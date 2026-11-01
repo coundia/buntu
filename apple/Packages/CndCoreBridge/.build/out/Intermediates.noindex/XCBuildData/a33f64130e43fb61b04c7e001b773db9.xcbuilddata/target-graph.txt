@@ -1,0 +1,11 @@
+Target dependency graph (4 targets)
+Target 'AllIncludingTests' in project 'Aggregate'
+➜ Explicit dependency on target 'CndCoreBridgeTests-product' in project 'CndCoreBridge'
+➜ Dependency on target 'CndCoreBridgeTests-product' in project 'CndCoreBridge' via transitive dependency through 'CndCoreBridgeTests-test-runner'
+➜ Explicit dependency on target 'CndCoreBridge-product' in project 'CndCoreBridge'
+➜ Explicit dependency on target 'CndCoreBridge' in project 'CndCoreBridge'
+Target 'CndCoreBridge-product' in project 'CndCoreBridge'
+➜ Explicit dependency on target 'CndCoreBridge' in project 'CndCoreBridge'
+Target 'CndCoreBridgeTests-product' in project 'CndCoreBridge'
+➜ Explicit dependency on target 'CndCoreBridge' in project 'CndCoreBridge'
+Target 'CndCoreBridge' in project 'CndCoreBridge' (no dependencies)

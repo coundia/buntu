@@ -1,0 +1,4 @@
+module CndCoreBridge {
+header "CndCoreBridge-Swift.h"
+export *
+}

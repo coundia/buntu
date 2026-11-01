@@ -1,0 +1,44 @@
+{
+  "object" : {
+    "artifacts" : [
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "cndcorebridge",
+          "kind" : "fileSystem",
+          "location" : "/Users/pcoundia/projects/cnd-iptv-native/apple/Packages/CndCoreBridge",
+          "name" : "CndCoreBridge"
+        },
+        "path" : "/Users/pcoundia/projects/cnd-iptv-native/apple/Packages/CndCoreBridge/cnd_coreFFI.xcframework",
+        "source" : {
+          "type" : "local"
+        },
+        "targetName" : "cnd_coreFFI"
+      }
+    ],
+    "dependencies" : [
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "cndcorebridge",
+          "kind" : "fileSystem",
+          "location" : "/Users/pcoundia/projects/cnd-iptv-native/apple/Packages/CndCoreBridge",
+          "name" : "CndCoreBridge"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/pcoundia/projects/cnd-iptv-native/apple/Packages/CndCoreBridge"
+        },
+        "subpath" : "cndcorebridge"
+      }
+    ],
+    "prebuilts" : [
+
+    ]
+  },
+  "version" : 7
+}

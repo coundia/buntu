@@ -1,0 +1,49 @@
+{
+  "" : {
+    "diagnostics" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp--6AE6D6921D9F7B1D-testable-primary.dia",
+    "emit-module-dependencies" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp--6AE6D6921D9F7B1D-testable-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp--6AE6D6921D9F7B1D-testable-primary-emit-module.dia",
+    "pch" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp--6AE6D6921D9F7B1D-testable-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp--6AE6D6921D9F7B1D-testable-primary.swiftdeps"
+  },
+  "/Users/pcoundia/projects/cnd-iptv-native/apple/Sources/CndIptvApp/AppState.swift" : {
+    "const-values" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/AppState.swiftconstvalues",
+    "dependencies" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/AppState.d",
+    "diagnostics" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/AppState.dia",
+    "index-unit-output-path" : "/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/AppState.o",
+    "llvm-bc" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/AppState.bc",
+    "object" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/AppState.o",
+    "swift-dependencies" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/AppState.swiftdeps",
+    "swiftmodule" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/AppState~partial.swiftmodule"
+  },
+  "/Users/pcoundia/projects/cnd-iptv-native/apple/Sources/CndIptvApp/CndIptvApp.swift" : {
+    "const-values" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp.swiftconstvalues",
+    "dependencies" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp.d",
+    "diagnostics" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp.dia",
+    "index-unit-output-path" : "/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp.o",
+    "llvm-bc" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp.bc",
+    "object" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp.o",
+    "swift-dependencies" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp.swiftdeps",
+    "swiftmodule" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/CndIptvApp~partial.swiftmodule"
+  },
+  "/Users/pcoundia/projects/cnd-iptv-native/apple/Sources/CndIptvApp/ContentView.swift" : {
+    "const-values" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/ContentView.swiftconstvalues",
+    "dependencies" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/ContentView.d",
+    "diagnostics" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/ContentView.dia",
+    "index-unit-output-path" : "/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/ContentView.o",
+    "swift-dependencies" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/ContentView.swiftdeps",
+    "swiftmodule" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/ContentView~partial.swiftmodule"
+  },
+  "/Users/pcoundia/projects/cnd-iptv-native/apple/Sources/CndIptvApp/Security/KeychainStore.swift" : {
+    "const-values" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/KeychainStore.swiftconstvalues",
+    "dependencies" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/KeychainStore.d",
+    "diagnostics" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/KeychainStore.dia",
+    "index-unit-output-path" : "/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/KeychainStore.o",
+    "llvm-bc" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/KeychainStore.bc",
+    "object" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/KeychainStore.o",
+    "swift-dependencies" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/KeychainStore.swiftdeps",
+    "swiftmodule" : "/Users/pcoundia/projects/cnd-iptv-native/apple/.build/out/Intermediates.noindex/CndIptvNative.build/Debug/CndIptvApp--6AE6D6921D9F7B1D-testable-t.build/Objects-normal/arm64/KeychainStore~partial.swiftmodule"
+  }
+}
