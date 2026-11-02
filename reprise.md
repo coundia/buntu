@@ -1,10 +1,10 @@
 # Guide de Reprise pour Agent IA — `cnd-iptv-native`
 
-> **Objectif de ce document :** Permettre à un nouvel agent IA (ou développeur) de reprendre **immédiatement et sans perte de contexte** l'implémentation séquentielle de la roadmap [`PRD/00_INDEX_ROADMAP.md`](./PRD/00_INDEX_ROADMAP.md) à partir du **PRD 07**.
+> **Objectif de ce document :** Permettre à un nouvel agent IA (ou développeur) de reprendre **immédiatement et sans perte de contexte** l'implémentation séquentielle de la roadmap [`PRD/00_INDEX_ROADMAP.md`](./PRD/00_INDEX_ROADMAP.md) à partir du **PRD 10**.
 
 ---
 
-## 1. Résumé de l'État Actuel (PRDs 01 à 06 Terminés & Validés ✅)
+## 1. Résumé de l'État Actuel (PRDs 01 à 09 Terminés & Validés ✅)
 
 | Ordre | PRD | Statut | Fichiers Clés Implémentés |
 | :---: | :--- | :---: | :--- |
@@ -14,18 +14,18 @@
 | **04** | [`PRD/04_XMLTV_EPG_ENGINE.md`](./PRD/04_XMLTV_EPG_ENGINE.md) | `[x]` | `crates/cnd-core/src/iptv/epg.rs`, `crates/cnd-core/src/db/epg_repo.rs` |
 | **05** | [`PRD/05_CATALOG_QUERIES_FAVORITES_HISTORY.md`](./PRD/05_CATALOG_QUERIES_FAVORITES_HISTORY.md) | `[x]` | `crates/cnd-core/src/db/catalog_repo.rs` |
 | **06** | [`PRD/06_METADATA_OMDB_TMDB_ENRICHMENT.md`](./PRD/06_METADATA_OMDB_TMDB_ENRICHMENT.md) | `[x]` | `crates/cnd-core/src/metadata/mod.rs` |
-| **07** | [`PRD/07_MULTI_SEGMENT_DOWNLOAD_ENGINE.md`](./PRD/07_MULTI_SEGMENT_DOWNLOAD_ENGINE.md) | `[ ]` | **À implémenter maintenant** *(schéma SQL `download_tasks` / `download_parts` déjà prêt dans `schema.rs` & `db/mod.rs`)* |
-| **08** | [`PRD/08_HYBRID_VIDEO_PLAYER_ENGINE.md`](./PRD/08_HYBRID_VIDEO_PLAYER_ENGINE.md) | `[ ]` | À implémenter après PRD 07 |
-| **09** | [`PRD/09_SWIFTUI_SOURCES_LIVE_TV_EPG.md`](./PRD/09_SWIFTUI_SOURCES_LIVE_TV_EPG.md) | `[ ]` | À implémenter après PRD 08 |
+| **07** | [`PRD/07_MULTI_SEGMENT_DOWNLOAD_ENGINE.md`](./PRD/07_MULTI_SEGMENT_DOWNLOAD_ENGINE.md) | `[x]` | `crates/cnd-core/src/db/download_repo.rs`, `crates/cnd-core/src/downloader/{mod,prober,worker,test_support}.rs`, exports `CndEngine` (`enqueue_download` … `get_download_logs`), `cnd-cli download <url> [dir]` |
+| **08** | [`PRD/08_HYBRID_VIDEO_PLAYER_ENGINE.md`](./PRD/08_HYBRID_VIDEO_PLAYER_ENGINE.md) | `[x]` | `apple/Sources/CndIptvApp/Player/{PlayableMedia,VideoBackendProtocol,AVPlayerBackend,MpvVideoToolboxBackend,CndPlayerController,CndVideoPlayerView,ExternalPlayerLauncher}.swift`, `apple/Tests/CndIptvAppTests/CndPlayerTests.swift` |
+| **09** | [`PRD/09_SWIFTUI_SOURCES_LIVE_TV_EPG.md`](./PRD/09_SWIFTUI_SOURCES_LIVE_TV_EPG.md) | `[x]` | `apple/Sources/CndIptvApp/{AppState.swift,App/AppShellView.swift,Shared/{ImageThumbnailCache,SearchFilterToolbar}.swift,Features/Sources/{SourcesModel,SourceFormModel,SourceFormSheet,SourcesListView}.swift,Features/LiveTV/{LiveTvModel,ChannelCardView,LiveTvView}.swift,Features/EPG/{EpgGuideModel,EpgGuideView}.swift}`, tests `SharedComponentsTests`, `LiveTvAndEpgTests`, `SourcesTests`, `Prd09TestSupport` |
 | **10** | [`PRD/10_SWIFTUI_MOVIES_SERIES_VOD.md`](./PRD/10_SWIFTUI_MOVIES_SERIES_VOD.md) | `[ ]` | À implémenter après PRD 09 |
 | **11** | [`PRD/11_SWIFTUI_DOWNLOADS_SETTINGS_CONSOLE.md`](./PRD/11_SWIFTUI_DOWNLOADS_SETTINGS_CONSOLE.md) | `[ ]` | À implémenter après PRD 10 |
 | **12** | [`PRD/12_APPLE_ECOSYSTEM_PIP_AIRPLAY_CLOUDKIT.md`](./PRD/12_APPLE_ECOSYSTEM_PIP_AIRPLAY_CLOUDKIT.md) | `[ ]` | À implémenter après PRD 11 |
 
 ### État de santé actuel du repo
-- **Tests Rust (`cargo test --workspace`) :** `23 passed; 0 failed` (inclut le benchmark streaming 50 000 items M3U `< 1.5s`, Xtream REST + fallback M3U+, XMLTV `.xml.gz` magic bytes, FTS5 caractères spéciaux, favori rang 1 000, cascade OMDb + cache SQLite + masquage `apikey=***`).
+- **Tests Rust (`cargo test --workspace`) :** `30 passed; 0 failed` (inclut le benchmark streaming 50 000 items M3U `< 1.5s`, Xtream REST + fallback M3U+, XMLTV `.xml.gz` magic bytes, FTS5 caractères spéciaux, favori rang 1 000, cascade OMDb + cache SQLite + masquage `apikey=***`).
 - **Linter Rust (`cargo clippy --workspace --all-targets -- -D warnings`) :** `0 warning, 0 error`.
-- **XCFramework Universel (`./scripts/build-xcframework.sh`) :** À jour avec les bindings UniFFI des PRDs 01 à 06 (`macOS arm64+x86_64`, `iOS Simulator arm64+x86_64`, `iOS Device arm64`).
-- **Tests Swift :** `apple/Packages/CndCoreBridge` (`swift test`) et `apple` (`swift test` incluant `KeychainStoreTests`) passent à 100 %.
+- **XCFramework Universel (`./scripts/build-xcframework.sh`) :** À jour avec les bindings UniFFI des PRDs 01 à 07 (`macOS arm64+x86_64`, `iOS Simulator arm64+x86_64`, `iOS Device arm64`).
+- **Tests Swift :** `apple/Packages/CndCoreBridge` (`swift test`) et `apple` (`swift test` : 53 tests = `KeychainStoreTests` + 15 `CndPlayerTests` (dont un smoke test `libmpv` réel ignoré si `libmpv`/`ffmpeg` sont absents) + 37 tests du PRD 09 contre un vrai `CndEngine.inMemory()`) passent à 100 %.
 - **Builds Xcode :** `xcodebuild -scheme CndIptvNative` passe sur `generic/platform=macOS` et `generic/platform=iOS Simulator`.
 
 ---
@@ -52,14 +52,18 @@
    Garder un seul bloc `#[uniffi::export(async_runtime = "tokio")] impl CndEngine` regroupant les constructeurs `#[uniffi::constructor]`, les méthodes synchrones `pub fn` et les méthodes asynchrones `pub async fn`.
    Dès qu'une méthode ou structure UniFFI est ajoutée/modifiée dans `cnd-core`, **toujours** relancer `./scripts/build-xcframework.sh` avant `swift test` ou `xcodebuild`.
 
-4. **Sécurité FTS5 SQLite (`iptv_items`) :**
+4. **Lecteur (PRD 08) :** `libmpv` est chargé par `dlopen` (aucune dépendance SPM, `Package.swift` inchangé). Le rendu passe par l'API render *software* de mpv vers `AVSampleBufferDisplayLayer` ; ce chemin ne peut pas importer les frames `videotoolbox` zéro-copie, donc `hwdec=videotoolbox,videotoolbox-copy` retombe sur `videotoolbox-copy` (décodage matériel, une copie vers la RAM). Sur iOS la lib doit être embarquée dans `Frameworks/`, sinon le contrôleur reste sur `AVPlayer`.
+
+5. **Sécurité FTS5 SQLite (`iptv_items`) :**
    Toujours utiliser `INSERT INTO iptv_items ... ON CONFLICT(stable_hash) DO UPDATE SET ...` (et jamais `INSERT OR REPLACE`) pour préserver l'intégrité des triggers FTS5 `trg_items_au`.
+
+6. **UI (PRD 09) :** `AppShellView` remplace `ContentView` (supprimé) ; `AppState` est `@MainActor`, expose `engine`, `stats`, `sources`, `catalogRevision` (incrémenté après sync/suppression/import, les écrans rechargent via `.task(id:)`) et le `CndPlayerController` partagé (progression via `DeferredProgressRecorder`, branché sur l'engine une fois ouvert). `CndVideoPlayerView` a un paramètre `closesOnDisappear` : le shell le passe à `false` car il pilote lui-même la fermeture (mini-lecteur <-> plein écran). Le mot de passe Xtream ne va jamais en SQLite : `KeychainStore` clé `cnd.xtream.<uuid>`, `passwordRef` = cette clé. Les onglets Films / Séries / Téléchargements / Réglages sont des `ContentUnavailableView` à remplacer dans les PRD 10 et 11. Dans les init des `@Observable @MainActor`, ne pas mettre `SearchFilterState()` en valeur par défaut d'argument (erreur d'isolation) : paramètre optionnel puis `?? SearchFilterState(...)`.
 
 ---
 
 ## 3. Plan d'Action Détaillé pour la Suite (PRDs 07 à 12)
 
-### Étape 1 — Implémenter & Valider `PRD 07` (`PRD/07_MULTI_SEGMENT_DOWNLOAD_ENGINE.md`)
+### ~~Étape 1 — `PRD 07`~~ (terminée ✅, détails conservés pour référence) (`PRD/07_MULTI_SEGMENT_DOWNLOAD_ENGINE.md`)
 - **Déjà fait dans `schema.rs` & `db/mod.rs` :**
   - Colonne `headers_json TEXT` ajoutée dans `download_tasks`.
   - Contrainte `UNIQUE(task_id, part_index)` et index `idx_download_parts_task_idx` sur `download_parts`.
@@ -86,7 +90,7 @@
      - `pause_download` à ~50 %, réouverture SQLite, `start_download` (reprise Range) + vérification hash `blake3`.
      - Fallback `Prober` quand `HEAD` renvoie `405 Method Not Allowed`.
 
-### Étape 2 — Implémenter & Valider `PRD 08` (`PRD/08_HYBRID_VIDEO_PLAYER_ENGINE.md`)
+### ~~Étape 2 — `PRD 08`~~ (terminée ✅, détails conservés pour référence) (`PRD/08_HYBRID_VIDEO_PLAYER_ENGINE.md`)
 - Créer dans `apple/Sources/CndIptvApp/Player/` :
   - `PlayableMedia.swift`, `VideoBackendProtocol.swift`
   - `AVPlayerBackend.swift` (`AVURLAsset` avec `AVURLAssetHTTPHeaderFieldsKey`, sélection pistes `AVMediaSelectionGroup`, observation `timeControlStatus` / `status`)
@@ -96,7 +100,7 @@
   - `ExternalPlayerLauncher.swift` (IINA, VLC, Infuse, Outplayer + `copyStreamUrl`, `copyFfmpegCommand`, `copyCurlCommand` avec échappement shell strict)
 - Ajouter les tests unitaires dans `apple/Tests/CndIptvAppTests/CndPlayerTests.swift`.
 
-### Étape 3 — Implémenter & Valider `PRD 09` (`PRD/09_SWIFTUI_SOURCES_LIVE_TV_EPG.md`)
+### ~~Étape 3~~ — `PRD 09` (terminée ✅, détails conservés pour référence) — `PRD 09` (`PRD/09_SWIFTUI_SOURCES_LIVE_TV_EPG.md`)
 - Créer :
   - `apple/Sources/CndIptvApp/Shared/ImageThumbnailCache.swift` (`actor` avec `NSCache` + cache disque `Caches/CndThumbnails/` + downsampling `CGImageSourceCreateThumbnailAtIndex` hors du Main Thread)
   - `apple/Sources/CndIptvApp/Shared/SearchFilterToolbar.swift` (debounce 120 ms, filtres Groupe/Host/Tri)
@@ -152,6 +156,6 @@ cargo clippy --workspace --all-targets -- -D warnings
 Pour reprendre le travail avec un nouvel agent IA, donnez-lui simplement :
 
 ```text
-/goal Lis reprise.md et PRD/00_INDEX_ROADMAP.md, puis poursuis l'implémentation séquentielle à partir du PRD 07 jusqu'au PRD 12 inclus en respectant toutes les validations et en cochant [x] dans PRD/00_INDEX_ROADMAP.md à chaque étape.
+/goal Lis reprise.md et PRD/00_INDEX_ROADMAP.md, puis poursuis l'implémentation séquentielle à partir du PRD 10 jusqu'au PRD 12 inclus en respectant toutes les validations et en cochant [x] dans PRD/00_INDEX_ROADMAP.md à chaque étape.
 ```
 

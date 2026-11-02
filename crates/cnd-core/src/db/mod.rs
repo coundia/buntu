@@ -1,4 +1,5 @@
 pub mod catalog_repo;
+pub mod download_repo;
 pub mod epg_repo;
 pub mod ingestion_writer;
 pub mod schema;

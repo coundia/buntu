@@ -1,10 +1,14 @@
 pub mod db;
+pub mod downloader;
 pub mod http_client;
 pub mod iptv;
 pub mod metadata;
 pub mod telemetry;
 
 pub use db::catalog_repo::{CatalogFilter, FacetCount, SeasonSummary, SeriesRecord, SortField};
+pub use db::download_repo::{
+    DownloadLogRecord, DownloadPartRecord, DownloadTaskRecord, NewDownloadRequest,
+};
 pub use db::epg_repo::{ChannelNowNext, EpgProgramRecord};
 pub use db::ingestion_writer::SyncSummary;
 pub use db::settings_repo::RuntimeSettings;
@@ -59,6 +63,7 @@ pub struct CndEngine {
     settings: Arc<RwLock<RuntimeSettings>>,
     telemetry: Arc<TelemetryHub>,
     http_pool: Arc<HttpClientPool>,
+    downloads: Arc<downloader::DownloadManager>,
 }
 
 impl CndEngine {
@@ -70,16 +75,31 @@ impl CndEngine {
             Arc::clone(&settings),
             Arc::clone(&telemetry),
         )?);
+        let recovered = db.reset_running_tasks_on_startup()?;
+        let db = Arc::new(db);
+        let downloads = downloader::DownloadManager::new(
+            Arc::clone(&db),
+            Arc::clone(&settings),
+            Arc::clone(&telemetry),
+            Arc::clone(&http_pool),
+        );
         telemetry.info(
             "DB",
             "CndEngine initialized (SQLite WAL + FTS5 + HttpClientPool)",
         );
+        if recovered > 0 {
+            telemetry.info(
+                "DL",
+                format!("Recovered {recovered} interrupted download(s) as paused"),
+            );
+        }
 
         Ok(Arc::new(Self {
-            db: Arc::new(db),
+            db,
             settings,
             telemetry,
             http_pool,
+            downloads,
         }))
     }
 
@@ -671,6 +691,46 @@ impl CndEngine {
             force_refresh,
         )
         .await
+    }
+
+    pub async fn enqueue_download(&self, req: NewDownloadRequest) -> Result<i64, CndError> {
+        self.downloads.enqueue(req).await
+    }
+
+    pub async fn start_download(&self, task_id: i64) -> Result<(), CndError> {
+        self.downloads.start(task_id)
+    }
+
+    pub async fn pause_download(&self, task_id: i64) -> Result<(), CndError> {
+        self.downloads.pause(task_id).await
+    }
+
+    pub async fn retry_download(&self, task_id: i64) -> Result<(), CndError> {
+        self.downloads.retry(task_id).await
+    }
+
+    pub async fn remove_download(&self, task_id: i64, delete_files: bool) -> Result<(), CndError> {
+        self.downloads.remove(task_id, delete_files).await
+    }
+
+    pub async fn start_all_downloads(&self) -> Result<(), CndError> {
+        self.downloads.start_all().await
+    }
+
+    pub async fn pause_all_downloads(&self) -> Result<(), CndError> {
+        self.downloads.pause_all().await
+    }
+
+    pub fn list_downloads(&self, query: Option<String>) -> Result<Vec<DownloadTaskRecord>, CndError> {
+        self.downloads.list(query.as_deref())
+    }
+
+    pub fn get_download_logs(
+        &self,
+        task_id: i64,
+        limit: u32,
+    ) -> Result<Vec<DownloadLogRecord>, CndError> {
+        self.downloads.logs(task_id, limit)
     }
 
     pub fn query_items(
