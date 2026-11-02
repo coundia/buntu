@@ -61,6 +61,8 @@ La première compilation du cœur Rust est longue ; les suivantes sont incrémen
 | `task run:release` | Idem en release |
 | `task run:fresh` | Reconstruit d'abord le XCFramework Rust |
 | `task run:logs` | Lance dans le terminal pour voir la sortie standard |
+| `task run:iphone` | Compile, signe, installe et lance l'app sur l'iPhone/iPad branché (`DEVICE="icnd 14"` pour choisir) |
+| `task iphone:devices` | Liste les appareils iOS connectés |
 | `task bundle` | Assemble `build/CndIPTV.app` sans lancer |
 | `task test` | Tests Rust, pont FFI et application |
 | `task lint` | Clippy (`-D warnings`) |
