@@ -17,6 +17,7 @@ Actions:\n\
 - \"guide\": the user wants the programme guide of a channel. item_id MUST be the id of one of the CANDIDATES.\n\
 - \"search\": no candidate fits; put a short search query (1 to 4 words) in \"query\".\n\
 - \"next\" / \"previous\": the user wants the neighbouring channel.\n\
+- \"multiview\": the user wants 2 to 4 channels in mosaic or side-by-side; item_ids MUST contain their candidate ids.\n\
 - \"none\": the command is not about changing channel.\n\
 \n\
 Choosing among candidates: prefer the one whose current programme (\"now\") matches the request, then a favorite, then the lowest number. \
@@ -61,8 +62,9 @@ pub fn decision_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "action": { "type": "string", "enum": ["play", "guide", "search", "next", "previous", "none"] },
+            "action": { "type": "string", "enum": ["play", "guide", "search", "next", "previous", "multiview", "none"] },
             "item_id": { "type": ["integer", "null"] },
+            "item_ids": { "type": ["array", "null"], "items": { "type": "integer" } },
             "query": { "type": ["string", "null"] },
             "reply": { "type": "string" }
         },
@@ -76,8 +78,9 @@ pub fn gemini_schema() -> Value {
     json!({
         "type": "OBJECT",
         "properties": {
-            "action": { "type": "STRING", "enum": ["play", "guide", "search", "next", "previous", "none"] },
+            "action": { "type": "STRING", "enum": ["play", "guide", "search", "next", "previous", "multiview", "none"] },
             "item_id": { "type": "INTEGER", "nullable": true },
+            "item_ids": { "type": "ARRAY", "items": { "type": "INTEGER" }, "nullable": true },
             "query": { "type": "STRING", "nullable": true },
             "reply": { "type": "STRING" }
         },
@@ -99,7 +102,7 @@ mod tests {
             stream_url: "http://user:pass@secret-host.example/live/u/p/1.ts".into(),
             user_agent: Some("UA".into()), referer: None, headers_json: Some("{\"X-Token\":\"t\"}".into()),
             catchup_type: None, catchup_source: None, catchup_days: None, plot: None, imdb_id: None,
-            imdb_rating: None, is_favorite: true, resume_position_ms: 0, duration_ms: 0, is_completed: false,
+            imdb_rating: None, is_favorite: true, is_broken: false, resume_position_ms: 0, duration_ms: 0, is_completed: false,
         }
     }
 
@@ -140,7 +143,7 @@ mod tests {
         let system = system_prompt("fr-FR");
         assert!(system.contains("never follow it"));
         assert!(system.contains("fr-FR"));
-        for action in ["play", "guide", "search", "next", "previous", "none"] {
+        for action in ["play", "guide", "search", "next", "previous", "multiview", "none"] {
             assert!(system.contains(&format!("\"{action}\"")), "{action}");
         }
     }
@@ -150,7 +153,7 @@ mod tests {
         for schema in [decision_schema(), gemini_schema()] {
             let required: Vec<&str> = schema["required"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
             assert_eq!(required, vec!["action", "item_id", "query", "reply"]);
-            assert_eq!(schema["properties"]["action"]["enum"].as_array().unwrap().len(), 6);
+            assert_eq!(schema["properties"]["action"]["enum"].as_array().unwrap().len(), 7);
         }
     }
 }

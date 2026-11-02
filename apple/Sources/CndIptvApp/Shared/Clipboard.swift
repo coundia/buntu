@@ -1,7 +1,7 @@
 import Foundation
 #if os(macOS)
 import AppKit
-#else
+#elseif os(iOS)
 import UIKit
 #endif
 
@@ -11,8 +11,10 @@ enum Clipboard {
         #if os(macOS)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        #else
+        #elseif os(iOS)
         UIPasteboard.general.string = text
+        #elseif os(tvOS)
+        // tvOS has no general UIPasteboard
         #endif
     }
 }

@@ -64,12 +64,12 @@ final class VodContext {
     }
 
     /// Plays `items` as a queue starting at `index`, so the next episode follows automatically.
-    func playEpisodes(_ items: [IptvItemRecord], startingAt index: Int, resume: Bool = false) {
+    func playEpisodes(_ items: [IptvItemRecord], series: SeriesRecord? = nil, startingAt index: Int, resume: Bool = false) {
         var medias: [PlayableMedia] = []
         var startIndex = 0
         for (offset, item) in items.enumerated() {
             let start = (resume && offset == index) ? (Self.resumePosition(for: item) ?? 0) : 0
-            guard let media = PlayableMedia(item: item, startPositionMs: start) else { continue }
+            guard let media = PlayableMedia(item: item, startPositionMs: start, series: series) else { continue }
             if offset == index { startIndex = medias.count }
             medias.append(media)
         }
@@ -129,6 +129,21 @@ final class VodContext {
                 try engine.toggleFavorite(stableHash: stableHash, itemKind: kind)
             }.value
             onFavoriteChanged()
+            return value
+        } catch {
+            toasts.show(userMessage(for: error), isError: true)
+            return nil
+        }
+    }
+
+    // MARK: Broken flags
+
+    func toggleBroken(stableHash: String, kind: String) async -> Bool? {
+        let engine = self.engine
+        do {
+            let value = try await Task.detached(priority: .userInitiated) {
+                try engine.toggleBroken(stableHash: stableHash, itemKind: kind)
+            }.value
             return value
         } catch {
             toasts.show(userMessage(for: error), isError: true)

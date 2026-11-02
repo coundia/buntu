@@ -342,6 +342,159 @@ final class CndPlayerTests: XCTestCase {
         XCTAssertNil(controller.media)
     }
 
+    // MARK: - Favorites
+
+    @MainActor
+    func testPlayerTogglesFavoriteViaHandler() async throws {
+        final class SafeBox: @unchecked Sendable {
+            private let lock = NSLock()
+            var handledMedia: PlayableMedia?
+            var desiredReturn = true
+            func setMedia(_ m: PlayableMedia) { lock.withLock { handledMedia = m } }
+            func getMedia() -> PlayableMedia? { lock.withLock { handledMedia } }
+            func setReturn(_ val: Bool) { lock.withLock { desiredReturn = val } }
+            func getReturn() -> Bool { lock.withLock { desiredReturn } }
+        }
+
+        let controller = makeController()
+        let movie = PlayableMedia(title: "Matrix", url: URL(string: "http://test/matrix.mp4")!, kind: .movie, stableHash: "hash_matrix", isFavorite: false)
+
+        let box = SafeBox()
+        var toggledCalls: [(PlayableMedia, Bool)] = []
+
+        controller.favoriteHandler = { media in
+            box.setMedia(media)
+            return box.getReturn()
+        }
+        controller.onFavoriteToggled = { media, isFav in
+            toggledCalls.append((media, isFav))
+        }
+
+        controller.open(movie)
+        XCTAssertFalse(controller.isFavorite)
+        XCTAssertFalse(controller.media?.isFavorite ?? true)
+
+        controller.toggleFavorite()
+        for _ in 0..<30 {
+            if controller.isFavorite { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertTrue(controller.isFavorite)
+        XCTAssertEqual(box.getMedia()?.stableHash, "hash_matrix")
+        XCTAssertEqual(toggledCalls.count, 1)
+        XCTAssertTrue(toggledCalls.first?.1 ?? false)
+        XCTAssertTrue(controller.media?.isFavorite ?? false)
+
+        // Toggle back to false
+        box.setReturn(false)
+        controller.toggleFavorite()
+        for _ in 0..<30 {
+            if !controller.isFavorite { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(controller.isFavorite)
+        XCTAssertEqual(toggledCalls.count, 2)
+        XCTAssertFalse(toggledCalls.last?.1 ?? true)
+    }
+
+    @MainActor
+    func testPlayerFallbackToggleWithoutHandler() async throws {
+        let controller = makeController()
+        let live = PlayableMedia(title: "News", url: URL(string: "http://test/live.m3u8")!, kind: .live, isFavorite: false)
+        controller.open(live)
+        XCTAssertFalse(controller.isFavorite)
+
+        controller.toggleFavorite()
+        for _ in 0..<30 {
+            if controller.isFavorite { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(controller.isFavorite)
+        XCTAssertTrue(controller.media?.isFavorite ?? false)
+    }
+
+    @MainActor
+    func testPlayerTogglesBrokenViaHandler() async throws {
+        let controller = makeController()
+        let movie = PlayableMedia(title: "Inception", url: URL(string: "http://test/m.mkv")!, kind: .movie, isBroken: false)
+
+        final class SafeBrokenBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var willReturn: Bool
+            private var calls: [String] = []
+
+            init(willReturn: Bool) { self.willReturn = willReturn }
+
+            func record(call: String) -> Bool {
+                lock.lock()
+                defer { lock.unlock() }
+                calls.append(call)
+                return willReturn
+            }
+
+            func setReturn(_ val: Bool) {
+                lock.lock()
+                defer { lock.unlock() }
+                willReturn = val
+            }
+
+            var callCount: Int {
+                lock.lock()
+                defer { lock.unlock() }
+                return calls.count
+            }
+        }
+
+        let box = SafeBrokenBox(willReturn: true)
+        controller.brokenHandler = { media in
+            box.record(call: media.title)
+        }
+
+        var toggledCalls: [(PlayableMedia, Bool)] = []
+        controller.onBrokenToggled = { media, isBroken in
+            toggledCalls.append((media, isBroken))
+        }
+
+        controller.open(movie)
+        XCTAssertFalse(controller.isBroken)
+
+        controller.toggleBroken()
+        for _ in 0..<30 {
+            if controller.isBroken { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(controller.isBroken)
+        XCTAssertTrue(controller.media?.isBroken ?? false)
+        XCTAssertEqual(box.callCount, 1)
+        XCTAssertEqual(toggledCalls.count, 1)
+        XCTAssertTrue(toggledCalls.first?.1 ?? false)
+
+        box.setReturn(false)
+        controller.toggleBroken()
+        for _ in 0..<30 {
+            if !controller.isBroken { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(controller.isBroken)
+        XCTAssertEqual(toggledCalls.count, 2)
+        XCTAssertFalse(toggledCalls.last?.1 ?? true)
+    }
+
+    @MainActor
+    func testPlaylistQueueUpdatesCurrentFavorite() {
+        let item1 = PlayableMedia(title: "E01", url: URL(string: "http://test/e1.mkv")!, kind: .episode, isFavorite: false)
+        let item2 = PlayableMedia(title: "E02", url: URL(string: "http://test/e2.mkv")!, kind: .episode, isFavorite: false)
+        var queue = PlaylistQueue(items: [item1, item2], currentIndex: 0)
+
+        XCTAssertFalse(queue.current?.isFavorite ?? true)
+        queue.updateCurrentFavorite(true)
+        XCTAssertTrue(queue.current?.isFavorite ?? false)
+
+        queue.next()
+        XCTAssertFalse(queue.current?.isFavorite ?? true)
+    }
+
     // MARK: libmpv smoke test (macOS dev machines with libmpv + ffmpeg only)
 
     #if os(macOS)

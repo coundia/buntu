@@ -196,6 +196,7 @@ final class NowPlayingTests: XCTestCase {
         XCTAssertEqual(summary.liveCount, 1)
         let item = try XCTUnwrap(engine.queryCatalog(filter: CatalogFilter(
             kind: "live", sourceId: nil, query: "", groupTitle: nil, host: nil, favoritesOnly: false,
+            includeBroken: false, includeHidden: false,
             sortBy: .name, sortAsc: true, limit: 5, offset: 0
         )).first)
         XCTAssertEqual(PlayableMedia(item: item)?.artworkUrl, "http://logos.test/1.png")
@@ -223,7 +224,7 @@ final class ZapAndGestureTests: XCTestCase {
             name: "Chaîne \(id)", nameClean: "Chaîne \(id)", year: nil, groupTitle: nil, tvgId: nil, logoUrl: nil, chno: nil,
             host: "h", containerExt: nil, streamUrl: "http://cdn.test/live/\(id).m3u8", userAgent: nil, referer: nil,
             headersJson: nil, catchupType: nil, catchupSource: nil, catchupDays: nil, plot: nil, imdbId: nil,
-            imdbRating: nil, isFavorite: false, resumePositionMs: 0, durationMs: 0, isCompleted: false
+            imdbRating: nil, isFavorite: false, isBroken: false, resumePositionMs: 0, durationMs: 0, isCompleted: false
         )
     }
 

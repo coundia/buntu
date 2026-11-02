@@ -37,6 +37,9 @@ enum EpgProgress {
 struct ChannelActions {
     var play: (IptvItemRecord) -> Void
     var toggleFavorite: (IptvItemRecord) -> Void
+    var toggleBroken: ((IptvItemRecord) -> Void)? = nil
+    var addToMultiView: ((IptvItemRecord) -> Void)? = nil
+    var showMirrors: ((IptvItemRecord) -> Void)? = nil
     var showGuide: (IptvItemRecord) -> Void
 }
 
@@ -46,6 +49,7 @@ struct ChannelCardView: View {
 
     let item: IptvItemRecord
     let nowNext: ChannelNowNext?
+    var health: StreamHealthRecord? = nil
     var isPlaying = false
     var style: Style = .card
     let actions: ChannelActions
@@ -113,6 +117,7 @@ struct ChannelCardView: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
+                healthIndicator
                 if isPlaying { Image(systemName: "speaker.wave.2.fill").font(.caption).foregroundStyle(.tint) }
                 if let number = item.chno { Text("\(number)").font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
                 Text(item.name).font(.subheadline.weight(.semibold)).lineLimit(1)
@@ -122,6 +127,13 @@ struct ChannelCardView: View {
                         .padding(.horizontal, 4).padding(.vertical, 1)
                         .background(quality == .uhd ? Color.orange : Color.secondary.opacity(0.25), in: RoundedRectangle(cornerRadius: 3))
                         .foregroundStyle(quality == .uhd ? Color.black : Color.primary)
+                }
+                if item.isBroken {
+                    Label("En panne", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(Color.red.opacity(0.2), in: RoundedRectangle(cornerRadius: 3))
+                        .foregroundStyle(Color.red)
                 }
             }
             if let group = item.groupTitle, !group.isEmpty {
@@ -159,10 +171,56 @@ struct ChannelCardView: View {
     }
 
     @ViewBuilder
+    private var healthIndicator: some View {
+        if item.isBroken {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+                .help("Signalée en panne")
+        } else if let health {
+            if health.status == "ok" {
+                let isRecent = Date().timeIntervalSince1970 - Double(health.checkedAt) < 3600
+                if isRecent && (health.latencyMs ?? 0) < 500 {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 8, height: 8)
+                        .help("Opérationnelle (\(health.latencyMs ?? 0) ms)")
+                } else {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 8, height: 8)
+                        .help("Flux lent (\(health.latencyMs ?? 0) ms)")
+                }
+            } else if health.consecutiveFailures > 0 {
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 8, height: 8)
+                    .help("\(health.consecutiveFailures) échec(s)")
+            }
+        }
+    }
+
+    @ViewBuilder
     private var menu: some View {
         Button("Lire", systemImage: "play.fill") { actions.play(item) }
         Button(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
                systemImage: item.isFavorite ? "star.slash" : "star") { actions.toggleFavorite(item) }
+        if let toggleBroken = actions.toggleBroken {
+            Button(item.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel",
+                   systemImage: item.isBroken ? "checkmark.circle" : "exclamationmark.triangle") {
+                toggleBroken(item)
+            }
+        }
+        if let addToMultiView = actions.addToMultiView {
+            Button("Ajouter à la mosaïque Multi-View", systemImage: "square.grid.2x2") {
+                addToMultiView(item)
+            }
+        }
+        if let showMirrors = actions.showMirrors {
+            Button("Alternatives (Miroirs)", systemImage: "arrow.triangle.swap") {
+                showMirrors(item)
+            }
+        }
         if let media = PlayableMedia(item: item) {
             Menu("Ouvrir dans…", systemImage: "arrow.up.forward.app") {
                 ForEach(ExternalPlayer.availableOnThisPlatform) { player in

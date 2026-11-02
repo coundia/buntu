@@ -1,0 +1,70 @@
+# PRD 23 — Projet Xcode signé, Info.plist, entitlements & distribution
+
+- **ID :** `PRD-23`
+- **Prérequis :** aucun (fondation) ; requis par `PRD-21`, `PRD-22`, et pour activer réellement l'iCloud du `PRD-12`, l'app Fichiers du `PRD-11` et `libmpv` sur iOS (`PRD-08`)
+- **Couches impactées :** `apple/Package.swift` (découpage en bibliothèque), nouveau projet Xcode généré, `assets/`, `scripts/`, `Taskfile.yml`
+- **Origine :** limites connues listées dans `README.md` et `reprise.md` (non couvertes par `PRD-14`)
+- **Objectif SLA :** un build `Release` signé de l'app macOS et iOS est produit par **une seule commande** ; l'app macOS sandboxée garde toutes ses fonctions.
+
+---
+
+## 1. Contexte & Objectif
+
+L'app est aujourd'hui un **exécutable Swift Package**, empaqueté à la main par `scripts/run-macos.sh` (bundle signé « ad hoc », sans `Info.plist` complet ni entitlements). Conséquences déjà constatées :
+- iCloud reste en « Mode local uniquement » (pas d'entitlement CloudKit ni de clé `CndCloudKitContainerIdentifier`) ;
+- sur iOS : pas d'icône d'app, `Documents/Downloads` invisible dans l'app Fichiers, `libmpv` non embarqué (lecteur limité à `AVPlayer`) ;
+- impossible d'ajouter une extension (Live Activities) ou une cible tvOS.
+
+---
+
+## 2. Spécifications Techniques Détaillées
+
+### 2.1. Découpage du package
+
+- `apple/Package.swift` : nouveau produit **bibliothèque** `CndIptvKit` contenant tout `Sources/CndIptvApp` **sauf** le point d'entrée `@main` ; l'exécutable `CndIptvApp` (gardé pour `swift run` et `task run`) ne contient plus que `CndIptvApp.swift`. Les tests ciblent `CndIptvKit`.
+
+### 2.2. Projet Xcode généré
+
+- Projet décrit en texte (`apple/project.yml`) et généré par **XcodeGen** (outil de développement, pas une dépendance de l'app) pour rester relisible et reproductible ; `apple/*.xcodeproj` ignoré par git ou régénéré par `task xcode:generate`.
+- Cibles : `CND IPTV (macOS)`, `CND IPTV (iOS)` (iPhone + iPad) ; emplacements prévus pour `tvOS` (PRD 21), `visionOS` et l'extension Widget (PRD 22).
+- Dépendance locale au package (`CndIptvKit`, `CndCoreBridge`).
+
+### 2.3. Info.plist (par plateforme)
+
+- Identité : `CFBundleIdentifier` (préfixe configurable, ex. `com.cnd.iptv`), version, `LSApplicationCategoryType = public.app-category.entertainment`.
+- Réseau : `NSAppTransportSecurity` → `NSAllowsArbitraryLoads = YES` (les flux IPTV sont souvent en HTTP) avec justification App Review ; `NSLocalNetworkUsageDescription` (assistant IA local Ollama/LM Studio, `PRD-13`).
+- iOS : `UIFileSharingEnabled` et `LSSupportsOpeningDocumentsInPlace` (téléchargements visibles dans Fichiers), `UIBackgroundModes = audio` (lecture en arrière-plan et PiP).
+- iCloud : `CndCloudKitContainerIdentifier = iCloud.<identifiant>` (active `CloudKitSyncManager`).
+- `NSSupportsLiveActivities` réservé au PRD 22.
+
+### 2.4. Entitlements
+
+- macOS **App Sandbox** : `network.client`, `files.user-selected.read-write`, `files.bookmarks.app-scope` (marque-pages du dossier de téléchargement, `PRD-11`), `files.downloads.read-write`.
+- iCloud : service CloudKit, conteneur `iCloud.<identifiant>`.
+- Trousseau : groupe d'accès partagé entre les cibles ; option `kSecAttrSynchronizable` (Trousseau iCloud) pour les mots de passe Xtream, **désactivée par défaut**, décision documentée.
+- Hardened Runtime (macOS).
+
+### 2.5. libmpv embarqué
+
+- Build LGPL de `libmpv` (et dépendances FFmpeg) pour macOS et iOS, copiée dans `Frameworks/` et **signée** à la phase de build ; vérifier la licence (pas de composants GPL). Le chargement `dlopen` cherche déjà `Frameworks/`.
+
+### 2.6. Ressources & signature
+
+- Catalogue d'assets `AppIcon` généré depuis `assets/AppIcon-1024.png` (`task icon`).
+- Signature automatique avec `DEVELOPMENT_TEAM` lu dans une variable d'environnement ; à défaut, « Sign to Run Locally » (l'app fonctionne alors en mode local, comme aujourd'hui).
+- Tâches : `task xcode:generate`, `task app:macos` (archive Release), `task app:ios` (archive), `task app:testflight` (export, facultatif).
+
+---
+
+## 3. Contraintes Non-Négociables (Guardrails IA)
+
+- `swift test`, `task run` et la suite `task check` existante restent fonctionnels.
+- Aucun secret (identifiant d'équipe, profils) dans le dépôt : variables d'environnement uniquement.
+- Le mode « Sign to Run Locally » ne doit jamais faire planter l'app (iCloud reste en mode local, comme garanti par le PRD 12).
+
+## 4. Critères d'Acceptation & Commandes de Validation
+
+1. `task xcode:generate` puis builds Release macOS et iOS signés (ou « to Run Locally » sans équipe).
+2. L'app macOS sandboxée : choix d'un dossier de téléchargement, téléchargement, lecture mpv, journaux.
+3. Avec une équipe Apple : la synchronisation iCloud fonctionne entre un Mac et un iPhone (essai manuel documenté), les téléchargements iOS apparaissent dans Fichiers, un flux `.ts` se lit sur iPhone via mpv.
+4. `task check` au vert.

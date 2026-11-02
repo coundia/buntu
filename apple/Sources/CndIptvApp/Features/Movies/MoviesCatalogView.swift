@@ -25,7 +25,13 @@ struct MoviesCatalogView: View {
             searchPrompt: "Rechercher un film",
             emptyDescription: "Ajoutez une source dans l'onglet Sources pour importer des films."
         ) { item, style in
-            MoviePosterCard(item: item, style: style, vod: vod) { toggleFavorite(item) }
+            MoviePosterCard(
+                item: item,
+                style: style,
+                vod: vod,
+                onToggleFavorite: { toggleFavorite(item) },
+                onToggleBroken: { toggleBroken(item) }
+            )
         }
     }
 
@@ -33,6 +39,14 @@ struct MoviesCatalogView: View {
         Task {
             if let value = await vod.toggleFavorite(stableHash: item.stableHash, kind: item.kind) {
                 model.applyFavorite(value, to: item)
+            }
+        }
+    }
+
+    private func toggleBroken(_ item: IptvItemRecord) {
+        Task {
+            if let value = await vod.toggleBroken(stableHash: item.stableHash, kind: item.kind) {
+                model.applyBroken(value, to: item)
             }
         }
     }

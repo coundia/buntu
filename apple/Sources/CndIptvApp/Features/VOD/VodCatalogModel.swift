@@ -7,6 +7,7 @@ protocol CatalogEntry: Sendable, Hashable {
     var entryId: Int64 { get }
     var entryStableHash: String { get }
     var entryIsFavorite: Bool { get set }
+    var entryIsBroken: Bool { get set }
     /// `itemKind` passed to `toggleFavorite`.
     var favoriteKind: String { get }
 }
@@ -18,6 +19,10 @@ extension IptvItemRecord: CatalogEntry {
         get { isFavorite }
         set { isFavorite = newValue }
     }
+    var entryIsBroken: Bool {
+        get { isBroken }
+        set { isBroken = newValue }
+    }
     var favoriteKind: String { kind }
 }
 
@@ -27,6 +32,10 @@ extension SeriesRecord: CatalogEntry {
     var entryIsFavorite: Bool {
         get { isFavorite }
         set { isFavorite = newValue }
+    }
+    var entryIsBroken: Bool {
+        get { isBroken }
+        set { isBroken = newValue }
     }
     var favoriteKind: String { "series" }
 }
@@ -101,7 +110,7 @@ final class VodCatalogModel<Entry: CatalogEntry> {
     }
 
     var showsSections: Bool {
-        filter.query.isEmpty && filter.group == nil && filter.host == nil
+        filter.query.isEmpty && filter.group == nil && filter.host == nil && !filter.showBroken
     }
 
     /// A search looks in every category: the selected one is only applied while the search is empty,
@@ -114,7 +123,7 @@ final class VodCatalogModel<Entry: CatalogEntry> {
         CatalogFilter(
             kind: kind, sourceId: nil, query: filter.query,
             groupTitle: filter.query.isEmpty ? filter.group : nil, host: filter.host,
-            favoritesOnly: false, sortBy: filter.sort, sortAsc: filter.ascending,
+            favoritesOnly: false, includeBroken: filter.showBroken, includeHidden: false, sortBy: filter.sort, sortAsc: filter.ascending,
             limit: UInt32(Self.pageSize), offset: UInt32(offset)
         )
     }
@@ -206,6 +215,36 @@ final class VodCatalogModel<Entry: CatalogEntry> {
             var added = entry
             added.entryIsFavorite = true
             favorites.insert(added, at: 0)
+        }
+    }
+
+    /// Toggles the broken flag on an entry.
+    func toggleBroken(_ entry: Entry, engine: CndEngine) async {
+        do {
+            let isBroken = try await Task.detached(priority: .userInitiated) {
+                try engine.toggleBroken(stableHash: entry.entryStableHash, itemKind: entry.favoriteKind)
+            }.value
+            applyBroken(isBroken, to: entry)
+        } catch {
+            errorMessage = userMessage(for: error)
+        }
+    }
+
+    /// Mirrors a broken flag change made anywhere into the loaded lists.
+    func applyBroken(_ isBroken: Bool, to entry: Entry) {
+        if !filter.showBroken && isBroken {
+            entries.removeAll { $0.entryStableHash == entry.entryStableHash }
+            resume.removeAll { $0.entryStableHash == entry.entryStableHash }
+            favorites.removeAll { $0.entryStableHash == entry.entryStableHash }
+        } else {
+            func update(_ list: inout [Entry]) {
+                for index in list.indices where list[index].entryStableHash == entry.entryStableHash {
+                    list[index].entryIsBroken = isBroken
+                }
+            }
+            update(&entries)
+            update(&resume)
+            update(&favorites)
         }
     }
 }

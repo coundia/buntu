@@ -152,7 +152,7 @@ struct DownloadTaskCard: View {
     private var fileActions: some View {
         #if os(macOS)
         Button(action: reveal) { Label("Afficher dans le Finder", systemImage: "folder") }
-        #else
+        #elseif os(iOS)
         ShareLink(item: URL(fileURLWithPath: task.savePath)) { Label("Partager", systemImage: "square.and.arrow.up") }
         #endif
     }

@@ -5,6 +5,7 @@ public enum PlayableKind: String, Sendable, Equatable {
     case live
     case movie
     case episode
+    case recording
 }
 
 public enum PlayerEngineKind: String, Sendable, Equatable {
@@ -29,6 +30,20 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
     public let stableHash: String?
     /// Logo or poster shown by the system Now Playing UI.
     public let artworkUrl: String?
+    /// Whether the media is currently marked as favorite.
+    public var isFavorite: Bool
+    /// Whether the media is currently flagged as broken / non-functional.
+    public var isBroken: Bool
+    /// Original item kind ("live", "movie", "episode").
+    public let itemKind: String?
+    /// Catalog item id if created from a catalog row.
+    public let itemId: Int64?
+    /// Link to series catalog if this item is an episode.
+    public let seriesId: Int64?
+    /// Series stable hash if known.
+    public let seriesStableHash: String?
+    /// Series title if known.
+    public let seriesTitle: String?
 
     public init(
         title: String,
@@ -37,7 +52,14 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
         kind: PlayableKind,
         startPositionMs: Int64 = 0,
         stableHash: String? = nil,
-        artworkUrl: String? = nil
+        itemId: Int64? = nil,
+        artworkUrl: String? = nil,
+        isFavorite: Bool = false,
+        isBroken: Bool = false,
+        itemKind: String? = nil,
+        seriesId: Int64? = nil,
+        seriesStableHash: String? = nil,
+        seriesTitle: String? = nil
     ) {
         self.title = title
         self.url = url
@@ -45,7 +67,14 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
         self.kind = kind
         self.startPositionMs = max(0, startPositionMs)
         self.stableHash = stableHash
+        self.itemId = itemId
         self.artworkUrl = artworkUrl
+        self.isFavorite = isFavorite
+        self.isBroken = isBroken
+        self.itemKind = itemKind ?? kind.rawValue
+        self.seriesId = seriesId
+        self.seriesStableHash = seriesStableHash
+        self.seriesTitle = seriesTitle
     }
 
     public func header(named name: String) -> String? {
@@ -54,6 +83,10 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
 
     public var userAgent: String? { header(named: "User-Agent") }
     public var referer: String? { header(named: "Referer") ?? header(named: "Referrer") }
+
+    public var isHls: Bool {
+        url.pathExtension.lowercased() == "m3u8" || url.absoluteString.lowercased().contains(".m3u8")
+    }
 
     /// Headers in a stable order: User-Agent, Referer, then the rest sorted by name.
     public var orderedHeaders: [(name: String, value: String)] {
@@ -70,8 +103,15 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
     }
 
     /// Builds a playable from a catalog row, merging `user_agent`, `referer` and `headers_json`.
-    public init?(item: IptvItemRecord, startPositionMs: Int64 = 0) {
-        guard let url = URL(string: item.streamUrl) else { return nil }
+    public init?(
+        item: IptvItemRecord,
+        overrideUrl: URL? = nil,
+        customTitle: String? = nil,
+        kind: PlayableKind? = nil,
+        startPositionMs: Int64 = 0,
+        series: SeriesRecord? = nil
+    ) {
+        guard let url = overrideUrl ?? URL(string: item.streamUrl) else { return nil }
         var headers: [String: String] = [:]
         if let raw = item.headersJson?.data(using: .utf8),
            let parsed = try? JSONDecoder().decode([String: String].self, from: raw) {
@@ -80,13 +120,20 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
         if let ua = item.userAgent, !ua.isEmpty { headers["User-Agent"] = ua }
         if let ref = item.referer, !ref.isEmpty { headers["Referer"] = ref }
         self.init(
-            title: item.name,
+            title: customTitle ?? item.name,
             url: url,
             headers: headers,
-            kind: PlayableKind(rawValue: item.kind) ?? .movie,
+            kind: kind ?? PlayableKind(rawValue: item.kind) ?? .movie,
             startPositionMs: startPositionMs,
             stableHash: item.stableHash,
-            artworkUrl: item.logoUrl
+            itemId: item.id,
+            artworkUrl: item.logoUrl,
+            isFavorite: series?.isFavorite ?? item.isFavorite,
+            isBroken: series?.isBroken ?? item.isBroken,
+            itemKind: item.kind,
+            seriesId: item.seriesId,
+            seriesStableHash: series?.stableHash,
+            seriesTitle: series?.title
         )
     }
 }
@@ -119,6 +166,11 @@ public struct PlaylistQueue: Equatable, Sendable {
         guard hasPrevious else { return nil }
         currentIndex -= 1
         return current
+    }
+
+    public mutating func updateCurrentFavorite(_ isFavorite: Bool) {
+        guard items.indices.contains(currentIndex) else { return }
+        items[currentIndex].isFavorite = isFavorite
     }
 }
 

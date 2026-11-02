@@ -53,13 +53,27 @@ struct CategoryNavigation<Content: View>: View {
     }
 
     private var filterField: some View {
+        #if os(tvOS)
+        TextField("Filtrer les catégories", text: $query)
+            .padding(8)
+        #else
         TextField("Filtrer les catégories", text: $query)
             .textFieldStyle(.roundedBorder)
             .padding(8)
+        #endif
     }
 
     private var list: some View {
         List(selection: $selection) {
+            #if os(tvOS)
+            Label(allTitle, systemImage: "square.grid.2x2")
+                .tag(String?.none)
+            ForEach(filteredGroups, id: \.value) { group in
+                Text(group.value)
+                    .lineLimit(1)
+                    .tag(String?.some(group.value))
+            }
+            #else
             Label(allTitle, systemImage: "square.grid.2x2")
                 .badge(totalCount)
                 .tag(String?.none)
@@ -69,8 +83,13 @@ struct CategoryNavigation<Content: View>: View {
                     .badge(Int(group.count))
                     .tag(String?.some(group.value))
             }
+            #endif
         }
+        #if os(tvOS)
+        .listStyle(.plain)
+        #else
         .listStyle(.sidebar)
+        #endif
     }
 
     private var sheet: some View {

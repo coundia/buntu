@@ -109,6 +109,15 @@ pub(crate) async fn resolve(
                 .unwrap_or_default(),
             AiAction::NextChannel => lang.pick("Chaîne suivante", "Next channel"),
             AiAction::PreviousChannel => lang.pick("Chaîne précédente", "Previous channel"),
+            AiAction::MultiView { item_ids } => {
+                let mut names = Vec::new();
+                for id in item_ids {
+                    if let Ok(Some(item)) = engine.db.get_item_by_id(*id) {
+                        names.push(item.name);
+                    }
+                }
+                format!("Mosaïque : {}", names.join(" + "))
+            }
             AiAction::None if local.note == Some("back_without_history") => lang.pick(
                 "Aucune autre chaîne dans l'historique.",
                 "No other channel in the history.",
@@ -253,6 +262,15 @@ fn validate(decision: &ModelDecision, candidates: &[Candidate]) -> Result<(AiAct
         }
         "next" => Ok((AiAction::NextChannel, reply)),
         "previous" => Ok((AiAction::PreviousChannel, reply)),
+        "multiview" => {
+            let ids = decision.item_ids.as_deref().unwrap_or(&[]);
+            let valid_ids: Vec<i64> = ids.iter().copied().filter(|id| known(*id)).collect();
+            if valid_ids.len() >= 2 && valid_ids.len() <= 4 {
+                Ok((AiAction::MultiView { item_ids: valid_ids }, reply))
+            } else {
+                Err("réponse invalide : mosaïque avec moins de 2 chaînes valides".to_string())
+            }
+        }
         "none" => Ok((AiAction::None, reply)),
         _ => Err("réponse invalide : action inconnue".to_string()),
     }
@@ -375,6 +393,7 @@ fn log_outcome(engine: &CndEngine, config: &AiProviderConfig, result: &AiCommand
         AiAction::Search { .. } => "search",
         AiAction::NextChannel => "next",
         AiAction::PreviousChannel => "previous",
+        AiAction::MultiView { .. } => "multiview",
         AiAction::None => "none",
     };
     let fallback = result

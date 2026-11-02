@@ -275,6 +275,7 @@ public final class MpvVideoToolboxBackend: VideoBackend {
     }
     public var onStateChange: ((PlaybackState) -> Void)?
     public var onTracksChange: (() -> Void)?
+    public var timeshiftDuration: TimeshiftDuration = .oneHour
 
     private let library: MpvLibrary?
     private let renderer: MpvRenderer?
@@ -387,6 +388,13 @@ public final class MpvVideoToolboxBackend: VideoBackend {
         if media.kind == .live {
             option("cache-secs", "3")
             option("stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=2")
+            if timeshiftDuration.isEnabled {
+                let cacheDir = TimeshiftCacheManager.ensureCacheDirectory()
+                option("demuxer-seekable-cache", "yes")
+                option("demuxer-max-bytes", timeshiftDuration.maxBytes)
+                option("demuxer-max-back-bytes", timeshiftDuration.maxBackBytes)
+                option("demuxer-cache-dir", cacheDir)
+            }
         }
         if let ua = media.userAgent { option("user-agent", ua) }
         if let referer = media.referer { option("referrer", referer) }
@@ -491,6 +499,37 @@ public final class MpvVideoToolboxBackend: VideoBackend {
     public func selectSubtitleTrack(id: String?) {
         setProperty("sid", id ?? "no")
         onTracksChange?()
+    }
+
+    public func setAudioEnhancement(_ config: AudioEnhancementConfig) {
+        setProperty("af", config.mpvFilterString)
+    }
+
+    public func setSubtitleDelay(seconds: Double) {
+        setProperty("sub-delay", "\(seconds)")
+    }
+
+    public func addExternalSubtitle(fileUrl: URL) -> Bool {
+        guard let library, let handle else { return false }
+        let path = fileUrl.path
+        return path.withCString { cPath in
+            "sub-add".withCString { cSubAdd in
+                "select".withCString { cSelect in
+                    var args: [UnsafePointer<CChar>?] = [cSubAdd, cPath, cSelect, nil]
+                    return args.withUnsafeMutableBufferPointer { buf in
+                        library.command(handle, buf.baseAddress) == 0
+                    }
+                }
+            }
+        }
+    }
+
+    public func seekLiveRelative(seconds: Double) {
+        run(["seek", String(format: "%.3f", seconds), "relative"])
+    }
+
+    public func returnToLive() {
+        run(["seek", "0", "relative+exact"])
     }
 
     public func teardown() {
