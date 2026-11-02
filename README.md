@@ -73,6 +73,8 @@ La première compilation du cœur Rust est longue ; les suivantes sont incrémen
 | `task cli -- download <url>` | CLI Rust de diagnostic |
 | `task clean` / `task clean:core` | Supprime `build/` / `target/` (avec confirmation) |
 
+Guide complet pour l'iPhone (prérequis, signature, dépannage) : [`docs/BUILD_IPHONE.md`](docs/BUILD_IPHONE.md).
+
 > Le test de performance d'ingestion (50 000 éléments en moins de 1,5 s) peut échouer par intermittence
 > quand la machine est très chargée ; il passe seul ou machine calme.
 
