@@ -74,6 +74,7 @@ private struct LoadedShellView: View {
     @State private var zapper = LiveZapper()
     @State private var epgFocus: IptvItemRecord?
     @State private var isPlayerExpanded = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var isDropTargeted = false
 
     init(state: AppState, engine: CndEngine, commands: AppCommandCenter) {
@@ -144,7 +145,7 @@ private struct LoadedShellView: View {
                 Text(state.errorMessage ?? "")
             }
             .onChange(of: hasMedia) { _, present in
-                if !present { isPlayerExpanded = false }
+                if !present { setExpanded(false) }
                 commands.hasMedia = present
                 nowPlaying.refresh()
             }
@@ -157,6 +158,27 @@ private struct LoadedShellView: View {
                 pip.attach(layer: player.surfaceLayer, controller: player)
             }
             .onAppear { connectPlayerIntegrations() }
+            #if os(macOS)
+            // Leaving full screen with Esc or the green button also collapses the player.
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+                if isPlayerExpanded {
+                    isPlayerExpanded = false
+                    columnVisibility = .automatic
+                }
+            }
+            #endif
+    }
+
+    /// Expands the player over the whole screen: on macOS the window goes full screen and the
+    /// sidebar is hidden; on iOS the player is presented full screen.
+    private func setExpanded(_ expanded: Bool) {
+        let wasExpanded = isPlayerExpanded
+        isPlayerExpanded = expanded
+        #if os(macOS)
+        columnVisibility = expanded ? .detailOnly : .automatic
+        guard expanded != wasExpanded, let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+        if window.styleMask.contains(.fullScreen) != expanded { window.toggleFullScreen(nil) }
+        #endif
     }
 
     /// Hooks the system integrations (Now Playing, media keys, menu bar) to this shell.
@@ -219,7 +241,7 @@ private struct LoadedShellView: View {
     @ViewBuilder
     private var platformShell: some View {
         #if os(macOS)
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             List(AppTab.allCases, selection: Binding<AppTab?>(
                 get: { selectedTab },
                 set: { if let tab = $0 { selectedTabRaw = tab.rawValue } }
@@ -368,7 +390,7 @@ private struct LoadedShellView: View {
     private func closePlayer() {
         player.close()
         state.cloudSync?.scheduleSync()
-        isPlayerExpanded = false
+        setExpanded(false)
     }
 
     /// Side panel (macOS): the channel list stays browsable while the live stream keeps playing.
@@ -376,7 +398,7 @@ private struct LoadedShellView: View {
         VStack(spacing: 0) {
             CndVideoPlayerView(
                 controller: player,
-                onToggleFullscreen: { isPlayerExpanded = true },
+                onToggleFullscreen: { setExpanded(true) },
                 onClose: closePlayer,
                 closesOnDisappear: false,
                 pip: pip
@@ -396,10 +418,11 @@ private struct LoadedShellView: View {
     private var expandedPlayer: some View {
         CndVideoPlayerView(
             controller: player,
-            onToggleFullscreen: { isPlayerExpanded = false },
+            onToggleFullscreen: { setExpanded(false) },
             onClose: closePlayer,
             closesOnDisappear: false,
-            pip: pip
+            pip: pip,
+            isFullscreen: true
         )
         .background(Color.black)
     }
@@ -432,7 +455,7 @@ private struct LoadedShellView: View {
             .padding(.vertical, 8)
             .background(.bar)
             .contentShape(Rectangle())
-            .onTapGesture { isPlayerExpanded = true }
+            .onTapGesture { setExpanded(true) }
         }
     }
 
