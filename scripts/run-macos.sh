@@ -79,6 +79,12 @@ for resources in "${BIN_DIR}"/*.bundle; do
   [[ -e "${resources}" ]] && cp -R "${resources}" "${BUNDLE_DIR}/Contents/Resources/"
 done
 
+if [[ -f "${ROOT_DIR}/assets/AppIcon.icns" ]]; then
+  cp "${ROOT_DIR}/assets/AppIcon.icns" "${BUNDLE_DIR}/Contents/Resources/AppIcon.icns"
+else
+  echo "warning: assets/AppIcon.icns missing (run 'task icon'): the app will have a generic icon" >&2
+fi
+
 # No CndCloudKitContainerIdentifier key on purpose: this build never touches iCloud.
 cat > "${BUNDLE_DIR}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -89,6 +95,7 @@ cat > "${BUNDLE_DIR}/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>CND IPTV</string>
   <key>CFBundleDisplayName</key><string>CND IPTV</string>
   <key>CFBundleExecutable</key><string>${PRODUCT}</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0.0</string>
   <key>CFBundleVersion</key><string>1</string>
