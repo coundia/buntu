@@ -1,0 +1,41 @@
+# PRD 22 — Live Activities, Dynamic Island & visionOS
+
+- **ID :** `PRD-22`
+- **Prérequis :** `PRD-23` (projet Xcode, extension de widget), `PRD-19` (enregistrements, pour le lot 22.1), `PRD-21` recommandé (code partagé multi-plateformes)
+- **Couches impactées :** extension Widget iOS, `ActivityKit`, nouvelle cible visionOS, `RealityKit`
+- **Origine :** `PRD-14` §4.6 et tableau PRD-22
+- **Objectif SLA :** Live Activity démarrée **< 1 s** après le début d'un enregistrement, mise à jour au plus **1 fois par minute** (économie de batterie) ; sur Vision Pro, écran virtuel stable à 90 Hz.
+
+Deux lots indépendants.
+
+---
+
+## Lot 22.1 — Live Activities & Dynamic Island (iOS / iPadOS)
+
+- **Cas d'usage :**
+  1. **Enregistrement en cours** (PRD 19) : chaîne, titre, temps restant, barre de progression ; bouton « Arrêter » (App Intent).
+  2. **Programme en cours de lecture** : chaîne et programme, progression du programme, programme suivant.
+- `ActivityAttributes` partagés entre l'app et l'extension ; présentation compacte, étendue et minimale pour la Dynamic Island ; écran verrouillé.
+- Mises à jour **locales** (`Activity.update`) pendant que l'app tourne ; pas de notifications push (pas de serveur). Fin de l'activité à la fin de l'enregistrement ou de la lecture.
+- `Info.plist` : `NSSupportsLiveActivities = YES` (projet du PRD 23).
+- Réglage pour désactiver chaque type d'activité.
+
+## Lot 22.2 — visionOS (Apple Vision Pro)
+
+- Moteur Rust : cibles `aarch64-apple-visionos` et `aarch64-apple-visionos-sim` (présentes dans `rustup target list` ; vérifier le niveau de support), ajout à l'`XCFramework`, `.visionOS(.v2)` dans `Package.swift`.
+- Application en **fenêtres** reprenant l'interface iPad (navigation, catalogue, réglages).
+- **Mode Cinéma** (espace immersif) : écran virtuel géant avec `RealityKit` ; lecture `AVPlayer` via `VideoPlayerComponent` (HLS). Le chemin `mpv` (TS, MKV) nécessite un rendu par `AVSampleBufferDisplayLayer` / renderer vidéo compatible RealityKit : **à valider par un prototype** au début du lot ; à défaut, le mode Cinéma reste limité aux flux HLS et le dit.
+- Audio spatialisé fourni par le système pour `AVPlayer`.
+
+---
+
+## Contraintes Non-Négociables (Guardrails IA)
+
+- Aucune donnée sensible (URL de flux, identifiants) dans les `ActivityAttributes` : seulement noms de chaîne, titres et horaires.
+- Les cibles iOS, macOS et tvOS existantes restent vertes.
+
+## Critères d'Acceptation & Commandes de Validation
+
+1. Lot 22.1 : build de l'extension, tests du modèle d'état des activités (démarrage, mise à jour limitée à 1/min, fin), essai manuel sur iPhone avec Dynamic Island.
+2. Lot 22.2 : `xcodebuild … -destination 'generic/platform=visionOS Simulator' build`, parcours manuel au simulateur Vision Pro, mode Cinéma avec un flux HLS.
+3. `task check` au vert.

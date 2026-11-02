@@ -10,7 +10,7 @@ func makeChannel(id: Int64, name: String, hash: String? = nil) -> IptvItemRecord
         name: name, nameClean: name, year: nil, groupTitle: "FR | INFO", tvgId: nil, logoUrl: nil, chno: UInt32(id),
         host: "h", containerExt: nil, streamUrl: "http://cdn.test/live/\(id).m3u8", userAgent: nil, referer: nil,
         headersJson: nil, catchupType: nil, catchupSource: nil, catchupDays: nil, plot: nil, imdbId: nil,
-        imdbRating: nil, isFavorite: false, resumePositionMs: 0, durationMs: 0, isCompleted: false
+        imdbRating: nil, isFavorite: false, isBroken: false, resumePositionMs: 0, durationMs: 0, isCompleted: false
     )
 }
 

@@ -54,6 +54,8 @@ struct SourcesListView: View {
     @State private var editor: SourceEditorTarget?
     @State private var pendingDelete: IptvSourceRecord?
     @State private var showingImporter = false
+    @State private var sharing: ShareSourcesModel?
+    @State private var shareImport: ShareImportModel?
 
     private var visibleSources: [IptvSourceRecord] {
         SourceFilter.apply(filter, query: query, to: sources)
@@ -85,6 +87,10 @@ struct SourcesListView: View {
                 Menu {
                     Button("Ajouter une source…", systemImage: "plus") { editor = .new }
                     Button("Importer un fichier M3U…", systemImage: "doc.badge.plus") { showingImporter = true }
+                    Divider()
+                    Button("Importer un partage…", systemImage: "square.and.arrow.down") { startShareImport() }
+                    Button("Partager des sources…", systemImage: "square.and.arrow.up") { startSharing() }
+                        .disabled(sources.isEmpty)
                 } label: {
                     Label("Ajouter", systemImage: "plus")
                 }
@@ -92,6 +98,13 @@ struct SourcesListView: View {
         }
         .onAppear { consumePendingAction() }
         .onChange(of: model.pendingAction) { _, _ in consumePendingAction() }
+        .onChange(of: model.incomingShare) { _, _ in consumePendingAction() }
+        .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) {
+            if let sharing { ShareSourcesSheet(model: sharing) { self.sharing = nil } }
+        }
+        .sheet(isPresented: Binding(get: { shareImport != nil }, set: { if !$0 { shareImport = nil } })) {
+            if let shareImport { ImportShareSheet(model: shareImport) { self.shareImport = nil } }
+        }
         .sheet(item: $editor) { target in
             SourceFormSheet(
                 engine: engine,
@@ -106,6 +119,7 @@ struct SourcesListView: View {
                 onCancel: { editor = nil }
             )
         }
+        #if !os(tvOS)
         .fileImporter(
             isPresented: $showingImporter,
             allowedContentTypes: Self.playlistTypes,
@@ -114,6 +128,7 @@ struct SourcesListView: View {
             guard case .success(let urls) = result else { return }
             Task { for url in urls { await model.importM3u(from: url) } }
         }
+        #endif
         .confirmationDialog(
             "Supprimer cette source ?",
             isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
@@ -126,12 +141,30 @@ struct SourcesListView: View {
     }
 
     private func consumePendingAction() {
+        if let incoming = model.incomingShare {
+            model.incomingShare = nil
+            startShareImport(incoming)
+        }
         guard let action = model.pendingAction else { return }
         model.pendingAction = nil
         switch action {
         case .addSource: editor = .new
         case .importPlaylist: showingImporter = true
+        case .importShare: startShareImport()
         }
+    }
+
+    private func startSharing(preselected: Set<Int64> = []) {
+        sharing = ShareSourcesModel(engine: engine, keychain: model.keychain, sources: sources, preselected: preselected)
+    }
+
+    private func startShareImport(_ incoming: IncomingShare? = nil) {
+        let importer = ShareImportModel(engine: engine, keychain: model.keychain, importsDirectory: model.importsDirectory, incoming: incoming)
+        importer.onImported = { ids in
+            model.onChange()
+            Task { for id in ids { await model.syncSource(id: id) } }
+        }
+        shareImport = importer
     }
 
     private func editingRecord(_ target: SourceEditorTarget) -> IptvSourceRecord? {
@@ -148,7 +181,9 @@ struct SourcesListView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            #if !os(tvOS)
             .listRowSeparator(.hidden)
+            #endif
 
             ForEach(visibleSources, id: \.id) { source in
                 SourceRowView(source: source, state: model.state(for: source), onSync: {
@@ -158,6 +193,7 @@ struct SourcesListView: View {
                 .contextMenu {
                     Button("Synchroniser", systemImage: "arrow.clockwise") { Task { await model.sync(source) } }
                     Button("Modifier…", systemImage: "pencil") { editor = .edit(source) }
+                    Button("Partager…", systemImage: "square.and.arrow.up") { startSharing(preselected: [source.id]) }
                     Divider()
                     Button("Supprimer…", systemImage: "trash", role: .destructive) { pendingDelete = source }
                 }
@@ -188,6 +224,7 @@ struct SourcesListView: View {
             Button("Ajouter une source") { editor = .new }
                 .buttonStyle(.borderedProminent)
             Button("Importer un fichier M3U…") { showingImporter = true }
+            Button("Importer un partage…") { startShareImport() }
         }
     }
 }
@@ -207,7 +244,7 @@ struct SourcesBannerView: View {
                 .accessibilityLabel("Fermer")
         }
         .padding(10)
-        .background(.bar)
+        .background(.thinMaterial)
         .overlay(alignment: .bottom) { Divider() }
     }
 }

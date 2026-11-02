@@ -5,7 +5,8 @@ let package = Package(
     name: "CndIptvNative",
     platforms: [
         .macOS(.v14),
-        .iOS(.v17)
+        .iOS(.v17),
+        .tvOS(.v17)
     ],
     products: [
         .executable(

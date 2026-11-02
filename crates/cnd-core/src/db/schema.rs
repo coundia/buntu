@@ -143,6 +143,26 @@ CREATE TABLE IF NOT EXISTS favorites (
     created_at INTEGER NOT NULL
 );
 
+-- Items flagged as broken / non-functional by the user or health probes
+CREATE TABLE IF NOT EXISTS broken_flags (
+    stable_hash TEXT PRIMARY KEY,
+    item_kind TEXT NOT NULL,
+    flagged_at INTEGER NOT NULL,
+    origin TEXT NOT NULL DEFAULT 'user'
+);
+CREATE INDEX IF NOT EXISTS idx_broken_flags_kind ON broken_flags(item_kind);
+
+-- Stream health tracking from background probes
+CREATE TABLE IF NOT EXISTS stream_health (
+    stable_hash TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    latency_ms INTEGER,
+    checked_at INTEGER NOT NULL,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    last_ok_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_stream_health_checked ON stream_health(checked_at);
+
 -- Deletions awaiting propagation to other devices (iCloud sync, Last-Write-Wins)
 CREATE TABLE IF NOT EXISTS sync_tombstones (
     kind TEXT NOT NULL, -- 'favorite' | 'source'
@@ -235,5 +255,89 @@ CREATE TABLE IF NOT EXISTS media_metadata_cache (
     fetched_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_metadata_imdb_id ON media_metadata_cache(imdb_id);
+
+-- PVR Recordings (PRD-19)
+CREATE TABLE IF NOT EXISTS recordings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL,
+    channel_tvg_id TEXT,
+    channel_name TEXT NOT NULL,
+    title TEXT NOT NULL,
+    subtitle TEXT,
+    stream_url TEXT NOT NULL,
+    start_ts INTEGER NOT NULL,
+    end_ts INTEGER NOT NULL,
+    pre_padding_s INTEGER NOT NULL DEFAULT 120,
+    post_padding_s INTEGER NOT NULL DEFAULT 300,
+    state TEXT NOT NULL DEFAULT 'scheduled',
+    file_path TEXT,
+    bytes_written INTEGER NOT NULL DEFAULT 0,
+    rule_id INTEGER,
+    error TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recordings_state_start ON recordings(state, start_ts);
+CREATE INDEX IF NOT EXISTS idx_recordings_channel ON recordings(channel_tvg_id);
+
+-- Series-Link Rules (PRD-19)
+CREATE TABLE IF NOT EXISTS recording_series_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_tvg_id TEXT,
+    title_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recording_rules_title ON recording_series_rules(title_key);
+
+-- Profiles (PRD-20)
+CREATE TABLE IF NOT EXISTS profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    avatar TEXT NOT NULL DEFAULT 'person.crop.circle',
+    is_kids INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+
+-- Hidden Groups (Bouquets) (PRD-20)
+CREATE TABLE IF NOT EXISTS hidden_groups (
+    profile_id INTEGER NOT NULL DEFAULT 1,
+    kind TEXT NOT NULL,
+    group_key TEXT NOT NULL,
+    PRIMARY KEY(profile_id, kind, group_key)
+);
+
+-- Hidden Items (PRD-20)
+CREATE TABLE IF NOT EXISTS hidden_items (
+    profile_id INTEGER NOT NULL DEFAULT 1,
+    stable_hash TEXT NOT NULL,
+    PRIMARY KEY(profile_id, stable_hash)
+);
+
+-- Custom Ordering (PRD-20)
+CREATE TABLE IF NOT EXISTS custom_order (
+    profile_id INTEGER NOT NULL DEFAULT 1,
+    scope TEXT NOT NULL,
+    key TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY(profile_id, scope, key)
+);
+
+-- Favorite Folders (PRD-20)
+CREATE TABLE IF NOT EXISTS favorite_folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id INTEGER NOT NULL DEFAULT 1,
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+
+-- Favorite Folder Items (PRD-20)
+CREATE TABLE IF NOT EXISTS favorite_folder_items (
+    folder_id INTEGER NOT NULL,
+    stable_hash TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(folder_id, stable_hash),
+    FOREIGN KEY(folder_id) REFERENCES favorite_folders(id) ON DELETE CASCADE
+);
 "#;
 

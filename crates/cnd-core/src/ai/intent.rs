@@ -115,6 +115,7 @@ pub enum AiAction {
     Search { query: String },
     NextChannel,
     PreviousChannel,
+    MultiView { item_ids: Vec<i64> },
     None,
 }
 

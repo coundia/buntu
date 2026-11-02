@@ -56,4 +56,18 @@ public protocol VideoBackend: AnyObject {
 
     /// Releases the player, its observers and background tasks. Idempotent.
     func teardown()
+
+    func setAudioEnhancement(_ config: AudioEnhancementConfig)
+    func setSubtitleDelay(seconds: Double)
+    func addExternalSubtitle(fileUrl: URL) -> Bool
+    func seekLiveRelative(seconds: Double)
+    func returnToLive()
+}
+
+extension VideoBackend {
+    public func setAudioEnhancement(_ config: AudioEnhancementConfig) {}
+    public func setSubtitleDelay(seconds: Double) {}
+    public func addExternalSubtitle(fileUrl: URL) -> Bool { false }
+    public func seekLiveRelative(seconds: Double) {}
+    public func returnToLive() {}
 }

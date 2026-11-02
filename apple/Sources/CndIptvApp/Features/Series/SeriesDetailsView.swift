@@ -84,11 +84,11 @@ final class SeriesDetailsModel {
     // MARK: Playback
 
     func playEpisode(at index: Int) {
-        vod.playEpisodes(episodes, startingAt: index, resume: true)
+        vod.playEpisodes(episodes, series: series, startingAt: index, resume: true)
     }
 
     func playSeason() {
-        vod.playEpisodes(episodes, startingAt: 0)
+        vod.playEpisodes(episodes, series: series, startingAt: 0)
     }
 
     func playWholeSeries() async {
@@ -97,7 +97,7 @@ final class SeriesDetailsModel {
         let all = (try? await Task.detached(priority: .userInitiated) {
             try engine.getSeriesEpisodes(seriesId: id, seasonNum: nil)
         }.value) ?? []
-        vod.playEpisodes(all, startingAt: 0)
+        vod.playEpisodes(all, series: series, startingAt: 0)
     }
 
     // MARK: Downloads
@@ -133,6 +133,20 @@ final class SeriesDetailsModel {
     func toggleFavorite() async {
         if let value = await vod.toggleFavorite(stableHash: series.stableHash, kind: "series") {
             series.isFavorite = value
+        }
+    }
+
+    func toggleBroken() async {
+        if let value = await vod.toggleBroken(stableHash: series.stableHash, kind: "series") {
+            series.isBroken = value
+        }
+    }
+
+    func toggleEpisodeBroken(_ episode: IptvItemRecord) async {
+        if let value = await vod.toggleBroken(stableHash: episode.stableHash, kind: episode.kind) {
+            for index in episodes.indices where episodes[index].stableHash == episode.stableHash {
+                episodes[index].isBroken = value
+            }
         }
     }
 }
@@ -193,6 +207,13 @@ struct SeriesDetailsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 6) {
                 Text(series.title).font(.headline).lineLimit(3)
+                if series.isBroken {
+                    Label("Signalé en panne", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.red.opacity(0.25), in: Capsule())
+                        .foregroundStyle(Color.red)
+                }
                 Text(SeriesLabels.counts(series)).font(.caption).foregroundStyle(.secondary)
                 if let rating, rating > 0 {
                     Label(String(format: "%.1f", rating), systemImage: "star.fill").foregroundStyle(.yellow).font(.subheadline)
@@ -222,6 +243,13 @@ struct SeriesDetailsView: View {
                     .shadow(radius: 10)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(series.title).font(.title.bold()).lineLimit(3)
+                    if series.isBroken {
+                        Label("Signalé en panne", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Color.red.opacity(0.3), in: Capsule())
+                            .foregroundStyle(Color.red)
+                    }
                     Text(SeriesLabels.counts(series)).font(.callout)
                     if let rating, rating > 0 {
                         Label(String(format: "%.1f", rating), systemImage: "star.fill").foregroundStyle(.yellow).font(.headline)
@@ -265,6 +293,12 @@ struct SeriesDetailsView: View {
             Label(series.isFavorite ? "Favori" : "Ajouter aux favoris", systemImage: series.isFavorite ? "star.fill" : "star")
         }
         .buttonStyle(.bordered)
+        Button { Task { await model.toggleBroken() } } label: {
+            Label(series.isBroken ? "En panne" : "Signaler en panne",
+                  systemImage: series.isBroken ? "exclamationmark.triangle.fill" : "exclamationmark.triangle")
+        }
+        .buttonStyle(.bordered)
+        .tint(series.isBroken ? .red : .secondary)
         Menu {
             Button("Lire toute la série", systemImage: "play.rectangle.on.rectangle") { Task { await model.playWholeSeries() } }
             Button("Rafraîchir les métadonnées OMDb", systemImage: "arrow.clockwise") {
@@ -326,7 +360,8 @@ struct SeriesDetailsView: View {
                     episode: episode,
                     seriesTitle: series.title,
                     onPlay: { model.playEpisode(at: index) },
-                    onDownload: { model.downloadEpisode(episode) }
+                    onDownload: { model.downloadEpisode(episode) },
+                    onToggleBroken: { Task { await model.toggleEpisodeBroken(episode) } }
                 )
                 Divider()
             }
@@ -339,6 +374,7 @@ struct EpisodeRow: View {
     let seriesTitle: String
     var onPlay: () -> Void
     var onDownload: () -> Void
+    var onToggleBroken: (() -> Void)? = nil
 
     private var title: String {
         let text = DownloadPlanner.episodeTitle(episode.nameClean.isEmpty ? episode.name : episode.nameClean, seriesTitle: seriesTitle)
@@ -360,6 +396,11 @@ struct EpisodeRow: View {
                 HStack(spacing: 6) {
                     Text(title).font(.body).lineLimit(2)
                     if episode.isCompleted { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+                    if episode.isBroken {
+                        Label("En panne", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.red)
+                    }
                 }
                 if let position = VodContext.resumePosition(for: episode) {
                     Text("Reprendre à \(TimeFormat.hms(milliseconds: position))").font(.caption).foregroundStyle(.secondary)
@@ -384,6 +425,11 @@ struct EpisodeRow: View {
                     }
                     Button("Copier l'URL") { ExternalPlayerLauncher.copyStreamUrl(media) }
                     Button("Copier la commande FFmpeg") { ExternalPlayerLauncher.copyFfmpegCommand(media) }
+                }
+                if let onToggleBroken {
+                    Button(episode.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel",
+                           systemImage: episode.isBroken ? "checkmark.circle" : "exclamationmark.triangle",
+                           action: onToggleBroken)
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")

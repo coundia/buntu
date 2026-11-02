@@ -189,6 +189,8 @@ final class CndCoreBridgeTests: XCTestCase {
                 groupTitle: nil,
                 host: nil,
                 favoritesOnly: false,
+                includeBroken: false,
+                includeHidden: false,
                 sortBy: .name,
                 sortAsc: true,
                 limit: 20,
@@ -214,6 +216,8 @@ final class CndCoreBridgeTests: XCTestCase {
                 groupTitle: nil,
                 host: nil,
                 favoritesOnly: false,
+                includeBroken: false,
+                includeHidden: false,
                 sortBy: .name,
                 sortAsc: true,
                 limit: 20,
@@ -226,6 +230,55 @@ final class CndCoreBridgeTests: XCTestCase {
 
         _ = try engine.toggleFavorite(stableHash: sev.stableHash, itemKind: "series")
         XCTAssertEqual(try engine.listFavoriteSeries().count, 1)
+
+        // Broken flag tests
+        XCTAssertFalse(try engine.isBroken(stableHash: spidey.stableHash))
+        XCTAssertTrue(try engine.toggleBroken(stableHash: spidey.stableHash, itemKind: "movie"))
+        XCTAssertTrue(try engine.isBroken(stableHash: spidey.stableHash))
+        XCTAssertEqual(try engine.listBrokenItems(kind: "movie").count, 1)
+
+        // With includeBroken = false, Spider-Man must not be returned
+        let hiddenMovies = try engine.queryCatalog(
+            filter: CatalogFilter(
+                kind: "movie",
+                sourceId: nil,
+                query: "Spider-Man",
+                groupTitle: nil,
+                host: nil,
+                favoritesOnly: false,
+                includeBroken: false,
+                includeHidden: false,
+                sortBy: .name,
+                sortAsc: true,
+                limit: 20,
+                offset: 0
+            )
+        )
+        XCTAssertEqual(hiddenMovies.count, 0)
+
+        // With includeBroken = true, it is returned and marked isBroken
+        let visibleMovies = try engine.queryCatalog(
+            filter: CatalogFilter(
+                kind: "movie",
+                sourceId: nil,
+                query: "Spider-Man",
+                groupTitle: nil,
+                host: nil,
+                favoritesOnly: false,
+                includeBroken: true,
+                includeHidden: false,
+                sortBy: .name,
+                sortAsc: true,
+                limit: 20,
+                offset: 0
+            )
+        )
+        XCTAssertEqual(visibleMovies.count, 1)
+        XCTAssertTrue(visibleMovies[0].isBroken)
+
+        // Unflag
+        XCTAssertFalse(try engine.toggleBroken(stableHash: spidey.stableHash, itemKind: "movie"))
+        XCTAssertFalse(try engine.isBroken(stableHash: spidey.stableHash))
 
         let seasons = try engine.getSeriesSeasons(seriesId: sev.id)
         XCTAssertEqual(seasons.count, 1)

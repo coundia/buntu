@@ -23,6 +23,11 @@ struct AddUrlsSheet: View {
         NavigationStack {
             Form {
                 Section {
+                    #if os(tvOS)
+                    TextField("Liens...", text: $text)
+                        .font(.body.monospaced())
+                        .autocorrectionDisabled()
+                    #else
                     TextEditor(text: $text)
                         .font(.body.monospaced())
                         .frame(minHeight: 140)
@@ -30,6 +35,7 @@ struct AddUrlsSheet: View {
                         #if os(iOS)
                         .textInputAutocapitalization(.never)
                         #endif
+                    #endif
                 } header: {
                     Text("Liens (un par ligne)")
                 } footer: {
@@ -46,12 +52,19 @@ struct AddUrlsSheet: View {
                     }
                 }
 
+                #if os(tvOS)
+                Section("En-têtes HTTP (optionnel)") {
+                    TextField("User-Agent", text: $userAgent)
+                    TextField("Referer", text: $referer)
+                }
+                #else
                 Section {
                     DisclosureGroup("En-têtes HTTP (optionnel)", isExpanded: $showsOptions) {
                         TextField("User-Agent", text: $userAgent)
                         TextField("Referer", text: $referer)
                     }
                 }
+                #endif
             }
             .formStyle(.grouped)
             .navigationTitle("Ajouter des liens")

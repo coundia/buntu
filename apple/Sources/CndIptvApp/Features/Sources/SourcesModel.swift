@@ -25,6 +25,7 @@ struct SourcesBanner: Equatable, Identifiable {
 enum SourcesAction: Equatable {
     case addSource
     case importPlaylist
+    case importShare
 }
 
 enum SourcesError: LocalizedError {
@@ -81,6 +82,8 @@ final class SourcesModel {
     /// Set by the menu bar (File > Add a source / Import). The list consumes it when it appears or
     /// when it changes, so the request survives the tab switch that creates the list.
     var pendingAction: SourcesAction?
+    /// A share received by link or file (opened from outside the list); the list shows the import sheet.
+    var incomingShare: IncomingShare?
 
     init(
         engine: CndEngine,

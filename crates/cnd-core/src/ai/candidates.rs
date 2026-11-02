@@ -72,6 +72,8 @@ fn search(db: &DatabaseManager, query: &str, group: Option<&str>) -> Result<Vec<
         group_title: group.map(str::to_string),
         host: None,
         favorites_only: false,
+        include_broken: false,
+        include_hidden: false,
         sort_by: SortField::ChannelNumber,
         sort_asc: true,
         limit: PER_QUERY,

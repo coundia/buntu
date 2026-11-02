@@ -7,6 +7,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     case movies
     case series
     case downloads
+    case recordings
     case sources
     case settings
 
@@ -19,6 +20,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .movies: return "Films"
         case .series: return "Séries"
         case .downloads: return "Téléchargements"
+        case .recordings: return "Enregistrements"
         case .sources: return "Sources"
         case .settings: return "Réglages"
         }
@@ -31,6 +33,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .movies: return "film"
         case .series: return "play.tv"
         case .downloads: return "arrow.down.circle"
+        case .recordings: return "recordingtape"
         case .sources: return "antenna.radiowaves.left.and.right"
         case .settings: return "gearshape"
         }
@@ -67,6 +70,7 @@ private struct LoadedShellView: View {
     @State private var toasts: ToastCenter
     @State private var vodContext: VodContext
     @State private var downloadsModel: DownloadsModel
+    @State private var recordingsModel: RecordingsModel
     @State private var settingsModel: SettingsModel
     @State private var consoleModel: ConsoleModel
     @State private var pip = PiPManager()
@@ -82,6 +86,8 @@ private struct LoadedShellView: View {
     @State private var fullscreenIsOurs = false
     @State private var windowIsFullscreen = false
     @State private var isDropTargeted = false
+    @State private var multiViewController = MultiViewController()
+    @State private var currentlyPlayingItem: IptvItemRecord?
 
     init(state: AppState, engine: CndEngine, commands: AppCommandCenter) {
         self.state = state
@@ -104,6 +110,7 @@ private struct LoadedShellView: View {
             onFavoriteChanged: { [weak state] in state?.reloadSnapshot(notifyScreens: false) }
         ))
         _downloadsModel = State(initialValue: DownloadsModel(backend: engine))
+        _recordingsModel = State(initialValue: RecordingsModel(backend: engine))
         let settings = SettingsModel(engine: engine, directory: state.downloadDirectory)
         settings.onConsoleVisibilityChanged = { [weak state] visible in state?.showNetworkConsole = visible }
         _settingsModel = State(initialValue: settings)
@@ -133,7 +140,10 @@ private struct LoadedShellView: View {
                 }
             }
             .animation(.easeOut(duration: 0.2), value: toasts.current?.id)
+            #if !os(tvOS)
             .dropDestination(for: URL.self) { urls, _ in handleDrop(urls) } isTargeted: { isDropTargeted = $0 }
+            #endif
+            .onOpenURL { url in _ = openShare(url) }
             .overlay {
                 if isDropTargeted {
                     RoundedRectangle(cornerRadius: 12)
@@ -161,7 +171,13 @@ private struct LoadedShellView: View {
                 nowPlaying.refresh()
                 pip.syncState(from: player)
             }
-            .onChange(of: player.media) { _, _ in nowPlaying.refresh() }
+            .onChange(of: player.media) { _, _ in
+                nowPlaying.refresh()
+                commands.isFavorite = player.isFavorite
+            }
+            .onChange(of: player.isFavorite) { _, isFav in
+                commands.isFavorite = isFav
+            }
             .onChange(of: player.surfaceLayer.map(ObjectIdentifier.init)) { _, _ in
                 pip.attach(layer: player.surfaceLayer, controller: player)
             }
@@ -272,19 +288,35 @@ private struct LoadedShellView: View {
             search: { query in
                 selectedTabRaw = AppTab.live.rawValue
                 liveSearchRequest = query
+            },
+            multiView: { items in
+                multiViewController.closeAll()
+                for item in items.prefix(multiViewController.maxAllowedSlots) {
+                    multiViewController.addChannel(item, sources: state.sources, makeActive: false)
+                }
+                if multiViewController.count > 0 {
+                    multiViewController.setActiveIndex(0)
+                    player.pause()
+                    multiViewController.isPresented = true
+                }
+                Haptics.light()
             }
         )
         commands.openAssistant = { openAssistant() }
 
         commands.addSource = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.addSource) }
         commands.importPlaylist = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.importPlaylist) }
+        commands.importShare = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.importShare) }
         commands.refreshAllSources = { Task { await sourcesModel.syncAll(state.sources) } }
         commands.toggleNetworkConsole = { toggleLogs() }
         commands.zap = { zap($0) }
         commands.togglePlayPause = { player.togglePlayPause() }
         commands.toggleMute = { player.isMuted.toggle() }
         commands.togglePictureInPicture = { pip.toggle() }
+        commands.toggleMultiView = { toggleMultiView() }
+        commands.toggleFavorite = { player.toggleFavorite() }
         commands.hasMedia = hasMedia
+        commands.isFavorite = player.isFavorite
 
         state.cloudSync?.onRemoteChange = { ids in
             state.reloadSnapshot()
@@ -350,7 +382,11 @@ private struct LoadedShellView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .foregroundStyle(state.showNetworkConsole ? Color.accentColor : Color.secondary)
+        #if os(tvOS)
+        .background(.thinMaterial)
+        #else
         .background(.bar)
+        #endif
         .overlay(alignment: .top) { Divider() }
         .help("Afficher ou masquer les journaux de l'application (⇧⌘C)")
         .accessibilityLabel(state.showNetworkConsole ? "Masquer les journaux" : "Afficher les journaux")
@@ -392,6 +428,21 @@ private struct LoadedShellView: View {
             }
             .overlay {
                 if isPlayerExpanded { expandedPlayer }
+                if multiViewController.isPresented {
+                    MultiViewScreen(
+                        controller: multiViewController,
+                        engine: engine,
+                        sources: state.sources,
+                        onExitToSinglePlayer: { channel in
+                            multiViewController.isPresented = false
+                            play(channel)
+                        },
+                        onClose: {
+                            multiViewController.isPresented = false
+                        }
+                    )
+                    .transition(.opacity)
+                }
             }
         }
         #else
@@ -405,12 +456,28 @@ private struct LoadedShellView: View {
                         }
                 }
                 .tabItem { Label(tab.title, systemImage: tab.systemImage) }
+                #if !os(tvOS)
                 .badge(badge(for: tab))
+                #endif
                 .tag(tab)
             }
         }
         .fullScreenCover(isPresented: $isPlayerExpanded) {
             expandedPlayer.ignoresSafeArea()
+        }
+        .fullScreenCover(isPresented: $multiViewController.isPresented) {
+            MultiViewScreen(
+                controller: multiViewController,
+                engine: engine,
+                sources: state.sources,
+                onExitToSinglePlayer: { channel in
+                    multiViewController.isPresented = false
+                    play(channel)
+                },
+                onClose: {
+                    multiViewController.isPresented = false
+                }
+            )
         }
         #endif
     }
@@ -423,7 +490,7 @@ private struct LoadedShellView: View {
         case .series: return Int(stats.totalSeries)
         case .downloads: return Int(stats.totalDownloads)
         case .sources: return Int(stats.totalSources)
-        case .guide, .settings: return 0
+        case .guide, .settings, .recordings: return 0
         }
     }
 
@@ -444,6 +511,8 @@ private struct LoadedShellView: View {
                     onFavoriteChanged: { state.reloadSnapshot(notifyScreens: false) },
                     zapper: zapper,
                     onOpenAssistant: state.aiSettings.isAssistantEnabled ? { openAssistant() } : nil,
+                    onAddToMultiView: addToMultiView,
+                    onOpenMultiView: openMultiView,
                     searchRequest: $liveSearchRequest
                 )
             case .guide:
@@ -452,7 +521,10 @@ private struct LoadedShellView: View {
                     focus: $epgFocus,
                     revision: state.catalogRevision,
                     playingURL: player.media?.url.absoluteString,
-                    onPlay: play
+                    onPlay: play,
+                    onPlayCatchup: playCatchup,
+                    onScheduleRecording: scheduleRecording,
+                    onAddSeriesRule: addSeriesRule
                 )
             case .sources:
                 SourcesListView(engine: engine, sources: state.sources, model: sourcesModel)
@@ -466,6 +538,8 @@ private struct LoadedShellView: View {
                 ))
             case .downloads:
                 DownloadsDashboardView(model: downloadsModel, directory: state.downloadDirectory, onPlay: playDownload)
+            case .recordings:
+                RecordingsView(model: recordingsModel, onPlay: playRecording)
             case .settings:
                 SettingsView(
                     model: settingsModel, directory: state.downloadDirectory, stats: state.stats, sync: state.cloudSync,
@@ -501,11 +575,58 @@ private struct LoadedShellView: View {
     // MARK: Player
 
     private func play(_ item: IptvItemRecord) {
+        currentlyPlayingItem = item
         guard let media = PlayableMedia(item: item) else {
             state.errorMessage = "L'URL du flux de « \(item.name) » est invalide."
             return
         }
         player.open(media)
+    }
+
+    private func playCatchup(channel: IptvItemRecord, program: EpgProgramRecord, replayUrlString: String) {
+        currentlyPlayingItem = channel
+        guard let url = URL(string: replayUrlString),
+              let media = PlayableMedia(
+                item: channel,
+                overrideUrl: url,
+                customTitle: "\(channel.name) — \(program.title) [Replay]",
+                kind: .movie
+              ) else {
+            state.errorMessage = "L'URL de replay pour « \(program.title) » est invalide."
+            return
+        }
+        player.open(media)
+    }
+
+    // MARK: - Multi-View
+
+    private func openMultiView() {
+        if multiViewController.slots.isEmpty, let current = currentlyPlayingItem {
+            multiViewController.addChannel(current, sources: state.sources, makeActive: true)
+            player.pause()
+        }
+        multiViewController.isPresented = true
+    }
+
+    private func toggleMultiView() {
+        if multiViewController.isPresented {
+            multiViewController.isPresented = false
+        } else {
+            openMultiView()
+        }
+    }
+
+    private func addToMultiView(_ channel: IptvItemRecord) {
+        if multiViewController.slots.isEmpty, let current = currentlyPlayingItem {
+            multiViewController.addChannel(current, sources: state.sources, makeActive: false)
+        }
+        let added = multiViewController.addChannel(channel, sources: state.sources, makeActive: true)
+        if added {
+            player.pause()
+            multiViewController.isPresented = true
+        } else if let err = multiViewController.errorMessage {
+            toasts.show(err, isError: true)
+        }
     }
 
     /// Opens a finished download straight from disk in the built-in player.
@@ -517,12 +638,58 @@ private struct LoadedShellView: View {
         player.open(PlayableMedia(title: task.fileName, url: URL(fileURLWithPath: task.savePath), kind: .movie))
     }
 
+    /// Opens a completed or partial recording from disk.
+    private func playRecording(_ recording: RecordingRecord) {
+        guard let path = recording.filePath, FileManager.default.fileExists(atPath: path) else {
+            toasts.show("Le fichier de l'enregistrement est introuvable sur le disque.", isError: true)
+            return
+        }
+        player.open(PlayableMedia(
+            title: "\(recording.channelName) — \(recording.title)",
+            url: URL(fileURLWithPath: path),
+            kind: .recording,
+            stableHash: "recording_\(recording.id)"
+        ))
+    }
+
+    private func scheduleRecording(channel: IptvItemRecord, program: EpgProgramRecord) {
+        let req = NewRecordingRequest(
+            itemId: channel.id,
+            channelTvgId: channel.tvgId,
+            channelName: channel.name,
+            title: program.title,
+            subtitle: program.subtitle,
+            streamUrl: channel.streamUrl,
+            startTs: program.startTs,
+            endTs: program.endTs,
+            prePaddingS: 120,
+            postPaddingS: 300,
+            ruleId: nil
+        )
+        do {
+            _ = try recordingsModel.schedule(req: req)
+            toasts.show("Enregistrement programmé : \(program.title)")
+        } catch {
+            toasts.show("Erreur de programmation : \(error.localizedDescription)", isError: true)
+        }
+    }
+
+    private func addSeriesRule(channel: IptvItemRecord, program: EpgProgramRecord) {
+        do {
+            _ = try recordingsModel.addSeriesRule(channelTvgId: channel.tvgId, title: program.title)
+            toasts.show("Series-Link activé : \(program.title)")
+        } catch {
+            toasts.show("Erreur Series-Link : \(error.localizedDescription)", isError: true)
+        }
+    }
+
     private func showGuide(_ item: IptvItemRecord) {
         epgFocus = item
         selectedTabRaw = AppTab.guide.rawValue
     }
 
     private func closePlayer() {
+        currentlyPlayingItem = nil
         player.close()
         state.cloudSync?.scheduleSync()
         setExpanded(false)
@@ -578,9 +745,24 @@ private struct LoadedShellView: View {
     }
 
     private var dockedInfo: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(player.media?.title ?? "").font(.headline).lineLimit(2)
-            Text(player.isLive ? "Direct" : "Lecture").font(.caption).foregroundStyle(.secondary)
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(player.media?.title ?? "").font(.headline).lineLimit(2)
+                Text(player.isLive ? "Direct" : "Lecture").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if player.media != nil {
+                Button {
+                    player.toggleFavorite()
+                } label: {
+                    Image(systemName: player.isFavorite ? "star.fill" : "star")
+                        .font(.title3)
+                        .foregroundStyle(player.isFavorite ? Color.yellow : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(player.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+                .help(player.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
@@ -636,7 +818,7 @@ private struct LoadedShellView: View {
             .font(.title3)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(.bar)
+            .background(.thinMaterial)
             .contentShape(Rectangle())
             .onTapGesture { setExpanded(true) }
         }
@@ -644,7 +826,19 @@ private struct LoadedShellView: View {
 
     // MARK: Drag & drop
 
+    /// A share arrives as a link or a `.cndshare` file: show the import sheet on the Sources tab.
+    @discardableResult
+    private func openShare(_ url: URL) -> Bool {
+        guard let incoming = IncomingShare.from(url: url) else { return false }
+        selectedTabRaw = AppTab.sources.rawValue
+        sourcesModel.incomingShare = incoming
+        return true
+    }
+
     private func handleDrop(_ urls: [URL]) -> Bool {
+        if let share = urls.first(where: { $0.pathExtension.lowercased() == ShareEnvelope.fileExtension }) {
+            return openShare(share)
+        }
         let playlists = urls.filter(SourcesModel.isM3uFile)
         guard !playlists.isEmpty else { return false }
         Task { for url in playlists { await sourcesModel.importM3u(from: url) } }

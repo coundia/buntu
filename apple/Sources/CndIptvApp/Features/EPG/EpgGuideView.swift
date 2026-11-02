@@ -20,25 +20,48 @@ struct EpgGuideView: View {
     let revision: Int
     let playingURL: String?
     let onPlay: (IptvItemRecord) -> Void
+    let onPlayCatchup: ((IptvItemRecord, EpgProgramRecord, String) -> Void)?
+    let onScheduleRecording: ((IptvItemRecord, EpgProgramRecord) -> Void)?
+    let onAddSeriesRule: ((IptvItemRecord, EpgProgramRecord) -> Void)?
 
     init(
         engine: CndEngine,
         focus: Binding<IptvItemRecord?>,
         revision: Int,
         playingURL: String?,
-        onPlay: @escaping (IptvItemRecord) -> Void
+        onPlay: @escaping (IptvItemRecord) -> Void,
+        onPlayCatchup: ((IptvItemRecord, EpgProgramRecord, String) -> Void)? = nil,
+        onScheduleRecording: ((IptvItemRecord, EpgProgramRecord) -> Void)? = nil,
+        onAddSeriesRule: ((IptvItemRecord, EpgProgramRecord) -> Void)? = nil
     ) {
         _model = State(initialValue: EpgGuideModel(engine: engine))
         _focus = focus
         self.revision = revision
         self.playingURL = playingURL
         self.onPlay = onPlay
+        self.onPlayCatchup = onPlayCatchup
+        self.onScheduleRecording = onScheduleRecording
+        self.onAddSeriesRule = onAddSeriesRule
     }
 
     var body: some View {
         Group {
             if let channel = focus {
-                ChannelScheduleView(model: model, channel: channel, onPlay: onPlay, onBack: { focus = nil })
+                ChannelScheduleView(
+                    model: model,
+                    channel: channel,
+                    onPlay: onPlay,
+                    onPlayCatchup: { program, replayUrl in
+                        onPlayCatchup?(channel, program, replayUrl)
+                    },
+                    onScheduleRecording: { program in
+                        onScheduleRecording?(channel, program)
+                    },
+                    onAddSeriesRule: { program in
+                        onAddSeriesRule?(channel, program)
+                    },
+                    onBack: { focus = nil }
+                )
             } else {
                 EpgGridView(model: model, revision: revision, playingURL: playingURL, onPlay: onPlay) { channel in
                     focus = channel
@@ -49,9 +72,28 @@ struct EpgGuideView: View {
         .sheet(item: $model.selection) { selection in
             ProgramDetailSheet(
                 selection: selection,
+                model: model,
                 onPlay: {
                     model.selection = nil
                     onPlay(selection.channel)
+                },
+                onPlayCatchup: { replayUrl in
+                    let ch = selection.channel
+                    let pr = selection.program
+                    model.selection = nil
+                    onPlayCatchup?(ch, pr, replayUrl)
+                },
+                onScheduleRecording: {
+                    let ch = selection.channel
+                    let pr = selection.program
+                    model.selection = nil
+                    onScheduleRecording?(ch, pr)
+                },
+                onAddSeriesRule: {
+                    let ch = selection.channel
+                    let pr = selection.program
+                    model.selection = nil
+                    onAddSeriesRule?(ch, pr)
                 },
                 onShowSchedule: {
                     model.selection = nil
@@ -194,11 +236,11 @@ private struct EpgGridView: View {
                 Text("Chaîne").font(.caption.weight(.semibold))
                     .frame(width: Self.labelWidth, height: Self.headerHeight, alignment: .leading)
                     .padding(.leading, 8)
-                    .background(.bar)
+                    .background(.thinMaterial)
             }
         }
         .frame(width: Self.labelWidth + model.timeline.totalWidth, height: Self.headerHeight, alignment: .topLeading)
-        .background(.bar)
+        .background(.thinMaterial)
         .overlay(alignment: .bottom) { Divider() }
     }
 
@@ -228,7 +270,7 @@ private struct EpgGridView: View {
         }
         .padding(.horizontal, 8)
         .frame(width: Self.labelWidth, height: Self.rowHeight, alignment: .leading)
-        .background(.bar)
+        .background(.thinMaterial)
         .overlay(alignment: .trailing) { Divider() }
         .contentShape(Rectangle())
         .onTapGesture { onPlay(channel) }
@@ -247,10 +289,14 @@ private struct EpgGridView: View {
         ZStack(alignment: .leading) {
             ForEach(programs, id: \.id) { program in
                 if let block = model.timeline.block(for: program) {
-                    ProgramBlockView(program: program, isLive: isLive(program))
-                        .frame(width: max(block.width - 2, 1), height: Self.rowHeight - 8)
-                        .offset(x: block.x)
-                        .onTapGesture { model.selection = EpgSelection(channel: channel, program: program) }
+                    ProgramBlockView(
+                        program: program,
+                        isLive: isLive(program),
+                        hasCatchup: model.isCatchupAvailable(for: channel, program: program)
+                    )
+                    .frame(width: max(block.width - 2, 1), height: Self.rowHeight - 8)
+                    .offset(x: block.x)
+                    .onTapGesture { model.selection = EpgSelection(channel: channel, program: program) }
                 }
             }
         }
@@ -278,10 +324,18 @@ private struct StickyLabel<Content: View>: View {
 private struct ProgramBlockView: View {
     let program: EpgProgramRecord
     let isLive: Bool
+    var hasCatchup: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(program.title).font(.caption.weight(.semibold)).lineLimit(1)
+            HStack(spacing: 4) {
+                Text(program.title).font(.caption.weight(.semibold)).lineLimit(1)
+                if hasCatchup && !isLive {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.tint)
+                }
+            }
             Text(EpgProgress.timeRange(program)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
         }
         .padding(.horizontal, 6)
@@ -299,6 +353,9 @@ private struct ChannelScheduleView: View {
     let model: EpgGuideModel
     let channel: IptvItemRecord
     let onPlay: (IptvItemRecord) -> Void
+    let onPlayCatchup: (EpgProgramRecord, String) -> Void
+    let onScheduleRecording: ((EpgProgramRecord) -> Void)?
+    let onAddSeriesRule: ((EpgProgramRecord) -> Void)?
     let onBack: () -> Void
 
     var body: some View {
@@ -338,18 +395,24 @@ private struct ChannelScheduleView: View {
     private func scheduleRow(_ program: EpgProgramRecord) -> some View {
         let now = Int64(Date().timeIntervalSince1970)
         let live = program.startTs <= now && program.endTs > now
-        return HStack(alignment: .top, spacing: 12) {
+        let catchup = !live && model.isCatchupAvailable(for: channel, program: program)
+        let isPast = program.endTs <= now
+        return HStack(alignment: .center, spacing: 12) {
             Text(Date(timeIntervalSince1970: TimeInterval(program.startTs)).formatted(date: .omitted, time: .shortened))
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(live ? Color.accentColor : .secondary)
                 .frame(width: 56, alignment: .leading)
             VStack(alignment: .leading, spacing: 3) {
-                HStack {
+                HStack(spacing: 6) {
                     Text(program.title).font(.body.weight(live ? .bold : .regular))
                     if live {
                         Text("EN DIRECT").font(.caption2.weight(.bold))
                             .padding(.horizontal, 5).padding(.vertical, 1)
                             .background(.red, in: Capsule()).foregroundStyle(.white)
+                    } else if catchup {
+                        Label("Replay", systemImage: "arrow.counterclockwise.circle.fill")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tint)
                     }
                 }
                 if let subtitle = program.subtitle, !subtitle.isEmpty {
@@ -361,8 +424,35 @@ private struct ChannelScheduleView: View {
                     }
                 }
             }
+            Spacer()
+            if catchup {
+                Button {
+                    if let replayUrl = model.buildCatchupUrl(for: channel, program: program) {
+                        onPlayCatchup(program, replayUrl)
+                    }
+                } label: {
+                    Image(systemName: "arrow.counterclockwise.circle")
+                        .font(.title3)
+                }
+                .buttonStyle(.borderless)
+                .help("Revoir cette émission (Replay)")
+            }
         }
         .contentShape(Rectangle())
+        .contextMenu {
+            if !isPast {
+                Button {
+                    onScheduleRecording?(program)
+                } label: {
+                    Label("Enregistrer cette émission", systemImage: "recordingtape")
+                }
+                Button {
+                    onAddSeriesRule?(program)
+                } label: {
+                    Label("Enregistrer toutes les diffusions (Series-Link)", systemImage: "repeat")
+                }
+            }
+        }
         .onTapGesture { model.selection = EpgSelection(channel: channel, program: program) }
     }
 }
@@ -371,11 +461,21 @@ private struct ChannelScheduleView: View {
 
 private struct ProgramDetailSheet: View {
     let selection: EpgSelection
+    let model: EpgGuideModel
     let onPlay: () -> Void
+    let onPlayCatchup: (String) -> Void
+    let onScheduleRecording: (() -> Void)?
+    let onAddSeriesRule: (() -> Void)?
     let onShowSchedule: () -> Void
     let onClose: () -> Void
 
     var body: some View {
+        let now = Int64(Date().timeIntervalSince1970)
+        let isLive = selection.program.startTs <= now && selection.program.endTs > now
+        let isPast = selection.program.endTs <= now
+        let hasCatchup = model.isCatchupAvailable(for: selection.channel, program: selection.program)
+        let replayUrl = hasCatchup ? model.buildCatchupUrl(for: selection.channel, program: selection.program) : nil
+
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -390,6 +490,11 @@ private struct ProgramDetailSheet: View {
                         if let category = selection.program.category, !category.isEmpty {
                             Text("·")
                             Text(category)
+                        }
+                        if hasCatchup {
+                            Text("·")
+                            Label("Replay disponible", systemImage: "arrow.counterclockwise.circle")
+                                .foregroundStyle(.tint)
                         }
                     }
                     .font(.callout)
@@ -411,12 +516,39 @@ private struct ProgramDetailSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Fermer", action: onClose) }
                 ToolbarItemGroup(placement: .confirmationAction) {
                     Button("Voir tout le programme", action: onShowSchedule)
-                    Button("Regarder", systemImage: "play.fill", action: onPlay)
+                    if !isPast {
+                        Menu {
+                            Button("Enregistrer cette émission", systemImage: "recordingtape") {
+                                onScheduleRecording?()
+                            }
+                            Button("Series-Link (Toutes les diffusions)", systemImage: "repeat") {
+                                onAddSeriesRule?()
+                            }
+                        } label: {
+                            Label("Enregistrer", systemImage: "recordingtape")
+                        }
+                    }
+                    if isPast && hasCatchup, let url = replayUrl {
+                        Button("Revoir (Replay)", systemImage: "arrow.counterclockwise.circle.fill") {
+                            onPlayCatchup(url)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else if isLive {
+                        if hasCatchup, let url = replayUrl {
+                            Button("Reprendre depuis le début", systemImage: "arrow.counterclockwise") {
+                                onPlayCatchup(url)
+                            }
+                        }
+                        Button("Regarder le direct", systemImage: "play.fill", action: onPlay)
+                            .buttonStyle(.borderedProminent)
+                    } else {
+                        Button("Regarder la chaîne", systemImage: "play.fill", action: onPlay)
+                    }
                 }
             }
         }
         #if os(macOS)
-        .frame(minWidth: 460, minHeight: 320)
+        .frame(minWidth: 480, minHeight: 340)
         #endif
         .presentationDetents([.medium, .large])
     }

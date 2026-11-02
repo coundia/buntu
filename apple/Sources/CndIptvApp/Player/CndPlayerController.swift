@@ -66,7 +66,23 @@ public struct PlayerTimings: Sendable {
     public var recoveryProbe: TimeInterval = 6
     public var progressInterval: TimeInterval = 5
 
-    public init() {}
+    public init(
+        tick: TimeInterval = 0.25,
+        watchdogInterval: TimeInterval = 1,
+        stallThreshold: TimeInterval = 4,
+        loadTimeout: TimeInterval = 15,
+        reconnectBackoff: [TimeInterval] = [1, 2, 4],
+        recoveryProbe: TimeInterval = 6,
+        progressInterval: TimeInterval = 5
+    ) {
+        self.tick = tick
+        self.watchdogInterval = watchdogInterval
+        self.stallThreshold = stallThreshold
+        self.loadTimeout = loadTimeout
+        self.reconnectBackoff = reconnectBackoff
+        self.recoveryProbe = recoveryProbe
+        self.progressInterval = progressInterval
+    }
 }
 
 // MARK: - Controller
@@ -87,6 +103,33 @@ public final class CndPlayerController {
     public private(set) var subtitleTracks: [MediaTrack] = []
     /// Non-blocking HUD banner, e.g. `Reconnexion 1/3…`.
     public private(set) var reconnectBanner: String?
+    /// Whether the currently playing media is in favorites.
+    public private(set) var isFavorite: Bool = false
+    /// Whether the currently playing media is flagged as broken.
+    public private(set) var isBroken: Bool = false
+
+    /// Whether automatic failover to alternative mirror streams is enabled.
+    public var autoFailoverEnabled: Bool = true
+    /// Async resolver for alternative mirror channels (item_id -> [IptvItemRecord]).
+    public var mirrorFinder: (@Sendable (Int64) async throws -> [IptvItemRecord])?
+    /// Callback invoked whenever an automatic failover to a mirror stream occurs.
+    public var onFailoverOccurred: ((IptvItemRecord) -> Void)?
+    /// List of alternative mirror channels available for the current stream.
+    public private(set) var availableMirrors: [IptvItemRecord] = []
+    /// Non-blocking HUD banner for mirror failover, e.g. « Bascule vers TF1 FHD ».
+    public private(set) var failoverBanner: String?
+    @ObservationIgnored public private(set) var failoverCount = 0
+    @ObservationIgnored private var recentDropouts: [Date] = []
+
+    /// Custom async handler for favorite persistence; returns the new `isFavorite` state.
+    public var favoriteHandler: (@Sendable (PlayableMedia) async throws -> Bool)?
+    /// Callback invoked whenever a favorite toggle completes.
+    public var onFavoriteToggled: ((PlayableMedia, Bool) -> Void)?
+
+    /// Custom async handler for broken flag persistence; returns the new `isBroken` state.
+    public var brokenHandler: (@Sendable (PlayableMedia) async throws -> Bool)?
+    /// Callback invoked whenever a broken toggle completes.
+    public var onBrokenToggled: ((PlayableMedia, Bool) -> Void)?
 
     public var enginePreference: PlayerEnginePreference = .auto
     public var rate: Float = 1 { didSet { backend?.setRate(rate) } }
@@ -94,6 +137,35 @@ public final class CndPlayerController {
     public var isMuted = false { didSet { backend?.setMuted(isMuted) } }
 
     public var isLive: Bool { media?.kind == .live }
+
+    // MARK: - Dialogue Boost & Audio Enhancement
+    public var audioEnhancement: AudioEnhancementConfig = .init() {
+        didSet {
+            applyAudioEnhancement()
+        }
+    }
+    public private(set) var showHlsAudioEnhancementNotice: Bool = false
+
+    // MARK: - Subtitles & Delay
+    public var subtitleDelaySeconds: Double = 0.0 {
+        didSet {
+            applySubtitleDelay()
+        }
+    }
+    public let subtitleOverlay = SubtitleOverlayModel()
+
+    // MARK: - Local Timeshift Pause Live (PRD-24)
+    public var timeshiftDuration: TimeshiftDuration = .oneHour
+    public var liveDelaySeconds: Double = 0
+    @ObservationIgnored public var livePauseStartTime: Date?
+
+    public var currentLiveDelaySeconds: Double {
+        var delay = liveDelaySeconds
+        if let pausedAt = livePauseStartTime {
+            delay += Date().timeIntervalSince(pausedAt)
+        }
+        return delay
+    }
 
     @ObservationIgnored private var backend: (any VideoBackend)?
     @ObservationIgnored private let backendFactory: (PlayerEngineKind) -> (any VideoBackend)?
@@ -173,11 +245,42 @@ public final class CndPlayerController {
             + (resumeAt > 0 ? ", reprise à \(resumeAt / 1000) s" : ""))
         cancelRecovery()
         fallbackUsed = false
+        failoverCount = 0
+        recentDropouts = []
+        availableMirrors = []
+        failoverBanner = nil
         self.media = media
+        self.isFavorite = media.isFavorite
+        self.isBroken = media.isBroken
         positionMs = resumeAt
         durationMs = 0
+        liveDelaySeconds = 0
+        livePauseStartTime = nil
+        TimeshiftCacheManager.cleanCacheDirectory()
         loadBackend(media, resumeAt: resumeAt, engine: PlayerRouting.engine(for: media.url, preference: enginePreference))
         startMonitor()
+    }
+
+    /// Automatically switches to an alternative mirror stream, preserving player state.
+    public func failoverToMirror(_ mirror: IptvItemRecord) {
+        guard let mirrorMedia = PlayableMedia(item: mirror) else { return }
+        failoverCount += 1
+        failoverBanner = "Bascule vers \(mirror.name)"
+        AppLog.shared.warn("PLAYER", "Bascule vers le flux miroir : \(mirror.name)")
+        self.media = mirrorMedia
+        self.isFavorite = mirrorMedia.isFavorite
+        self.isBroken = mirrorMedia.isBroken
+        self.reconnectBanner = nil
+        self.recoveryTask = nil
+
+        let engine = PlayerRouting.engine(for: mirrorMedia.url, preference: enginePreference)
+        loadBackend(mirrorMedia, resumeAt: 0, engine: engine)
+        onFailoverOccurred?(mirror)
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            self?.failoverBanner = nil
+        }
     }
 
     /// Replaces the current backend. Does not touch the recovery task, so reconnection can reuse it.
@@ -211,10 +314,21 @@ public final class CndPlayerController {
             guard let self, self.generation == token else { return }
             self.refreshTracks()
         }
+        if let mpv = newBackend as? MpvVideoToolboxBackend {
+            mpv.timeshiftDuration = timeshiftDuration
+        }
         newBackend.setRate(rate)
         newBackend.setVolume(volume)
         newBackend.setMuted(isMuted)
+        newBackend.setAudioEnhancement(audioEnhancement)
+        newBackend.setSubtitleDelay(seconds: subtitleDelaySeconds)
         newBackend.load(media, startPositionMs: resumeAt)
+
+        if chosen == .avPlayer, media.isHls, audioEnhancement.isActive {
+            showHlsAudioEnhancementNotice = true
+        } else {
+            showHlsAudioEnhancementNotice = false
+        }
 
         lastAdvanceAt = Date()
         lastWatchdogCheck = Date()
@@ -234,11 +348,66 @@ public final class CndPlayerController {
 
     // MARK: Transport
 
-    public func play() { backend?.play() }
-    public func pause() { backend?.pause() }
+    public func play() {
+        if isLive, let pausedAt = livePauseStartTime {
+            liveDelaySeconds += Date().timeIntervalSince(pausedAt)
+            livePauseStartTime = nil
+        }
+        backend?.play()
+    }
+
+    public func pause() {
+        if isLive && timeshiftDuration.isEnabled && livePauseStartTime == nil {
+            livePauseStartTime = Date()
+        }
+        backend?.pause()
+    }
 
     public func togglePlayPause() {
         state == .playing || state == .buffering ? pause() : play()
+    }
+
+    /// Toggles favorite status for the currently playing media across all media kinds.
+    public func toggleFavorite() {
+        guard let currentMedia = media else { return }
+        Task { @MainActor in
+            do {
+                let newFav: Bool
+                if let handler = self.favoriteHandler {
+                    newFav = try await handler(currentMedia)
+                } else {
+                    newFav = !self.isFavorite
+                }
+                self.isFavorite = newFav
+                self.media?.isFavorite = newFav
+                self.queue?.updateCurrentFavorite(newFav)
+                self.onFavoriteToggled?(currentMedia, newFav)
+                Haptics.light()
+            } catch {
+                AppLog.shared.error("PLAYER", "Impossible de modifier les favoris : \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Toggles broken/non-functional flag for the currently playing media across all media kinds.
+    public func toggleBroken() {
+        guard let currentMedia = media else { return }
+        Task { @MainActor in
+            do {
+                let newBroken: Bool
+                if let handler = self.brokenHandler {
+                    newBroken = try await handler(currentMedia)
+                } else {
+                    newBroken = !self.isBroken
+                }
+                self.isBroken = newBroken
+                self.media?.isBroken = newBroken
+                self.onBrokenToggled?(currentMedia, newBroken)
+                Haptics.light()
+            } catch {
+                AppLog.shared.error("PLAYER", "Impossible de modifier l'état de panne : \(error.localizedDescription)")
+            }
+        }
     }
 
     public func seek(toMs target: Int64) {
@@ -252,7 +421,30 @@ public final class CndPlayerController {
     }
 
     public func skip(bySeconds seconds: Int) {
+        if isLive {
+            guard timeshiftDuration.isEnabled else { return }
+            if seconds < 0 {
+                liveDelaySeconds += Double(-seconds)
+                backend?.seekLiveRelative(seconds: Double(seconds))
+            } else {
+                if liveDelaySeconds > Double(seconds) {
+                    liveDelaySeconds -= Double(seconds)
+                    backend?.seekLiveRelative(seconds: Double(seconds))
+                } else {
+                    catchUpToLive()
+                }
+            }
+            return
+        }
         seek(toMs: positionMs + Int64(seconds) * 1000)
+    }
+
+    public func catchUpToLive() {
+        guard isLive else { return }
+        liveDelaySeconds = 0
+        livePauseStartTime = nil
+        backend?.returnToLive()
+        backend?.play()
     }
 
     public func selectAudioTrack(id: String) { backend?.selectAudioTrack(id: id) }
@@ -321,6 +513,7 @@ public final class CndPlayerController {
         let position = backend.positionMs
         positionMs = position
         durationMs = backend.durationMs
+        subtitleOverlay.update(positionMs: position)
 
         if abs(position - stallReferenceMs) >= 200 {
             stallReferenceMs = position
@@ -355,9 +548,25 @@ public final class CndPlayerController {
 
     private func beginRecovery() {
         guard recoveryTask == nil, let media else { return }
+        let now = Date()
+        recentDropouts.append(now)
+        recentDropouts = recentDropouts.filter { now.timeIntervalSince($0) <= 60 }
+        let rapidDropouts = recentDropouts.count >= 2
+
         let attempts = timings.reconnectBackoff
         recoveryTask = Task { @MainActor [weak self] in
             guard let self else { return }
+
+            // If 2 dropouts occurred within 60 seconds on a live stream, attempt rapid failover to a mirror
+            if rapidDropouts, self.isLive, let itemId = media.itemId, let mirrorFinder = self.mirrorFinder {
+                let mirrors = (try? await mirrorFinder(itemId)) ?? []
+                self.availableMirrors = mirrors
+                if let best = mirrors.first, self.autoFailoverEnabled, self.failoverCount < 2 {
+                    self.failoverToMirror(best)
+                    return
+                }
+            }
+
             for (index, delay) in attempts.enumerated() {
                 self.reconnectBanner = "Reconnexion \(index + 1)/\(attempts.count)…"
                 AppLog.shared.warn("PLAYER", "Flux interrompu : reconnexion \(index + 1)/\(attempts.count)")
@@ -375,6 +584,17 @@ public final class CndPlayerController {
                 }
                 if Task.isCancelled { return }
             }
+
+            // All reconnection attempts exhausted: attempt automatic failover to mirror
+            if self.isLive, let itemId = media.itemId, let mirrorFinder = self.mirrorFinder {
+                let mirrors = (try? await mirrorFinder(itemId)) ?? []
+                self.availableMirrors = mirrors
+                if let best = mirrors.first, self.autoFailoverEnabled, self.failoverCount < 2 {
+                    self.failoverToMirror(best)
+                    return
+                }
+            }
+
             self.reconnectBanner = nil
             self.recoveryTask = nil
             AppLog.shared.error("PLAYER", "Flux indisponible après \(attempts.count) tentatives de reconnexion")
@@ -395,6 +615,59 @@ public final class CndPlayerController {
         recoveryTask?.cancel()
         recoveryTask = nil
         reconnectBanner = nil
+    }
+
+    // MARK: - Dialogue Boost & Audio Enhancement Actions
+
+    public func setAudioEnhancement(_ config: AudioEnhancementConfig) {
+        self.audioEnhancement = config
+    }
+
+    public func applyAudioEnhancement() {
+        if activeEngine == .avPlayer, let media, media.isHls, audioEnhancement.isActive {
+            showHlsAudioEnhancementNotice = true
+        } else {
+            showHlsAudioEnhancementNotice = false
+        }
+        backend?.setAudioEnhancement(audioEnhancement)
+    }
+
+    public func switchToMpvForAudioEnhancement() {
+        guard let media, isEngineAvailable(.mpv) else { return }
+        showHlsAudioEnhancementNotice = false
+        enginePreference = .forceMpv
+        let resume = isLive ? 0 : max(positionMs, media.startPositionMs)
+        loadBackend(media, resumeAt: resume, engine: .mpv)
+    }
+
+    public func dismissHlsAudioEnhancementNotice() {
+        showHlsAudioEnhancementNotice = false
+    }
+
+    // MARK: - Subtitle Actions & External Subtitles
+
+    public func setSubtitleDelay(_ delay: Double) {
+        self.subtitleDelaySeconds = delay
+    }
+
+    public func applySubtitleDelay() {
+        subtitleOverlay.delaySeconds = subtitleDelaySeconds
+        backend?.setSubtitleDelay(seconds: subtitleDelaySeconds)
+    }
+
+    public func loadExternalSubtitle(fileUrl: URL, engine: CndEngine? = nil) {
+        _ = backend?.addExternalSubtitle(fileUrl: fileUrl)
+        if let content = try? String(contentsOf: fileUrl, encoding: .utf8) {
+            let cues: [SubtitleCue]
+            if let engine {
+                cues = engine.parseSrt(srtContent: content)
+            } else {
+                cues = []
+            }
+            if !cues.isEmpty {
+                subtitleOverlay.load(cues: cues)
+            }
+        }
     }
 
     // MARK: Watch progress
@@ -426,5 +699,11 @@ public final class CndPlayerController {
         durationMs = 0
         audioTracks = []
         subtitleTracks = []
+        subtitleOverlay.clear()
+        showHlsAudioEnhancementNotice = false
+        liveDelaySeconds = 0
+        livePauseStartTime = nil
+        TimeshiftCacheManager.cleanCacheDirectory()
+        DisplayRateMatcher.shared.reset()
     }
 }

@@ -52,7 +52,7 @@ final class LiveTvModel {
 
     /// Recents and Favorites are only shown when nothing narrows the catalog.
     var showsSections: Bool {
-        filter.query.isEmpty && filter.group == nil && filter.host == nil
+        filter.query.isEmpty && filter.group == nil && filter.host == nil && !filter.showBroken
     }
 
     /// A search looks in every category; the selected one comes back when the search is cleared.
@@ -68,6 +68,8 @@ final class LiveTvModel {
             groupTitle: filter.query.isEmpty ? filter.group : nil,
             host: filter.host,
             favoritesOnly: false,
+            includeBroken: filter.showBroken,
+            includeHidden: false,
             sortBy: filter.sort,
             sortAsc: filter.ascending,
             limit: UInt32(Self.pageSize),
@@ -221,6 +223,36 @@ final class LiveTvModel {
             onFavoriteChanged()
         } catch {
             errorMessage = userMessage(for: error)
+        }
+    }
+
+    func toggleBroken(_ item: IptvItemRecord) async {
+        let engine = self.engine
+        do {
+            let isBroken = try await Task.detached(priority: .userInitiated) {
+                try engine.toggleBroken(stableHash: item.stableHash, itemKind: item.kind)
+            }.value
+            apply(isBroken: isBroken, to: item)
+        } catch {
+            errorMessage = userMessage(for: error)
+        }
+    }
+
+    private func apply(isBroken: Bool, to item: IptvItemRecord) {
+        if !filter.showBroken && isBroken {
+            channels.removeAll { $0.stableHash == item.stableHash }
+            recents.removeAll { $0.stableHash == item.stableHash }
+            favorites.removeAll { $0.stableHash == item.stableHash }
+        } else {
+            for index in channels.indices where channels[index].stableHash == item.stableHash {
+                channels[index].isBroken = isBroken
+            }
+            for index in recents.indices where recents[index].stableHash == item.stableHash {
+                recents[index].isBroken = isBroken
+            }
+            for index in favorites.indices where favorites[index].stableHash == item.stableHash {
+                favorites[index].isBroken = isBroken
+            }
         }
     }
 

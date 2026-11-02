@@ -12,6 +12,7 @@ extension SortField {
         case .rating: return "Note"
         case .recentlyAdded: return "Ajout récent"
         case .channelNumber: return "Numéro"
+        case .custom: return "Personnalisé"
         }
     }
 }
@@ -25,6 +26,7 @@ final class SearchFilterState {
     private(set) var query = ""
     var group: String?
     var host: String?
+    var showBroken = false
     var sort: SortField
     var ascending = true
 
@@ -55,13 +57,14 @@ final class SearchFilterState {
     func resetFilters() {
         group = nil
         host = nil
+        showBroken = false
     }
 
-    var hasActiveFilter: Bool { group != nil || host != nil }
+    var hasActiveFilter: Bool { group != nil || host != nil || showBroken }
 
     /// Changes whenever the catalog query must be re-run (used as a `.task(id:)` key).
     var signature: String {
-        "\(query)|\(group ?? "")|\(host ?? "")|\(sort)|\(ascending)"
+        "\(query)|\(group ?? "")|\(host ?? "")|\(sort)|\(ascending)|\(showBroken)"
     }
 }
 
@@ -97,6 +100,10 @@ struct SearchFilterToolbarModifier: ViewModifier {
                                 Text("Tous les serveurs").tag(String?.none)
                                 ForEach(hosts, id: \.value) { Text("\($0.value) (\($0.count))").tag(String?.some($0.value)) }
                             }
+                        }
+                        Divider()
+                        Toggle(isOn: $state.showBroken) {
+                            Label("Afficher les contenus en panne", systemImage: "exclamationmark.triangle")
                         }
                         if state.hasActiveFilter {
                             Divider()
