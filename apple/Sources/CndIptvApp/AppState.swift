@@ -30,6 +30,8 @@ public final class AppState {
     public var errorMessage: String?
     /// Mirrors `RuntimeSettings.showNetworkConsole`: whether the console drawer is shown.
     public var showNetworkConsole = false
+    /// Set when a movie or episode starts: the shell then shows the player large instead of docked.
+    var wantsLargePlayer = false
 
     let player: CndPlayerController
     let downloadDirectory: DownloadDirectoryManager

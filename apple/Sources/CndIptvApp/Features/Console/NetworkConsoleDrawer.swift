@@ -62,6 +62,7 @@ final class ConsoleModel {
 
     let engine: CndEngine
     let pollInterval: Duration
+    let appLog: AppLog
 
     private(set) var entries: [NetworkLogEntry] = []
     private(set) var isPolling = false
@@ -70,10 +71,12 @@ final class ConsoleModel {
     var levelFilter: LogLevelFilter = .all
 
     @ObservationIgnored private var lastSeq: UInt64 = 0
+    @ObservationIgnored private var lastLocalSeq: UInt64 = 0
 
-    init(engine: CndEngine, pollInterval: Duration = .milliseconds(500)) {
+    init(engine: CndEngine, pollInterval: Duration = .milliseconds(500), appLog: AppLog = .shared) {
         self.engine = engine
         self.pollInterval = pollInterval
+        self.appLog = appLog
     }
 
     var categories: [String] { Array(Set(entries.map(\.category))).sorted() }
@@ -98,6 +101,15 @@ final class ConsoleModel {
             entries.append(contentsOf: batch)
             if batch.count < Int(Self.batchSize) { break }
         }
+        let local = appLog.entries(after: lastLocalSeq)
+        if let last = local.last {
+            lastLocalSeq = last.seqId
+            entries.append(contentsOf: local)
+            // Engine and app entries come from two counters: order them by time (stable for equal stamps).
+            entries = entries.enumerated()
+                .sorted { ($0.element.timestampMs, $0.offset) < ($1.element.timestampMs, $1.offset) }
+                .map(\.element)
+        }
         if entries.count > Self.capacity { entries.removeFirst(entries.count - Self.capacity) }
         pollCount += 1
     }
@@ -113,6 +125,7 @@ final class ConsoleModel {
 
     func clear() {
         engine.clearLogs()
+        appLog.clear()
         entries = []
     }
 

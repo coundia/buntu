@@ -169,6 +169,8 @@ public final class CndPlayerController {
     public var hasPrevious: Bool { queue?.hasPrevious ?? false }
 
     private func start(_ media: PlayableMedia, resumeAt: Int64) {
+        AppLog.shared.info("PLAYER", "Ouverture de « \(media.title) » (\(AppLog.describe(media.url)))"
+            + (resumeAt > 0 ? ", reprise à \(resumeAt / 1000) s" : ""))
         cancelRecovery()
         fallbackUsed = false
         self.media = media
@@ -183,10 +185,15 @@ public final class CndPlayerController {
         releaseBackend()
         let other: PlayerEngineKind = engine == .mpv ? .avPlayer : .mpv
         let chosen = isEngineAvailable(engine) ? engine : other
+        if chosen != engine {
+            AppLog.shared.warn("PLAYER", "\(Self.engineName(engine)) indisponible (libmpv introuvable ?) : utilisation de \(Self.engineName(chosen))")
+        }
         guard isEngineAvailable(chosen), let newBackend = backendFactory(chosen) else {
+            AppLog.shared.error("PLAYER", "Aucun moteur de lecture disponible")
             state = .failed("No playback engine available")
             return
         }
+        AppLog.shared.info("PLAYER", "Moteur \(Self.engineName(chosen)) chargé")
         generation += 1
         let token = generation
         backend = newBackend
@@ -212,6 +219,10 @@ public final class CndPlayerController {
         lastAdvanceAt = Date()
         lastWatchdogCheck = Date()
         stallReferenceMs = resumeAt
+    }
+
+    private nonisolated static func engineName(_ kind: PlayerEngineKind) -> String {
+        kind == .mpv ? "mpv" : "AVPlayer"
     }
 
     private func releaseBackend() {
@@ -260,10 +271,12 @@ public final class CndPlayerController {
         state = newState
         switch newState {
         case .failed(let reason):
+            AppLog.shared.error("PLAYER", "Échec de lecture (\(activeEngine.map(Self.engineName) ?? "?")) : \(reason)")
             handleFailure(reason)
         case .ended:
             handleEnded()
         case .playing where previous != .playing:
+            if previous == .loading { AppLog.shared.info("PLAYER", "Lecture démarrée") }
             refreshTracks()
         default:
             break
@@ -275,6 +288,7 @@ public final class CndPlayerController {
         guard let media else { return }
         if activeEngine == .avPlayer, !fallbackUsed, isEngineAvailable(.mpv) {
             fallbackUsed = true
+            AppLog.shared.warn("PLAYER", "AVPlayer a refusé le flux : bascule vers mpv")
             let resume = isLive ? 0 : max(positionMs, media.startPositionMs)
             loadBackend(media, resumeAt: resume, engine: .mpv)
             return
@@ -346,6 +360,7 @@ public final class CndPlayerController {
             guard let self else { return }
             for (index, delay) in attempts.enumerated() {
                 self.reconnectBanner = "Reconnexion \(index + 1)/\(attempts.count)…"
+                AppLog.shared.warn("PLAYER", "Flux interrompu : reconnexion \(index + 1)/\(attempts.count)")
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 if Task.isCancelled { return }
                 _ = await self.reachability.waitUntilConnected(timeout: max(delay, 2))
@@ -362,6 +377,7 @@ public final class CndPlayerController {
             }
             self.reconnectBanner = nil
             self.recoveryTask = nil
+            AppLog.shared.error("PLAYER", "Flux indisponible après \(attempts.count) tentatives de reconnexion")
             self.state = .failed("Stream unavailable after \(attempts.count) reconnection attempts")
         }
     }

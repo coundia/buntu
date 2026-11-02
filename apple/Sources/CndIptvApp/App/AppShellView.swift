@@ -75,6 +75,9 @@ private struct LoadedShellView: View {
     @State private var epgFocus: IptvItemRecord?
     @State private var isPlayerExpanded = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    /// True while the window is full screen because the player asked for it (not because the user chose it).
+    @State private var fullscreenIsOurs = false
+    @State private var windowIsFullscreen = false
     @State private var isDropTargeted = false
 
     init(state: AppState, engine: CndEngine, commands: AppCommandCenter) {
@@ -91,8 +94,14 @@ private struct LoadedShellView: View {
             engine: engine,
             toasts: toasts,
             downloadBase: { [weak state] in state?.downloadDirectory.directory ?? DownloadLocation.baseDirectory },
-            playMedia: { [weak state] media in state?.player.open(media) },
-            playQueue: { [weak state] medias, index in state?.player.openQueue(medias, startIndex: index) },
+            playMedia: { [weak state] media in
+                state?.player.open(media)
+                state?.wantsLargePlayer = true
+            },
+            playQueue: { [weak state] medias, index in
+                state?.player.openQueue(medias, startIndex: index)
+                state?.wantsLargePlayer = true
+            },
             openDownloads: { UserDefaults.standard.set(AppTab.downloads.rawValue, forKey: "shell.selectedTab") },
             onFavoriteChanged: { [weak state] in state?.reloadSnapshot(notifyScreens: false) }
         ))
@@ -154,30 +163,69 @@ private struct LoadedShellView: View {
                 pip.syncState(from: player)
             }
             .onChange(of: player.media) { _, _ in nowPlaying.refresh() }
+            .onChange(of: state.wantsLargePlayer) { _, wanted in
+                guard wanted else { return }
+                state.wantsLargePlayer = false
+                setExpanded(true, windowFullscreen: false)
+            }
             .onChange(of: player.surfaceLayer.map(ObjectIdentifier.init)) { _, _ in
                 pip.attach(layer: player.surfaceLayer, controller: player)
             }
             .onAppear { connectPlayerIntegrations() }
             #if os(macOS)
-            // Leaving full screen with Esc or the green button also collapses the player.
+            // The expanded player stays up when the window leaves full screen; "Réduire" docks it.
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+                windowIsFullscreen = true
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
-                if isPlayerExpanded {
-                    isPlayerExpanded = false
-                    columnVisibility = .automatic
-                }
+                windowIsFullscreen = false
+                fullscreenIsOurs = false
             }
             #endif
     }
 
-    /// Expands the player over the whole screen: on macOS the window goes full screen and the
-    /// sidebar is hidden; on iOS the player is presented full screen.
-    private func setExpanded(_ expanded: Bool) {
-        let wasExpanded = isPlayerExpanded
+    /// Shows the player large. `windowFullscreen` additionally puts the macOS window in full screen
+    /// (the player's own button); starting a movie only fills the window, which is gentler.
+    /// On iOS the player is presented full screen either way.
+    private func setExpanded(_ expanded: Bool, windowFullscreen: Bool = true) {
         isPlayerExpanded = expanded
         #if os(macOS)
         columnVisibility = expanded ? .detailOnly : .automatic
-        guard expanded != wasExpanded, let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
-        if window.styleMask.contains(.fullScreen) != expanded { window.toggleFullScreen(nil) }
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+        let isFull = window.styleMask.contains(.fullScreen)
+        if expanded, windowFullscreen, !isFull {
+            fullscreenIsOurs = true
+            window.toggleFullScreen(nil)
+        } else if !expanded, fullscreenIsOurs {
+            fullscreenIsOurs = false
+            if isFull { window.toggleFullScreen(nil) }
+        }
+        #endif
+    }
+
+    /// macOS shows a separate "Réduire" next to the full-screen button; on iOS the single button collapses.
+    private var collapseAction: (() -> Void)? {
+        #if os(macOS)
+        { setExpanded(false) }
+        #else
+        nil
+        #endif
+    }
+
+    private var expandedShowsFullscreen: Bool {
+        #if os(macOS)
+        windowIsFullscreen
+        #else
+        true
+        #endif
+    }
+
+    /// The player's full-screen button when it is already large: toggles the window's full screen.
+    private func toggleWindowFullscreen() {
+        #if os(macOS)
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+        fullscreenIsOurs = !window.styleMask.contains(.fullScreen)
+        window.toggleFullScreen(nil)
         #endif
     }
 
@@ -416,6 +464,7 @@ private struct LoadedShellView: View {
             return
         }
         player.open(PlayableMedia(title: task.fileName, url: URL(fileURLWithPath: task.savePath), kind: .movie))
+        setExpanded(true, windowFullscreen: false)
     }
 
     private func showGuide(_ item: IptvItemRecord) {
@@ -454,11 +503,18 @@ private struct LoadedShellView: View {
     private var expandedPlayer: some View {
         CndVideoPlayerView(
             controller: player,
-            onToggleFullscreen: { setExpanded(false) },
+            onToggleFullscreen: {
+                #if os(macOS)
+                toggleWindowFullscreen()
+                #else
+                setExpanded(false)
+                #endif
+            },
             onClose: closePlayer,
+            onCollapse: collapseAction,
             closesOnDisappear: false,
             pip: pip,
-            isFullscreen: true
+            isFullscreen: expandedShowsFullscreen
         )
         .background(Color.black)
     }
