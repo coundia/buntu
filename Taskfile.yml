@@ -110,6 +110,13 @@ tasks:
     cmds:
       - xcodegen generate
 
+  xcode:open:
+    desc: Open the Xcode project (apple/CndIPTV.xcodeproj) in Xcode
+    aliases: [open:xcode, xcode]
+    cmds:
+      - test -d apple/CndIPTV.xcodeproj || task xcode:generate
+      - open apple/CndIPTV.xcodeproj
+
   xcode:macos:
     desc: xcodebuild for macOS (CONFIG=Release for a release build)
     dir: "{{.APPLE_DIR}}"
