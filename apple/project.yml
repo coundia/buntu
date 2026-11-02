@@ -48,11 +48,9 @@ targets:
         product: CndCoreBridge
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cnd.iptv.ios
+        PRODUCT_BUNDLE_IDENTIFIER: com.papacoundia.cndiptv
         INFOPLIST_FILE: Resources/Info-iOS.plist
-        CODE_SIGN_ENTITLEMENTS: Resources/CndIPTV-iOS.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-        CODE_SIGN_IDENTITY: "-"
 
   CndIPTV-tvOS:
     type: application
