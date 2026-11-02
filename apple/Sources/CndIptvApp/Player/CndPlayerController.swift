@@ -299,6 +299,21 @@ public final class CndPlayerController {
         if chosen != engine {
             AppLog.shared.warn("PLAYER", "\(Self.engineName(engine)) indisponible (libmpv introuvable ?) : utilisation de \(Self.engineName(chosen))")
         }
+        // Without libmpv, AVPlayer cannot read raw TS, MKV, AVI or FLV: use the channel's HLS form when
+        // the server has one, otherwise say so at once instead of failing three reconnections later.
+        var playable = media
+        if chosen == .avPlayer, !PlayerRouting.avPlayerCanPlay(media.url) {
+            if let hls = PlayerRouting.hlsAlternative(for: media.url) {
+                playable = media.replacingURL(hls)
+                AppLog.shared.info("PLAYER", "Chaîne lue en HLS (.m3u8) : le moteur libmpv n'est pas disponible sur cet appareil")
+            } else {
+                let ext = media.url.pathExtension.isEmpty ? "ce format" : "le format .\(media.url.pathExtension.lowercased())"
+                let reason = "\(ext.prefix(1).uppercased() + ext.dropFirst()) n'est pas pris en charge sur cet appareil (le moteur libmpv n'y est pas inclus). Les films .mp4 et les chaînes disponibles en HLS fonctionnent."
+                AppLog.shared.error("PLAYER", reason)
+                state = .failed(reason)
+                return
+            }
+        }
         guard isEngineAvailable(chosen), let newBackend = backendFactory(chosen) else {
             AppLog.shared.error("PLAYER", "Aucun moteur de lecture disponible")
             state = .failed("No playback engine available")
@@ -330,7 +345,7 @@ public final class CndPlayerController {
         newBackend.setMuted(isMuted)
         newBackend.setAudioEnhancement(audioEnhancement)
         newBackend.setSubtitleDelay(seconds: subtitleDelaySeconds)
-        newBackend.load(media, startPositionMs: resumeAt)
+        newBackend.load(playable, startPositionMs: resumeAt)
 
         if chosen == .avPlayer, media.isHls, audioEnhancement.isActive {
             showHlsAudioEnhancementNotice = true
