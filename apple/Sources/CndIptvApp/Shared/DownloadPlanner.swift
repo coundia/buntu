@@ -1,15 +1,12 @@
 import Foundation
 import CndCoreBridge
 
-/// Where downloads are written. PRD 11 replaces this with the security-scoped directory picker;
-/// until then an explicit path in `UserDefaults` wins over the platform default.
+/// Where downloads are written by default.
 enum DownloadLocation {
     static let defaultsKey = "downloads.directory"
 
-    static var baseDirectory: URL {
-        if let path = UserDefaults.standard.string(forKey: defaultsKey), !path.isEmpty {
-            return URL(fileURLWithPath: path, isDirectory: true)
-        }
+    /// Visible in the Files app on iOS (`Documents/Downloads`), `~/Downloads/CndIPTV` on macOS.
+    static var platformDefault: URL {
         #if os(macOS)
         let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
@@ -19,6 +16,14 @@ enum DownloadLocation {
             ?? FileManager.default.temporaryDirectory
         return documents.appendingPathComponent("Downloads", isDirectory: true)
         #endif
+    }
+
+    /// The folder chosen in Settings (kept in `UserDefaults` by `DownloadDirectoryManager`), else the default.
+    static var baseDirectory: URL {
+        if let path = UserDefaults.standard.string(forKey: defaultsKey), !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        return platformDefault
     }
 }
 
