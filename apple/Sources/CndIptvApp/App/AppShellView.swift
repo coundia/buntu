@@ -94,14 +94,8 @@ private struct LoadedShellView: View {
             engine: engine,
             toasts: toasts,
             downloadBase: { [weak state] in state?.downloadDirectory.directory ?? DownloadLocation.baseDirectory },
-            playMedia: { [weak state] media in
-                state?.player.open(media)
-                state?.wantsLargePlayer = true
-            },
-            playQueue: { [weak state] medias, index in
-                state?.player.openQueue(medias, startIndex: index)
-                state?.wantsLargePlayer = true
-            },
+            playMedia: { [weak state] media in state?.player.open(media) },
+            playQueue: { [weak state] medias, index in state?.player.openQueue(medias, startIndex: index) },
             openDownloads: { UserDefaults.standard.set(AppTab.downloads.rawValue, forKey: "shell.selectedTab") },
             onFavoriteChanged: { [weak state] in state?.reloadSnapshot(notifyScreens: false) }
         ))
@@ -163,11 +157,6 @@ private struct LoadedShellView: View {
                 pip.syncState(from: player)
             }
             .onChange(of: player.media) { _, _ in nowPlaying.refresh() }
-            .onChange(of: state.wantsLargePlayer) { _, wanted in
-                guard wanted else { return }
-                state.wantsLargePlayer = false
-                setExpanded(true, windowFullscreen: false)
-            }
             .onChange(of: player.surfaceLayer.map(ObjectIdentifier.init)) { _, _ in
                 pip.attach(layer: player.surfaceLayer, controller: player)
             }
@@ -464,7 +453,6 @@ private struct LoadedShellView: View {
             return
         }
         player.open(PlayableMedia(title: task.fileName, url: URL(fileURLWithPath: task.savePath), kind: .movie))
-        setExpanded(true, windowFullscreen: false)
     }
 
     private func showGuide(_ item: IptvItemRecord) {
