@@ -119,6 +119,11 @@ public final class CndPlayerController {
     /// Non-blocking HUD banner for mirror failover, e.g. « Bascule vers TF1 FHD ».
     public private(set) var failoverBanner: String?
     @ObservationIgnored public private(set) var failoverCount = 0
+    /// Explains why a stream failed (HTTP status, DNS, timeout…). Set by the app; `nil` skips the check.
+    @ObservationIgnored public var streamDiagnoser: (@Sendable (PlayableMedia) async -> StreamDiagnosis)?
+    /// Last diagnosis for the current media; a final one stops any further reconnection.
+    @ObservationIgnored public private(set) var diagnosis: StreamDiagnosis?
+    @ObservationIgnored private var diagnosisTask: Task<Void, Never>?
     @ObservationIgnored private var recentDropouts: [Date] = []
 
     /// Custom async handler for favorite persistence; returns the new `isFavorite` state.
@@ -244,6 +249,9 @@ public final class CndPlayerController {
         AppLog.shared.info("PLAYER", "Ouverture de « \(media.title) » (\(AppLog.describe(media.url)))"
             + (resumeAt > 0 ? ", reprise à \(resumeAt / 1000) s" : ""))
         cancelRecovery()
+        diagnosisTask?.cancel()
+        diagnosisTask = nil
+        diagnosis = nil
         fallbackUsed = false
         failoverCount = 0
         recentDropouts = []
@@ -464,6 +472,8 @@ public final class CndPlayerController {
         switch newState {
         case .failed(let reason):
             AppLog.shared.error("PLAYER", "Échec de lecture (\(activeEngine.map(Self.engineName) ?? "?")) : \(reason)")
+            if diagnosis?.isFinal == true { return }
+            diagnoseFailure()
             handleFailure(reason)
         case .ended:
             handleEnded()
@@ -486,6 +496,26 @@ public final class CndPlayerController {
             return
         }
         beginRecovery()
+    }
+
+    /// One request per media: the engines only say "loading failed". When the server's answer makes
+    /// retrying pointless (429, 403, 404…), the recovery stops and the reason is shown instead.
+    private func diagnoseFailure() {
+        guard diagnosis == nil, diagnosisTask == nil, let media, let diagnoser = streamDiagnoser else { return }
+        diagnosisTask = Task { @MainActor [weak self] in
+            let result = await diagnoser(media)
+            guard let self, !Task.isCancelled, self.media == media else { return }
+            self.diagnosisTask = nil
+            self.diagnosis = result
+            if result.isFinal {
+                AppLog.shared.error("PLAYER", "Diagnostic : \(result.message) Lecture arrêtée, pas de nouvelle tentative.")
+                self.cancelRecovery()
+                self.releaseBackend()
+                self.state = .failed(result.message)
+            } else {
+                AppLog.shared.warn("PLAYER", "Diagnostic : \(result.message)")
+            }
+        }
     }
 
     private func handleEnded() {
@@ -597,8 +627,9 @@ public final class CndPlayerController {
 
             self.reconnectBanner = nil
             self.recoveryTask = nil
-            AppLog.shared.error("PLAYER", "Flux indisponible après \(attempts.count) tentatives de reconnexion")
-            self.state = .failed("Stream unavailable after \(attempts.count) reconnection attempts")
+            AppLog.shared.error("PLAYER", "Flux indisponible après \(attempts.count) tentatives de reconnexion"
+                + (self.diagnosis.map { " : \($0.message)" } ?? ""))
+            self.state = .failed(self.diagnosis?.message ?? "Stream unavailable after \(attempts.count) reconnection attempts")
         }
     }
 
