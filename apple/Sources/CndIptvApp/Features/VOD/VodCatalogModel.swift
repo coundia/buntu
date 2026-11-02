@@ -104,9 +104,16 @@ final class VodCatalogModel<Entry: CatalogEntry> {
         filter.query.isEmpty && filter.group == nil && filter.host == nil
     }
 
+    /// A search looks in every category: the selected one is only applied while the search is empty,
+    /// and comes back as soon as it is cleared.
+    var searchIgnoresCategory: Bool {
+        !filter.query.isEmpty && filter.group != nil
+    }
+
     private func makeFilter(offset: Int) -> CatalogFilter {
         CatalogFilter(
-            kind: kind, sourceId: nil, query: filter.query, groupTitle: filter.group, host: filter.host,
+            kind: kind, sourceId: nil, query: filter.query,
+            groupTitle: filter.query.isEmpty ? filter.group : nil, host: filter.host,
             favoritesOnly: false, sortBy: filter.sort, sortAsc: filter.ascending,
             limit: UInt32(Self.pageSize), offset: UInt32(offset)
         )

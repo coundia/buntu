@@ -122,6 +122,10 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
                     if let message = model.errorMessage {
                         Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
                     }
+                    if model.searchIgnoresCategory {
+                        Label("Recherche dans toutes les catégories", systemImage: "magnifyingglass")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
                     if model.showsSections {
                         shelf(titles.resume, icon: titles.resumeIcon, entries: model.resume)
                         shelf(titles.favorites, icon: "star.fill", entries: model.favorites)

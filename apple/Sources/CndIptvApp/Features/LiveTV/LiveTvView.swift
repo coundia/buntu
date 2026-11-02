@@ -105,6 +105,10 @@ struct LiveTvView: View {
                     if let message = model.errorMessage {
                         Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
                     }
+                    if model.searchIgnoresCategory {
+                        Label("Recherche dans toutes les catégories", systemImage: "magnifyingglass")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
                     if model.showsSections {
                         horizontalSection("Récemment consultés", icon: "clock", items: model.recents)
                         horizontalSection("Favoris", icon: "star.fill", items: model.favorites)

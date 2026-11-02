@@ -388,3 +388,89 @@ final class ToastCenterTests: XCTestCase {
         XCTAssertTrue(gone)
     }
 }
+
+// MARK: - Search spans every category
+
+final class SearchAcrossCategoriesTests: VodTestCase {
+    func testMovieSearchIgnoresTheSelectedCategoryAndItComesBackAfterwards() async throws {
+        try await TestFixtures.importVod(into: engine, directory: directory, movies: 12)
+        let model = VodCatalogModel<IptvItemRecord>(kind: "movie", source: .movies(engine: engine))
+
+        // Film 003 is a "Drame"; the selected category is "Action".
+        model.filter.group = "Action"
+        await model.reload()
+        XCTAssertEqual(model.entries.count, 6)
+        XCTAssertFalse(model.entries.contains { $0.nameClean == "Film 003" })
+        XCTAssertFalse(model.searchIgnoresCategory)
+
+        model.filter.text = "Film 003"
+        model.filter.commit()
+        await model.reload()
+        XCTAssertEqual(model.entries.map(\.nameClean), ["Film 003"], "found although it is not in the selected category")
+        XCTAssertEqual(model.entries.first?.groupTitle, "Drame")
+        XCTAssertTrue(model.searchIgnoresCategory)
+
+        model.filter.text = ""
+        model.filter.commit()
+        await model.reload()
+        XCTAssertEqual(model.entries.count, 6, "the Action filter applies again once the search is cleared")
+        XCTAssertTrue(model.entries.allSatisfy { $0.groupTitle == "Action" })
+        XCTAssertEqual(model.filter.group, "Action", "the selection itself was never lost")
+        XCTAssertFalse(model.searchIgnoresCategory)
+    }
+
+    func testSearchStillHonorsTheServerFilter() async throws {
+        try await TestFixtures.importVod(into: engine, directory: directory, movies: 4)
+        let model = VodCatalogModel<IptvItemRecord>(kind: "movie", source: .movies(engine: engine))
+        model.filter.group = "Action"
+        model.filter.host = "elsewhere.example"
+        model.filter.text = "Film"
+        model.filter.commit()
+        await model.reload()
+        XCTAssertTrue(model.entries.isEmpty, "only the category is ignored while searching, not the server filter")
+    }
+
+    func testSeriesSearchIgnoresTheSelectedCategoryToo() async throws {
+        try await TestFixtures.importVod(into: engine, directory: directory, movies: 2)
+        let model = VodCatalogModel<SeriesRecord>(kind: "series", source: .series(engine: engine))
+        await model.reload()
+        let group = try XCTUnwrap(model.groups.first?.value)
+
+        model.filter.group = "Une autre catégorie"
+        await model.reload()
+        XCTAssertTrue(model.entries.isEmpty)
+
+        model.filter.text = "Dark"
+        model.filter.commit()
+        await model.reload()
+        XCTAssertEqual(model.entries.map(\.title), ["Dark"])
+        XCTAssertEqual(model.entries.first?.groupTitle, group)
+    }
+}
+
+@MainActor
+final class LiveSearchAcrossCategoriesTests: XCTestCase {
+    func testLiveSearchLooksInEveryCategory() async throws {
+        let engine = try CndEngine.inMemory()
+        let directory = try TestFixtures.makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await TestFixtures.importCatalog(into: engine, directory: directory, count: 30)
+
+        let model = LiveTvModel(engine: engine)
+        model.filter.group = "Sport"            // channel 17 is in "Kids"
+        await model.reload()
+        XCTAssertEqual(model.channels.count, 10)
+
+        model.filter.text = "Chaine 017"
+        model.filter.commit()
+        await model.reload()
+        XCTAssertEqual(model.channels.map(\.name), ["Chaine 017"])
+        XCTAssertTrue(model.searchIgnoresCategory)
+
+        model.filter.text = ""
+        model.filter.commit()
+        await model.reload()
+        XCTAssertEqual(model.channels.count, 10)
+        XCTAssertFalse(model.searchIgnoresCategory)
+    }
+}
