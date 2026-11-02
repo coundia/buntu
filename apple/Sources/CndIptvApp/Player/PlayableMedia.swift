@@ -77,6 +77,16 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
         self.seriesTitle = seriesTitle
     }
 
+    /// The same media played from another address (headers, position and identity are kept).
+    public func replacingURL(_ newURL: URL) -> PlayableMedia {
+        PlayableMedia(
+            title: title, url: newURL, headers: headers, kind: kind, startPositionMs: startPositionMs,
+            stableHash: stableHash, itemId: itemId, artworkUrl: artworkUrl, isFavorite: isFavorite,
+            isBroken: isBroken, itemKind: itemKind, seriesId: seriesId, seriesStableHash: seriesStableHash,
+            seriesTitle: seriesTitle
+        )
+    }
+
     public func header(named name: String) -> String? {
         headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
     }
@@ -177,6 +187,22 @@ public struct PlaylistQueue: Equatable, Sendable {
 /// Engine selection: `AVPlayer` for HLS/MP4/MOV, `mpv` for raw TS/MKV/AVI/FLV and unknown containers.
 public enum PlayerRouting {
     private static let avPlayerExtensions: Set<String> = ["m3u8", "mp4", "m4v", "mov"]
+
+    /// `AVPlayer` plays HLS, MP4, M4V and MOV; raw MPEG-TS, MKV, AVI and FLV need `libmpv`.
+    public static func avPlayerCanPlay(_ url: URL) -> Bool {
+        avPlayerExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Xtream serves a live channel as `/live/<user>/<password>/<id>.ts` (raw TS) and, from the same
+    /// path with `.m3u8`, as HLS. Devices without `libmpv` (iPhone, iPad) can only play the HLS form.
+    public static func hlsAlternative(for url: URL) -> URL? {
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard parts.count == 4, parts[0] == "live", ["ts", ""].contains(url.pathExtension.lowercased()),
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        let id = (parts[3] as NSString).deletingPathExtension
+        components.path = "/live/\(parts[1])/\(parts[2])/\(id).m3u8"
+        return components.url
+    }
 
     public static func engine(for url: URL, preference: PlayerEnginePreference = .auto) -> PlayerEngineKind {
         if preference == .forceMpv { return .mpv }
