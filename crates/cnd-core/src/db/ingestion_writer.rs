@@ -133,9 +133,20 @@ impl DatabaseManager {
 
     pub fn delete_source(&self, source_id: i64) -> Result<(), DbError> {
         self.with_conn(|conn| {
+            let uuid: Option<String> = conn
+                .query_row("SELECT uuid FROM iptv_sources WHERE id = ?1", params![source_id], |r| r.get(0))
+                .optional()?;
             let affected = conn.execute("DELETE FROM iptv_sources WHERE id = ?1", params![source_id])?;
             if affected == 0 {
                 return Err(DbError::NotFound(format!("Source id={source_id} not found")));
+            }
+            if let Some(uuid) = uuid {
+                crate::db::sync_repo::upsert_tombstone(
+                    conn,
+                    crate::db::sync_repo::TOMBSTONE_SOURCE,
+                    &uuid,
+                    chrono_now_ts(),
+                )?;
             }
             Ok(())
         })

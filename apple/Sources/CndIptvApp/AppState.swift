@@ -33,6 +33,8 @@ public final class AppState {
 
     let player: CndPlayerController
     let downloadDirectory: DownloadDirectoryManager
+    /// iCloud sync of sources, favorites and progress; reports "local only" when iCloud is unusable.
+    private(set) var cloudSync: CloudKitSyncManager?
     @ObservationIgnored private let recorder = DeferredProgressRecorder()
 
     init(engine: CndEngine? = nil, downloadDirectory: DownloadDirectoryManager? = nil) {
@@ -49,6 +51,10 @@ public final class AppState {
         recorder.attach(engine)
         self.engine = engine
         showNetworkConsole = engine.getSettings().showNetworkConsole
+        let sync = CloudKitSyncManager(engine: engine)
+        sync.onRemoteChange = { [weak self] _ in self?.reloadSnapshot() }
+        cloudSync = sync
+        sync.start()
         reloadSnapshot()
     }
 
@@ -82,6 +88,7 @@ public final class AppState {
                 self?.stats = snapshot.stats
                 self?.sources = snapshot.sources
                 if notifyScreens { self?.catalogRevision += 1 }
+                self?.cloudSync?.scheduleSync()
             } catch {
                 self?.errorMessage = error.localizedDescription
             }

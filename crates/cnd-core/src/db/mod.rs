@@ -4,6 +4,7 @@ pub mod epg_repo;
 pub mod ingestion_writer;
 pub mod schema;
 pub mod settings_repo;
+pub mod sync_repo;
 
 use rusqlite::{params, Connection};
 use std::path::Path;
@@ -221,7 +222,7 @@ impl DatabaseManager {
     pub fn add_source(&self, name: &str, source_type: &str, url: Option<&str>, server: Option<&str>, username: Option<&str>, password_ref: Option<&str>) -> std::result::Result<i64, DbError> {
         let conn = self.conn.lock().map_err(|e| DbError::Lock(e.to_string()))?;
         let now = chrono_now_ts();
-        let uuid = format!("src_{}_{}", now, blake3::hash(name.as_bytes()).to_hex().chars().take(8).collect::<String>());
+        let uuid = new_source_uuid(name, now);
 
         conn.execute(
             "INSERT INTO iptv_sources (uuid, name, source_type, url, server, username, password_ref, created_at, updated_at)
@@ -277,12 +278,17 @@ impl DatabaseManager {
 
         if exists {
             conn.execute("DELETE FROM favorites WHERE stable_hash = ?1", params![stable_hash])?;
+            sync_repo::upsert_tombstone(&conn, sync_repo::TOMBSTONE_FAVORITE, stable_hash, chrono_now_ts())?;
             Ok(false)
         } else {
             let now = chrono_now_ts();
             conn.execute(
                 "INSERT INTO favorites (stable_hash, item_kind, created_at) VALUES (?1, ?2, ?3)",
                 params![stable_hash, item_kind, now],
+            )?;
+            conn.execute(
+                "DELETE FROM sync_tombstones WHERE kind = ?1 AND key = ?2",
+                params![sync_repo::TOMBSTONE_FAVORITE, stable_hash],
             )?;
             Ok(true)
         }
@@ -310,6 +316,22 @@ impl DatabaseManager {
             offset,
         })
     }
+}
+
+/// `src_<unix seconds>_<hash>`. The hash mixes the name with a nanosecond clock and a process-wide
+/// counter, so two sources with the same name created in the same second never collide, and the
+/// uuid stays a safe identity across devices.
+fn new_source_uuid(name: &str, now: i64) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let digest = blake3::hash(format!("{name}|{nanos}|{seq}").as_bytes());
+    let short: String = digest.to_hex().chars().take(12).collect();
+    format!("src_{now}_{short}")
 }
 
 pub(crate) fn chrono_now_ts() -> i64 {

@@ -90,6 +90,8 @@ struct SourcesListView: View {
                 }
             }
         }
+        .onAppear { consumePendingAction() }
+        .onChange(of: model.pendingAction) { _, _ in consumePendingAction() }
         .sheet(item: $editor) { target in
             SourceFormSheet(
                 engine: engine,
@@ -120,6 +122,15 @@ struct SourcesListView: View {
             Button("Supprimer « \(source.name) »", role: .destructive) { model.delete(source) }
         } message: { source in
             Text("Les \(source.itemCount) éléments importés depuis cette source seront retirés du catalogue.")
+        }
+    }
+
+    private func consumePendingAction() {
+        guard let action = model.pendingAction else { return }
+        model.pendingAction = nil
+        switch action {
+        case .addSource: editor = .new
+        case .importPlaylist: showingImporter = true
         }
     }
 
