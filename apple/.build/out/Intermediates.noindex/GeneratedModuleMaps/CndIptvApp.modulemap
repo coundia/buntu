@@ -1,4 +1,0 @@
-module CndIptvApp {
-header "CndIptvApp-Swift.h"
-export *
-}
