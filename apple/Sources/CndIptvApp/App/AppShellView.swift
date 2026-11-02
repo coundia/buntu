@@ -194,7 +194,7 @@ private struct LoadedShellView: View {
         commands.addSource = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.addSource) }
         commands.importPlaylist = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.importPlaylist) }
         commands.refreshAllSources = { Task { await sourcesModel.syncAll(state.sources) } }
-        commands.toggleNetworkConsole = { settingsModel.showNetworkConsole.toggle() }
+        commands.toggleNetworkConsole = { toggleLogs() }
         commands.zap = { zap($0) }
         commands.togglePlayPause = { player.togglePlayPause() }
         commands.toggleMute = { player.isMuted.toggle() }
@@ -236,6 +236,38 @@ private struct LoadedShellView: View {
         Haptics.light()
     }
 
+    // MARK: Logs
+
+    /// Shows or hides the log console (the engine's HTTP, M3U, Xtream, EPG, download and database
+    /// events). Opening it also expands it if it was folded.
+    private func toggleLogs() {
+        let opening = !settingsModel.showNetworkConsole
+        if opening { UserDefaults.standard.set(false, forKey: "console.collapsed") }
+        settingsModel.showNetworkConsole.toggle()
+    }
+
+    private var logsButton: some View {
+        Button { toggleLogs() } label: {
+            Label("Journaux", systemImage: "terminal")
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .foregroundStyle(state.showNetworkConsole ? Color.accentColor : Color.secondary)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+        .help("Afficher ou masquer les journaux de l'application (⇧⌘C)")
+        .accessibilityLabel(state.showNetworkConsole ? "Masquer les journaux" : "Afficher les journaux")
+    }
+
+    private var logsToolbarButton: some View {
+        Button { toggleLogs() } label: {
+            Label("Journaux", systemImage: state.showNetworkConsole ? "terminal.fill" : "terminal")
+        }
+        .accessibilityLabel(state.showNetworkConsole ? "Masquer les journaux" : "Afficher les journaux")
+    }
+
     // MARK: Platform shells
 
     @ViewBuilder
@@ -252,6 +284,7 @@ private struct LoadedShellView: View {
             }
             .navigationTitle("CND IPTV")
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
+            .safeAreaInset(edge: .bottom, spacing: 0) { logsButton }
         } detail: {
             HStack(spacing: 0) {
                 content(for: selectedTab)
@@ -271,6 +304,9 @@ private struct LoadedShellView: View {
                 NavigationStack {
                     content(for: tab)
                         .safeAreaInset(edge: .bottom, spacing: 0) { miniPlayerBar }
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) { logsToolbarButton }
+                        }
                 }
                 .tabItem { Label(tab.title, systemImage: tab.systemImage) }
                 .badge(badge(for: tab))
