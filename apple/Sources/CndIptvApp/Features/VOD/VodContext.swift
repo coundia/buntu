@@ -13,6 +13,8 @@ final class VodContext {
     let downloadBase: () -> URL
     let openDownloads: () -> Void
     let onFavoriteChanged: () -> Void
+    /// The movie or series shown in the side panel (macOS), under the player. Never a separate page there.
+    var selection: VodRoute?
     private let playMedia: (PlayableMedia) -> Void
     private let playQueue: ([PlayableMedia], Int) -> Void
 
