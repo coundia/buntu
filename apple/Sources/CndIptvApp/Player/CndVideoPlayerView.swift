@@ -91,6 +91,8 @@ public struct CndVideoPlayerView: View {
     var closesOnDisappear: Bool
     /// Shows the Picture-in-Picture button when provided and supported.
     var pip: PiPManager?
+    /// Whether the host currently shows the player full screen (switches the button's icon).
+    var isFullscreen: Bool
 
     @State private var hudVisible = true
     @State private var hideTask: Task<Void, Never>?
@@ -104,9 +106,11 @@ public struct CndVideoPlayerView: View {
         onToggleFullscreen: (() -> Void)? = nil,
         onClose: (() -> Void)? = nil,
         closesOnDisappear: Bool = true,
-        pip: PiPManager? = nil
+        pip: PiPManager? = nil,
+        isFullscreen: Bool = false
     ) {
         self.controller = controller
+        self.isFullscreen = isFullscreen
         self.closesOnDisappear = closesOnDisappear
         self.pip = pip
         #if os(macOS)
@@ -188,6 +192,14 @@ public struct CndVideoPlayerView: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(.white.opacity(0.15), in: Capsule())
                 }
+                // Top-right, never clipped: the bottom row is too crowded for the narrow docked player.
+                if let onToggleFullscreen {
+                    hudButton(
+                        isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                        isFullscreen ? "Quitter le plein écran" : "Plein écran"
+                    ) { onToggleFullscreen() }
+                    .font(.title3)
+                }
             }
             if let banner = controller.reconnectBanner {
                 Label(banner, systemImage: "wifi.exclamationmark")
@@ -205,43 +217,61 @@ public struct CndVideoPlayerView: View {
     private var bottomBar: some View {
         VStack(spacing: 8) {
             progressRow
-            HStack(spacing: 18) {
-                if controller.queue != nil {
-                    hudButton("backward.end.fill", "Épisode précédent", enabled: controller.hasPrevious) { controller.previous() }
+            // One row when it fits (wide / full screen), two rows in the narrow docked player.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 18) {
+                    transportControls
+                    Spacer(minLength: 12)
+                    secondaryControls
                 }
-                if !controller.isLive {
-                    hudButton("gobackward.10", "Reculer de 10 secondes") { controller.skip(bySeconds: -10) }
-                }
-                hudButton(
-                    controller.state == .playing || controller.state == .buffering ? "pause.fill" : "play.fill",
-                    "Lecture / Pause"
-                ) { controller.togglePlayPause() }
-                .font(.title)
-                if !controller.isLive {
-                    hudButton("goforward.10", "Avancer de 10 secondes") { controller.skip(bySeconds: 10) }
-                }
-                if controller.queue != nil {
-                    hudButton("forward.end.fill", "Épisode suivant", enabled: controller.hasNext) { controller.next() }
-                }
-                Spacer()
-                volumeControls
-                speedMenu
-                trackMenu(title: "Audio", systemImage: "speaker.wave.2", tracks: controller.audioTracks, allowsNone: false)
-                trackMenu(title: "Sous-titres", systemImage: "captions.bubble", tracks: controller.subtitleTracks, allowsNone: true)
-                AirPlayRoutePicker()
-                    .frame(width: 24, height: 24)
-                    .accessibilityLabel("AirPlay")
-                if let pip, pip.isSupported {
-                    hudButton(pip.isActive ? "pip.exit" : "pip.enter", "Image dans l'image", enabled: pip.isPossible) { pip.toggle() }
-                }
-                if let onToggleFullscreen {
-                    hudButton("arrow.up.left.and.arrow.down.right", "Plein écran") { onToggleFullscreen() }
+                VStack(spacing: 10) {
+                    transportControls
+                    secondaryControls
                 }
             }
         }
         .foregroundStyle(.white)
         .padding(12)
         .background(LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .top, endPoint: .bottom))
+    }
+
+    private var transportControls: some View {
+        HStack(spacing: 18) {
+            if controller.queue != nil {
+                hudButton("backward.end.fill", "Épisode précédent", enabled: controller.hasPrevious) { controller.previous() }
+            }
+            if !controller.isLive {
+                hudButton("gobackward.10", "Reculer de 10 secondes") { controller.skip(bySeconds: -10) }
+            }
+            hudButton(
+                controller.state == .playing || controller.state == .buffering ? "pause.fill" : "play.fill",
+                "Lecture / Pause"
+            ) { controller.togglePlayPause() }
+            .font(.title)
+            if !controller.isLive {
+                hudButton("goforward.10", "Avancer de 10 secondes") { controller.skip(bySeconds: 10) }
+            }
+            if controller.queue != nil {
+                hudButton("forward.end.fill", "Épisode suivant", enabled: controller.hasNext) { controller.next() }
+            }
+        }
+        .fixedSize()
+    }
+
+    private var secondaryControls: some View {
+        HStack(spacing: 14) {
+            volumeControls
+            speedMenu
+            trackMenu(title: "Audio", systemImage: "speaker.wave.2", tracks: controller.audioTracks, allowsNone: false)
+            trackMenu(title: "Sous-titres", systemImage: "captions.bubble", tracks: controller.subtitleTracks, allowsNone: true)
+            AirPlayRoutePicker()
+                .frame(width: 24, height: 24)
+                .accessibilityLabel("AirPlay")
+            if let pip, pip.isSupported {
+                hudButton(pip.isActive ? "pip.exit" : "pip.enter", "Image dans l'image", enabled: pip.isPossible) { pip.toggle() }
+            }
+        }
+        .fixedSize()
     }
 
     @ViewBuilder
