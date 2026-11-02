@@ -87,6 +87,8 @@ public struct CndVideoPlayerView: View {
     @Bindable var controller: CndPlayerController
     var onToggleFullscreen: (() -> Void)?
     var onClose: (() -> Void)?
+    /// Shrinks a large player back to its docked size; shown only when provided.
+    var onCollapse: (() -> Void)?
     /// `false` when a host view owns the controller's lifetime (mini-player <-> expanded swap).
     var closesOnDisappear: Bool
     /// Shows the Picture-in-Picture button when provided and supported.
@@ -105,6 +107,7 @@ public struct CndVideoPlayerView: View {
         controller: CndPlayerController,
         onToggleFullscreen: (() -> Void)? = nil,
         onClose: (() -> Void)? = nil,
+        onCollapse: (() -> Void)? = nil,
         closesOnDisappear: Bool = true,
         pip: PiPManager? = nil,
         isFullscreen: Bool = false
@@ -119,6 +122,7 @@ public struct CndVideoPlayerView: View {
         self.onToggleFullscreen = onToggleFullscreen
         #endif
         self.onClose = onClose
+        self.onCollapse = onCollapse
     }
 
     public var body: some View {
@@ -181,6 +185,9 @@ public struct CndVideoPlayerView: View {
                     Button(action: onClose) { Image(systemName: "xmark") }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Fermer")
+                }
+                if let onCollapse {
+                    hudButton("rectangle.compress.vertical", "Réduire le lecteur") { onCollapse() }
                 }
                 Text(controller.media?.title ?? "")
                     .font(.headline)

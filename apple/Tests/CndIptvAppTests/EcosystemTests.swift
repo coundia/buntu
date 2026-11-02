@@ -289,3 +289,91 @@ final class ZapAndGestureTests: XCTestCase {
         XCTAssertEqual(model.pendingAction, .importPlaylist)
     }
 }
+
+// MARK: - Application log
+
+@MainActor
+final class AppLogTests: XCTestCase {
+    func testEntriesAreSequencedAboveTheEngineRangeAndQueryableByCursor() {
+        let log = AppLog()
+        log.info("PLAYER", "un")
+        log.warn("PLAYER", "deux")
+        log.error("SYNC", "trois")
+        let all = log.entries(after: 0)
+        XCTAssertEqual(all.map(\.message), ["un", "deux", "trois"])
+        XCTAssertTrue(all.allSatisfy { $0.seqId > AppLog.seqBase })
+        XCTAssertEqual(all.map(\.level), [.info, .warn, .error])
+        XCTAssertEqual(log.entries(after: all[1].seqId).map(\.message), ["trois"])
+        XCTAssertTrue(log.entries(after: all[2].seqId).isEmpty)
+        log.clear()
+        XCTAssertTrue(log.entries(after: 0).isEmpty)
+    }
+
+    func testCapacityKeepsTheNewestEntries() {
+        let log = AppLog()
+        for index in 0..<(AppLog.capacity + 25) { log.info("T", "m\(index)") }
+        let all = log.entries(after: 0)
+        XCTAssertEqual(all.count, AppLog.capacity)
+        XCTAssertEqual(all.last?.message, "m\(AppLog.capacity + 24)")
+    }
+
+    func testStreamUrlsAreDescribedWithoutCredentials() {
+        let url = URL(string: "http://srv.example.com:8080/movie/alice/s3cret/12345.mkv?token=abc")!
+        let text = AppLog.describe(url)
+        XCTAssertEqual(text, "srv.example.com, .mkv")
+        for secret in ["alice", "s3cret", "token", "12345"] { XCTAssertFalse(text.contains(secret)) }
+        XCTAssertEqual(AppLog.describe(URL(string: "http://h/stream/9")!), "h, sans extension")
+    }
+
+    func testConsoleShowsAppEntriesInTimeOrderAndClearsThem() async throws {
+        let engine = try CndEngine.inMemory()
+        let log = AppLog()
+        let console = ConsoleModel(engine: engine, appLog: log)
+
+        _ = try engine.addSource(name: "Engine first", sourceType: "m3u", url: "http://x/a.m3u", server: nil, username: nil, passwordRef: nil)
+        try await Task.sleep(for: .milliseconds(30))
+        log.error("PLAYER", "Échec de lecture (mpv) : boom")
+        await console.poll()
+
+        let messages = console.entries.map(\.message)
+        XCTAssertTrue(messages.contains { $0.contains("Engine first") })
+        XCTAssertEqual(messages.last, "Échec de lecture (mpv) : boom", "ordered by time: the app entry came last")
+        XCTAssertTrue(console.categories.contains("PLAYER"))
+
+        await console.poll()
+        XCTAssertEqual(console.entries.filter { $0.category == "PLAYER" }.count, 1, "no duplicate on the next poll")
+
+        console.toggle(category: "PLAYER")
+        XCTAssertEqual(console.filtered.map(\.message), ["Échec de lecture (mpv) : boom"])
+        console.levelFilter = .errors
+        XCTAssertEqual(console.filtered.count, 1)
+
+        console.clear()
+        XCTAssertTrue(console.entries.isEmpty)
+        XCTAssertTrue(log.entries(after: 0).isEmpty)
+    }
+
+    func testThePlayerReportsOpeningFallbackAndFailureWithoutLeakingTheUrl() async {
+        let before = AppLog.shared.entries(after: 0).count
+        let controller = CndPlayerController(
+            recorder: nil, reachability: FakeReachability(),
+            backendFactory: { kind in
+                let backend = MockBackend(kind)
+                backend.behavior = kind == .avPlayer ? .fail("format non pris en charge") : .play
+                return backend
+            }
+        )
+        controller.open(PlayableMedia(
+            title: "Mon film", url: URL(string: "http://srv.test/movie/alice/s3cret/7.mp4")!, kind: .movie
+        ))
+        _ = await eventually { controller.state == .playing }
+        controller.close()
+
+        let fresh = Array(AppLog.shared.entries(after: 0).dropFirst(before)).map(\.message)
+        XCTAssertTrue(fresh.contains { $0.contains("Ouverture de « Mon film »") && $0.contains("srv.test, .mp4") })
+        XCTAssertTrue(fresh.contains { $0.contains("Échec de lecture (AVPlayer)") && $0.contains("format non pris en charge") })
+        XCTAssertTrue(fresh.contains { $0.contains("bascule vers mpv") })
+        XCTAssertTrue(fresh.contains { $0.contains("Lecture démarrée") })
+        XCTAssertFalse(fresh.contains { $0.contains("s3cret") || $0.contains("alice") })
+    }
+}

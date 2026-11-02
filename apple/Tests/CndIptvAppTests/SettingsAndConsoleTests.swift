@@ -172,7 +172,7 @@ final class ConsoleModelTests: XCTestCase {
     }
 
     func testPollingIsIncremental() async throws {
-        let model = ConsoleModel(engine: engine, pollInterval: .milliseconds(20))
+        let model = ConsoleModel(engine: engine, pollInterval: .milliseconds(20), appLog: AppLog())
         try produceLogs(3)
         await model.poll()
         let first = model.entries.count
@@ -190,14 +190,14 @@ final class ConsoleModelTests: XCTestCase {
 
     func testBacklogLargerThanOneBatchIsFullyFetched() async throws {
         try produceLogs(450)
-        let model = ConsoleModel(engine: engine)
+        let model = ConsoleModel(engine: engine, appLog: AppLog())
         await model.poll()
         XCTAssertGreaterThanOrEqual(model.entries.count, 450)
         XCTAssertEqual(Set(model.entries.map(\.seqId)).count, model.entries.count)
     }
 
     func testClearEmptiesAndOnlyNewEntriesFollow() async throws {
-        let model = ConsoleModel(engine: engine)
+        let model = ConsoleModel(engine: engine, appLog: AppLog())
         try produceLogs(2)
         await model.poll()
         XCTAssertFalse(model.entries.isEmpty)
@@ -213,7 +213,7 @@ final class ConsoleModelTests: XCTestCase {
     }
 
     func testCategoryAndLevelFilters() async throws {
-        let model = ConsoleModel(engine: engine)
+        let model = ConsoleModel(engine: engine, appLog: AppLog())
         try produceLogs(2)
         await model.poll()
         XCTAssertEqual(model.categories, ["DB"])
@@ -235,7 +235,7 @@ final class ConsoleModelTests: XCTestCase {
     }
 
     func testPollingRunsOnlyInsideRunAndStopsWhenCancelled() async throws {
-        let model = ConsoleModel(engine: engine, pollInterval: .milliseconds(20))
+        let model = ConsoleModel(engine: engine, pollInterval: .milliseconds(20), appLog: AppLog())
         XCTAssertFalse(model.isPolling)
 
         let task = Task { await model.run() }
@@ -251,7 +251,7 @@ final class ConsoleModelTests: XCTestCase {
     }
 
     func testLiveRunPicksUpNewLogs() async throws {
-        let model = ConsoleModel(engine: engine, pollInterval: .milliseconds(20))
+        let model = ConsoleModel(engine: engine, pollInterval: .milliseconds(20), appLog: AppLog())
         let task = Task { await model.run() }
         try produceLogs(1)
         let seen = await eventually { model.entries.contains { $0.message.contains("Source0") } }
