@@ -143,6 +143,14 @@ CREATE TABLE IF NOT EXISTS favorites (
     created_at INTEGER NOT NULL
 );
 
+-- Deletions awaiting propagation to other devices (iCloud sync, Last-Write-Wins)
+CREATE TABLE IF NOT EXISTS sync_tombstones (
+    kind TEXT NOT NULL, -- 'favorite' | 'source'
+    key TEXT NOT NULL,  -- stable_hash | source uuid
+    deleted_at INTEGER NOT NULL,
+    PRIMARY KEY (kind, key)
+);
+
 -- Watch History & Playback Progress (independent of pagination)
 CREATE TABLE IF NOT EXISTS watch_history (
     stable_hash TEXT PRIMARY KEY,

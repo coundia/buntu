@@ -12,6 +12,9 @@ pub use db::download_repo::{
 pub use db::epg_repo::{ChannelNowNext, EpgProgramRecord};
 pub use db::ingestion_writer::SyncSummary;
 pub use db::settings_repo::RuntimeSettings;
+pub use db::sync_repo::{
+    SyncDelta, SyncFavorite, SyncImportSummary, SyncSource, SyncTombstone, SyncWatchProgress,
+};
 pub use iptv::xtream::XtreamAccountInfo;
 pub use metadata::MediaMetadata;
 pub use telemetry::{LogLevel, NetworkLogEntry, TelemetryHub};
@@ -731,6 +734,25 @@ impl CndEngine {
         limit: u32,
     ) -> Result<Vec<DownloadLogRecord>, CndError> {
         self.downloads.logs(task_id, limit)
+    }
+
+    /// Changes made after `since_ts` (Unix seconds) to sources, favorites and watch progress.
+    pub fn export_sync_delta(&self, since_ts: i64) -> Result<SyncDelta, CndError> {
+        Ok(self.db.export_sync_delta(since_ts)?)
+    }
+
+    /// Merges a delta received from another device (Last-Write-Wins).
+    pub fn import_sync_delta(&self, delta: SyncDelta) -> Result<SyncImportSummary, CndError> {
+        let summary = self.db.import_sync_delta(&delta)?;
+        self.telemetry.info(
+            "SYNC",
+            format!(
+                "Imported delta: {} applied, {} skipped",
+                summary.applied(),
+                summary.skipped
+            ),
+        );
+        Ok(summary)
     }
 
     pub fn query_items(

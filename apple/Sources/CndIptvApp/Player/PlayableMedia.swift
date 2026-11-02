@@ -27,6 +27,8 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
     public let startPositionMs: Int64
     /// `iptv_items.stable_hash`, used to persist watch progress (VOD only).
     public let stableHash: String?
+    /// Logo or poster shown by the system Now Playing UI.
+    public let artworkUrl: String?
 
     public init(
         title: String,
@@ -34,7 +36,8 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
         headers: [String: String] = [:],
         kind: PlayableKind,
         startPositionMs: Int64 = 0,
-        stableHash: String? = nil
+        stableHash: String? = nil,
+        artworkUrl: String? = nil
     ) {
         self.title = title
         self.url = url
@@ -42,6 +45,7 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
         self.kind = kind
         self.startPositionMs = max(0, startPositionMs)
         self.stableHash = stableHash
+        self.artworkUrl = artworkUrl
     }
 
     public func header(named name: String) -> String? {
@@ -81,7 +85,8 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
             headers: headers,
             kind: PlayableKind(rawValue: item.kind) ?? .movie,
             startPositionMs: startPositionMs,
-            stableHash: item.stableHash
+            stableHash: item.stableHash,
+            artworkUrl: item.logoUrl
         )
     }
 }

@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Bindable var model: SettingsModel
     @Bindable var directory: DownloadDirectoryManager
     let stats: DbStats?
+    var sync: CloudKitSyncManager?
 
     @State private var showsOmdbKey = false
 
@@ -13,6 +14,7 @@ struct SettingsView: View {
             downloadsSection
             networkSection
             omdbSection
+            if let sync { iCloudSection(sync) }
             diagnosticSection
             aboutSection
         }
@@ -99,6 +101,28 @@ struct SettingsView: View {
             Text("Métadonnées OMDb")
         } footer: {
             Text("Stockée dans le Trousseau, jamais dans la base de données. Utilisée pour enrichir les fiches films et séries.")
+        }
+    }
+
+    private func iCloudSection(_ sync: CloudKitSyncManager) -> some View {
+        Section {
+            LabeledContent("État") {
+                HStack(spacing: 6) {
+                    if sync.status == .syncing { ProgressView().controlSize(.small) }
+                    Text(sync.status.title)
+                }
+            }
+            if let detail = sync.status.detail {
+                Label(detail, systemImage: sync.isAvailable ? "exclamationmark.triangle.fill" : "icloud.slash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Button("Synchroniser maintenant") { Task { await sync.syncNow() } }
+                .disabled(!sync.isAvailable || sync.status == .syncing)
+        } header: {
+            Text("Synchronisation iCloud")
+        } footer: {
+            Text("Seuls les sources, les favoris et la progression de lecture sont synchronisés. Le catalogue et le guide sont reconstruits sur chaque appareil, et les mots de passe restent dans le Trousseau.")
         }
     }
 

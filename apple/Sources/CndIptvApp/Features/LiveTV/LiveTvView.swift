@@ -8,6 +8,7 @@ struct LiveTvView: View {
     let playingURL: String?
     let onPlay: (IptvItemRecord) -> Void
     let onShowGuide: (IptvItemRecord) -> Void
+    var zapper: LiveZapper?
 
     @AppStorage("live.viewMode") private var viewModeRaw = LiveViewMode.grid.rawValue
     init(
@@ -17,7 +18,8 @@ struct LiveTvView: View {
         playingURL: String?,
         onPlay: @escaping (IptvItemRecord) -> Void,
         onShowGuide: @escaping (IptvItemRecord) -> Void,
-        onFavoriteChanged: @escaping () -> Void
+        onFavoriteChanged: @escaping () -> Void,
+        zapper: LiveZapper? = nil
     ) {
         let model = LiveTvModel(engine: engine)
         model.onFavoriteChanged = onFavoriteChanged
@@ -27,11 +29,17 @@ struct LiveTvView: View {
         self.playingURL = playingURL
         self.onPlay = onPlay
         self.onShowGuide = onShowGuide
+        self.zapper = zapper
     }
 
     private var viewMode: LiveViewMode { LiveViewMode(rawValue: viewModeRaw) ?? .grid }
 
     private var reloadKey: String { "\(model.filter.signature)#\(revision)" }
+
+    /// Hands the browsed channel list to the zapper (next/previous channel from anywhere).
+    private func publishZapList() {
+        zapper?.update(channels: model.channels) { [model] item in model.program(for: item)?.now?.title }
+    }
 
     private var actions: ChannelActions {
         ChannelActions(
@@ -39,7 +47,10 @@ struct LiveTvView: View {
                 model.markWatched(item)
                 onPlay(item)
             },
-            toggleFavorite: { item in Task { await model.toggleFavorite(item) } },
+            toggleFavorite: { item in
+                Haptics.light()
+                Task { await model.toggleFavorite(item) }
+            },
             showGuide: onShowGuide
         )
     }
@@ -72,6 +83,8 @@ struct LiveTvView: View {
             }
         }
         .task(id: reloadKey) { await model.reload(revision: revision) }
+        .onChange(of: model.channels.count) { _, _ in publishZapList() }
+        .onChange(of: model.nowNext.count) { _, _ in publishZapList() }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
