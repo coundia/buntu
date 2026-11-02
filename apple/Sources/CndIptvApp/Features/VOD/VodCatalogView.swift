@@ -8,6 +8,29 @@ enum VodRoute: Hashable {
     case series(SeriesRecord)
 }
 
+/// Tapping a card shows its details: in the side panel under the player on macOS, as a pushed page on iOS.
+struct VodCardLink<Content: View>: View {
+    let route: VodRoute
+    @ViewBuilder let content: () -> Content
+    @Environment(VodContext.self) private var vod
+
+    var body: some View {
+        #if os(macOS)
+        content()
+            .padding(4)
+            .overlay {
+                if vod.selection == route {
+                    RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 3)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { vod.selection = route }
+        #else
+        NavigationLink(value: route, label: content).buttonStyle(.plain)
+        #endif
+    }
+}
+
 struct VodSectionTitles {
     var resume: String
     var resumeIcon: String

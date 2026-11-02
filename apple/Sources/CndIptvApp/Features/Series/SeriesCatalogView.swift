@@ -53,13 +53,12 @@ struct SeriesCard: View {
     var onToggleFavorite: () -> Void
 
     var body: some View {
-        NavigationLink(value: VodRoute.series(series)) {
+        VodCardLink(route: .series(series)) {
             switch style {
             case .poster: poster
             case .row: row
             }
         }
-        .buttonStyle(.plain)
         .contextMenu {
             Button(series.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
                    systemImage: series.isFavorite ? "star.slash" : "star", action: onToggleFavorite)

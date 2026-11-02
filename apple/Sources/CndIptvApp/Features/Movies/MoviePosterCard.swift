@@ -56,13 +56,12 @@ struct MoviePosterCard: View {
     private var displayTitle: String { item.nameClean.isEmpty ? item.name : item.nameClean }
 
     var body: some View {
-        NavigationLink(value: VodRoute.movie(item)) {
+        VodCardLink(route: .movie(item)) {
             switch style {
             case .poster: poster
             case .row: row
             }
         }
-        .buttonStyle(.plain)
         .contextMenu { MovieActionsMenu(item: item, vod: vod, onToggleFavorite: onToggleFavorite) }
         .accessibilityLabel(displayTitle)
     }

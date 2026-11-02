@@ -139,9 +139,14 @@ final class SeriesDetailsModel {
 
 struct SeriesDetailsView: View {
     @State private var model: SeriesDetailsModel
+    /// Narrow layout for the side panel (under the player) instead of a full page.
+    let compact: Bool
+    let onClose: (() -> Void)?
 
-    init(series: SeriesRecord, vod: VodContext) {
+    init(series: SeriesRecord, vod: VodContext, compact: Bool = false, onClose: (() -> Void)? = nil) {
         _model = State(initialValue: SeriesDetailsModel(series: series, vod: vod))
+        self.compact = compact
+        self.onClose = onClose
     }
 
     private var series: SeriesRecord { model.series }
@@ -150,9 +155,9 @@ struct SeriesDetailsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: compact ? 12 : 20) {
+                if compact { compactHeader } else { header }
+                VStack(alignment: .leading, spacing: compact ? 12 : 16) {
                     actions
                     status
                     if let genres = genres, !genres.isEmpty {
@@ -162,12 +167,12 @@ struct SeriesDetailsView: View {
                     seasonPicker
                     episodeList
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, compact ? 14 : 20)
                 .padding(.bottom, 24)
             }
         }
-        .navigationTitle(series.title)
         #if os(iOS)
+        .navigationTitle(series.title)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .task { await model.load() }
@@ -179,6 +184,29 @@ struct SeriesDetailsView: View {
     }
 
     // MARK: Header
+
+    private var compactHeader: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ThumbnailImageView(urlString: series.posterUrl, size: .poster, placeholderSystemImage: "play.tv", fills: true)
+                .frame(width: 96, height: 144)
+                .background(.quaternary)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 6) {
+                Text(series.title).font(.headline).lineLimit(3)
+                Text(SeriesLabels.counts(series)).font(.caption).foregroundStyle(.secondary)
+                if let rating, rating > 0 {
+                    Label(String(format: "%.1f", rating), systemImage: "star.fill").foregroundStyle(.yellow).font(.subheadline)
+                }
+            }
+            Spacer(minLength: 0)
+            if let onClose {
+                Button(action: onClose) { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Fermer la fiche")
+            }
+        }
+        .padding([.horizontal, .top], 14)
+    }
 
     private var header: some View {
         ZStack(alignment: .bottomLeading) {
@@ -209,10 +237,15 @@ struct SeriesDetailsView: View {
 
     // MARK: Actions
 
+    @ViewBuilder
     private var actions: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) { actionButtons }
-            VStack(alignment: .leading, spacing: 10) { actionButtons }
+        if compact {
+            FlowLayout(spacing: 8) { actionButtons }.controlSize(.small)
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { actionButtons }
+                VStack(alignment: .leading, spacing: 10) { actionButtons }
+            }
         }
     }
 

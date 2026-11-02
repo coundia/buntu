@@ -147,6 +147,7 @@ private struct LoadedShellView: View {
             } message: {
                 Text(state.errorMessage ?? "")
             }
+            .onChange(of: selectedTabRaw) { _, _ in vodContext.selection = nil }
             .onChange(of: hasMedia) { _, present in
                 if !present { setExpanded(false) }
                 commands.hasMedia = present
@@ -326,9 +327,9 @@ private struct LoadedShellView: View {
             HStack(spacing: 0) {
                 content(for: selectedTab)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if hasMedia && !isPlayerExpanded {
+                if showsSidePanel {
                     Divider()
-                    dockedPlayer.frame(width: 360)
+                    sidePanel.frame(width: detailSelection == nil ? 360 : 400)
                 }
             }
             .overlay {
@@ -416,13 +417,11 @@ private struct LoadedShellView: View {
         }
     }
 
-    /// Movies and series push their details; macOS needs its own stack inside the split view's detail.
+    /// iOS pushes the details of a movie or series; on macOS they show in the side panel.
     @ViewBuilder
     private func vodScreen<Screen: View>(_ screen: Screen) -> some View {
         #if os(macOS)
-        NavigationStack {
-            screen.navigationDestination(for: VodRoute.self) { vodDestination($0) }
-        }
+        screen // details open in the side panel, not as a page
         #else
         screen.navigationDestination(for: VodRoute.self) { vodDestination($0) }
         #endif
@@ -466,27 +465,64 @@ private struct LoadedShellView: View {
         setExpanded(false)
     }
 
-    /// Side panel (macOS): the channel list stays browsable while the live stream keeps playing.
-    private var dockedPlayer: some View {
+    #if os(macOS)
+    /// The movie or series whose details are showing (Movies and Series tabs only).
+    private var detailSelection: VodRoute? {
+        selectedTab == .movies || selectedTab == .series ? vodContext.selection : nil
+    }
+
+    private var showsSidePanel: Bool {
+        (hasMedia && !isPlayerExpanded) || detailSelection != nil
+    }
+
+    /// Right-hand column: the player on top while something plays, the details of the selected
+    /// movie or series right below it; browsing on the left stays possible throughout.
+    private var sidePanel: some View {
         VStack(spacing: 0) {
-            CndVideoPlayerView(
-                controller: player,
-                onToggleFullscreen: { setExpanded(true) },
-                onClose: closePlayer,
-                closesOnDisappear: false,
-                pip: pip
-            )
-            .aspectRatio(16 / 9, contentMode: .fit)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(player.media?.title ?? "").font(.headline).lineLimit(2)
-                Text(player.isLive ? "Direct" : "Lecture").font(.caption).foregroundStyle(.secondary)
+            if hasMedia && !isPlayerExpanded { dockedVideo }
+            if let route = detailSelection {
+                if hasMedia && !isPlayerExpanded { Divider() }
+                detailsPanel(route)
+            } else if hasMedia {
+                dockedInfo
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            Spacer(minLength: 0)
         }
         .background(.background)
     }
+
+    @ViewBuilder
+    private func detailsPanel(_ route: VodRoute) -> some View {
+        switch route {
+        case .movie(let item):
+            MovieDetailsView(item: item, vod: vodContext, compact: true, onClose: { vodContext.selection = nil })
+                .id(route)
+        case .series(let series):
+            SeriesDetailsView(series: series, vod: vodContext, compact: true, onClose: { vodContext.selection = nil })
+                .id(route)
+        }
+    }
+
+    private var dockedVideo: some View {
+        CndVideoPlayerView(
+            controller: player,
+            onToggleFullscreen: { setExpanded(true) },
+            onClose: closePlayer,
+            closesOnDisappear: false,
+            pip: pip
+        )
+        .aspectRatio(16 / 9, contentMode: .fit)
+    }
+
+    private var dockedInfo: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(player.media?.title ?? "").font(.headline).lineLimit(2)
+            Text(player.isLive ? "Direct" : "Lecture").font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+    }
+    #endif
 
     private var expandedPlayer: some View {
         CndVideoPlayerView(
