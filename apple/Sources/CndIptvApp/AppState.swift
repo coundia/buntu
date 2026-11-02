@@ -65,8 +65,9 @@ public final class AppState {
         }
     }
 
-    /// Re-reads the sidebar counters and the source list, then notifies the screens.
-    public func reloadSnapshot() {
+    /// Re-reads the sidebar counters and the source list. `notifyScreens: false` refreshes the
+    /// counters only (e.g. after a favorite toggle) without making every list reload and lose its scroll.
+    public func reloadSnapshot(notifyScreens: Bool = true) {
         guard let engine else { return }
         Task { [weak self] in
             do {
@@ -75,7 +76,7 @@ public final class AppState {
                 }.value
                 self?.stats = snapshot.stats
                 self?.sources = snapshot.sources
-                self?.catalogRevision += 1
+                if notifyScreens { self?.catalogRevision += 1 }
             } catch {
                 self?.errorMessage = error.localizedDescription
             }

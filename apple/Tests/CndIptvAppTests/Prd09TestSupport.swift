@@ -84,6 +84,41 @@ enum TestFixtures {
         return xml + "</tv>\n"
     }
 
+    static let movieUserAgent = "CndTest/1.0"
+
+    /// `movies` VOD films (with custom UA / referrer) plus two series:
+    /// "Breaking Bad" (S1 x3 episodes, S2 x2) and "Dark" (S1 x2).
+    static func vodM3u(movies: Int) -> String {
+        var lines = ["#EXTM3U"]
+        let genres = ["Action", "Drame"]
+        for index in 1...movies {
+            lines.append("#EXTINF:-1 tvg-logo=\"http://posters.test/\(index).jpg\" group-title=\"\(genres[index % 2])\",Film \(String(format: "%03d", index)) (2020)")
+            lines.append("#EXTVLCOPT:http-user-agent=\(movieUserAgent)")
+            lines.append("#EXTVLCOPT:http-referrer=http://portal.test/")
+            lines.append("http://127.0.0.1:9/movie/u/p/\(index).mkv")
+        }
+        var number = 1000
+        func episodes(_ series: String, season: Int, count: Int, titles: [String]) {
+            for episode in 1...count {
+                let tag = String(format: "S%02dE%02d", season, episode)
+                lines.append("#EXTINF:-1 tvg-logo=\"http://posters.test/\(series).jpg\" group-title=\"Séries\",\(series) \(tag) \(titles[episode - 1])")
+                lines.append("http://127.0.0.1:9/series/u/p/\(number).mkv")
+                number += 1
+            }
+        }
+        episodes("Breaking Bad", season: 1, count: 3, titles: ["Pilot", "Cat's in the Bag", "And the Bag's in the River"])
+        episodes("Breaking Bad", season: 2, count: 2, titles: ["Seven Thirty-Seven", "Grilled"])
+        episodes("Dark", season: 1, count: 2, titles: ["Secrets", "Lies"])
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    @discardableResult
+    static func importVod(into engine: CndEngine, directory: URL, movies: Int) async throws -> Int64 {
+        let url = directory.appendingPathComponent("vod.m3u")
+        try vodM3u(movies: movies).write(to: url, atomically: true, encoding: .utf8)
+        return try await engine.importLocalM3u(name: "VOD", filePath: url.path).sourceId
+    }
+
     /// Imports a playlist and attaches a local XMLTV file to the created source.
     @discardableResult
     static func importCatalog(

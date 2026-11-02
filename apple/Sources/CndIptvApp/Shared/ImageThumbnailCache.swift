@@ -188,15 +188,19 @@ struct ThumbnailImageView: View {
     let urlString: String?
     var size: ThumbnailSize = .tvLogo
     var placeholderSystemImage = "tv"
+    /// Fills and crops the frame (posters) instead of fitting inside it (logos).
+    var fills = false
 
     @State private var image: CGImage?
 
     var body: some View {
         ZStack {
             if let image {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .scaledToFit()
+                if fills {
+                    Image(decorative: image, scale: 1).resizable().scaledToFill()
+                } else {
+                    Image(decorative: image, scale: 1).resizable().scaledToFit()
+                }
             } else {
                 Image(systemName: placeholderSystemImage)
                     .foregroundStyle(.secondary)
