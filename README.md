@@ -148,7 +148,7 @@ Les tests Swift tournent contre un vrai moteur Rust en mémoire (`CndEngine.inMe
 
 ## Feuille de route
 
-Les 12 PRD du dossier [`PRD/`](PRD/00_INDEX_ROADMAP.md) sont implémentés et cochés (cœur Rust, ingestion, Xtream, EPG, catalogue, OMDb, téléchargements, lecteur, interfaces, écosystème Apple). Les notes techniques détaillées et les pièges à éviter sont dans [`reprise.md`](reprise.md).
+Les PRD 01 à 12 du dossier [`PRD/`](PRD/00_INDEX_ROADMAP.md) sont implémentés et cochés (cœur Rust, ingestion, Xtream, EPG, catalogue, OMDb, téléchargements, lecteur, interfaces, écosystème Apple). Le PRD 13 (assistant IA pour changer de chaîne en langage naturel, avec une clé Gemini ou d'un autre fournisseur) est spécifié et reste à implémenter. Les notes techniques détaillées et les pièges à éviter sont dans [`reprise.md`](reprise.md).
 
 ## Licence
 
