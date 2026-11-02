@@ -90,6 +90,7 @@ public final class MultiViewController {
         }
 
         let controller = CndPlayerController()
+        controller.streamDiagnoser = { media in await StreamDiagnosis.probe(url: media.url, headers: media.headers) }
         let shouldBeMuted = !slots.isEmpty && !makeActive
         controller.isMuted = shouldBeMuted
         controller.open(media)

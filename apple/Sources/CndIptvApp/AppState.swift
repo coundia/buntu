@@ -41,6 +41,7 @@ public final class AppState {
 
     init(engine: CndEngine? = nil, downloadDirectory: DownloadDirectoryManager? = nil) {
         player = CndPlayerController(recorder: recorder)
+        player.streamDiagnoser = { media in await StreamDiagnosis.probe(url: media.url, headers: media.headers) }
         self.downloadDirectory = downloadDirectory ?? DownloadDirectoryManager()
         if let engine {
             attach(engine)
