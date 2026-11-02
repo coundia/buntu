@@ -1,0 +1,184 @@
+# https://taskfile.dev  —  `task` lists the tasks, `task <name>` runs one.
+version: "3"
+
+vars:
+  APPLE_DIR: apple
+  BRIDGE_DIR: apple/Packages/CndCoreBridge
+  SCHEME: CndIptvNative
+  # Keeps xcodebuild output out of the tracked apple/.build folders.
+  DERIVED_DATA: build/DerivedData
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task --list
+
+  # ---------------------------------------------------------------- run
+  run:
+    desc: Build (debug) and launch the app on macOS
+    aliases: [dev, start]
+    cmds:
+      - ./scripts/run-macos.sh
+
+  run:release:
+    desc: Build (release) and launch the app on macOS
+    cmds:
+      - ./scripts/run-macos.sh --release
+
+  run:fresh:
+    desc: Rebuild the Rust core XCFramework, then build and launch
+    cmds:
+      - ./scripts/run-macos.sh --rebuild-core
+
+  run:logs:
+    desc: Run the app in this terminal so its logs are visible
+    cmds:
+      - ./scripts/run-macos.sh --foreground
+
+  bundle:
+    desc: Assemble build/CndIPTV.app without launching it
+    cmds:
+      - ./scripts/run-macos.sh --build-only
+
+  cli:
+    desc: "Run the Rust CLI, e.g. task cli -- download <url> [dir]"
+    cmds:
+      - cargo run --quiet -p cnd-cli -- {{.CLI_ARGS}}
+
+  # --------------------------------------------------------------- core
+  core:build:
+    desc: Compile the Rust workspace
+    cmds:
+      - cargo build --workspace
+
+  core:test:
+    desc: Rust unit tests (use `task core:test:release` for the SLA benchmark)
+    cmds:
+      - cargo test --workspace
+
+  core:test:release:
+    desc: Rust tests in release mode (includes the 50k-item ingestion SLA)
+    cmds:
+      - cargo test --workspace --release
+
+  core:lint:
+    desc: Clippy with warnings as errors
+    cmds:
+      - cargo clippy --workspace --all-targets -- -D warnings
+
+  core:fmt:
+    desc: Format the Rust code
+    cmds:
+      - cargo fmt --all
+
+  xcframework:
+    desc: Rebuild the universal XCFramework + UniFFI Swift bindings (run after any cnd-core API change)
+    aliases: [core:xcframework]
+    sources:
+      - crates/cnd-core/src/**/*.rs
+      - crates/cnd-core/Cargo.toml
+      - Cargo.toml
+      - Cargo.lock
+    generates:
+      - "{{.BRIDGE_DIR}}/cnd_coreFFI.xcframework/Info.plist"
+    cmds:
+      - ./scripts/build-xcframework.sh
+
+  # -------------------------------------------------------------- swift
+  swift:build:
+    desc: Build the Swift package (debug)
+    dir: "{{.APPLE_DIR}}"
+    cmds:
+      - swift build
+
+  swift:test:
+    desc: App unit tests
+    dir: "{{.APPLE_DIR}}"
+    cmds:
+      - swift test
+
+  swift:test:bridge:
+    desc: FFI bridge tests
+    dir: "{{.BRIDGE_DIR}}"
+    cmds:
+      - swift test
+
+  xcode:macos:
+    desc: xcodebuild for macOS (CONFIG=Release for a release build)
+    dir: "{{.APPLE_DIR}}"
+    vars:
+      CONFIG: '{{default "Debug" .CONFIG}}'
+    cmds:
+      - >-
+        xcodebuild -scheme {{.SCHEME}} -configuration {{.CONFIG}}
+        -destination 'generic/platform=macOS'
+        -derivedDataPath ../{{.DERIVED_DATA}} -quiet build
+
+  xcode:ios:
+    desc: xcodebuild for the iOS Simulator (CONFIG=Release for a release build)
+    dir: "{{.APPLE_DIR}}"
+    vars:
+      CONFIG: '{{default "Debug" .CONFIG}}'
+    cmds:
+      - >-
+        xcodebuild -scheme {{.SCHEME}} -configuration {{.CONFIG}}
+        -destination 'generic/platform=iOS Simulator'
+        -derivedDataPath ../{{.DERIVED_DATA}} -quiet build
+
+  # ------------------------------------------------------------ groups
+  test:
+    desc: All fast tests (Rust, bridge, app)
+    cmds:
+      - task: core:test
+      - task: swift:test:bridge
+      - task: swift:test
+
+  lint:
+    desc: Static checks (Clippy)
+    cmds:
+      - task: core:lint
+
+  check:
+    desc: Full release-readiness validation (what the last PRD requires)
+    cmds:
+      - task: core:lint
+      - task: core:test:release
+      - task: xcframework
+      - task: swift:test:bridge
+      - task: swift:test
+      - task: xcode:macos
+        vars: { CONFIG: Release }
+      - task: xcode:ios
+        vars: { CONFIG: Release }
+
+  # ----------------------------------------------------------- upkeep
+  doctor:
+    desc: Check that the required tools are installed
+    silent: true
+    cmds:
+      - |
+        ok=1
+        for tool in cargo rustc swift xcodebuild codesign; do
+          if command -v "$tool" >/dev/null 2>&1; then printf '  ok       %s\n' "$tool"
+          else printf '  MISSING  %s\n' "$tool"; ok=0; fi
+        done
+        for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
+          if rustup target list --installed 2>/dev/null | grep -qx "$target"; then printf '  ok       rust target %s\n' "$target"
+          else printf '  MISSING  rust target %s  (rustup target add %s)\n' "$target" "$target"; ok=0; fi
+        done
+        if [ -e /opt/homebrew/lib/libmpv.2.dylib ] || [ -e /usr/local/lib/libmpv.2.dylib ]; then echo "  ok       libmpv (mpv engine available)"
+        else echo "  optional libmpv not found: mkv/avi/ts cannot play, only AVPlayer formats (brew install mpv)"; fi
+        [ "$ok" = 1 ] && echo "All required tools are present." || { echo "Some required tools are missing."; exit 1; }
+
+  clean:
+    desc: Remove the build/ folder (app bundle, Swift scratch and DerivedData)
+    prompt: This deletes ./build. Continue?
+    cmds:
+      - rm -rf build
+
+  clean:core:
+    desc: Remove the Rust target/ folder (the next build is a full rebuild)
+    prompt: This deletes ./target and takes minutes to rebuild. Continue?
+    cmds:
+      - cargo clean
