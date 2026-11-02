@@ -28,12 +28,16 @@ public final class AppState {
     /// Bumped whenever the catalog may have changed (sync, delete, import), so screens reload.
     public private(set) var catalogRevision = 0
     public var errorMessage: String?
+    /// Mirrors `RuntimeSettings.showNetworkConsole`: whether the console drawer is shown.
+    public var showNetworkConsole = false
 
     let player: CndPlayerController
+    let downloadDirectory: DownloadDirectoryManager
     @ObservationIgnored private let recorder = DeferredProgressRecorder()
 
-    public init(engine: CndEngine? = nil) {
+    init(engine: CndEngine? = nil, downloadDirectory: DownloadDirectoryManager? = nil) {
         player = CndPlayerController(recorder: recorder)
+        self.downloadDirectory = downloadDirectory ?? DownloadDirectoryManager()
         if let engine {
             attach(engine)
         } else {
@@ -44,6 +48,7 @@ public final class AppState {
     private func attach(_ engine: CndEngine) {
         recorder.attach(engine)
         self.engine = engine
+        showNetworkConsole = engine.getSettings().showNetworkConsole
         reloadSnapshot()
     }
 

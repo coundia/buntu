@@ -64,6 +64,9 @@ private struct LoadedShellView: View {
     @State private var sourcesModel: SourcesModel
     @State private var toasts: ToastCenter
     @State private var vodContext: VodContext
+    @State private var downloadsModel: DownloadsModel
+    @State private var settingsModel: SettingsModel
+    @State private var consoleModel: ConsoleModel
     @State private var epgFocus: IptvItemRecord?
     @State private var isPlayerExpanded = false
     @State private var isDropTargeted = false
@@ -79,11 +82,17 @@ private struct LoadedShellView: View {
         _vodContext = State(initialValue: VodContext(
             engine: engine,
             toasts: toasts,
+            downloadBase: { [weak state] in state?.downloadDirectory.directory ?? DownloadLocation.baseDirectory },
             playMedia: { [weak state] media in state?.player.open(media) },
             playQueue: { [weak state] medias, index in state?.player.openQueue(medias, startIndex: index) },
             openDownloads: { UserDefaults.standard.set(AppTab.downloads.rawValue, forKey: "shell.selectedTab") },
             onFavoriteChanged: { [weak state] in state?.reloadSnapshot(notifyScreens: false) }
         ))
+        _downloadsModel = State(initialValue: DownloadsModel(backend: engine))
+        let settings = SettingsModel(engine: engine, directory: state.downloadDirectory)
+        settings.onConsoleVisibilityChanged = { [weak state] visible in state?.showNetworkConsole = visible }
+        _settingsModel = State(initialValue: settings)
+        _consoleModel = State(initialValue: ConsoleModel(engine: engine))
     }
 
     private var selectedTab: AppTab { AppTab(rawValue: selectedTabRaw) ?? .live }
@@ -91,6 +100,15 @@ private struct LoadedShellView: View {
     private var hasMedia: Bool { player.media != nil }
 
     var body: some View {
+        VStack(spacing: 0) {
+            mainShell
+            if state.showNetworkConsole {
+                NetworkConsoleDrawer(model: consoleModel)
+            }
+        }
+    }
+
+    private var mainShell: some View {
         platformShell
             .environment(vodContext)
             .overlay(alignment: .bottom) {
@@ -214,13 +232,10 @@ private struct LoadedShellView: View {
                 vodScreen(SeriesCatalogView(
                     engine: engine, revision: state.catalogRevision, totalSeries: Int(state.stats?.totalSeries ?? 0)
                 ))
-            case .downloads, .settings:
-                ContentUnavailableView(
-                    tab.title,
-                    systemImage: tab.systemImage,
-                    description: Text("Cet écran sera disponible dans une prochaine étape.")
-                )
-                .navigationTitle(tab.title)
+            case .downloads:
+                DownloadsDashboardView(model: downloadsModel, directory: state.downloadDirectory, onPlay: playDownload)
+            case .settings:
+                SettingsView(model: settingsModel, directory: state.downloadDirectory, stats: state.stats)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -258,6 +273,15 @@ private struct LoadedShellView: View {
             return
         }
         player.open(media)
+    }
+
+    /// Opens a finished download straight from disk in the built-in player.
+    private func playDownload(_ task: DownloadTaskRecord) {
+        guard FileManager.default.fileExists(atPath: task.savePath) else {
+            toasts.show("Le fichier « \(task.fileName) » est introuvable sur le disque.", isError: true)
+            return
+        }
+        player.open(PlayableMedia(title: task.fileName, url: URL(fileURLWithPath: task.savePath), kind: .movie))
     }
 
     private func showGuide(_ item: IptvItemRecord) {
