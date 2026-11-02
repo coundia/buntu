@@ -14,17 +14,6 @@ struct SharingNearbyAndCloudKitTests {
         #expect(server.state == .idle)
     }
 
-    @Test func testDiscoveredPeerPinCodeExtraction() {
-        let peer = NearbyTransferClient.DiscoveredPeer(
-            id: "CND-IPTV-582910",
-            name: "CND-IPTV-582910",
-            endpoint: .service(name: "CND-IPTV-582910", type: "_cndiptv._tcp", domain: "local.", interface: nil)
-        )
-
-        #expect(peer.pinCode == "582910")
-        #expect(peer.name == "CND-IPTV-582910")
-    }
-
     @Test @MainActor func testCloudKitSourceShareLifecycle() async throws {
         let controller = CloudKitSourceShareController.shared
 

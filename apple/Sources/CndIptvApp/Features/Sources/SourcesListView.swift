@@ -56,6 +56,8 @@ struct SourcesListView: View {
     @State private var showingImporter = false
     @State private var sharing: ShareSourcesModel?
     @State private var shareImport: ShareImportModel?
+    @State private var nearbySend: NearbySendModel?
+    @State private var nearbyReceive: NearbyReceiveModel?
 
     private var visibleSources: [IptvSourceRecord] {
         SourceFilter.apply(filter, query: query, to: sources)
@@ -83,6 +85,19 @@ struct SourcesListView: View {
                 }
                 .disabled(sources.isEmpty || model.isSyncingAll)
             }
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    startNearbySend()
+                } label: {
+                    #if os(macOS)
+                    Label("Envoyer vers l'iPhone", systemImage: "iphone.and.arrow.right.outward")
+                    #else
+                    Label("Envoyer vers un autre appareil", systemImage: "iphone.and.arrow.right.outward")
+                    #endif
+                }
+                .disabled(sources.isEmpty)
+                .help("Envoie vos sources à un iPhone, un iPad ou un Mac proche")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("Ajouter une source…", systemImage: "plus") { editor = .new }
@@ -91,6 +106,7 @@ struct SourcesListView: View {
                     Button("Importer un partage…", systemImage: "square.and.arrow.down") { startShareImport() }
                     Button("Partager des sources…", systemImage: "square.and.arrow.up") { startSharing() }
                         .disabled(sources.isEmpty)
+                    Button("Recevoir depuis un autre appareil…", systemImage: "antenna.radiowaves.left.and.right") { startNearbyReceive() }
                 } label: {
                     Label("Ajouter", systemImage: "plus")
                 }
@@ -104,6 +120,12 @@ struct SourcesListView: View {
         }
         .sheet(isPresented: Binding(get: { shareImport != nil }, set: { if !$0 { shareImport = nil } })) {
             if let shareImport { ImportShareSheet(model: shareImport) { self.shareImport = nil } }
+        }
+        .sheet(isPresented: Binding(get: { nearbySend != nil }, set: { if !$0 { nearbySend = nil } })) {
+            if let nearbySend { SendToDeviceSheet(model: nearbySend) { self.nearbySend = nil } }
+        }
+        .sheet(isPresented: Binding(get: { nearbyReceive != nil }, set: { if !$0 { nearbyReceive = nil } })) {
+            if let nearbyReceive { ReceiveFromDeviceSheet(model: nearbyReceive) { self.nearbyReceive = nil } }
         }
         .sheet(item: $editor) { target in
             SourceFormSheet(
@@ -156,6 +178,21 @@ struct SourcesListView: View {
 
     private func startSharing(preselected: Set<Int64> = []) {
         sharing = ShareSourcesModel(engine: engine, keychain: model.keychain, sources: sources, preselected: preselected)
+    }
+
+    private func startNearbySend() {
+        let choices = ShareSourcesModel(engine: engine, keychain: model.keychain, sources: sources, preselected: Set(sources.map(\.id)))
+        nearbySend = NearbySendModel(share: choices)
+    }
+
+    /// What arrives is shown in the usual import sheet: preview first, nothing is added before the user confirms.
+    private func startNearbyReceive() {
+        let receiver = NearbyReceiveModel()
+        receiver.onReceived = { incoming in
+            nearbyReceive = nil
+            startShareImport(incoming)
+        }
+        nearbyReceive = receiver
     }
 
     private func startShareImport(_ incoming: IncomingShare? = nil) {

@@ -29,6 +29,10 @@
     <array>
         <string>audio</string>
     </array>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_cndiptv._tcp</string>
+    </array>
 </dict>
 </plist>
 
