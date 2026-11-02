@@ -75,9 +75,18 @@ struct SearchFilterToolbarModifier: ViewModifier {
     var sortOptions: [SortField]
     var prompt: String
 
+    /// On iPhone the field stays visible under the title instead of hiding until the list is pulled down.
+    @ViewBuilder
+    private func searchField(_ content: Content) -> some View {
+        #if os(iOS)
+        content.searchable(text: $state.text, placement: .navigationBarDrawer(displayMode: .always), prompt: Text(prompt))
+        #else
+        content.searchable(text: $state.text, prompt: Text(prompt))
+        #endif
+    }
+
     func body(content: Content) -> some View {
-        content
-            .searchable(text: $state.text, prompt: Text(prompt))
+        searchField(content)
             .onSubmit(of: .search) { state.commit() }
             .toolbar {
                 ToolbarItem(placement: .automatic) {
