@@ -40,10 +40,11 @@ enum AppTab: String, CaseIterable, Identifiable {
 /// Root view: waits for the engine, then shows the adaptive navigation.
 struct AppShellView: View {
     @Bindable var state: AppState
+    var commands: AppCommandCenter = AppCommandCenter()
 
     var body: some View {
         if let engine = state.engine {
-            LoadedShellView(state: state, engine: engine)
+            LoadedShellView(state: state, engine: engine, commands: commands)
         } else if let error = state.errorMessage {
             ContentUnavailableView("Démarrage impossible", systemImage: "exclamationmark.triangle", description: Text(error))
         } else {
@@ -59,6 +60,7 @@ struct AppShellView: View {
 private struct LoadedShellView: View {
     @Bindable var state: AppState
     let engine: CndEngine
+    let commands: AppCommandCenter
 
     @AppStorage("shell.selectedTab") private var selectedTabRaw = AppTab.live.rawValue
     @State private var sourcesModel: SourcesModel
@@ -67,13 +69,18 @@ private struct LoadedShellView: View {
     @State private var downloadsModel: DownloadsModel
     @State private var settingsModel: SettingsModel
     @State private var consoleModel: ConsoleModel
+    @State private var pip = PiPManager()
+    @State private var nowPlaying: NowPlayingCoordinator
+    @State private var zapper = LiveZapper()
     @State private var epgFocus: IptvItemRecord?
     @State private var isPlayerExpanded = false
     @State private var isDropTargeted = false
 
-    init(state: AppState, engine: CndEngine) {
+    init(state: AppState, engine: CndEngine, commands: AppCommandCenter) {
         self.state = state
         self.engine = engine
+        self.commands = commands
+        _nowPlaying = State(initialValue: NowPlayingCoordinator(controller: state.player))
         _sourcesModel = State(initialValue: SourcesModel(engine: engine, onChange: { [weak state] in
             state?.reloadSnapshot()
         }))
@@ -136,7 +143,75 @@ private struct LoadedShellView: View {
             } message: {
                 Text(state.errorMessage ?? "")
             }
-            .onChange(of: hasMedia) { _, present in if !present { isPlayerExpanded = false } }
+            .onChange(of: hasMedia) { _, present in
+                if !present { isPlayerExpanded = false }
+                commands.hasMedia = present
+                nowPlaying.refresh()
+            }
+            .onChange(of: player.state) { _, _ in
+                nowPlaying.refresh()
+                pip.syncState(from: player)
+            }
+            .onChange(of: player.media) { _, _ in nowPlaying.refresh() }
+            .onChange(of: player.surfaceLayer.map(ObjectIdentifier.init)) { _, _ in
+                pip.attach(layer: player.surfaceLayer, controller: player)
+            }
+            .onAppear { connectPlayerIntegrations() }
+    }
+
+    /// Hooks the system integrations (Now Playing, media keys, menu bar) to this shell.
+    private func connectPlayerIntegrations() {
+        nowPlaying.onZap = { zap($0) }
+        nowPlaying.subtitleProvider = { media in
+            media.kind == .live
+                ? (zapper.nowTitle(forStreamUrl: media.url.absoluteString) ?? NowPlayingInfoBuilder.defaultSubtitle(for: media))
+                : NowPlayingInfoBuilder.defaultSubtitle(for: media)
+        }
+        nowPlaying.activate()
+
+        commands.addSource = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.addSource) }
+        commands.importPlaylist = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.importPlaylist) }
+        commands.refreshAllSources = { Task { await sourcesModel.syncAll(state.sources) } }
+        commands.toggleNetworkConsole = { settingsModel.showNetworkConsole.toggle() }
+        commands.zap = { zap($0) }
+        commands.togglePlayPause = { player.togglePlayPause() }
+        commands.toggleMute = { player.isMuted.toggle() }
+        commands.togglePictureInPicture = { pip.toggle() }
+        commands.hasMedia = hasMedia
+
+        state.cloudSync?.onRemoteChange = { ids in
+            state.reloadSnapshot()
+            refreshImportedSources(ids)
+        }
+    }
+
+    /// Sources that arrived from iCloud have no catalog yet: fetch M3U ones now; Xtream ones need
+    /// their password, which lives in the Keychain of the device where it was typed.
+    private func refreshImportedSources(_ ids: [Int64]) {
+        guard !ids.isEmpty else { return }
+        Task {
+            let sources = (try? engine.listSources()) ?? []
+            for source in sources where ids.contains(source.id) {
+                if source.sourceType == "xtream" {
+                    toasts.show("« \(source.name) » vient d'iCloud : saisissez son mot de passe pour la charger.")
+                } else {
+                    await sourcesModel.sync(source)
+                }
+            }
+        }
+    }
+
+    /// Next / previous episode when a queue is playing, otherwise next / previous channel.
+    private func zap(_ offset: Int) {
+        if player.queue != nil {
+            offset > 0 ? player.next() : player.previous()
+            Haptics.light()
+            return
+        }
+        guard player.media == nil || player.media?.kind == .live,
+              let item = zapper.neighbor(of: player.media?.url.absoluteString, offset: offset) else { return }
+        play(item)
+        Haptics.light()
     }
 
     // MARK: Platform shells
@@ -212,7 +287,8 @@ private struct LoadedShellView: View {
                     playingURL: player.media?.url.absoluteString,
                     onPlay: play,
                     onShowGuide: showGuide,
-                    onFavoriteChanged: { state.reloadSnapshot(notifyScreens: false) }
+                    onFavoriteChanged: { state.reloadSnapshot(notifyScreens: false) },
+                    zapper: zapper
                 )
             case .guide:
                 EpgGuideView(
@@ -235,7 +311,7 @@ private struct LoadedShellView: View {
             case .downloads:
                 DownloadsDashboardView(model: downloadsModel, directory: state.downloadDirectory, onPlay: playDownload)
             case .settings:
-                SettingsView(model: settingsModel, directory: state.downloadDirectory, stats: state.stats)
+                SettingsView(model: settingsModel, directory: state.downloadDirectory, stats: state.stats, sync: state.cloudSync)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -291,6 +367,7 @@ private struct LoadedShellView: View {
 
     private func closePlayer() {
         player.close()
+        state.cloudSync?.scheduleSync()
         isPlayerExpanded = false
     }
 
@@ -301,7 +378,8 @@ private struct LoadedShellView: View {
                 controller: player,
                 onToggleFullscreen: { isPlayerExpanded = true },
                 onClose: closePlayer,
-                closesOnDisappear: false
+                closesOnDisappear: false,
+                pip: pip
             )
             .aspectRatio(16 / 9, contentMode: .fit)
             VStack(alignment: .leading, spacing: 6) {
@@ -320,7 +398,8 @@ private struct LoadedShellView: View {
             controller: player,
             onToggleFullscreen: { isPlayerExpanded = false },
             onClose: closePlayer,
-            closesOnDisappear: false
+            closesOnDisappear: false,
+            pip: pip
         )
         .background(Color.black)
     }

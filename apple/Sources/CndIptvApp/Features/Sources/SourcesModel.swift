@@ -22,6 +22,11 @@ struct SourcesBanner: Equatable, Identifiable {
     let text: String
 }
 
+enum SourcesAction: Equatable {
+    case addSource
+    case importPlaylist
+}
+
 enum SourcesError: LocalizedError {
     case missingPassword
     case unsupportedFile(String)
@@ -73,6 +78,9 @@ final class SourcesModel {
     private(set) var isSyncingAll = false
     private(set) var isImporting = false
     private(set) var banner: SourcesBanner?
+    /// Set by the menu bar (File > Add a source / Import). The list consumes it when it appears or
+    /// when it changes, so the request survives the tab switch that creates the list.
+    var pendingAction: SourcesAction?
 
     init(
         engine: CndEngine,
@@ -101,6 +109,7 @@ final class SourcesModel {
     }
 
     func dismissBanner() { banner = nil }
+    func request(_ action: SourcesAction) { pendingAction = action }
 
     private func show(_ text: String, isError: Bool) {
         let banner = SourcesBanner(isError: isError, text: text)

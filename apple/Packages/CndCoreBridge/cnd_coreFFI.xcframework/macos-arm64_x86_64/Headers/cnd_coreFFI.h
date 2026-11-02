@@ -297,6 +297,11 @@ uint64_t uniffi_cnd_core_fn_method_cndengine_enqueue_download(void*_Nonnull ptr,
 uint64_t uniffi_cnd_core_fn_method_cndengine_ensure_xtream_series_episodes(void*_Nonnull ptr, int64_t series_db_id, RustBuffer password
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_EXPORT_SYNC_DELTA
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_EXPORT_SYNC_DELTA
+RustBuffer uniffi_cnd_core_fn_method_cndengine_export_sync_delta(void*_Nonnull ptr, int64_t since_ts, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_FETCH_ITEM_METADATA
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_FETCH_ITEM_METADATA
 uint64_t uniffi_cnd_core_fn_method_cndengine_fetch_item_metadata(void*_Nonnull ptr, int64_t item_id, RustBuffer api_key, int8_t force_refresh
@@ -370,6 +375,11 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_get_stats(void*_Nonnull ptr, Rust
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_IMPORT_LOCAL_M3U
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_IMPORT_LOCAL_M3U
 uint64_t uniffi_cnd_core_fn_method_cndengine_import_local_m3u(void*_Nonnull ptr, RustBuffer name, RustBuffer file_path
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_IMPORT_SYNC_DELTA
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_IMPORT_SYNC_DELTA
+RustBuffer uniffi_cnd_core_fn_method_cndengine_import_sync_delta(void*_Nonnull ptr, RustBuffer delta, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LIST_DOWNLOADS
@@ -819,6 +829,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_ensure_xtream_series_episodes
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_EXPORT_SYNC_DELTA
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_EXPORT_SYNC_DELTA
+uint16_t uniffi_cnd_core_checksum_method_cndengine_export_sync_delta(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_FETCH_ITEM_METADATA
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_FETCH_ITEM_METADATA
 uint16_t uniffi_cnd_core_checksum_method_cndengine_fetch_item_metadata(void
@@ -906,6 +922,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_get_stats(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_IMPORT_LOCAL_M3U
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_IMPORT_LOCAL_M3U
 uint16_t uniffi_cnd_core_checksum_method_cndengine_import_local_m3u(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_IMPORT_SYNC_DELTA
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_IMPORT_SYNC_DELTA
+uint16_t uniffi_cnd_core_checksum_method_cndengine_import_sync_delta(void
     
 );
 #endif

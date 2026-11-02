@@ -89,6 +89,8 @@ public struct CndVideoPlayerView: View {
     var onClose: (() -> Void)?
     /// `false` when a host view owns the controller's lifetime (mini-player <-> expanded swap).
     var closesOnDisappear: Bool
+    /// Shows the Picture-in-Picture button when provided and supported.
+    var pip: PiPManager?
 
     @State private var hudVisible = true
     @State private var hideTask: Task<Void, Never>?
@@ -97,14 +99,16 @@ public struct CndVideoPlayerView: View {
 
     private static let speeds: [Float] = [0.5, 1.0, 1.25, 1.5, 2.0]
 
-    public init(
+    init(
         controller: CndPlayerController,
         onToggleFullscreen: (() -> Void)? = nil,
         onClose: (() -> Void)? = nil,
-        closesOnDisappear: Bool = true
+        closesOnDisappear: Bool = true,
+        pip: PiPManager? = nil
     ) {
         self.controller = controller
         self.closesOnDisappear = closesOnDisappear
+        self.pip = pip
         #if os(macOS)
         self.onToggleFullscreen = onToggleFullscreen ?? { NSApp.keyWindow?.toggleFullScreen(nil) }
         #else
@@ -117,6 +121,14 @@ public struct CndVideoPlayerView: View {
         ZStack {
             Color.black
             PlayerSurface(layer: controller.surfaceLayer)
+
+            #if os(iOS)
+            PlayerGestureLayer(
+                controller: controller,
+                onSingleTap: { hudVisible ? scheduleHide() : showHUD() },
+                onSkip: { controller.skip(bySeconds: $0); showHUD() }
+            )
+            #endif
 
             if case .failed(let message) = controller.state {
                 errorOverlay(message)
@@ -136,7 +148,9 @@ public struct CndVideoPlayerView: View {
         #if os(macOS)
         .onContinuousHover { _ in showHUD() }
         #endif
+        #if os(macOS)
         .onTapGesture { hudVisible ? scheduleHide() : showHUD() }
+        #endif
         .onAppear { showHUD() }
         .onDisappear {
             hideTask?.cancel()
@@ -145,6 +159,12 @@ public struct CndVideoPlayerView: View {
         #if os(macOS)
         .focusable()
         .onKeyPress(.space) { controller.togglePlayPause(); showHUD(); return .handled }
+        .onKeyPress("m") { controller.isMuted.toggle(); showHUD(); return .handled }
+        .onKeyPress("f") { onToggleFullscreen?(); return .handled }
+        .onKeyPress(.leftArrow) { guard !controller.isLive else { return .ignored }; controller.skip(bySeconds: -10); showHUD(); return .handled }
+        .onKeyPress(.rightArrow) { guard !controller.isLive else { return .ignored }; controller.skip(bySeconds: 10); showHUD(); return .handled }
+        .onKeyPress(.upArrow) { controller.volume = min(controller.volume + 0.1, 1); showHUD(); return .handled }
+        .onKeyPress(.downArrow) { controller.volume = max(controller.volume - 0.1, 0); showHUD(); return .handled }
         #endif
     }
 
@@ -208,6 +228,12 @@ public struct CndVideoPlayerView: View {
                 speedMenu
                 trackMenu(title: "Audio", systemImage: "speaker.wave.2", tracks: controller.audioTracks, allowsNone: false)
                 trackMenu(title: "Sous-titres", systemImage: "captions.bubble", tracks: controller.subtitleTracks, allowsNone: true)
+                AirPlayRoutePicker()
+                    .frame(width: 24, height: 24)
+                    .accessibilityLabel("AirPlay")
+                if let pip, pip.isSupported {
+                    hudButton(pip.isActive ? "pip.exit" : "pip.enter", "Image dans l'image", enabled: pip.isPossible) { pip.toggle() }
+                }
                 if let onToggleFullscreen {
                     hudButton("arrow.up.left.and.arrow.down.right", "Plein écran") { onToggleFullscreen() }
                 }

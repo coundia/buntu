@@ -557,6 +557,11 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func ensureXtreamSeriesEpisodes(seriesDbId: Int64, password: String) async throws  -> UInt32
     
+    /**
+     * Changes made after `since_ts` (Unix seconds) to sources, favorites and watch progress.
+     */
+    func exportSyncDelta(sinceTs: Int64) throws  -> SyncDelta
+    
     func fetchItemMetadata(itemId: Int64, apiKey: String, forceRefresh: Bool) async throws  -> MediaMetadata?
     
     func fetchSeriesMetadata(seriesId: Int64, apiKey: String, forceRefresh: Bool) async throws  -> MediaMetadata?
@@ -586,6 +591,11 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     func getStats() throws  -> DbStats
     
     func importLocalM3u(name: String, filePath: String) async throws  -> SyncSummary
+    
+    /**
+     * Merges a delta received from another device (Last-Write-Wins).
+     */
+    func importSyncDelta(delta: SyncDelta) throws  -> SyncImportSummary
     
     func listDownloads(query: String?) throws  -> [DownloadTaskRecord]
     
@@ -765,6 +775,17 @@ open func ensureXtreamSeriesEpisodes(seriesDbId: Int64, password: String)async t
         )
 }
     
+    /**
+     * Changes made after `since_ts` (Unix seconds) to sources, favorites and watch progress.
+     */
+open func exportSyncDelta(sinceTs: Int64)throws  -> SyncDelta  {
+    return try  FfiConverterTypeSyncDelta_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_export_sync_delta(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(sinceTs),$0
+    )
+})
+}
+    
 open func fetchItemMetadata(itemId: Int64, apiKey: String, forceRefresh: Bool)async throws  -> MediaMetadata?  {
     return
         try  await uniffiRustCallAsync(
@@ -915,6 +936,17 @@ open func importLocalM3u(name: String, filePath: String)async throws  -> SyncSum
             liftFunc: FfiConverterTypeSyncSummary_lift,
             errorHandler: FfiConverterTypeCndError_lift
         )
+}
+    
+    /**
+     * Merges a delta received from another device (Last-Write-Wins).
+     */
+open func importSyncDelta(delta: SyncDelta)throws  -> SyncImportSummary  {
+    return try  FfiConverterTypeSyncImportSummary_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_import_sync_delta(self.uniffiClonePointer(),
+        FfiConverterTypeSyncDelta_lower(delta),$0
+    )
+})
 }
     
 open func listDownloads(query: String?)throws  -> [DownloadTaskRecord]  {
@@ -3377,6 +3409,410 @@ public func FfiConverterTypeSeriesRecord_lower(_ value: SeriesRecord) -> RustBuf
 }
 
 
+public struct SyncDelta {
+    public var sources: [SyncSource]
+    public var favorites: [SyncFavorite]
+    public var watchHistory: [SyncWatchProgress]
+    public var tombstones: [SyncTombstone]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sources: [SyncSource], favorites: [SyncFavorite], watchHistory: [SyncWatchProgress], tombstones: [SyncTombstone]) {
+        self.sources = sources
+        self.favorites = favorites
+        self.watchHistory = watchHistory
+        self.tombstones = tombstones
+    }
+}
+
+#if compiler(>=6)
+extension SyncDelta: Sendable {}
+#endif
+
+
+extension SyncDelta: Equatable, Hashable {
+    public static func ==(lhs: SyncDelta, rhs: SyncDelta) -> Bool {
+        if lhs.sources != rhs.sources {
+            return false
+        }
+        if lhs.favorites != rhs.favorites {
+            return false
+        }
+        if lhs.watchHistory != rhs.watchHistory {
+            return false
+        }
+        if lhs.tombstones != rhs.tombstones {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(sources)
+        hasher.combine(favorites)
+        hasher.combine(watchHistory)
+        hasher.combine(tombstones)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncDelta: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncDelta {
+        return
+            try SyncDelta(
+                sources: FfiConverterSequenceTypeSyncSource.read(from: &buf), 
+                favorites: FfiConverterSequenceTypeSyncFavorite.read(from: &buf), 
+                watchHistory: FfiConverterSequenceTypeSyncWatchProgress.read(from: &buf), 
+                tombstones: FfiConverterSequenceTypeSyncTombstone.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncDelta, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeSyncSource.write(value.sources, into: &buf)
+        FfiConverterSequenceTypeSyncFavorite.write(value.favorites, into: &buf)
+        FfiConverterSequenceTypeSyncWatchProgress.write(value.watchHistory, into: &buf)
+        FfiConverterSequenceTypeSyncTombstone.write(value.tombstones, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncDelta_lift(_ buf: RustBuffer) throws -> SyncDelta {
+    return try FfiConverterTypeSyncDelta.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncDelta_lower(_ value: SyncDelta) -> RustBuffer {
+    return FfiConverterTypeSyncDelta.lower(value)
+}
+
+
+public struct SyncFavorite {
+    public var stableHash: String
+    public var itemKind: String
+    public var createdAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(stableHash: String, itemKind: String, createdAt: Int64) {
+        self.stableHash = stableHash
+        self.itemKind = itemKind
+        self.createdAt = createdAt
+    }
+}
+
+#if compiler(>=6)
+extension SyncFavorite: Sendable {}
+#endif
+
+
+extension SyncFavorite: Equatable, Hashable {
+    public static func ==(lhs: SyncFavorite, rhs: SyncFavorite) -> Bool {
+        if lhs.stableHash != rhs.stableHash {
+            return false
+        }
+        if lhs.itemKind != rhs.itemKind {
+            return false
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(stableHash)
+        hasher.combine(itemKind)
+        hasher.combine(createdAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncFavorite: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncFavorite {
+        return
+            try SyncFavorite(
+                stableHash: FfiConverterString.read(from: &buf), 
+                itemKind: FfiConverterString.read(from: &buf), 
+                createdAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncFavorite, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.stableHash, into: &buf)
+        FfiConverterString.write(value.itemKind, into: &buf)
+        FfiConverterInt64.write(value.createdAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncFavorite_lift(_ buf: RustBuffer) throws -> SyncFavorite {
+    return try FfiConverterTypeSyncFavorite.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncFavorite_lower(_ value: SyncFavorite) -> RustBuffer {
+    return FfiConverterTypeSyncFavorite.lower(value)
+}
+
+
+public struct SyncImportSummary {
+    public var sourcesApplied: UInt32
+    public var favoritesApplied: UInt32
+    public var watchApplied: UInt32
+    public var deletionsApplied: UInt32
+    public var skipped: UInt32
+    /**
+     * Local ids of sources created by this import; they have no catalog yet and need a refresh.
+     */
+    public var insertedSourceIds: [Int64]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sourcesApplied: UInt32, favoritesApplied: UInt32, watchApplied: UInt32, deletionsApplied: UInt32, skipped: UInt32, 
+        /**
+         * Local ids of sources created by this import; they have no catalog yet and need a refresh.
+         */insertedSourceIds: [Int64]) {
+        self.sourcesApplied = sourcesApplied
+        self.favoritesApplied = favoritesApplied
+        self.watchApplied = watchApplied
+        self.deletionsApplied = deletionsApplied
+        self.skipped = skipped
+        self.insertedSourceIds = insertedSourceIds
+    }
+}
+
+#if compiler(>=6)
+extension SyncImportSummary: Sendable {}
+#endif
+
+
+extension SyncImportSummary: Equatable, Hashable {
+    public static func ==(lhs: SyncImportSummary, rhs: SyncImportSummary) -> Bool {
+        if lhs.sourcesApplied != rhs.sourcesApplied {
+            return false
+        }
+        if lhs.favoritesApplied != rhs.favoritesApplied {
+            return false
+        }
+        if lhs.watchApplied != rhs.watchApplied {
+            return false
+        }
+        if lhs.deletionsApplied != rhs.deletionsApplied {
+            return false
+        }
+        if lhs.skipped != rhs.skipped {
+            return false
+        }
+        if lhs.insertedSourceIds != rhs.insertedSourceIds {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(sourcesApplied)
+        hasher.combine(favoritesApplied)
+        hasher.combine(watchApplied)
+        hasher.combine(deletionsApplied)
+        hasher.combine(skipped)
+        hasher.combine(insertedSourceIds)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncImportSummary: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncImportSummary {
+        return
+            try SyncImportSummary(
+                sourcesApplied: FfiConverterUInt32.read(from: &buf), 
+                favoritesApplied: FfiConverterUInt32.read(from: &buf), 
+                watchApplied: FfiConverterUInt32.read(from: &buf), 
+                deletionsApplied: FfiConverterUInt32.read(from: &buf), 
+                skipped: FfiConverterUInt32.read(from: &buf), 
+                insertedSourceIds: FfiConverterSequenceInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncImportSummary, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.sourcesApplied, into: &buf)
+        FfiConverterUInt32.write(value.favoritesApplied, into: &buf)
+        FfiConverterUInt32.write(value.watchApplied, into: &buf)
+        FfiConverterUInt32.write(value.deletionsApplied, into: &buf)
+        FfiConverterUInt32.write(value.skipped, into: &buf)
+        FfiConverterSequenceInt64.write(value.insertedSourceIds, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncImportSummary_lift(_ buf: RustBuffer) throws -> SyncImportSummary {
+    return try FfiConverterTypeSyncImportSummary.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncImportSummary_lower(_ value: SyncImportSummary) -> RustBuffer {
+    return FfiConverterTypeSyncImportSummary.lower(value)
+}
+
+
+public struct SyncSource {
+    public var uuid: String
+    public var name: String
+    public var sourceType: String
+    public var url: String?
+    public var server: String?
+    public var username: String?
+    /**
+     * Keychain reference only; the secret itself is never stored in SQLite.
+     */
+    public var passwordRef: String?
+    public var epgUrl: String?
+    public var updatedAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(uuid: String, name: String, sourceType: String, url: String?, server: String?, username: String?, 
+        /**
+         * Keychain reference only; the secret itself is never stored in SQLite.
+         */passwordRef: String?, epgUrl: String?, updatedAt: Int64) {
+        self.uuid = uuid
+        self.name = name
+        self.sourceType = sourceType
+        self.url = url
+        self.server = server
+        self.username = username
+        self.passwordRef = passwordRef
+        self.epgUrl = epgUrl
+        self.updatedAt = updatedAt
+    }
+}
+
+#if compiler(>=6)
+extension SyncSource: Sendable {}
+#endif
+
+
+extension SyncSource: Equatable, Hashable {
+    public static func ==(lhs: SyncSource, rhs: SyncSource) -> Bool {
+        if lhs.uuid != rhs.uuid {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.sourceType != rhs.sourceType {
+            return false
+        }
+        if lhs.url != rhs.url {
+            return false
+        }
+        if lhs.server != rhs.server {
+            return false
+        }
+        if lhs.username != rhs.username {
+            return false
+        }
+        if lhs.passwordRef != rhs.passwordRef {
+            return false
+        }
+        if lhs.epgUrl != rhs.epgUrl {
+            return false
+        }
+        if lhs.updatedAt != rhs.updatedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(uuid)
+        hasher.combine(name)
+        hasher.combine(sourceType)
+        hasher.combine(url)
+        hasher.combine(server)
+        hasher.combine(username)
+        hasher.combine(passwordRef)
+        hasher.combine(epgUrl)
+        hasher.combine(updatedAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncSource: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncSource {
+        return
+            try SyncSource(
+                uuid: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                sourceType: FfiConverterString.read(from: &buf), 
+                url: FfiConverterOptionString.read(from: &buf), 
+                server: FfiConverterOptionString.read(from: &buf), 
+                username: FfiConverterOptionString.read(from: &buf), 
+                passwordRef: FfiConverterOptionString.read(from: &buf), 
+                epgUrl: FfiConverterOptionString.read(from: &buf), 
+                updatedAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncSource, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.uuid, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.sourceType, into: &buf)
+        FfiConverterOptionString.write(value.url, into: &buf)
+        FfiConverterOptionString.write(value.server, into: &buf)
+        FfiConverterOptionString.write(value.username, into: &buf)
+        FfiConverterOptionString.write(value.passwordRef, into: &buf)
+        FfiConverterOptionString.write(value.epgUrl, into: &buf)
+        FfiConverterInt64.write(value.updatedAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncSource_lift(_ buf: RustBuffer) throws -> SyncSource {
+    return try FfiConverterTypeSyncSource.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncSource_lower(_ value: SyncSource) -> RustBuffer {
+    return FfiConverterTypeSyncSource.lower(value)
+}
+
+
 public struct SyncSummary {
     public var sourceId: Int64
     public var totalItems: UInt32
@@ -3484,6 +3920,181 @@ public func FfiConverterTypeSyncSummary_lift(_ buf: RustBuffer) throws -> SyncSu
 #endif
 public func FfiConverterTypeSyncSummary_lower(_ value: SyncSummary) -> RustBuffer {
     return FfiConverterTypeSyncSummary.lower(value)
+}
+
+
+/**
+ * A deletion. `kind` is `"favorite"` (key = stable hash) or `"source"` (key = source uuid).
+ */
+public struct SyncTombstone {
+    public var kind: String
+    public var key: String
+    public var deletedAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: String, key: String, deletedAt: Int64) {
+        self.kind = kind
+        self.key = key
+        self.deletedAt = deletedAt
+    }
+}
+
+#if compiler(>=6)
+extension SyncTombstone: Sendable {}
+#endif
+
+
+extension SyncTombstone: Equatable, Hashable {
+    public static func ==(lhs: SyncTombstone, rhs: SyncTombstone) -> Bool {
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.key != rhs.key {
+            return false
+        }
+        if lhs.deletedAt != rhs.deletedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(key)
+        hasher.combine(deletedAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncTombstone: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncTombstone {
+        return
+            try SyncTombstone(
+                kind: FfiConverterString.read(from: &buf), 
+                key: FfiConverterString.read(from: &buf), 
+                deletedAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncTombstone, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.key, into: &buf)
+        FfiConverterInt64.write(value.deletedAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncTombstone_lift(_ buf: RustBuffer) throws -> SyncTombstone {
+    return try FfiConverterTypeSyncTombstone.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncTombstone_lower(_ value: SyncTombstone) -> RustBuffer {
+    return FfiConverterTypeSyncTombstone.lower(value)
+}
+
+
+public struct SyncWatchProgress {
+    public var stableHash: String
+    public var positionMs: Int64
+    public var durationMs: Int64
+    public var completed: Bool
+    public var lastWatchedAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(stableHash: String, positionMs: Int64, durationMs: Int64, completed: Bool, lastWatchedAt: Int64) {
+        self.stableHash = stableHash
+        self.positionMs = positionMs
+        self.durationMs = durationMs
+        self.completed = completed
+        self.lastWatchedAt = lastWatchedAt
+    }
+}
+
+#if compiler(>=6)
+extension SyncWatchProgress: Sendable {}
+#endif
+
+
+extension SyncWatchProgress: Equatable, Hashable {
+    public static func ==(lhs: SyncWatchProgress, rhs: SyncWatchProgress) -> Bool {
+        if lhs.stableHash != rhs.stableHash {
+            return false
+        }
+        if lhs.positionMs != rhs.positionMs {
+            return false
+        }
+        if lhs.durationMs != rhs.durationMs {
+            return false
+        }
+        if lhs.completed != rhs.completed {
+            return false
+        }
+        if lhs.lastWatchedAt != rhs.lastWatchedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(stableHash)
+        hasher.combine(positionMs)
+        hasher.combine(durationMs)
+        hasher.combine(completed)
+        hasher.combine(lastWatchedAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncWatchProgress: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncWatchProgress {
+        return
+            try SyncWatchProgress(
+                stableHash: FfiConverterString.read(from: &buf), 
+                positionMs: FfiConverterInt64.read(from: &buf), 
+                durationMs: FfiConverterInt64.read(from: &buf), 
+                completed: FfiConverterBool.read(from: &buf), 
+                lastWatchedAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncWatchProgress, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.stableHash, into: &buf)
+        FfiConverterInt64.write(value.positionMs, into: &buf)
+        FfiConverterInt64.write(value.durationMs, into: &buf)
+        FfiConverterBool.write(value.completed, into: &buf)
+        FfiConverterInt64.write(value.lastWatchedAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncWatchProgress_lift(_ buf: RustBuffer) throws -> SyncWatchProgress {
+    return try FfiConverterTypeSyncWatchProgress.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncWatchProgress_lower(_ value: SyncWatchProgress) -> RustBuffer {
+    return FfiConverterTypeSyncWatchProgress.lower(value)
 }
 
 
@@ -4129,6 +4740,31 @@ fileprivate struct FfiConverterOptionTypeSeriesRecord: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceInt64: FfiConverterRustBuffer {
+    typealias SwiftType = [Int64]
+
+    public static func write(_ value: [Int64], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterInt64.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Int64] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Int64]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterInt64.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -4425,6 +5061,106 @@ fileprivate struct FfiConverterSequenceTypeSeriesRecord: FfiConverterRustBuffer 
         return seq
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSyncFavorite: FfiConverterRustBuffer {
+    typealias SwiftType = [SyncFavorite]
+
+    public static func write(_ value: [SyncFavorite], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSyncFavorite.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SyncFavorite] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SyncFavorite]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSyncFavorite.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSyncSource: FfiConverterRustBuffer {
+    typealias SwiftType = [SyncSource]
+
+    public static func write(_ value: [SyncSource], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSyncSource.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SyncSource] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SyncSource]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSyncSource.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSyncTombstone: FfiConverterRustBuffer {
+    typealias SwiftType = [SyncTombstone]
+
+    public static func write(_ value: [SyncTombstone], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSyncTombstone.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SyncTombstone] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SyncTombstone]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSyncTombstone.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSyncWatchProgress: FfiConverterRustBuffer {
+    typealias SwiftType = [SyncWatchProgress]
+
+    public static func write(_ value: [SyncWatchProgress], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSyncWatchProgress.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SyncWatchProgress] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SyncWatchProgress]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSyncWatchProgress.read(from: &buf))
+        }
+        return seq
+    }
+}
 private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
 private let UNIFFI_RUST_FUTURE_POLL_MAYBE_READY: Int8 = 1
 
@@ -4511,6 +5247,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_ensure_xtream_series_episodes() != 45600) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_export_sync_delta() != 8526) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_fetch_item_metadata() != 9906) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4554,6 +5293,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_import_local_m3u() != 13379) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_import_sync_delta() != 52267) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_list_downloads() != 18449) {
