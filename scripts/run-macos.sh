@@ -128,6 +128,8 @@ cat > "${BUNDLE_DIR}/Contents/Info.plist" <<PLIST
       <key>LSItemContentTypes</key><array><string>${BUNDLE_ID}.share</string></array>
     </dict>
   </array>
+  <key>NSLocalNetworkUsageDescription</key><string>Requis pour envoyer ou recevoir des sources entre vos appareils sur le réseau local.</string>
+  <key>NSBonjourServices</key><array><string>_cndiptv._tcp</string></array>
   <key>NSAppTransportSecurity</key>
   <dict><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict>

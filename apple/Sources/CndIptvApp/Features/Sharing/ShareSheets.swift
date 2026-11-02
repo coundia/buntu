@@ -56,25 +56,10 @@ struct ShareSourcesSheet: View {
 
     private var form: some View {
         Form {
-            Section("Sources à partager") {
-                ForEach(model.sources, id: \.id) { source in
-                    sourceRow(source)
-                }
-            }
+            ShareSourceChoices(model: model)
             Section("Validité") {
                 Picker("Le partage expire dans", selection: $model.validity) {
                     ForEach(ShareValidity.allCases) { Text($0.title).tag($0) }
-                }
-            }
-            if model.sharesCredentials {
-                Section {
-                    Label(
-                        "Partagez vos identifiants uniquement avec des personnes de confiance et si votre abonnement le permet. Le nombre de connexions simultanées est limité par votre fournisseur"
-                            + (model.sharedConnectionLimit.map { " (\($0) autorisée(s))." } ?? "."),
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .font(.callout)
-                    .foregroundStyle(.orange)
                 }
             }
             if let message = model.errorMessage {
@@ -95,39 +80,6 @@ struct ShareSourcesSheet: View {
             }
         }
         .formStyle(.grouped)
-    }
-
-    private func sourceRow(_ source: IptvSourceRecord) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle(isOn: binding(\.selected, source.id)) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(source.name).font(.body.weight(.semibold))
-                    Text(source.sourceType == "xtream" ? "Xtream · \(source.server ?? "")" : "M3U")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }
-            if model.selected.contains(source.id) {
-                if ShareSourcesModel.isLocalPlaylist(source) {
-                    Toggle("Inclure le contenu de la playlist locale", isOn: binding(\.includePlaylist, source.id))
-                        .font(.callout)
-                } else {
-                    Toggle(
-                        source.sourceType == "xtream" ? "Inclure le mot de passe (le nom d'utilisateur est toujours transmis)" : "Conserver les identifiants de l'adresse",
-                        isOn: binding(\.includeCredentials, source.id)
-                    )
-                    .font(.callout)
-                }
-            }
-        }
-    }
-
-    private func binding(_ keyPath: ReferenceWritableKeyPath<ShareSourcesModel, Set<Int64>>, _ id: Int64) -> Binding<Bool> {
-        Binding(
-            get: { model[keyPath: keyPath].contains(id) },
-            set: { on in
-                if on { model[keyPath: keyPath].insert(id) } else { model[keyPath: keyPath].remove(id) }
-            }
-        )
     }
 
     // MARK: Result
@@ -200,6 +152,64 @@ struct ShareSourcesSheet: View {
         }
         .formStyle(.grouped)
         .onAppear { fileURL = try? package.writeFile() }
+    }
+}
+
+/// The list of sources with their per-source options, and the credentials warning. Shared by the
+/// file/link/QR sheet and the nearby-device sheet.
+struct ShareSourceChoices: View {
+    @Bindable var model: ShareSourcesModel
+
+    var body: some View {
+        Section("Sources à partager") {
+            ForEach(model.sources, id: \.id) { source in
+                sourceRow(source)
+            }
+        }
+        if model.sharesCredentials {
+            Section {
+                Label(
+                    "Partagez vos identifiants uniquement avec des personnes de confiance et si votre abonnement le permet. Le nombre de connexions simultanées est limité par votre fournisseur"
+                        + (model.sharedConnectionLimit.map { " (\($0) autorisée(s))." } ?? "."),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.callout)
+                .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func sourceRow(_ source: IptvSourceRecord) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: binding(\.selected, source.id)) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(source.name).font(.body.weight(.semibold))
+                    Text(source.sourceType == "xtream" ? "Xtream · \(source.server ?? "")" : "M3U")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            if model.selected.contains(source.id) {
+                if ShareSourcesModel.isLocalPlaylist(source) {
+                    Toggle("Inclure le contenu de la playlist locale", isOn: binding(\.includePlaylist, source.id))
+                        .font(.callout)
+                } else {
+                    Toggle(
+                        source.sourceType == "xtream" ? "Inclure le mot de passe (le nom d'utilisateur est toujours transmis)" : "Conserver les identifiants de l'adresse",
+                        isOn: binding(\.includeCredentials, source.id)
+                    )
+                    .font(.callout)
+                }
+            }
+        }
+    }
+
+    private func binding(_ keyPath: ReferenceWritableKeyPath<ShareSourcesModel, Set<Int64>>, _ id: Int64) -> Binding<Bool> {
+        Binding(
+            get: { model[keyPath: keyPath].contains(id) },
+            set: { on in
+                if on { model[keyPath: keyPath].insert(id) } else { model[keyPath: keyPath].remove(id) }
+            }
+        )
     }
 }
 

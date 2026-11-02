@@ -33,6 +33,10 @@
         <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_cndiptv._tcp</string>
+    </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Requis pour communiquer avec les serveurs IA locaux et découvrir les flux IPTV locaux.</string>
     <key>UILaunchScreen</key>
