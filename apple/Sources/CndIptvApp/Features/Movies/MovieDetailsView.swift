@@ -64,9 +64,14 @@ final class MovieDetailsModel {
 struct MovieDetailsView: View {
     @State private var model: MovieDetailsModel
     @State private var showsDebug = false
+    /// Narrow layout for the side panel (under the player) instead of a full page.
+    let compact: Bool
+    let onClose: (() -> Void)?
 
-    init(item: IptvItemRecord, vod: VodContext) {
+    init(item: IptvItemRecord, vod: VodContext, compact: Bool = false, onClose: (() -> Void)? = nil) {
         _model = State(initialValue: MovieDetailsModel(item: item, vod: vod))
+        self.compact = compact
+        self.onClose = onClose
     }
 
     private var item: IptvItemRecord { model.item }
@@ -76,9 +81,9 @@ struct MovieDetailsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                hero
-                VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: compact ? 12 : 20) {
+                if compact { compactHeader } else { hero }
+                VStack(alignment: .leading, spacing: compact ? 12 : 16) {
                     actions
                     if model.isLoadingMetadata {
                         HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Enrichissement OMDb…").foregroundStyle(.secondary) }
@@ -95,12 +100,12 @@ struct MovieDetailsView: View {
                     credits
                     debugPanel
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, compact ? 14 : 20)
                 .padding(.bottom, 24)
             }
         }
-        .navigationTitle(title)
         #if os(iOS)
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .task { await model.load() }
@@ -112,6 +117,28 @@ struct MovieDetailsView: View {
     }
 
     // MARK: Hero
+
+    /// Poster, title and rating side by side, plus a close button: fits a ~380 pt panel.
+    private var compactHeader: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ThumbnailImageView(urlString: item.logoUrl, size: .poster, placeholderSystemImage: "film", fills: true)
+                .frame(width: 96, height: 144)
+                .background(.quaternary)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(.headline).lineLimit(3)
+                Text(metaLine).font(.caption).foregroundStyle(.secondary)
+                ratingRow
+            }
+            Spacer(minLength: 0)
+            if let onClose {
+                Button(action: onClose) { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Fermer la fiche")
+            }
+        }
+        .padding([.horizontal, .top], 14)
+    }
 
     private var hero: some View {
         ZStack(alignment: .bottomLeading) {
@@ -169,10 +196,15 @@ struct MovieDetailsView: View {
 
     // MARK: Actions
 
+    @ViewBuilder
     private var actions: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) { primaryButtons }
-            VStack(alignment: .leading, spacing: 10) { primaryButtons }
+        if compact {
+            FlowLayout(spacing: 8) { primaryButtons }.controlSize(.small)
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { primaryButtons }
+                VStack(alignment: .leading, spacing: 10) { primaryButtons }
+            }
         }
     }
 
