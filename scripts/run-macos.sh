@@ -58,6 +58,17 @@ if [[ "${FOREGROUND}" -eq 1 ]]; then
   exec "${EXECUTABLE}"
 fi
 
+# `open` on an app that is already running only brings the old build to the front: stop it first.
+if pgrep -f "${BUNDLE_DIR}/Contents/MacOS/${PRODUCT}" >/dev/null 2>&1; then
+  echo "==> Quitting the running instance"
+  osascript -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    pgrep -f "${BUNDLE_DIR}/Contents/MacOS/${PRODUCT}" >/dev/null 2>&1 || break
+    sleep 0.3
+  done
+  pkill -f "${BUNDLE_DIR}/Contents/MacOS/${PRODUCT}" >/dev/null 2>&1 || true
+fi
+
 echo "==> Assembling ${BUNDLE_DIR}"
 rm -rf "${BUNDLE_DIR}"
 mkdir -p "${BUNDLE_DIR}/Contents/MacOS" "${BUNDLE_DIR}/Contents/Resources"
