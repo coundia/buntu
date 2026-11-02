@@ -4,7 +4,6 @@ version: "3"
 vars:
   APPLE_DIR: apple
   BRIDGE_DIR: apple/Packages/CndCoreBridge
-  SCHEME: CndIptvNative
   # Keeps xcodebuild output out of the tracked apple/.build folders.
   DERIVED_DATA: build/DerivedData
 
@@ -139,9 +138,9 @@ tasks:
       CONFIG: '{{default "Debug" .CONFIG}}'
     cmds:
       - >-
-        xcodebuild -scheme {{.SCHEME}} -configuration {{.CONFIG}}
+        xcodebuild -scheme CndIPTV-macOS -configuration {{.CONFIG}}
         -destination 'generic/platform=macOS'
-        -derivedDataPath ../{{.DERIVED_DATA}} -quiet build
+        -derivedDataPath ../{{.DERIVED_DATA}} CODE_SIGNING_ALLOWED=NO -quiet build
 
   xcode:ios:
     desc: xcodebuild for the iOS Simulator (CONFIG=Release for a release build)
@@ -150,7 +149,7 @@ tasks:
       CONFIG: '{{default "Debug" .CONFIG}}'
     cmds:
       - >-
-        xcodebuild -scheme {{.SCHEME}} -configuration {{.CONFIG}}
+        xcodebuild -scheme CndIPTV-iOS -configuration {{.CONFIG}}
         -destination 'generic/platform=iOS Simulator'
         -derivedDataPath ../{{.DERIVED_DATA}} -quiet build
 
