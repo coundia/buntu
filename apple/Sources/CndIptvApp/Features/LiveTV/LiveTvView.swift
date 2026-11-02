@@ -10,13 +10,6 @@ struct LiveTvView: View {
     let onShowGuide: (IptvItemRecord) -> Void
 
     @AppStorage("live.viewMode") private var viewModeRaw = LiveViewMode.grid.rawValue
-    @State private var isWide = false
-    @State private var showingCategories = false
-    @State private var categoryQuery = ""
-
-    /// Width from which the category column stays visible (macOS and iPad landscape).
-    static let wideLayoutThreshold: CGFloat = 900
-
     init(
         engine: CndEngine,
         revision: Int,
@@ -52,19 +45,14 @@ struct LiveTvView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            let wide = geo.size.width >= Self.wideLayoutThreshold
-            HStack(spacing: 0) {
-                if wide {
-                    categoryColumn.frame(width: 250)
-                    Divider()
-                }
-                VStack(spacing: 0) {
-                    if !wide { categoryChips }
-                    channelContent
-                }
-            }
-            .onChange(of: wide, initial: true) { _, newValue in isWide = newValue }
+        @Bindable var filter = model.filter
+        return CategoryNavigation(
+            groups: model.groups,
+            totalCount: totalChannels,
+            allTitle: "Toutes les chaînes",
+            selection: $filter.group
+        ) {
+            channelContent
         }
         .navigationTitle("Live TV")
         .searchFilterToolbar(
@@ -82,13 +70,7 @@ struct LiveTvView: View {
                 }
                 .pickerStyle(.segmented)
             }
-            if !isWide {
-                ToolbarItem(placement: .automatic) {
-                    Button { showingCategories = true } label: { Label("Catégories", systemImage: "folder") }
-                }
-            }
         }
-        .sheet(isPresented: $showingCategories) { categorySheet }
         .task(id: reloadKey) { await model.reload(revision: revision) }
         .task {
             while !Task.isCancelled {
@@ -96,93 +78,6 @@ struct LiveTvView: View {
                 model.refreshEpg()
             }
         }
-    }
-
-    // MARK: Categories
-
-    private var filteredGroups: [FacetCount] {
-        let needle = categoryQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty else { return model.groups }
-        return model.groups.filter { $0.value.localizedCaseInsensitiveContains(needle) }
-    }
-
-    private var categoryColumn: some View {
-        VStack(spacing: 0) {
-            TextField("Filtrer les catégories", text: $categoryQuery)
-                .textFieldStyle(.roundedBorder)
-                .padding(8)
-            categoryList
-        }
-    }
-
-    private var categoryList: some View {
-        @Bindable var filter = model.filter
-        return List(selection: $filter.group) {
-            Label("Toutes les chaînes", systemImage: "tv")
-                .badge(totalChannels)
-                .tag(String?.none)
-            ForEach(filteredGroups, id: \.value) { group in
-                Text(group.value)
-                    .lineLimit(1)
-                    .badge(Int(group.count))
-                    .tag(String?.some(group.value))
-            }
-        }
-        .listStyle(.sidebar)
-    }
-
-    private var categorySheet: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                TextField("Filtrer les catégories", text: $categoryQuery)
-                    .textFieldStyle(.roundedBorder)
-                    .padding(8)
-                categoryList
-                    .onChange(of: model.filter.group) { _, _ in showingCategories = false }
-            }
-            .navigationTitle("Catégories")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("OK") { showingCategories = false } }
-            }
-        }
-        #if os(macOS)
-        .frame(minWidth: 320, minHeight: 420)
-        #endif
-        .presentationDetents([.medium, .large])
-    }
-
-    private var categoryChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                chip("Toutes", selected: model.filter.group == nil) { model.filter.group = nil }
-                ForEach(model.groups.prefix(40), id: \.value) { group in
-                    chip("\(group.value) \(group.count)", selected: model.filter.group == group.value) {
-                        model.filter.group = group.value
-                    }
-                }
-                if model.groups.count > 40 {
-                    chip("Plus…", selected: false) { showingCategories = true }
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-        }
-    }
-
-    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline)
-                .lineLimit(1)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(selected ? Color.accentColor : Color.secondary.opacity(0.18), in: Capsule())
-                .foregroundStyle(selected ? Color.white : Color.primary)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: Channels

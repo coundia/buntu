@@ -1,0 +1,102 @@
+import SwiftUI
+import CndCoreBridge
+
+enum SeriesLabels {
+    static func counts(_ series: SeriesRecord) -> String {
+        let seasons = series.seasonCount
+        let episodes = series.episodeCount
+        guard episodes > 0 else { return "Épisodes à charger" }
+        return "\(seasons) saison\(seasons > 1 ? "s" : "") · \(episodes) épisode\(episodes > 1 ? "s" : "")"
+    }
+}
+
+struct SeriesCatalogView: View {
+    @State private var model: VodCatalogModel<SeriesRecord>
+    let revision: Int
+    let totalSeries: Int
+    @Environment(VodContext.self) private var vod
+
+    init(engine: CndEngine, revision: Int, totalSeries: Int) {
+        _model = State(initialValue: VodCatalogModel(kind: "series", source: .series(engine: engine)))
+        self.revision = revision
+        self.totalSeries = totalSeries
+    }
+
+    var body: some View {
+        VodCatalogView(
+            title: "Séries",
+            model: model,
+            totalCount: totalSeries,
+            revision: revision,
+            viewModeKey: "series.viewMode",
+            titles: VodSectionTitles(resume: "Récemment consultées", resumeIcon: "clock", all: "Toutes les séries"),
+            sortOptions: [.name, .rating, .recentlyAdded, .group],
+            searchPrompt: "Rechercher une série",
+            emptyDescription: "Ajoutez une source dans l'onglet Sources pour importer des séries."
+        ) { series, style in
+            SeriesCard(series: series, style: style) { toggleFavorite(series) }
+        }
+    }
+
+    private func toggleFavorite(_ series: SeriesRecord) {
+        Task {
+            if let value = await vod.toggleFavorite(stableHash: series.stableHash, kind: "series") {
+                model.applyFavorite(value, to: series)
+            }
+        }
+    }
+}
+
+struct SeriesCard: View {
+    let series: SeriesRecord
+    let style: VodCardStyle
+    var onToggleFavorite: () -> Void
+
+    var body: some View {
+        NavigationLink(value: VodRoute.series(series)) {
+            switch style {
+            case .poster: poster
+            case .row: row
+            }
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(series.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
+                   systemImage: series.isFavorite ? "star.slash" : "star", action: onToggleFavorite)
+        }
+        .accessibilityLabel(series.title)
+    }
+
+    private var poster: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            PosterArtwork(
+                posterUrl: series.posterUrl, rating: series.imdbRating, progress: nil,
+                isFavorite: series.isFavorite, placeholder: "play.tv", onToggleFavorite: onToggleFavorite
+            )
+            .hoverLift()
+            Text(series.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+            Text(SeriesLabels.counts(series)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+    }
+
+    private var row: some View {
+        HStack(spacing: 12) {
+            ThumbnailImageView(urlString: series.posterUrl, size: .poster, placeholderSystemImage: "play.tv", fills: true)
+                .frame(width: 44, height: 66)
+                .background(.quaternary)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(series.title).font(.body.weight(.semibold)).lineLimit(1)
+                Text(SeriesLabels.counts(series)).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(action: onToggleFavorite) {
+                Image(systemName: series.isFavorite ? "star.fill" : "star")
+                    .foregroundStyle(series.isFavorite ? Color.yellow : Color.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+    }
+}
