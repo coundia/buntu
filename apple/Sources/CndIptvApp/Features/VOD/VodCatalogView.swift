@@ -191,10 +191,15 @@ struct PosterArtwork: View {
     var onToggleFavorite: () -> Void
 
     var body: some View {
-        ThumbnailImageView(urlString: posterUrl, size: .poster, placeholderSystemImage: placeholder, fills: true)
-            .frame(maxWidth: .infinity)
+        // The 2:3 frame comes from a flexible clear base, not from the image: inside a horizontal
+        // shelf the parent proposes no height, and an image-driven frame collapsed to nothing.
+        Color.clear
             .aspectRatio(2.0 / 3.0, contentMode: .fit)
-            .background(.quaternary)
+            .overlay {
+                ThumbnailImageView(urlString: posterUrl, size: .poster, placeholderSystemImage: placeholder, fills: true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.quaternary)
+            }
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(alignment: .topLeading) {
                 if let rating, rating > 0 {

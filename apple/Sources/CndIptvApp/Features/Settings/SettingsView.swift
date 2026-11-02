@@ -143,6 +143,13 @@ struct SettingsView: View {
 
     private var aboutSection: some View {
         Section("À propos") {
+            HStack(spacing: 12) {
+                AppLogoView(size: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("CND IPTV").font(.headline)
+                    Text("Lecteur IPTV natif pour Mac, iPhone et iPad").font(.caption).foregroundStyle(.secondary)
+                }
+            }
             LabeledContent("Application", value: SettingsModel.appVersion)
             LabeledContent("Moteur Rust", value: model.engineVersion)
             if let stats {

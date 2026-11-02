@@ -221,6 +221,12 @@ private struct LoadedShellView: View {
 
     /// Hooks the system integrations (Now Playing, media keys, menu bar) to this shell.
     private func connectPlayerIntegrations() {
+        #if os(macOS)
+        // Covers runs that are not a .app bundle (swift run, Xcode scheme): they would show a generic icon.
+        if Bundle.main.bundlePath.hasSuffix(".app") == false, let icon = AppLogoRenderer.nsImage(pixels: 512) {
+            NSApplication.shared.applicationIconImage = icon
+        }
+        #endif
         nowPlaying.onZap = { zap($0) }
         nowPlaying.subtitleProvider = { media in
             media.kind == .live
@@ -284,6 +290,16 @@ private struct LoadedShellView: View {
         settingsModel.showNetworkConsole.toggle()
     }
 
+    private var sidebarBrand: some View {
+        HStack(spacing: 10) {
+            AppLogoView(size: 30)
+            Text("CND IPTV").font(.headline)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
     private var logsButton: some View {
         Button { toggleLogs() } label: {
             Label("Journaux", systemImage: "terminal")
@@ -322,6 +338,7 @@ private struct LoadedShellView: View {
             }
             .navigationTitle("CND IPTV")
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
+            .safeAreaInset(edge: .top, spacing: 0) { sidebarBrand }
             .safeAreaInset(edge: .bottom, spacing: 0) { logsButton }
         } detail: {
             HStack(spacing: 0) {
