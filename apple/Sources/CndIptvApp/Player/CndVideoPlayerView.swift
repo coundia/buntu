@@ -157,6 +157,9 @@ public struct CndVideoPlayerView: View {
         .onContinuousHover { _ in showHUD() }
         #endif
         #if os(macOS)
+        // Double-click toggles full screen (declared first so it wins over the single click, which
+        // shows or hides the controls).
+        .onTapGesture(count: 2) { onToggleFullscreen?() }
         .onTapGesture { hudVisible ? scheduleHide() : showHUD() }
         #endif
         .onAppear { showHUD() }
