@@ -33,6 +33,8 @@ public final class AppState {
 
     let player: CndPlayerController
     let downloadDirectory: DownloadDirectoryManager
+    /// Provider choice and consent of the channel assistant (key in the Keychain).
+    let aiSettings = AiProviderSettings()
     /// iCloud sync of sources, favorites and progress; reports "local only" when iCloud is unusable.
     private(set) var cloudSync: CloudKitSyncManager?
     @ObservationIgnored private let recorder = DeferredProgressRecorder()
