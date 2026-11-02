@@ -580,6 +580,17 @@ public struct CndVideoPlayerView: View {
                 }
                 .padding(.top, 4)
 
+                // The way out when this device cannot play the stream itself (MKV on iPhone, for one).
+                Menu {
+                    ForEach(ExternalPlayer.availableOnThisPlatform) { player in
+                        Button(player.displayName) { Task { _ = await ExternalPlayerLauncher.launch(player, media: media) } }
+                    }
+                    Button("Copier l'URL du flux", systemImage: "link") { ExternalPlayerLauncher.copyStreamUrl(media) }
+                } label: {
+                    Label("Ouvrir dans une autre app", systemImage: "arrow.up.forward.app")
+                }
+                .buttonStyle(.bordered)
+
                 if !controller.availableMirrors.isEmpty {
                     VStack(spacing: 6) {
                         Text("Alternatives disponibles :")
