@@ -1,0 +1,296 @@
+import SwiftUI
+import CndCoreBridge
+
+enum AppTab: String, CaseIterable, Identifiable {
+    case live
+    case guide
+    case movies
+    case series
+    case downloads
+    case sources
+    case settings
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .live: return "Live TV"
+        case .guide: return "Guide TV"
+        case .movies: return "Films"
+        case .series: return "Séries"
+        case .downloads: return "Téléchargements"
+        case .sources: return "Sources"
+        case .settings: return "Réglages"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .live: return "tv"
+        case .guide: return "calendar"
+        case .movies: return "film"
+        case .series: return "play.tv"
+        case .downloads: return "arrow.down.circle"
+        case .sources: return "antenna.radiowaves.left.and.right"
+        case .settings: return "gearshape"
+        }
+    }
+}
+
+/// Root view: waits for the engine, then shows the adaptive navigation.
+struct AppShellView: View {
+    @Bindable var state: AppState
+
+    var body: some View {
+        if let engine = state.engine {
+            LoadedShellView(state: state, engine: engine)
+        } else if let error = state.errorMessage {
+            ContentUnavailableView("Démarrage impossible", systemImage: "exclamationmark.triangle", description: Text(error))
+        } else {
+            ProgressView("Initialisation du moteur…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// macOS: `NavigationSplitView` (sidebar, then the screen with its own category column and the
+/// docked player). iOS: `TabView` with a persistent mini-player above the tab bar. One navigation
+/// container per platform, so there is a single title bar and a single toolbar.
+private struct LoadedShellView: View {
+    @Bindable var state: AppState
+    let engine: CndEngine
+
+    @AppStorage("shell.selectedTab") private var selectedTabRaw = AppTab.live.rawValue
+    @State private var sourcesModel: SourcesModel
+    @State private var epgFocus: IptvItemRecord?
+    @State private var isPlayerExpanded = false
+    @State private var isDropTargeted = false
+
+    init(state: AppState, engine: CndEngine) {
+        self.state = state
+        self.engine = engine
+        _sourcesModel = State(initialValue: SourcesModel(engine: engine, onChange: { [weak state] in
+            state?.reloadSnapshot()
+        }))
+    }
+
+    private var selectedTab: AppTab { AppTab(rawValue: selectedTabRaw) ?? .live }
+    private var player: CndPlayerController { state.player }
+    private var hasMedia: Bool { player.media != nil }
+
+    var body: some View {
+        platformShell
+            .dropDestination(for: URL.self) { urls, _ in handleDrop(urls) } isTargeted: { isDropTargeted = $0 }
+            .overlay {
+                if isDropTargeted {
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [10]))
+                        .background(Color.accentColor.opacity(0.08))
+                        .padding(8)
+                        .allowsHitTesting(false)
+                }
+            }
+            .alert(
+                "Erreur",
+                isPresented: Binding(get: { state.errorMessage != nil }, set: { if !$0 { state.errorMessage = nil } })
+            ) {
+                Button("OK") { state.errorMessage = nil }
+            } message: {
+                Text(state.errorMessage ?? "")
+            }
+            .onChange(of: hasMedia) { _, present in if !present { isPlayerExpanded = false } }
+    }
+
+    // MARK: Platform shells
+
+    @ViewBuilder
+    private var platformShell: some View {
+        #if os(macOS)
+        NavigationSplitView {
+            List(AppTab.allCases, selection: Binding<AppTab?>(
+                get: { selectedTab },
+                set: { if let tab = $0 { selectedTabRaw = tab.rawValue } }
+            )) { tab in
+                Label(tab.title, systemImage: tab.systemImage)
+                    .badge(badge(for: tab))
+                    .tag(tab)
+            }
+            .navigationTitle("CND IPTV")
+            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
+        } detail: {
+            HStack(spacing: 0) {
+                content(for: selectedTab)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if hasMedia && !isPlayerExpanded {
+                    Divider()
+                    dockedPlayer.frame(width: 360)
+                }
+            }
+            .overlay {
+                if isPlayerExpanded { expandedPlayer }
+            }
+        }
+        #else
+        TabView(selection: Binding(get: { selectedTab }, set: { selectedTabRaw = $0.rawValue })) {
+            ForEach(AppTab.allCases) { tab in
+                NavigationStack {
+                    content(for: tab)
+                        .safeAreaInset(edge: .bottom, spacing: 0) { miniPlayerBar }
+                }
+                .tabItem { Label(tab.title, systemImage: tab.systemImage) }
+                .badge(badge(for: tab))
+                .tag(tab)
+            }
+        }
+        .fullScreenCover(isPresented: $isPlayerExpanded) {
+            expandedPlayer.ignoresSafeArea()
+        }
+        #endif
+    }
+
+    private func badge(for tab: AppTab) -> Int {
+        guard let stats = state.stats else { return 0 }
+        switch tab {
+        case .live: return Int(stats.totalLiveChannels)
+        case .movies: return Int(stats.totalMovies)
+        case .series: return Int(stats.totalSeries)
+        case .downloads: return Int(stats.totalDownloads)
+        case .sources: return Int(stats.totalSources)
+        case .guide, .settings: return 0
+        }
+    }
+
+    // MARK: Screens
+
+    @ViewBuilder
+    private func content(for tab: AppTab) -> some View {
+        Group {
+            switch tab {
+            case .live:
+                LiveTvView(
+                    engine: engine,
+                    revision: state.catalogRevision,
+                    totalChannels: Int(state.stats?.totalLiveChannels ?? 0),
+                    playingURL: player.media?.url.absoluteString,
+                    onPlay: play,
+                    onShowGuide: showGuide,
+                    onFavoriteChanged: { state.reloadSnapshot() }
+                )
+            case .guide:
+                EpgGuideView(
+                    engine: engine,
+                    focus: $epgFocus,
+                    revision: state.catalogRevision,
+                    playingURL: player.media?.url.absoluteString,
+                    onPlay: play
+                )
+            case .sources:
+                SourcesListView(engine: engine, sources: state.sources, model: sourcesModel)
+            case .movies, .series, .downloads, .settings:
+                ContentUnavailableView(
+                    tab.title,
+                    systemImage: tab.systemImage,
+                    description: Text("Cet écran sera disponible dans une prochaine étape.")
+                )
+                .navigationTitle(tab.title)
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let banner = sourcesModel.banner {
+                SourcesBannerView(banner: banner) { sourcesModel.dismissBanner() }
+            }
+        }
+    }
+
+    // MARK: Player
+
+    private func play(_ item: IptvItemRecord) {
+        guard let media = PlayableMedia(item: item) else {
+            state.errorMessage = "L'URL du flux de « \(item.name) » est invalide."
+            return
+        }
+        player.open(media)
+    }
+
+    private func showGuide(_ item: IptvItemRecord) {
+        epgFocus = item
+        selectedTabRaw = AppTab.guide.rawValue
+    }
+
+    private func closePlayer() {
+        player.close()
+        isPlayerExpanded = false
+    }
+
+    /// Side panel (macOS): the channel list stays browsable while the live stream keeps playing.
+    private var dockedPlayer: some View {
+        VStack(spacing: 0) {
+            CndVideoPlayerView(
+                controller: player,
+                onToggleFullscreen: { isPlayerExpanded = true },
+                onClose: closePlayer,
+                closesOnDisappear: false
+            )
+            .aspectRatio(16 / 9, contentMode: .fit)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(player.media?.title ?? "").font(.headline).lineLimit(2)
+                Text(player.isLive ? "Direct" : "Lecture").font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            Spacer(minLength: 0)
+        }
+        .background(.background)
+    }
+
+    private var expandedPlayer: some View {
+        CndVideoPlayerView(
+            controller: player,
+            onToggleFullscreen: { isPlayerExpanded = false },
+            onClose: closePlayer,
+            closesOnDisappear: false
+        )
+        .background(Color.black)
+    }
+
+    /// Persistent mini-player (iOS): tap to expand, controls stay one thumb away.
+    @ViewBuilder
+    private var miniPlayerBar: some View {
+        if hasMedia {
+            HStack(spacing: 12) {
+                PlayerSurface(layer: isPlayerExpanded ? nil : player.surfaceLayer)
+                    .frame(width: 112, height: 63)
+                    .background(Color.black)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(player.media?.title ?? "").font(.subheadline.weight(.semibold)).lineLimit(1)
+                    Text(player.reconnectBanner ?? (player.isLive ? "Direct" : "Lecture"))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Button { player.togglePlayPause() } label: {
+                    Image(systemName: player.state == .playing || player.state == .buffering ? "pause.fill" : "play.fill")
+                }
+                .accessibilityLabel("Lecture / Pause")
+                Button(action: closePlayer) { Image(systemName: "xmark") }
+                    .accessibilityLabel("Fermer le lecteur")
+            }
+            .buttonStyle(.plain)
+            .font(.title3)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
+            .contentShape(Rectangle())
+            .onTapGesture { isPlayerExpanded = true }
+        }
+    }
+
+    // MARK: Drag & drop
+
+    private func handleDrop(_ urls: [URL]) -> Bool {
+        let playlists = urls.filter(SourcesModel.isM3uFile)
+        guard !playlists.isEmpty else { return false }
+        Task { for url in playlists { await sourcesModel.importM3u(from: url) } }
+        return true
+    }
+}

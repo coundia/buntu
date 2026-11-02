@@ -6,7 +6,7 @@ struct CndIptvApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView(state: appState)
+            AppShellView(state: appState)
                 #if os(macOS)
                 .frame(minWidth: 800, minHeight: 500)
                 #endif

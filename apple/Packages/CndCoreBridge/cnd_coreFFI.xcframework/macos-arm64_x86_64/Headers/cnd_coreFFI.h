@@ -287,6 +287,11 @@ void uniffi_cnd_core_fn_method_cndengine_clear_logs(void*_Nonnull ptr, RustCallS
 void uniffi_cnd_core_fn_method_cndengine_delete_source(void*_Nonnull ptr, int64_t source_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ENQUEUE_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ENQUEUE_DOWNLOAD
+uint64_t uniffi_cnd_core_fn_method_cndengine_enqueue_download(void*_Nonnull ptr, RustBuffer req
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ENSURE_XTREAM_SERIES_EPISODES
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ENSURE_XTREAM_SERIES_EPISODES
 uint64_t uniffi_cnd_core_fn_method_cndengine_ensure_xtream_series_episodes(void*_Nonnull ptr, int64_t series_db_id, RustBuffer password
@@ -305,6 +310,11 @@ uint64_t uniffi_cnd_core_fn_method_cndengine_fetch_series_metadata(void*_Nonnull
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_CHANNEL_EPG
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_CHANNEL_EPG
 RustBuffer uniffi_cnd_core_fn_method_cndengine_get_channel_epg(void*_Nonnull ptr, RustBuffer tvg_id, int64_t from_ts, int64_t to_ts, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_DOWNLOAD_LOGS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_DOWNLOAD_LOGS
+RustBuffer uniffi_cnd_core_fn_method_cndengine_get_download_logs(void*_Nonnull ptr, int64_t task_id, uint32_t limit, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_EPG_NOW_NEXT
@@ -362,6 +372,11 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_get_stats(void*_Nonnull ptr, Rust
 uint64_t uniffi_cnd_core_fn_method_cndengine_import_local_m3u(void*_Nonnull ptr, RustBuffer name, RustBuffer file_path
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LIST_DOWNLOADS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LIST_DOWNLOADS
+RustBuffer uniffi_cnd_core_fn_method_cndengine_list_downloads(void*_Nonnull ptr, RustBuffer query, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LIST_FAVORITE_ITEMS
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LIST_FAVORITE_ITEMS
 RustBuffer uniffi_cnd_core_fn_method_cndengine_list_favorite_items(void*_Nonnull ptr, RustBuffer kind, RustCallStatus *_Nonnull out_status
@@ -385,6 +400,16 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_list_recent_series(void*_Nonnull 
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LIST_SOURCES
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LIST_SOURCES
 RustBuffer uniffi_cnd_core_fn_method_cndengine_list_sources(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PAUSE_ALL_DOWNLOADS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PAUSE_ALL_DOWNLOADS
+uint64_t uniffi_cnd_core_fn_method_cndengine_pause_all_downloads(void*_Nonnull ptr
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PAUSE_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PAUSE_DOWNLOAD
+uint64_t uniffi_cnd_core_fn_method_cndengine_pause_download(void*_Nonnull ptr, int64_t task_id
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_QUERY_CATALOG
@@ -420,6 +445,26 @@ uint64_t uniffi_cnd_core_fn_method_cndengine_refresh_source_epg(void*_Nonnull pt
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_REFRESH_XTREAM_SOURCE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_REFRESH_XTREAM_SOURCE
 uint64_t uniffi_cnd_core_fn_method_cndengine_refresh_xtream_source(void*_Nonnull ptr, int64_t source_id, RustBuffer password
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_REMOVE_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_REMOVE_DOWNLOAD
+uint64_t uniffi_cnd_core_fn_method_cndengine_remove_download(void*_Nonnull ptr, int64_t task_id, int8_t delete_files
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RETRY_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RETRY_DOWNLOAD
+uint64_t uniffi_cnd_core_fn_method_cndengine_retry_download(void*_Nonnull ptr, int64_t task_id
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_START_ALL_DOWNLOADS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_START_ALL_DOWNLOADS
+uint64_t uniffi_cnd_core_fn_method_cndengine_start_all_downloads(void*_Nonnull ptr
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_START_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_START_DOWNLOAD
+uint64_t uniffi_cnd_core_fn_method_cndengine_start_download(void*_Nonnull ptr, int64_t task_id
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_TOGGLE_FAVORITE
@@ -762,6 +807,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_delete_source(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_ENQUEUE_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_ENQUEUE_DOWNLOAD
+uint16_t uniffi_cnd_core_checksum_method_cndengine_enqueue_download(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_ENSURE_XTREAM_SERIES_EPISODES
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_ENSURE_XTREAM_SERIES_EPISODES
 uint16_t uniffi_cnd_core_checksum_method_cndengine_ensure_xtream_series_episodes(void
@@ -783,6 +834,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_fetch_series_metadata(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_CHANNEL_EPG
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_CHANNEL_EPG
 uint16_t uniffi_cnd_core_checksum_method_cndengine_get_channel_epg(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_DOWNLOAD_LOGS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_DOWNLOAD_LOGS
+uint16_t uniffi_cnd_core_checksum_method_cndengine_get_download_logs(void
     
 );
 #endif
@@ -852,6 +909,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_import_local_m3u(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_LIST_DOWNLOADS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_LIST_DOWNLOADS
+uint16_t uniffi_cnd_core_checksum_method_cndengine_list_downloads(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_LIST_FAVORITE_ITEMS
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_LIST_FAVORITE_ITEMS
 uint16_t uniffi_cnd_core_checksum_method_cndengine_list_favorite_items(void
@@ -879,6 +942,18 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_list_recent_series(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_LIST_SOURCES
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_LIST_SOURCES
 uint16_t uniffi_cnd_core_checksum_method_cndengine_list_sources(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PAUSE_ALL_DOWNLOADS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PAUSE_ALL_DOWNLOADS
+uint16_t uniffi_cnd_core_checksum_method_cndengine_pause_all_downloads(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PAUSE_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PAUSE_DOWNLOAD
+uint16_t uniffi_cnd_core_checksum_method_cndengine_pause_download(void
     
 );
 #endif
@@ -921,6 +996,30 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_refresh_source_epg(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_REFRESH_XTREAM_SOURCE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_REFRESH_XTREAM_SOURCE
 uint16_t uniffi_cnd_core_checksum_method_cndengine_refresh_xtream_source(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_REMOVE_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_REMOVE_DOWNLOAD
+uint16_t uniffi_cnd_core_checksum_method_cndengine_remove_download(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RETRY_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RETRY_DOWNLOAD
+uint16_t uniffi_cnd_core_checksum_method_cndengine_retry_download(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_START_ALL_DOWNLOADS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_START_ALL_DOWNLOADS
+uint16_t uniffi_cnd_core_checksum_method_cndengine_start_all_downloads(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_START_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_START_DOWNLOAD
+uint16_t uniffi_cnd_core_checksum_method_cndengine_start_download(void
     
 );
 #endif

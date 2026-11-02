@@ -1,0 +1,186 @@
+import SwiftUI
+import CndCoreBridge
+
+/// Quality badge guessed from the channel name (`4K`, `UHD`, `FHD`, `HD`).
+enum ChannelQuality: String {
+    case uhd = "4K"
+    case fullHD = "FHD"
+    case hd = "HD"
+
+    private static func matches(_ pattern: String, in name: String) -> Bool {
+        name.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    static func detect(in name: String) -> ChannelQuality? {
+        if matches(#"(^|[^A-Za-z0-9])(4K|UHD|2160P?)($|[^A-Za-z0-9])"#, in: name) { return .uhd }
+        if matches(#"(^|[^A-Za-z0-9])(FHD|1080[PI]?)($|[^A-Za-z0-9])"#, in: name) { return .fullHD }
+        if matches(#"(^|[^A-Za-z0-9])(HD|720P?)($|[^A-Za-z0-9])"#, in: name) { return .hd }
+        return nil
+    }
+}
+
+enum EpgProgress {
+    /// Elapsed fraction of a programme at `now`, clamped to 0...1.
+    static func ratio(start: Int64, end: Int64, now: Date = Date()) -> Double {
+        guard end > start else { return 0 }
+        let elapsed = now.timeIntervalSince1970 - Double(start)
+        return min(max(elapsed / Double(end - start), 0), 1)
+    }
+
+    static func timeRange(_ program: EpgProgramRecord) -> String {
+        let start = Date(timeIntervalSince1970: TimeInterval(program.startTs))
+        let end = Date(timeIntervalSince1970: TimeInterval(program.endTs))
+        return "\(start.formatted(date: .omitted, time: .shortened)) – \(end.formatted(date: .omitted, time: .shortened))"
+    }
+}
+
+struct ChannelActions {
+    var play: (IptvItemRecord) -> Void
+    var toggleFavorite: (IptvItemRecord) -> Void
+    var showGuide: (IptvItemRecord) -> Void
+}
+
+/// One channel, as a grid card or a list row. Fixed height so lazy grids never reflow.
+struct ChannelCardView: View {
+    enum Style { case card, row }
+
+    let item: IptvItemRecord
+    let nowNext: ChannelNowNext?
+    var isPlaying = false
+    var style: Style = .card
+    let actions: ChannelActions
+
+    var body: some View {
+        Group {
+            switch style {
+            case .card: card
+            case .row: row
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { actions.play(item) }
+        .contextMenu { menu }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    // MARK: Layouts
+
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                logo
+                titleBlock
+                Spacer(minLength: 0)
+                favoriteButton
+            }
+            programBlock
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+        .background(.quaternary.opacity(isPlaying ? 0.9 : 0.4), in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            if isPlaying {
+                RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 2)
+            }
+        }
+    }
+
+    private var row: some View {
+        HStack(spacing: 12) {
+            logo
+            VStack(alignment: .leading, spacing: 4) {
+                titleBlock
+                programBlock
+            }
+            favoriteButton
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(isPlaying ? Color.accentColor.opacity(0.15) : .clear)
+    }
+
+    // MARK: Pieces
+
+    private var logo: some View {
+        ThumbnailImageView(urlString: item.logoUrl, size: .tvLogo)
+            .frame(width: 44, height: 44)
+            .padding(2)
+            .background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                if isPlaying { Image(systemName: "speaker.wave.2.fill").font(.caption).foregroundStyle(.tint) }
+                if let number = item.chno { Text("\(number)").font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
+                Text(item.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                if let quality = ChannelQuality.detect(in: item.name) {
+                    Text(quality.rawValue)
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(quality == .uhd ? Color.orange : Color.secondary.opacity(0.25), in: RoundedRectangle(cornerRadius: 3))
+                        .foregroundStyle(quality == .uhd ? Color.black : Color.primary)
+                }
+            }
+            if let group = item.groupTitle, !group.isEmpty {
+                Text(group).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var programBlock: some View {
+        if let now = nowNext?.now {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(now.title).font(.caption).lineLimit(1)
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    ProgressView(value: EpgProgress.ratio(start: now.startTs, end: now.endTs, now: context.date))
+                        .progressViewStyle(.linear)
+                        .controlSize(.mini)
+                }
+            }
+        } else {
+            Text(item.tvgId?.isEmpty == false ? "Guide indisponible" : "Pas de guide")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+        }
+    }
+
+    private var favoriteButton: some View {
+        Button { actions.toggleFavorite(item) } label: {
+            Image(systemName: item.isFavorite ? "star.fill" : "star")
+                .foregroundStyle(item.isFavorite ? Color.yellow : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+    }
+
+    @ViewBuilder
+    private var menu: some View {
+        Button("Lire", systemImage: "play.fill") { actions.play(item) }
+        Button(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
+               systemImage: item.isFavorite ? "star.slash" : "star") { actions.toggleFavorite(item) }
+        if let media = PlayableMedia(item: item) {
+            Menu("Ouvrir dans…", systemImage: "arrow.up.forward.app") {
+                ForEach(ExternalPlayer.availableOnThisPlatform) { player in
+                    Button(player.displayName) { Task { _ = await ExternalPlayerLauncher.launch(player, media: media) } }
+                }
+            }
+        }
+        Button("Voir le programme TV complet", systemImage: "calendar") { actions.showGuide(item) }
+            .disabled(item.tvgId?.isEmpty != false)
+        Divider()
+        if let media = PlayableMedia(item: item) {
+            Button("Copier l'URL du flux", systemImage: "link") { ExternalPlayerLauncher.copyStreamUrl(media) }
+        }
+    }
+
+    private var accessibilityText: String {
+        var text = item.name
+        if let now = nowNext?.now { text += ", en ce moment : \(now.title)" }
+        return text
+    }
+}
