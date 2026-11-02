@@ -127,8 +127,9 @@ public struct CndVideoPlayerView: View {
 
     public var body: some View {
         ZStack {
-            Color.black
-            PlayerSurface(layer: controller.surfaceLayer)
+            // Video and gestures run edge to edge; the controls below stay inside the safe area.
+            Color.black.ignoresSafeArea()
+            PlayerSurface(layer: controller.surfaceLayer).ignoresSafeArea()
 
             #if os(iOS)
             PlayerGestureLayer(
@@ -136,6 +137,7 @@ public struct CndVideoPlayerView: View {
                 onSingleTap: { hudVisible ? scheduleHide() : showHUD() },
                 onSkip: { controller.skip(bySeconds: $0); showHUD() }
             )
+            .ignoresSafeArea()
             #endif
 
             SubtitleOverlayView(model: controller.subtitleOverlay)
