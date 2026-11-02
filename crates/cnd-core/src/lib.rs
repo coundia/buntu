@@ -1,14 +1,25 @@
 pub mod ai;
 pub mod db;
 pub mod downloader;
+pub mod health;
 pub mod http_client;
 pub mod iptv;
 pub mod metadata;
+pub mod recorder;
+pub mod sharing;
+pub mod subtitles;
 pub mod telemetry;
 
 pub use ai::{
     AiAction, AiCommandContext, AiCommandResult, AiProviderConfig, AiProviderKind, AiProviderStatus,
 };
+pub use sharing::{
+    ShareDecision, ShareExport, ShareImportAction, ShareImportResult, ShareImportedSource, SharePreview,
+    SharePreviewSource, ShareSourceOption, ShareWarning,
+};
+pub use subtitles::{SubtitleCue, SubtitleSearchQuery, SubtitleSearchResult};
+pub use db::profile_repo::{FavoriteFolderRecord, ProfileRecord};
+pub use db::recording_repo::{NewRecordingRequest, RecordingRecord, SeriesRuleRecord};
 pub use db::catalog_repo::{CatalogFilter, FacetCount, SeasonSummary, SeriesRecord, SortField};
 pub use db::download_repo::{
     DownloadLogRecord, DownloadPartRecord, DownloadTaskRecord, NewDownloadRequest,
@@ -19,6 +30,8 @@ pub use db::settings_repo::RuntimeSettings;
 pub use db::sync_repo::{
     SyncDelta, SyncFavorite, SyncImportSummary, SyncSource, SyncTombstone, SyncWatchProgress,
 };
+pub use db::StreamHealthRecord;
+pub use health::ProbeResultRecord;
 pub use iptv::xtream::XtreamAccountInfo;
 pub use metadata::MediaMetadata;
 pub use telemetry::{LogLevel, NetworkLogEntry, TelemetryHub};
@@ -71,6 +84,10 @@ pub struct CndEngine {
     telemetry: Arc<TelemetryHub>,
     http_pool: Arc<HttpClientPool>,
     downloads: Arc<downloader::DownloadManager>,
+    health_service: Arc<health::HealthService>,
+    subtitle_service: Arc<subtitles::SubtitleService>,
+    recorder: Arc<recorder::PvrManager>,
+    active_profile_id: std::sync::atomic::AtomicI64,
 }
 
 impl CndEngine {
@@ -90,9 +107,18 @@ impl CndEngine {
             Arc::clone(&telemetry),
             Arc::clone(&http_pool),
         );
+        let health_service = Arc::new(health::HealthService::new(Arc::clone(&db)));
+        let subtitle_service = Arc::new(subtitles::SubtitleService::default());
+        let default_rec_dir = std::env::temp_dir().join("cnd_recordings");
+        let recorder = recorder::PvrManager::new(
+            Arc::clone(&db),
+            Arc::clone(&http_pool),
+            Arc::clone(&telemetry),
+            default_rec_dir,
+        );
         telemetry.info(
             "DB",
-            "CndEngine initialized (SQLite WAL + FTS5 + HttpClientPool)",
+            "CndEngine initialized (SQLite WAL + FTS5 + HttpClientPool + PVR)",
         );
         if recovered > 0 {
             telemetry.info(
@@ -107,6 +133,10 @@ impl CndEngine {
             telemetry,
             http_pool,
             downloads,
+            health_service,
+            subtitle_service,
+            recorder,
+            active_profile_id: std::sync::atomic::AtomicI64::new(1),
         }))
     }
 
@@ -489,7 +519,7 @@ impl CndEngine {
         };
 
         let now_ts = db::chrono_now_ts();
-        let _ = self.db.purge_expired_epg(now_ts - 86_400)?;
+        let _ = self.db.purge_expired_epg(now_ts - (14 * 86_400))?;
         let known_channels = self.db.load_known_tvg_channels(None)?;
 
         let mut total_imported = 0u32;
@@ -583,6 +613,78 @@ impl CndEngine {
         Ok(self.db.get_channel_epg(&tvg_id, from_ts, to_ts)?)
     }
 
+    pub fn build_catchup_url(
+        &self,
+        item_id: i64,
+        start_ts: i64,
+        end_ts: i64,
+    ) -> Result<Option<String>, CndError> {
+        let Some(item) = self.db.get_item_by_id(item_id)? else {
+            return Ok(None);
+        };
+        let now_ts = db::chrono_now_ts();
+        match iptv::catchup::build_catchup_url(
+            &item.stream_url,
+            item.catchup_type.as_deref(),
+            item.catchup_source.as_deref(),
+            item.catchup_days,
+            start_ts,
+            end_ts,
+            now_ts,
+        ) {
+            Ok(url) => Ok(Some(url)),
+            Err(e) => {
+                tracing::debug!("Catchup URL not generated for item {item_id}: {e}");
+                Ok(None)
+            }
+        }
+    }
+
+    pub fn is_catchup_available(
+        &self,
+        item_id: i64,
+        start_ts: i64,
+    ) -> Result<bool, CndError> {
+        let Some(item) = self.db.get_item_by_id(item_id)? else {
+            return Ok(false);
+        };
+        let now_ts = db::chrono_now_ts();
+        Ok(iptv::catchup::is_catchup_available(
+            item.catchup_type.as_deref(),
+            item.catchup_source.as_deref(),
+            item.catchup_days,
+            start_ts,
+            now_ts,
+        ))
+    }
+
+    pub fn resolve_catchup_url(
+        &self,
+        stream_url: String,
+        catchup_type: Option<String>,
+        catchup_source: Option<String>,
+        catchup_days: Option<u32>,
+        start_ts: i64,
+        end_ts: i64,
+    ) -> Result<Option<String>, CndError> {
+        let now_ts = db::chrono_now_ts();
+        match iptv::catchup::build_catchup_url(
+            &stream_url,
+            catchup_type.as_deref(),
+            catchup_source.as_deref(),
+            catchup_days,
+            start_ts,
+            end_ts,
+            now_ts,
+        ) {
+            Ok(url) => Ok(Some(url)),
+            Err(e) => {
+                tracing::debug!("Catchup URL not generated: {e}");
+                Ok(None)
+            }
+        }
+    }
+
     pub fn toggle_favorite(
         &self,
         stable_hash: String,
@@ -591,12 +693,42 @@ impl CndEngine {
         Ok(self.db.toggle_favorite(&stable_hash, &item_kind)?)
     }
 
+    pub fn toggle_broken(
+        &self,
+        stable_hash: String,
+        item_kind: String,
+    ) -> Result<bool, CndError> {
+        Ok(self.db.toggle_broken(&stable_hash, &item_kind)?)
+    }
+
+    pub fn set_broken(
+        &self,
+        stable_hash: String,
+        item_kind: String,
+        broken: bool,
+    ) -> Result<bool, CndError> {
+        Ok(self.db.set_broken(&stable_hash, &item_kind, broken)?)
+    }
+
+    pub fn is_broken(&self, stable_hash: String) -> Result<bool, CndError> {
+        Ok(self.db.is_broken(&stable_hash)?)
+    }
+
     pub fn get_groups(
         &self,
         kind: String,
         source_id: Option<i64>,
     ) -> Result<Vec<FacetCount>, CndError> {
-        Ok(self.db.get_groups(&kind, source_id)?)
+        Ok(self.db.get_groups(&kind, source_id, false)?)
+    }
+
+    pub fn get_groups_with_hidden(
+        &self,
+        kind: String,
+        source_id: Option<i64>,
+        include_hidden: bool,
+    ) -> Result<Vec<FacetCount>, CndError> {
+        Ok(self.db.get_groups(&kind, source_id, include_hidden)?)
     }
 
     pub fn get_hosts(
@@ -641,6 +773,52 @@ impl CndEngine {
 
     pub fn list_favorite_series(&self) -> Result<Vec<SeriesRecord>, CndError> {
         Ok(self.db.list_favorite_series()?)
+    }
+
+    pub fn list_broken_items(&self, kind: String) -> Result<Vec<db::IptvItemRecord>, CndError> {
+        Ok(self.db.list_broken_items(&kind)?)
+    }
+
+    pub fn list_broken_series(&self) -> Result<Vec<SeriesRecord>, CndError> {
+        Ok(self.db.list_broken_series()?)
+    }
+
+    pub fn find_mirrors(&self, item_id: i64) -> Result<Vec<db::IptvItemRecord>, CndError> {
+        Ok(health::find_mirrors(&self.db, item_id)?)
+    }
+
+    pub async fn probe_stream(
+        &self,
+        url: String,
+        headers_json: Option<String>,
+        user_agent: Option<String>,
+        referer: Option<String>,
+    ) -> Result<ProbeResultRecord, CndError> {
+        Ok(health::probe_stream(&url, headers_json.as_deref(), user_agent.as_deref(), referer.as_deref()).await)
+    }
+
+    pub fn get_stream_health(&self, stable_hash: String) -> Result<Option<StreamHealthRecord>, CndError> {
+        Ok(self.db.get_stream_health(&stable_hash)?)
+    }
+
+    pub fn get_stream_health_batch(&self, hashes: Vec<String>) -> Result<Vec<StreamHealthRecord>, CndError> {
+        Ok(self.db.get_stream_health_batch(&hashes)?)
+    }
+
+    pub fn start_health_checks(&self, interval_minutes: Option<u32>) {
+        self.health_service.start(interval_minutes);
+    }
+
+    pub fn stop_health_checks(&self) {
+        self.health_service.stop();
+    }
+
+    pub fn is_health_check_running(&self) -> bool {
+        self.health_service.is_running()
+    }
+
+    pub async fn run_health_check_cycle(&self, throttle: bool) -> Result<u32, CndError> {
+        Ok(self.health_service.run_single_cycle(throttle).await?)
     }
 
     pub fn record_watch_progress(
@@ -740,6 +918,32 @@ impl CndEngine {
         self.downloads.logs(task_id, limit)
     }
 
+    /// Builds the plain share document for the chosen sources (the app encrypts it).
+    /// Credentials are only included for sources whose option asks for it.
+    pub fn export_share_document(
+        &self,
+        options: Vec<ShareSourceOption>,
+        from: String,
+        valid_for_seconds: u32,
+    ) -> Result<ShareExport, CndError> {
+        sharing::export(self, options, from, valid_for_seconds)
+    }
+
+    /// Reads a decrypted share document and tells what it contains and what already exists here.
+    pub fn preview_share_document(&self, json: String) -> Result<SharePreview, CndError> {
+        sharing::preview(self, &json)
+    }
+
+    /// Creates (or replaces) the sources of a share document according to the user's decisions.
+    pub fn import_share_document(
+        &self,
+        json: String,
+        decisions: Vec<ShareDecision>,
+        imports_dir: String,
+    ) -> Result<ShareImportResult, CndError> {
+        sharing::import(self, &json, decisions, &imports_dir)
+    }
+
     /// Turns a typed or spoken command into a channel action: local resolution first, then the
     /// user's own model provider, validated against a short candidate list.
     pub async fn ai_resolve_command(
@@ -792,6 +996,163 @@ impl CndEngine {
             limit,
             offset,
         )?)
+    }
+
+    pub async fn search_subtitles(
+        &self,
+        query: subtitles::SubtitleSearchQuery,
+        api_key: Option<String>,
+    ) -> Result<Vec<subtitles::SubtitleSearchResult>, CndError> {
+        self.subtitle_service
+            .search(&query, api_key.as_deref())
+            .await
+    }
+
+    pub async fn download_subtitle(
+        &self,
+        file_id: i64,
+        target_dir: String,
+        api_key: Option<String>,
+    ) -> Result<String, CndError> {
+        let path = self
+            .subtitle_service
+            .download(file_id, Path::new(&target_dir), api_key.as_deref())
+            .await?;
+        Ok(path.to_string_lossy().to_string())
+    }
+
+    pub fn parse_srt(&self, srt_content: String) -> Vec<subtitles::SubtitleCue> {
+        subtitles::parse_srt(&srt_content)
+    }
+
+    pub fn compute_file_moviehash(&self, file_path: String) -> Result<String, CndError> {
+        subtitles::compute_file_moviehash(&file_path).map_err(|e| CndError::Parse {
+            message: e.to_string(),
+        })
+    }
+
+    // MARK: - PVR Scheduled Recording (PRD-19)
+
+    pub fn schedule_recording(&self, req: NewRecordingRequest) -> Result<i64, CndError> {
+        self.recorder.schedule_recording(req)
+    }
+
+    pub fn record_now(&self, item_id: i64, duration_minutes: u32) -> Result<i64, CndError> {
+        self.recorder.record_now(item_id, duration_minutes)
+    }
+
+    pub fn cancel_recording(&self, id: i64) -> Result<bool, CndError> {
+        self.recorder.cancel_recording(id)
+    }
+
+    pub fn delete_recording(&self, id: i64, delete_file: bool) -> Result<bool, CndError> {
+        self.recorder.delete_recording(id, delete_file)
+    }
+
+    pub fn list_recordings(&self, state_filter: Option<String>) -> Result<Vec<RecordingRecord>, CndError> {
+        self.recorder.list_recordings(state_filter)
+    }
+
+    pub fn set_recording_directory(&self, dir: String) {
+        self.recorder.set_download_dir(std::path::PathBuf::from(dir));
+    }
+
+    pub fn add_series_rule(&self, channel_tvg_id: Option<String>, title: String) -> Result<i64, CndError> {
+        self.recorder.add_series_rule(channel_tvg_id, title)
+    }
+
+    pub fn remove_series_rule(&self, id: i64) -> Result<bool, CndError> {
+        self.recorder.remove_series_rule(id)
+    }
+
+    pub fn list_series_rules(&self) -> Result<Vec<SeriesRuleRecord>, CndError> {
+        self.recorder.list_series_rules()
+    }
+
+    // MARK: - Profiles & Bouquets & Parental Control (PRD-20)
+
+    pub fn active_profile_id(&self) -> i64 {
+        self.active_profile_id.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn set_active_profile_id(&self, id: i64) {
+        self.active_profile_id.store(id, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn list_profiles(&self) -> Result<Vec<ProfileRecord>, CndError> {
+        Ok(self.db.list_profiles()?)
+    }
+
+    pub fn get_profile(&self, id: i64) -> Result<Option<ProfileRecord>, CndError> {
+        Ok(self.db.get_profile(id)?)
+    }
+
+    pub fn create_profile(&self, name: String, avatar: String, is_kids: bool) -> Result<ProfileRecord, CndError> {
+        Ok(self.db.create_profile(&name, &avatar, is_kids)?)
+    }
+
+    pub fn update_profile(&self, id: i64, name: String, avatar: String, is_kids: bool) -> Result<(), CndError> {
+        Ok(self.db.update_profile(id, &name, &avatar, is_kids)?)
+    }
+
+    pub fn delete_profile(&self, id: i64) -> Result<bool, CndError> {
+        Ok(self.db.delete_profile(id)?)
+    }
+
+    pub fn hide_group(&self, profile_id: i64, kind: String, group: String) -> Result<(), CndError> {
+        Ok(self.db.hide_group(profile_id, &kind, &group)?)
+    }
+
+    pub fn unhide_group(&self, profile_id: i64, kind: String, group: String) -> Result<bool, CndError> {
+        Ok(self.db.unhide_group(profile_id, &kind, &group)?)
+    }
+
+    pub fn list_hidden_groups(&self, profile_id: i64, kind: String) -> Result<Vec<String>, CndError> {
+        Ok(self.db.list_hidden_groups(profile_id, &kind)?)
+    }
+
+    pub fn hide_item(&self, profile_id: i64, stable_hash: String) -> Result<(), CndError> {
+        Ok(self.db.hide_item(profile_id, &stable_hash)?)
+    }
+
+    pub fn unhide_item(&self, profile_id: i64, stable_hash: String) -> Result<bool, CndError> {
+        Ok(self.db.unhide_item(profile_id, &stable_hash)?)
+    }
+
+    pub fn list_hidden_items(&self, profile_id: i64) -> Result<Vec<String>, CndError> {
+        Ok(self.db.list_hidden_items(profile_id)?)
+    }
+
+    pub fn set_custom_order(&self, profile_id: i64, scope: String, key: String, position: i32) -> Result<(), CndError> {
+        Ok(self.db.set_custom_order(profile_id, &scope, &key, position)?)
+    }
+
+    pub fn create_favorite_folder(&self, profile_id: i64, name: String, position: i32) -> Result<i64, CndError> {
+        Ok(self.db.create_favorite_folder(profile_id, &name, position)?)
+    }
+
+    pub fn delete_favorite_folder(&self, id: i64) -> Result<bool, CndError> {
+        Ok(self.db.delete_favorite_folder(id)?)
+    }
+
+    pub fn list_favorite_folders(&self, profile_id: i64) -> Result<Vec<FavoriteFolderRecord>, CndError> {
+        Ok(self.db.list_favorite_folders(profile_id)?)
+    }
+
+    pub fn add_to_favorite_folder(&self, folder_id: i64, stable_hash: String, position: i32) -> Result<(), CndError> {
+        Ok(self.db.add_to_favorite_folder(folder_id, &stable_hash, position)?)
+    }
+
+    pub fn remove_from_favorite_folder(&self, folder_id: i64, stable_hash: String) -> Result<bool, CndError> {
+        Ok(self.db.remove_from_favorite_folder(folder_id, &stable_hash)?)
+    }
+
+    pub fn list_favorite_folder_items(&self, folder_id: i64) -> Result<Vec<String>, CndError> {
+        Ok(self.db.list_favorite_folder_items(folder_id)?)
+    }
+
+    pub fn is_adult_category(&self, group: String) -> bool {
+        db::profile_repo::is_adult_category(&group)
     }
 }
 
@@ -1191,5 +1552,396 @@ http://iptv.local:8080/series/u/p/401.mkv
         }
 
         srv.abort();
+    }
+
+    #[tokio::test]
+    async fn test_cnd_engine_catchup_workflow() {
+        let engine = CndEngine::in_memory().expect("engine");
+        let src_id = engine
+            .add_source(
+                "Catchup Test".to_string(),
+                "m3u".to_string(),
+                Some("http://dummy/m3u".to_string()),
+                None,
+                None,
+                None,
+            )
+            .expect("source");
+
+        let now_ts = db::chrono_now_ts();
+        let past_start = now_ts - 7200; // 2 hours ago
+        let past_end = past_start + 3600; // 1 hour duration
+
+        // Insert item with Xtream-style live url and default catchup
+        let live_url = "http://iptv.server.io:8080/live/user1/pass1/999.ts";
+        let item_id = engine
+            .db
+            .with_conn(|conn| {
+                conn.execute(
+                    "INSERT INTO iptv_items (
+                        source_id, stable_hash, kind, name, name_clean, host,
+                        container_ext, stream_url, catchup_type, catchup_days, created_at, updated_at
+                    ) VALUES (?1, 'hash_catchup_1', 'live', 'France 2 HD', 'france 2 hd', 'iptv.server.io', 'ts', ?2, 'default', 7, ?3, ?3)",
+                    rusqlite::params![src_id, live_url, now_ts],
+                )?;
+                Ok(conn.last_insert_rowid())
+            })
+            .expect("insert item");
+
+        // 1. Availability check
+        assert!(engine.is_catchup_available(item_id, past_start).expect("avail"));
+        assert!(!engine.is_catchup_available(item_id, now_ts + 1000).expect("future not avail"));
+        assert!(!engine.is_catchup_available(item_id, now_ts - (10 * 86_400)).expect("expired not avail"));
+
+        // 2. Build Catchup URL
+        let replay_url = engine
+            .build_catchup_url(item_id, past_start, past_end)
+            .expect("build url")
+            .expect("some replay url");
+
+        assert!(replay_url.starts_with("http://iptv.server.io:8080/timeshift/user1/pass1/60/"));
+        assert!(replay_url.ends_with("/999.ts"));
+
+        // 3. Resolve Catchup URL standalone
+        let resolved = engine
+            .resolve_catchup_url(
+                "http://stream.org/live/ch1.m3u8".to_string(),
+                Some("flussonic".to_string()),
+                None,
+                Some(7),
+                past_start,
+                past_end,
+            )
+            .expect("resolve standalone")
+            .expect("url");
+        assert_eq!(resolved, format!("http://stream.org/live/ch1/timeshift_abs-{past_start}.m3u8"));
+    }
+
+    #[tokio::test]
+    async fn test_cnd_engine_mirrors_and_failover() {
+        let engine = CndEngine::in_memory().expect("in memory engine");
+        let src_id = engine
+            .add_source(
+                "Source A".to_string(),
+                "m3u".to_string(),
+                Some("http://dummy/a.m3u".to_string()),
+                None,
+                None,
+                None,
+            )
+            .expect("source a");
+        let src_b = engine
+            .add_source(
+                "Source B".to_string(),
+                "m3u".to_string(),
+                Some("http://dummy/b.m3u".to_string()),
+                None,
+                None,
+                None,
+            )
+            .expect("source b");
+
+        let now_ts = db::chrono_now_ts();
+
+        // Target: TF1 4K on Source A
+        let target_id = engine
+            .db
+            .with_conn(|conn| {
+                conn.execute(
+                    "INSERT INTO iptv_items (source_id, stable_hash, kind, name, name_clean, tvg_id, host, stream_url, created_at, updated_at)
+                     VALUES (?1, 'hash_tf1_4k', 'live', 'TF1 4K', 'tf1 4k', 'TF1.fr', 'srv1', 'http://srv1/tf1_4k.ts', ?2, ?2)",
+                    rusqlite::params![src_id, now_ts],
+                )?;
+                Ok(conn.last_insert_rowid())
+            })
+            .expect("insert target");
+
+        // Mirror 1: TF1 FHD on Source A (tvg_id match, FHD quality)
+        let m1_id = engine
+            .db
+            .with_conn(|conn| {
+                conn.execute(
+                    "INSERT INTO iptv_items (source_id, stable_hash, kind, name, name_clean, tvg_id, host, stream_url, created_at, updated_at)
+                     VALUES (?1, 'hash_tf1_fhd', 'live', 'FR | TF1 FHD', 'fr tf1 fhd', 'TF1.fr', 'srv1', 'http://srv1/tf1_fhd.ts', ?2, ?2)",
+                    rusqlite::params![src_id, now_ts],
+                )?;
+                Ok(conn.last_insert_rowid())
+            })
+            .expect("insert m1");
+
+        // Mirror 2: TF1 HD on Source B (no tvg_id, token match "tf 1")
+        let m2_id = engine
+            .db
+            .with_conn(|conn| {
+                conn.execute(
+                    "INSERT INTO iptv_items (source_id, stable_hash, kind, name, name_clean, tvg_id, host, stream_url, created_at, updated_at)
+                     VALUES (?1, 'hash_tf1_hd', 'live', 'TF1 HD', 'tf1 hd', '', 'srv2', 'http://srv2/tf1_hd.ts', ?2, ?2)",
+                    rusqlite::params![src_b, now_ts],
+                )?;
+                Ok(conn.last_insert_rowid())
+            })
+            .expect("insert m2");
+
+        // Mirror 3: TF1 SD on Source A (flagged broken -> should be excluded!)
+        engine
+            .db
+            .with_conn(|conn| {
+                conn.execute(
+                    "INSERT INTO iptv_items (source_id, stable_hash, kind, name, name_clean, tvg_id, host, stream_url, created_at, updated_at)
+                     VALUES (?1, 'hash_tf1_sd', 'live', 'TF1 SD', 'tf1 sd', 'TF1.fr', 'srv1', 'http://srv1/tf1_sd.ts', ?2, ?2)",
+                    rusqlite::params![src_id, now_ts],
+                )?;
+                Ok(())
+            })
+            .expect("insert m3");
+        engine
+            .set_broken("hash_tf1_sd".to_string(), "live".to_string(), true)
+            .expect("flag broken");
+
+        // Unrelated channel: France 2 HD
+        engine
+            .db
+            .with_conn(|conn| {
+                conn.execute(
+                    "INSERT INTO iptv_items (source_id, stable_hash, kind, name, name_clean, tvg_id, host, stream_url, created_at, updated_at)
+                     VALUES (?1, 'hash_fr2', 'live', 'France 2 HD', 'france 2 hd', 'France2.fr', 'srv1', 'http://srv1/fr2.ts', ?2, ?2)",
+                    rusqlite::params![src_id, now_ts],
+                )?;
+                Ok(())
+            })
+            .expect("insert fr2");
+
+        // Set health: m1 is OK with 30ms latency
+        engine
+            .db
+            .save_stream_health(&db::StreamHealthRecord {
+                stable_hash: "hash_tf1_fhd".to_string(),
+                status: "ok".to_string(),
+                latency_ms: Some(30),
+                checked_at: now_ts,
+                consecutive_failures: 0,
+                last_ok_at: Some(now_ts),
+            })
+            .expect("save health");
+
+        // Find mirrors for target
+        let mirrors = engine.find_mirrors(target_id).expect("find mirrors");
+        assert_eq!(
+            mirrors.len(),
+            2,
+            "broken and target excluded, fr2 not a mirror"
+        );
+        assert_eq!(
+            mirrors[0].id, m1_id,
+            "first mirror is TF1 FHD (OK health + FHD quality)"
+        );
+        assert_eq!(mirrors[1].id, m2_id, "second mirror is TF1 HD");
+    }
+
+    #[tokio::test]
+    async fn test_health_worker_auto_flag_and_user_origin() {
+        let engine = CndEngine::in_memory().expect("in memory engine");
+        let src_id = engine
+            .add_source(
+                "Source A".to_string(),
+                "m3u".to_string(),
+                Some("http://dummy/a.m3u".to_string()),
+                None,
+                None,
+                None,
+            )
+            .expect("source a");
+
+        let now_ts = db::chrono_now_ts();
+        engine
+            .db
+            .with_conn(|conn| {
+                conn.execute(
+                    "INSERT INTO iptv_items (source_id, stable_hash, kind, name, name_clean, host, stream_url, created_at, updated_at)
+                     VALUES (?1, 'hash_auto_broken', 'live', 'Canal+ Test', 'canal test', 'srv', 'http://127.0.0.1:9999/bad.ts', ?2, ?2)",
+                    rusqlite::params![src_id, now_ts],
+                )?;
+                Ok(())
+            })
+            .expect("insert item");
+
+        // Mark as favorite so worker will pick it up
+        engine
+            .toggle_favorite("hash_auto_broken".to_string(), "live".to_string())
+            .expect("fav");
+
+        // Initially not broken
+        assert!(!engine
+            .is_broken("hash_auto_broken".to_string())
+            .expect("is broken"));
+
+        // Simulate 3 failures via worker logic
+        for _ in 0..3 {
+            let _ = engine.run_health_check_cycle(false).await;
+        }
+
+        // Now should be auto-flagged broken
+        assert!(engine
+            .is_broken("hash_auto_broken".to_string())
+            .expect("is broken"));
+
+        // Succeeded probe clears origin='auto'
+        let _ = engine
+            .db
+            .set_broken_with_origin("hash_auto_broken", "live", false, "auto");
+        assert!(!engine
+            .is_broken("hash_auto_broken".to_string())
+            .expect("is broken"));
+
+        // User sets broken -> origin='user'
+        engine
+            .set_broken(
+                "hash_auto_broken".to_string(),
+                "live".to_string(),
+                true,
+            )
+            .expect("set broken");
+        assert!(engine
+            .is_broken("hash_auto_broken".to_string())
+            .expect("is broken"));
+
+        // Worker auto-success does NOT remove user-flagged broken!
+        let _ = engine
+            .db
+            .set_broken_with_origin("hash_auto_broken", "live", false, "auto");
+        assert!(engine
+            .is_broken("hash_auto_broken".to_string())
+            .expect("still broken because user flagged it"));
+    }
+
+    #[tokio::test]
+    async fn test_cnd_engine_subtitles_parsing_and_hash() {
+        let engine = CndEngine::in_memory().expect("engine");
+
+        let srt = "1\n00:00:01,000 --> 00:00:04,500\n<i>Bienvenue</i> sur CND IPTV\n\n2\n00:00:05,000 --> 00:00:08,000\nDeuxième réplique";
+        let cues = engine.parse_srt(srt.to_string());
+        assert_eq!(cues.len(), 2);
+        assert_eq!(cues[0].text, "Bienvenue sur CND IPTV");
+        assert_eq!(cues[0].start_ms, 1000);
+        assert_eq!(cues[0].end_ms, 4500);
+
+        // Test hash calculation on temporary file >= 64KB
+        use std::io::Write;
+        let tmp_path = std::env::temp_dir().join(format!("cnd_test_lib_hash_{}.bin", std::process::id()));
+        let mut tmp = std::fs::File::create(&tmp_path).unwrap();
+        let payload = vec![0x33u8; 100 * 1024];
+        tmp.write_all(&payload).unwrap();
+        tmp.flush().unwrap();
+        drop(tmp);
+
+        let hash = engine
+            .compute_file_moviehash(tmp_path.to_string_lossy().to_string())
+            .expect("moviehash");
+        assert_eq!(hash.len(), 16);
+        let _ = std::fs::remove_file(tmp_path);
+    }
+
+    #[tokio::test]
+    async fn test_cnd_engine_pvr_schedule_and_rules() {
+        let engine = CndEngine::in_memory().expect("engine");
+
+        let req = NewRecordingRequest {
+            item_id: 101,
+            channel_tvg_id: Some("canal.plus".to_string()),
+            channel_name: "Canal+".to_string(),
+            title: "Grand Film du Dimanche".to_string(),
+            subtitle: None,
+            stream_url: "http://stream.example/canal.ts".to_string(),
+            start_ts: 3000,
+            end_ts: 4000,
+            pre_padding_s: Some(60),
+            post_padding_s: Some(180),
+            rule_id: None,
+        };
+
+        let id = engine.schedule_recording(req).expect("schedule");
+        assert!(id > 0);
+
+        let list = engine.list_recordings(None).expect("list");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, id);
+        assert_eq!(list[0].title, "Grand Film du Dimanche");
+        assert_eq!(list[0].state, "scheduled");
+
+        // Cancel
+        let cancelled = engine.cancel_recording(id).expect("cancel");
+        assert!(cancelled);
+
+        let list_after = engine.list_recordings(Some("cancelled".to_string())).expect("list");
+        assert_eq!(list_after.len(), 1);
+
+        // Delete
+        let deleted = engine.delete_recording(id, false).expect("delete");
+        assert!(deleted);
+        assert_eq!(engine.list_recordings(None).expect("list").len(), 0);
+
+        // Series rule
+        let rule_id = engine
+            .add_series_rule(Some("canal.plus".to_string()), "Top 14".to_string())
+            .expect("add rule");
+        let rules = engine.list_series_rules().expect("rules");
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].title_key, "top 14");
+
+        assert!(engine.remove_series_rule(rule_id).expect("remove rule"));
+        assert_eq!(engine.list_series_rules().expect("rules").len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_cnd_engine_profiles_bouquets_and_parental_control() {
+        let engine = CndEngine::in_memory().expect("engine");
+
+        // 1. Initial default profile
+        assert_eq!(engine.active_profile_id(), 1);
+        let profiles = engine.list_profiles().expect("profiles");
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].id, 1);
+        assert_eq!(profiles[0].name, "Principal");
+        assert!(!profiles[0].is_kids);
+
+        // 2. Create Kids Profile
+        let kids_prof = engine
+            .create_profile("Kids Room".to_string(), "figure.child".to_string(), true)
+            .expect("create kids");
+        assert!(kids_prof.id > 1);
+        assert!(kids_prof.is_kids);
+
+        engine.set_active_profile_id(kids_prof.id);
+        assert_eq!(engine.active_profile_id(), kids_prof.id);
+
+        // 3. Hide adult group
+        assert!(engine.is_adult_category("XXX Adultes".to_string()));
+        assert!(!engine.is_adult_category("Dessins Animés".to_string()));
+
+        engine
+            .hide_group(kids_prof.id, "live".to_string(), "XXX Adultes".to_string())
+            .expect("hide group");
+        let hidden_groups = engine.list_hidden_groups(kids_prof.id, "live".to_string()).expect("hidden groups");
+        assert_eq!(hidden_groups, vec!["xxx adultes"]);
+
+        // 4. Hide individual item
+        engine.hide_item(kids_prof.id, "hash_violent_channel".to_string()).expect("hide item");
+        let hidden_items = engine.list_hidden_items(kids_prof.id).expect("hidden items");
+        assert_eq!(hidden_items, vec!["hash_violent_channel"]);
+
+        // 5. Favorite folders
+        let f_id = engine.create_favorite_folder(kids_prof.id, "Cartoons".to_string(), 0).expect("fav folder");
+        let folders = engine.list_favorite_folders(kids_prof.id).expect("list folders");
+        assert_eq!(folders.len(), 1);
+        assert_eq!(folders[0].name, "Cartoons");
+
+        engine.add_to_favorite_folder(f_id, "hash_cartoon_1".to_string(), 0).expect("add to folder");
+        let f_items = engine.list_favorite_folder_items(f_id).expect("folder items");
+        assert_eq!(f_items, vec!["hash_cartoon_1"]);
+
+        // 6. Delete profile (cannot delete default 1)
+        assert!(engine.delete_profile(1).is_err());
+        assert!(engine.delete_profile(kids_prof.id).expect("delete kids"));
+        assert_eq!(engine.list_profiles().expect("list").len(), 1);
     }
 }

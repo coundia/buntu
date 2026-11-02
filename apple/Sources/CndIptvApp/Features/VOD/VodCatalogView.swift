@@ -242,11 +242,15 @@ struct HoverLift: ViewModifier {
     @State private var hovering = false
 
     func body(content: Content) -> some View {
+        #if os(tvOS)
+        content
+        #else
         content
             .scaleEffect(hovering ? 1.03 : 1)
             .shadow(color: .black.opacity(hovering ? 0.25 : 0), radius: 8, y: 4)
             .animation(.easeOut(duration: 0.15), value: hovering)
             .onHover { hovering = $0 }
+        #endif
     }
 }
 

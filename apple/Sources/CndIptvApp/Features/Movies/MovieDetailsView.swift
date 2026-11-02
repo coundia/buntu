@@ -59,6 +59,12 @@ final class MovieDetailsModel {
             item.isFavorite = value
         }
     }
+
+    func toggleBroken() async {
+        if let value = await vod.toggleBroken(stableHash: item.stableHash, kind: item.kind) {
+            item.isBroken = value
+        }
+    }
 }
 
 struct MovieDetailsView: View {
@@ -127,6 +133,13 @@ struct MovieDetailsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).font(.headline).lineLimit(3)
+                if item.isBroken {
+                    Label("Signalé en panne", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.red.opacity(0.25), in: Capsule())
+                        .foregroundStyle(Color.red)
+                }
                 Text(metaLine).font(.caption).foregroundStyle(.secondary)
                 ratingRow
             }
@@ -156,6 +169,13 @@ struct MovieDetailsView: View {
                     .shadow(radius: 10)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(title).font(.title.bold()).lineLimit(3)
+                    if item.isBroken {
+                        Label("Signalé en panne", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Color.red.opacity(0.3), in: Capsule())
+                            .foregroundStyle(Color.red)
+                    }
                     Text(metaLine).font(.callout)
                     ratingRow
                 }
@@ -229,10 +249,17 @@ struct MovieDetailsView: View {
             Label(item.isFavorite ? "Favori" : "Ajouter aux favoris", systemImage: item.isFavorite ? "star.fill" : "star")
         }
         .buttonStyle(.bordered)
+        Button { Task { await model.toggleBroken() } } label: {
+            Label(item.isBroken ? "En panne" : "Signaler en panne",
+                  systemImage: item.isBroken ? "exclamationmark.triangle.fill" : "exclamationmark.triangle")
+        }
+        .buttonStyle(.bordered)
+        .tint(item.isBroken ? .red : .secondary)
         Menu {
             MovieActionsMenu(
                 item: item, vod: model.vod,
                 onToggleFavorite: { Task { await model.toggleFavorite() } },
+                onToggleBroken: { Task { await model.toggleBroken() } },
                 onRefreshMetadata: { Task { await model.refreshMetadata(force: true) } }
             )
         } label: {
@@ -263,6 +290,18 @@ struct MovieDetailsView: View {
     }
 
     private var debugPanel: some View {
+        #if os(tvOS)
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Informations techniques").font(.headline)
+            debugRow("IMDb", model.metadata?.imdbId ?? item.imdbId)
+            debugRow("Source", model.metadata.map { $0.fromCache ? "cache SQLite" : "réseau" })
+            debugRow("Hôte du flux", item.host)
+            debugRow("Conteneur", item.containerExt)
+            debugRow("Hash", item.stableHash)
+        }
+        .font(.caption)
+        .padding(.top, 6)
+        #else
         DisclosureGroup("Informations techniques OMDb", isExpanded: $showsDebug) {
             VStack(alignment: .leading, spacing: 4) {
                 debugRow("IMDb", model.metadata?.imdbId ?? item.imdbId)
@@ -275,12 +314,17 @@ struct MovieDetailsView: View {
             .padding(.top, 6)
         }
         .font(.callout)
+        #endif
     }
 
     private func debugRow(_ label: String, _ value: String?) -> some View {
         HStack(alignment: .top) {
             Text(label).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
+            #if os(tvOS)
+            Text(value ?? "—")
+            #else
             Text(value ?? "—").textSelection(.enabled)
+            #endif
         }
     }
 }

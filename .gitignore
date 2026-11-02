@@ -4,5 +4,6 @@
 .DS_Store
 *.xcresult
 DerivedData/
+*.xcodeproj/
 
 /build/

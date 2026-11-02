@@ -94,7 +94,7 @@ final class EpgGuideModel {
     private func makeFilter(offset: Int) -> CatalogFilter {
         CatalogFilter(
             kind: "live", sourceId: nil, query: filter.query, groupTitle: nil, host: nil,
-            favoritesOnly: false, sortBy: filter.sort, sortAsc: filter.ascending,
+            favoritesOnly: false, includeBroken: filter.showBroken, includeHidden: false, sortBy: filter.sort, sortAsc: filter.ascending,
             limit: UInt32(Self.pageSize), offset: UInt32(offset)
         )
     }
@@ -182,20 +182,32 @@ final class EpgGuideModel {
 
     // MARK: Single-channel schedule
 
-    /// Full programme of one channel: from the start of today to three days ahead.
+    /// Full programme of one channel: from lookback days (if catchup available) to three days ahead.
     func loadSchedule(for item: IptvItemRecord, now: Date = Date(), calendar: Calendar = .current) async {
         guard let id = item.tvgId, !id.isEmpty else {
             schedule = []
             return
         }
         isLoadingSchedule = true
-        let from = Int64(calendar.startOfDay(for: now).timeIntervalSince1970)
-        let to = from + 4 * 86_400
+        let startOfToday = Int64(calendar.startOfDay(for: now).timeIntervalSince1970)
+        let retentionDays = (item.catchupType != nil || item.catchupSource != nil) ? max(1, Int64(item.catchupDays ?? 7)) : 0
+        let from = startOfToday - (retentionDays * 86_400)
+        let to = startOfToday + 4 * 86_400
         let engine = self.engine
         schedule = (try? await Task.detached(priority: .userInitiated) {
             try engine.getChannelEpg(tvgId: id, fromTs: from, toTs: to)
         }.value) ?? []
         isLoadingSchedule = false
+    }
+
+    // MARK: Catch-up & Replay
+
+    func isCatchupAvailable(for channel: IptvItemRecord, program: EpgProgramRecord) -> Bool {
+        (try? engine.isCatchupAvailable(itemId: channel.id, startTs: program.startTs)) ?? false
+    }
+
+    func buildCatchupUrl(for channel: IptvItemRecord, program: EpgProgramRecord) -> String? {
+        (try? engine.buildCatchupUrl(itemId: channel.id, startTs: program.startTs, endTs: program.endTs)) ?? nil
     }
 
     static func groupByDay(_ programs: [EpgProgramRecord], calendar: Calendar = .current) -> [(day: Date, programs: [EpgProgramRecord])] {

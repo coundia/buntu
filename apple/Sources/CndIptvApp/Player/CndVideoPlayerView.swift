@@ -138,6 +138,34 @@ public struct CndVideoPlayerView: View {
             )
             #endif
 
+            SubtitleOverlayView(model: controller.subtitleOverlay)
+
+            if controller.showHlsAudioEnhancementNotice {
+                VStack {
+                    HStack(spacing: 12) {
+                        Image(systemName: "waveform.badge.exclamationmark")
+                            .foregroundStyle(.yellow)
+                        Text("Le Dialogue Boost nécessite mpv pour les flux HLS.")
+                            .font(.caption.bold())
+                        Button("Basculer sur mpv") {
+                            controller.switchToMpvForAudioEnhancement()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        Button("Ignorer") {
+                            controller.dismissHlsAudioEnhancementNotice()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    .padding(10)
+                    .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 8))
+                    .padding(.top, 50)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             if case .failed(let message) = controller.state {
                 errorOverlay(message)
             } else if controller.state == .loading {
@@ -172,10 +200,40 @@ public struct CndVideoPlayerView: View {
         .onKeyPress(.space) { controller.togglePlayPause(); showHUD(); return .handled }
         .onKeyPress("m") { controller.isMuted.toggle(); showHUD(); return .handled }
         .onKeyPress("f") { onToggleFullscreen?(); return .handled }
-        .onKeyPress(.leftArrow) { guard !controller.isLive else { return .ignored }; controller.skip(bySeconds: -10); showHUD(); return .handled }
-        .onKeyPress(.rightArrow) { guard !controller.isLive else { return .ignored }; controller.skip(bySeconds: 10); showHUD(); return .handled }
+        .onKeyPress("s") { controller.toggleFavorite(); showHUD(); return .handled }
+        .onKeyPress(.leftArrow) {
+            guard !controller.isLive || controller.timeshiftDuration.isEnabled else { return .ignored }
+            controller.skip(bySeconds: -10); showHUD(); return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            guard !controller.isLive || (controller.timeshiftDuration.isEnabled && controller.currentLiveDelaySeconds > 0) else { return .ignored }
+            controller.skip(bySeconds: 10); showHUD(); return .handled
+        }
         .onKeyPress(.upArrow) { controller.volume = min(controller.volume + 0.1, 1); showHUD(); return .handled }
         .onKeyPress(.downArrow) { controller.volume = max(controller.volume - 0.1, 0); showHUD(); return .handled }
+        #elseif os(tvOS)
+        .onPlayPauseCommand { controller.togglePlayPause(); showHUD() }
+        .onExitCommand {
+            if hudVisible {
+                hudVisible = false
+            } else if let onClose {
+                onClose()
+            }
+        }
+        .onMoveCommand { direction in
+            switch direction {
+            case .left:
+                guard !controller.isLive || controller.timeshiftDuration.isEnabled else { return }
+                controller.skip(bySeconds: -10)
+                showHUD()
+            case .right:
+                guard !controller.isLive || (controller.timeshiftDuration.isEnabled && controller.currentLiveDelaySeconds > 0) else { return }
+                controller.skip(bySeconds: 10)
+                showHUD()
+            default:
+                break
+            }
+        }
         #endif
     }
 
@@ -183,7 +241,7 @@ public struct CndVideoPlayerView: View {
 
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
+            HStack(spacing: 8) {
                 if let onClose {
                     Button(action: onClose) { Image(systemName: "xmark") }
                         .buttonStyle(.plain)
@@ -195,7 +253,17 @@ public struct CndVideoPlayerView: View {
                 Text(controller.media?.title ?? "")
                     .font(.headline)
                     .lineLimit(1)
+                if controller.media != nil {
+                    favoriteButton
+                    brokenButton
+                }
                 Spacer()
+                if let format = DisplayRateMatcher.shared.currentFormat {
+                    Text(format.summary)
+                        .font(.caption2.monospaced())
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.white.opacity(0.15), in: Capsule())
+                }
                 if let engine = controller.activeEngine {
                     Text(engine == .mpv ? "mpv" : "AVPlayer")
                         .font(.caption2.monospaced())
@@ -216,12 +284,43 @@ public struct CndVideoPlayerView: View {
                     .font(.caption)
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(.orange.opacity(0.85), in: Capsule())
+            } else if let banner = controller.failoverBanner {
+                Label(banner, systemImage: "arrow.triangle.swap")
+                    .font(.caption)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(.blue.opacity(0.85), in: Capsule())
             }
         }
         .foregroundStyle(.white)
         .padding(12)
         .background(LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom))
-        .opacity(hudVisible || controller.reconnectBanner != nil ? 1 : 0)
+        .opacity(hudVisible || controller.reconnectBanner != nil || controller.failoverBanner != nil ? 1 : 0)
+    }
+
+    private var favoriteButton: some View {
+        Button {
+            controller.toggleFavorite()
+            scheduleHide()
+        } label: {
+            Image(systemName: controller.isFavorite ? "star.fill" : "star")
+                .foregroundStyle(controller.isFavorite ? Color.yellow : Color.white)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(controller.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+        .help(controller.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+    }
+
+    private var brokenButton: some View {
+        Button {
+            controller.toggleBroken()
+            scheduleHide()
+        } label: {
+            Image(systemName: controller.isBroken ? "exclamationmark.triangle.fill" : "exclamationmark.triangle")
+                .foregroundStyle(controller.isBroken ? Color.red : Color.white)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(controller.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel")
+        .help(controller.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel")
     }
 
     private var bottomBar: some View {
@@ -250,7 +349,7 @@ public struct CndVideoPlayerView: View {
             if controller.queue != nil {
                 hudButton("backward.end.fill", "Épisode précédent", enabled: controller.hasPrevious) { controller.previous() }
             }
-            if !controller.isLive {
+            if !controller.isLive || controller.timeshiftDuration.isEnabled {
                 hudButton("gobackward.10", "Reculer de 10 secondes") { controller.skip(bySeconds: -10) }
             }
             hudButton(
@@ -258,7 +357,7 @@ public struct CndVideoPlayerView: View {
                 "Lecture / Pause"
             ) { controller.togglePlayPause() }
             .font(.title)
-            if !controller.isLive {
+            if !controller.isLive || (controller.timeshiftDuration.isEnabled && controller.currentLiveDelaySeconds > 0) {
                 hudButton("goforward.10", "Avancer de 10 secondes") { controller.skip(bySeconds: 10) }
             }
             if controller.queue != nil {
@@ -272,8 +371,8 @@ public struct CndVideoPlayerView: View {
         HStack(spacing: 14) {
             volumeControls
             speedMenu
-            trackMenu(title: "Audio", systemImage: "speaker.wave.2", tracks: controller.audioTracks, allowsNone: false)
-            trackMenu(title: "Sous-titres", systemImage: "captions.bubble", tracks: controller.subtitleTracks, allowsNone: true)
+            audioMenu
+            subtitlesMenu
             AirPlayRoutePicker()
                 .frame(width: 24, height: 24)
                 .accessibilityLabel("AirPlay")
@@ -284,19 +383,118 @@ public struct CndVideoPlayerView: View {
         .fixedSize()
     }
 
+    private var audioMenu: some View {
+        Menu {
+            if !controller.audioTracks.isEmpty {
+                Section("Pistes audio") {
+                    ForEach(controller.audioTracks) { track in
+                        Button(track.isSelected ? "✓ \(track.title)" : track.title) {
+                            controller.selectAudioTrack(id: track.id)
+                        }
+                    }
+                }
+            }
+
+            Section("Amélioration des voix") {
+                Menu("Dialogue Boost") {
+                    ForEach(DialogueBoostLevel.allCases) { level in
+                        Button(controller.audioEnhancement.dialogueBoost == level ? "✓ \(level.displayName)" : level.displayName) {
+                            controller.audioEnhancement.dialogueBoost = level
+                        }
+                    }
+                }
+
+                Button(controller.audioEnhancement.nightMode ? "✓ Mode nuit (activé)" : "Mode nuit (désactivé)") {
+                    controller.audioEnhancement.nightMode.toggle()
+                }
+            }
+        } label: {
+            Image(systemName: controller.audioEnhancement.isActive ? "waveform.badge.magnifyingglass" : "speaker.wave.2")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Audio et Dialogue Boost")
+    }
+
+    private var subtitlesMenu: some View {
+        Menu {
+            Button("Désactivés") {
+                controller.selectSubtitleTrack(id: nil)
+                controller.subtitleOverlay.clear()
+            }
+
+            if !controller.subtitleTracks.isEmpty {
+                Section("Pistes intégrées") {
+                    ForEach(controller.subtitleTracks) { track in
+                        Button(track.isSelected ? "✓ \(track.title)" : track.title) {
+                            controller.selectSubtitleTrack(id: track.id)
+                        }
+                    }
+                }
+            }
+
+            Section("Synchronisation") {
+                let delay = controller.subtitleDelaySeconds
+                Text(String(format: "Décalage : %+.2f s", delay))
+                Button("+0,25 s (plus tard)") {
+                    controller.setSubtitleDelay(delay + 0.25)
+                }
+                Button("-0,25 s (plus tôt)") {
+                    controller.setSubtitleDelay(delay - 0.25)
+                }
+                if delay != 0 {
+                    Button("Réinitialiser (0 s)") {
+                        controller.setSubtitleDelay(0)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: controller.subtitleOverlay.isLoaded ? "captions.bubble.fill" : "captions.bubble")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Sous-titres")
+    }
+
     @ViewBuilder
     private var progressRow: some View {
         if controller.isLive {
-            HStack {
-                Text("LIVE")
-                    .font(.caption.bold())
-                    .padding(.horizontal, 8).padding(.vertical, 2)
-                    .background(.red, in: RoundedRectangle(cornerRadius: 4))
+            HStack(spacing: 8) {
+                if controller.currentLiveDelaySeconds > 0 {
+                    Button {
+                        controller.catchUpToLive()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Direct")
+                            Image(systemName: "forward.end.fill")
+                        }
+                        .font(.caption.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(.red, in: RoundedRectangle(cornerRadius: 4))
+                    }
+                    .buttonStyle(.plain)
+
+                    Text("−" + Self.formatSeconds(Int64(controller.currentLiveDelaySeconds)))
+                        .font(.caption.monospacedDigit().bold())
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
+                } else {
+                    Text("LIVE")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .background(.red, in: RoundedRectangle(cornerRadius: 4))
+                }
                 Spacer()
             }
         } else {
             HStack(spacing: 10) {
                 Text(Self.format(isScrubbing ? Int64(scrubValue) : controller.positionMs)).monospacedDigit()
+                #if os(tvOS)
+                ProgressView(value: Double(controller.positionMs), total: Double(max(controller.durationMs, 1)))
+                    .progressViewStyle(.linear)
+                #else
                 Slider(
                     value: Binding(
                         get: { isScrubbing ? scrubValue : Double(controller.positionMs) },
@@ -316,6 +514,7 @@ public struct CndVideoPlayerView: View {
                     }
                 )
                 .disabled(controller.durationMs == 0)
+                #endif
                 Text(Self.format(controller.durationMs)).monospacedDigit()
             }
             .font(.caption)
@@ -347,29 +546,6 @@ public struct CndVideoPlayerView: View {
         .fixedSize()
     }
 
-    private func trackMenu(title: String, systemImage: String, tracks: [MediaTrack], allowsNone: Bool) -> some View {
-        Menu {
-            if allowsNone {
-                Button("Désactivés") { controller.selectSubtitleTrack(id: nil) }
-            }
-            ForEach(tracks) { track in
-                Button(track.isSelected ? "✓ \(track.title)" : track.title) {
-                    if allowsNone {
-                        controller.selectSubtitleTrack(id: track.id)
-                    } else {
-                        controller.selectAudioTrack(id: track.id)
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: systemImage)
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .disabled(tracks.isEmpty)
-        .accessibilityLabel(title)
-    }
-
     private func hudButton(_ symbol: String, _ label: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
         Button {
             action()
@@ -389,7 +565,36 @@ public struct CndVideoPlayerView: View {
             Text("Lecture impossible").font(.headline)
             Text(message).font(.caption).multilineTextAlignment(.center)
             if let media = controller.media {
-                Button("Réessayer") { controller.open(media) }
+                HStack(spacing: 12) {
+                    Button("Réessayer") { controller.open(media) }
+                        .buttonStyle(.borderedProminent)
+                    Button {
+                        controller.toggleBroken()
+                    } label: {
+                        Label(controller.isBroken ? "Marqué en panne" : "Signaler en panne",
+                              systemImage: controller.isBroken ? "checkmark.circle" : "exclamationmark.triangle")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.top, 4)
+
+                if !controller.availableMirrors.isEmpty {
+                    VStack(spacing: 6) {
+                        Text("Alternatives disponibles :")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ForEach(controller.availableMirrors.prefix(3), id: \.id) { mirror in
+                            Button {
+                                controller.failoverToMirror(mirror)
+                            } label: {
+                                Label(mirror.name, systemImage: "play.circle.fill")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
             }
         }
         .foregroundStyle(.white)
@@ -420,5 +625,10 @@ public struct CndVideoPlayerView: View {
         let total = max(0, Int(ms / 1000))
         let (h, m, s) = (total / 3600, (total % 3600) / 60, total % 60)
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+    }
+
+    static func formatSeconds(_ seconds: Int64) -> String {
+        let (h, m, s) = (seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
     }
 }

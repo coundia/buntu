@@ -432,6 +432,22 @@ fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterInt32: FfiConverterPrimitive {
+    typealias FfiType = Int32
+    typealias SwiftType = Int32
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int32 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int32, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
     typealias FfiType = UInt64
     typealias SwiftType = UInt64
@@ -547,7 +563,13 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 public protocol CndEngineProtocol: AnyObject, Sendable {
     
+    func activeProfileId()  -> Int64
+    
+    func addSeriesRule(channelTvgId: String?, title: String) throws  -> Int64
+    
     func addSource(name: String, sourceType: String, url: String?, server: String?, username: String?, passwordRef: String?) throws  -> Int64
+    
+    func addToFavoriteFolder(folderId: Int64, stableHash: String, position: Int32) throws 
     
     /**
      * Turns a typed or spoken command into a channel action: local resolution first, then the
@@ -560,13 +582,37 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
      */
     func aiTestProvider(config: AiProviderConfig) async throws  -> AiProviderStatus
     
+    func buildCatchupUrl(itemId: Int64, startTs: Int64, endTs: Int64) throws  -> String?
+    
+    func cancelRecording(id: Int64) throws  -> Bool
+    
     func clearLogs() 
     
+    func computeFileMoviehash(filePath: String) throws  -> String
+    
+    func createFavoriteFolder(profileId: Int64, name: String, position: Int32) throws  -> Int64
+    
+    func createProfile(name: String, avatar: String, isKids: Bool) throws  -> ProfileRecord
+    
+    func deleteFavoriteFolder(id: Int64) throws  -> Bool
+    
+    func deleteProfile(id: Int64) throws  -> Bool
+    
+    func deleteRecording(id: Int64, deleteFile: Bool) throws  -> Bool
+    
     func deleteSource(sourceId: Int64) throws 
+    
+    func downloadSubtitle(fileId: Int64, targetDir: String, apiKey: String?) async throws  -> String
     
     func enqueueDownload(req: NewDownloadRequest) async throws  -> Int64
     
     func ensureXtreamSeriesEpisodes(seriesDbId: Int64, password: String) async throws  -> UInt32
+    
+    /**
+     * Builds the plain share document for the chosen sources (the app encrypts it).
+     * Credentials are only included for sources whose option asks for it.
+     */
+    func exportShareDocument(options: [ShareSourceOption], from: String, validForSeconds: UInt32) throws  -> ShareExport
     
     /**
      * Changes made after `since_ts` (Unix seconds) to sources, favorites and watch progress.
@@ -577,6 +623,8 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func fetchSeriesMetadata(seriesId: Int64, apiKey: String, forceRefresh: Bool) async throws  -> MediaMetadata?
     
+    func findMirrors(itemId: Int64) throws  -> [IptvItemRecord]
+    
     func getChannelEpg(tvgId: String, fromTs: Int64, toTs: Int64) throws  -> [EpgProgramRecord]
     
     func getDownloadLogs(taskId: Int64, limit: UInt32) throws  -> [DownloadLogRecord]
@@ -585,11 +633,15 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func getGroups(kind: String, sourceId: Int64?) throws  -> [FacetCount]
     
+    func getGroupsWithHidden(kind: String, sourceId: Int64?, includeHidden: Bool) throws  -> [FacetCount]
+    
     func getHosts(kind: String, sourceId: Int64?) throws  -> [FacetCount]
     
     func getItemById(itemId: Int64) throws  -> IptvItemRecord?
     
     func getLogsSince(afterSeqId: UInt64, limit: UInt32)  -> [NetworkLogEntry]
+    
+    func getProfile(id: Int64) throws  -> ProfileRecord?
     
     func getSeriesById(seriesId: Int64) throws  -> SeriesRecord?
     
@@ -601,34 +653,84 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func getStats() throws  -> DbStats
     
+    func getStreamHealth(stableHash: String) throws  -> StreamHealthRecord?
+    
+    func getStreamHealthBatch(hashes: [String]) throws  -> [StreamHealthRecord]
+    
+    func hideGroup(profileId: Int64, kind: String, group: String) throws 
+    
+    func hideItem(profileId: Int64, stableHash: String) throws 
+    
     func importLocalM3u(name: String, filePath: String) async throws  -> SyncSummary
+    
+    /**
+     * Creates (or replaces) the sources of a share document according to the user's decisions.
+     */
+    func importShareDocument(json: String, decisions: [ShareDecision], importsDir: String) throws  -> ShareImportResult
     
     /**
      * Merges a delta received from another device (Last-Write-Wins).
      */
     func importSyncDelta(delta: SyncDelta) throws  -> SyncImportSummary
     
+    func isAdultCategory(group: String)  -> Bool
+    
+    func isBroken(stableHash: String) throws  -> Bool
+    
+    func isCatchupAvailable(itemId: Int64, startTs: Int64) throws  -> Bool
+    
+    func isHealthCheckRunning()  -> Bool
+    
+    func listBrokenItems(kind: String) throws  -> [IptvItemRecord]
+    
+    func listBrokenSeries() throws  -> [SeriesRecord]
+    
     func listDownloads(query: String?) throws  -> [DownloadTaskRecord]
+    
+    func listFavoriteFolderItems(folderId: Int64) throws  -> [String]
+    
+    func listFavoriteFolders(profileId: Int64) throws  -> [FavoriteFolderRecord]
     
     func listFavoriteItems(kind: String) throws  -> [IptvItemRecord]
     
     func listFavoriteSeries() throws  -> [SeriesRecord]
     
+    func listHiddenGroups(profileId: Int64, kind: String) throws  -> [String]
+    
+    func listHiddenItems(profileId: Int64) throws  -> [String]
+    
+    func listProfiles() throws  -> [ProfileRecord]
+    
     func listRecentItems(kind: String, limit: UInt32) throws  -> [IptvItemRecord]
     
     func listRecentSeries(limit: UInt32) throws  -> [SeriesRecord]
     
+    func listRecordings(stateFilter: String?) throws  -> [RecordingRecord]
+    
+    func listSeriesRules() throws  -> [SeriesRuleRecord]
+    
     func listSources() throws  -> [IptvSourceRecord]
+    
+    func parseSrt(srtContent: String)  -> [SubtitleCue]
     
     func pauseAllDownloads() async throws 
     
     func pauseDownload(taskId: Int64) async throws 
+    
+    /**
+     * Reads a decrypted share document and tells what it contains and what already exists here.
+     */
+    func previewShareDocument(json: String) throws  -> SharePreview
+    
+    func probeStream(url: String, headersJson: String?, userAgent: String?, referer: String?) async throws  -> ProbeResultRecord
     
     func queryCatalog(filter: CatalogFilter) throws  -> [IptvItemRecord]
     
     func queryItems(kind: String, query: String, group: String?, host: String?, limit: UInt32, offset: UInt32) throws  -> [IptvItemRecord]
     
     func querySeries(filter: CatalogFilter) throws  -> [SeriesRecord]
+    
+    func recordNow(itemId: Int64, durationMinutes: UInt32) throws  -> Int64
     
     func recordWatchProgress(stableHash: String, positionMs: Int64, durationMs: Int64) throws 
     
@@ -640,13 +742,45 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func removeDownload(taskId: Int64, deleteFiles: Bool) async throws 
     
+    func removeFromFavoriteFolder(folderId: Int64, stableHash: String) throws  -> Bool
+    
+    func removeSeriesRule(id: Int64) throws  -> Bool
+    
+    func resolveCatchupUrl(streamUrl: String, catchupType: String?, catchupSource: String?, catchupDays: UInt32?, startTs: Int64, endTs: Int64) throws  -> String?
+    
     func retryDownload(taskId: Int64) async throws 
+    
+    func runHealthCheckCycle(throttle: Bool) async throws  -> UInt32
+    
+    func scheduleRecording(req: NewRecordingRequest) throws  -> Int64
+    
+    func searchSubtitles(query: SubtitleSearchQuery, apiKey: String?) async throws  -> [SubtitleSearchResult]
+    
+    func setActiveProfileId(id: Int64) 
+    
+    func setBroken(stableHash: String, itemKind: String, broken: Bool) throws  -> Bool
+    
+    func setCustomOrder(profileId: Int64, scope: String, key: String, position: Int32) throws 
+    
+    func setRecordingDirectory(dir: String) 
     
     func startAllDownloads() async throws 
     
     func startDownload(taskId: Int64) async throws 
     
+    func startHealthChecks(intervalMinutes: UInt32?) 
+    
+    func stopHealthChecks() 
+    
+    func toggleBroken(stableHash: String, itemKind: String) throws  -> Bool
+    
     func toggleFavorite(stableHash: String, itemKind: String) throws  -> Bool
+    
+    func unhideGroup(profileId: Int64, kind: String, group: String) throws  -> Bool
+    
+    func unhideItem(profileId: Int64, stableHash: String) throws  -> Bool
+    
+    func updateProfile(id: Int64, name: String, avatar: String, isKids: Bool) throws 
     
     func updateSettings(settings: RuntimeSettings) throws 
     
@@ -726,6 +860,22 @@ public static func inMemory()throws  -> CndEngine  {
     
 
     
+open func activeProfileId() -> Int64  {
+    return try!  FfiConverterInt64.lift(try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_active_profile_id(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+open func addSeriesRule(channelTvgId: String?, title: String)throws  -> Int64  {
+    return try  FfiConverterInt64.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_add_series_rule(self.uniffiClonePointer(),
+        FfiConverterOptionString.lower(channelTvgId),
+        FfiConverterString.lower(title),$0
+    )
+})
+}
+    
 open func addSource(name: String, sourceType: String, url: String?, server: String?, username: String?, passwordRef: String?)throws  -> Int64  {
     return try  FfiConverterInt64.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_add_source(self.uniffiClonePointer(),
@@ -737,6 +887,15 @@ open func addSource(name: String, sourceType: String, url: String?, server: Stri
         FfiConverterOptionString.lower(passwordRef),$0
     )
 })
+}
+    
+open func addToFavoriteFolder(folderId: Int64, stableHash: String, position: Int32)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_add_to_favorite_folder(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(folderId),
+        FfiConverterString.lower(stableHash),
+        FfiConverterInt32.lower(position),$0
+    )
+}
 }
     
     /**
@@ -780,10 +939,81 @@ open func aiTestProvider(config: AiProviderConfig)async throws  -> AiProviderSta
         )
 }
     
+open func buildCatchupUrl(itemId: Int64, startTs: Int64, endTs: Int64)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_build_catchup_url(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(itemId),
+        FfiConverterInt64.lower(startTs),
+        FfiConverterInt64.lower(endTs),$0
+    )
+})
+}
+    
+open func cancelRecording(id: Int64)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_cancel_recording(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(id),$0
+    )
+})
+}
+    
 open func clearLogs()  {try! rustCall() {
     uniffi_cnd_core_fn_method_cndengine_clear_logs(self.uniffiClonePointer(),$0
     )
 }
+}
+    
+open func computeFileMoviehash(filePath: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_compute_file_moviehash(self.uniffiClonePointer(),
+        FfiConverterString.lower(filePath),$0
+    )
+})
+}
+    
+open func createFavoriteFolder(profileId: Int64, name: String, position: Int32)throws  -> Int64  {
+    return try  FfiConverterInt64.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_create_favorite_folder(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(profileId),
+        FfiConverterString.lower(name),
+        FfiConverterInt32.lower(position),$0
+    )
+})
+}
+    
+open func createProfile(name: String, avatar: String, isKids: Bool)throws  -> ProfileRecord  {
+    return try  FfiConverterTypeProfileRecord_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_create_profile(self.uniffiClonePointer(),
+        FfiConverterString.lower(name),
+        FfiConverterString.lower(avatar),
+        FfiConverterBool.lower(isKids),$0
+    )
+})
+}
+    
+open func deleteFavoriteFolder(id: Int64)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_delete_favorite_folder(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(id),$0
+    )
+})
+}
+    
+open func deleteProfile(id: Int64)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_delete_profile(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(id),$0
+    )
+})
+}
+    
+open func deleteRecording(id: Int64, deleteFile: Bool)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_delete_recording(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(id),
+        FfiConverterBool.lower(deleteFile),$0
+    )
+})
 }
     
 open func deleteSource(sourceId: Int64)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
@@ -791,6 +1021,23 @@ open func deleteSource(sourceId: Int64)throws   {try rustCallWithError(FfiConver
         FfiConverterInt64.lower(sourceId),$0
     )
 }
+}
+    
+open func downloadSubtitle(fileId: Int64, targetDir: String, apiKey: String?)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_download_subtitle(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(fileId),FfiConverterString.lower(targetDir),FfiConverterOptionString.lower(apiKey)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
 }
     
 open func enqueueDownload(req: NewDownloadRequest)async throws  -> Int64  {
@@ -825,6 +1072,20 @@ open func ensureXtreamSeriesEpisodes(seriesDbId: Int64, password: String)async t
             liftFunc: FfiConverterUInt32.lift,
             errorHandler: FfiConverterTypeCndError_lift
         )
+}
+    
+    /**
+     * Builds the plain share document for the chosen sources (the app encrypts it).
+     * Credentials are only included for sources whose option asks for it.
+     */
+open func exportShareDocument(options: [ShareSourceOption], from: String, validForSeconds: UInt32)throws  -> ShareExport  {
+    return try  FfiConverterTypeShareExport_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_export_share_document(self.uniffiClonePointer(),
+        FfiConverterSequenceTypeShareSourceOption.lower(options),
+        FfiConverterString.lower(from),
+        FfiConverterUInt32.lower(validForSeconds),$0
+    )
+})
 }
     
     /**
@@ -872,6 +1133,14 @@ open func fetchSeriesMetadata(seriesId: Int64, apiKey: String, forceRefresh: Boo
         )
 }
     
+open func findMirrors(itemId: Int64)throws  -> [IptvItemRecord]  {
+    return try  FfiConverterSequenceTypeIptvItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_find_mirrors(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(itemId),$0
+    )
+})
+}
+    
 open func getChannelEpg(tvgId: String, fromTs: Int64, toTs: Int64)throws  -> [EpgProgramRecord]  {
     return try  FfiConverterSequenceTypeEpgProgramRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_get_channel_epg(self.uniffiClonePointer(),
@@ -908,6 +1177,16 @@ open func getGroups(kind: String, sourceId: Int64?)throws  -> [FacetCount]  {
 })
 }
     
+open func getGroupsWithHidden(kind: String, sourceId: Int64?, includeHidden: Bool)throws  -> [FacetCount]  {
+    return try  FfiConverterSequenceTypeFacetCount.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_get_groups_with_hidden(self.uniffiClonePointer(),
+        FfiConverterString.lower(kind),
+        FfiConverterOptionInt64.lower(sourceId),
+        FfiConverterBool.lower(includeHidden),$0
+    )
+})
+}
+    
 open func getHosts(kind: String, sourceId: Int64?)throws  -> [FacetCount]  {
     return try  FfiConverterSequenceTypeFacetCount.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_get_hosts(self.uniffiClonePointer(),
@@ -930,6 +1209,14 @@ open func getLogsSince(afterSeqId: UInt64, limit: UInt32) -> [NetworkLogEntry]  
     uniffi_cnd_core_fn_method_cndengine_get_logs_since(self.uniffiClonePointer(),
         FfiConverterUInt64.lower(afterSeqId),
         FfiConverterUInt32.lower(limit),$0
+    )
+})
+}
+    
+open func getProfile(id: Int64)throws  -> ProfileRecord?  {
+    return try  FfiConverterOptionTypeProfileRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_get_profile(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(id),$0
     )
 })
 }
@@ -973,6 +1260,39 @@ open func getStats()throws  -> DbStats  {
 })
 }
     
+open func getStreamHealth(stableHash: String)throws  -> StreamHealthRecord?  {
+    return try  FfiConverterOptionTypeStreamHealthRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_get_stream_health(self.uniffiClonePointer(),
+        FfiConverterString.lower(stableHash),$0
+    )
+})
+}
+    
+open func getStreamHealthBatch(hashes: [String])throws  -> [StreamHealthRecord]  {
+    return try  FfiConverterSequenceTypeStreamHealthRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_get_stream_health_batch(self.uniffiClonePointer(),
+        FfiConverterSequenceString.lower(hashes),$0
+    )
+})
+}
+    
+open func hideGroup(profileId: Int64, kind: String, group: String)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_hide_group(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(profileId),
+        FfiConverterString.lower(kind),
+        FfiConverterString.lower(group),$0
+    )
+}
+}
+    
+open func hideItem(profileId: Int64, stableHash: String)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_hide_item(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(profileId),
+        FfiConverterString.lower(stableHash),$0
+    )
+}
+}
+    
 open func importLocalM3u(name: String, filePath: String)async throws  -> SyncSummary  {
     return
         try  await uniffiRustCallAsync(
@@ -991,6 +1311,19 @@ open func importLocalM3u(name: String, filePath: String)async throws  -> SyncSum
 }
     
     /**
+     * Creates (or replaces) the sources of a share document according to the user's decisions.
+     */
+open func importShareDocument(json: String, decisions: [ShareDecision], importsDir: String)throws  -> ShareImportResult  {
+    return try  FfiConverterTypeShareImportResult_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_import_share_document(self.uniffiClonePointer(),
+        FfiConverterString.lower(json),
+        FfiConverterSequenceTypeShareDecision.lower(decisions),
+        FfiConverterString.lower(importsDir),$0
+    )
+})
+}
+    
+    /**
      * Merges a delta received from another device (Last-Write-Wins).
      */
 open func importSyncDelta(delta: SyncDelta)throws  -> SyncImportSummary  {
@@ -1001,10 +1334,73 @@ open func importSyncDelta(delta: SyncDelta)throws  -> SyncImportSummary  {
 })
 }
     
+open func isAdultCategory(group: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_is_adult_category(self.uniffiClonePointer(),
+        FfiConverterString.lower(group),$0
+    )
+})
+}
+    
+open func isBroken(stableHash: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_is_broken(self.uniffiClonePointer(),
+        FfiConverterString.lower(stableHash),$0
+    )
+})
+}
+    
+open func isCatchupAvailable(itemId: Int64, startTs: Int64)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_is_catchup_available(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(itemId),
+        FfiConverterInt64.lower(startTs),$0
+    )
+})
+}
+    
+open func isHealthCheckRunning() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_is_health_check_running(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+open func listBrokenItems(kind: String)throws  -> [IptvItemRecord]  {
+    return try  FfiConverterSequenceTypeIptvItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_list_broken_items(self.uniffiClonePointer(),
+        FfiConverterString.lower(kind),$0
+    )
+})
+}
+    
+open func listBrokenSeries()throws  -> [SeriesRecord]  {
+    return try  FfiConverterSequenceTypeSeriesRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_list_broken_series(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
 open func listDownloads(query: String?)throws  -> [DownloadTaskRecord]  {
     return try  FfiConverterSequenceTypeDownloadTaskRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_list_downloads(self.uniffiClonePointer(),
         FfiConverterOptionString.lower(query),$0
+    )
+})
+}
+    
+open func listFavoriteFolderItems(folderId: Int64)throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_list_favorite_folder_items(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(folderId),$0
+    )
+})
+}
+    
+open func listFavoriteFolders(profileId: Int64)throws  -> [FavoriteFolderRecord]  {
+    return try  FfiConverterSequenceTypeFavoriteFolderRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_list_favorite_folders(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(profileId),$0
     )
 })
 }
@@ -1020,6 +1416,30 @@ open func listFavoriteItems(kind: String)throws  -> [IptvItemRecord]  {
 open func listFavoriteSeries()throws  -> [SeriesRecord]  {
     return try  FfiConverterSequenceTypeSeriesRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_list_favorite_series(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+open func listHiddenGroups(profileId: Int64, kind: String)throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_list_hidden_groups(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(profileId),
+        FfiConverterString.lower(kind),$0
+    )
+})
+}
+    
+open func listHiddenItems(profileId: Int64)throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_list_hidden_items(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(profileId),$0
+    )
+})
+}
+    
+open func listProfiles()throws  -> [ProfileRecord]  {
+    return try  FfiConverterSequenceTypeProfileRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_list_profiles(self.uniffiClonePointer(),$0
     )
 })
 }
@@ -1041,9 +1461,32 @@ open func listRecentSeries(limit: UInt32)throws  -> [SeriesRecord]  {
 })
 }
     
+open func listRecordings(stateFilter: String?)throws  -> [RecordingRecord]  {
+    return try  FfiConverterSequenceTypeRecordingRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_list_recordings(self.uniffiClonePointer(),
+        FfiConverterOptionString.lower(stateFilter),$0
+    )
+})
+}
+    
+open func listSeriesRules()throws  -> [SeriesRuleRecord]  {
+    return try  FfiConverterSequenceTypeSeriesRuleRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_list_series_rules(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
 open func listSources()throws  -> [IptvSourceRecord]  {
     return try  FfiConverterSequenceTypeIptvSourceRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_list_sources(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+open func parseSrt(srtContent: String) -> [SubtitleCue]  {
+    return try!  FfiConverterSequenceTypeSubtitleCue.lift(try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_parse_srt(self.uniffiClonePointer(),
+        FfiConverterString.lower(srtContent),$0
     )
 })
 }
@@ -1082,6 +1525,34 @@ open func pauseDownload(taskId: Int64)async throws   {
         )
 }
     
+    /**
+     * Reads a decrypted share document and tells what it contains and what already exists here.
+     */
+open func previewShareDocument(json: String)throws  -> SharePreview  {
+    return try  FfiConverterTypeSharePreview_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_preview_share_document(self.uniffiClonePointer(),
+        FfiConverterString.lower(json),$0
+    )
+})
+}
+    
+open func probeStream(url: String, headersJson: String?, userAgent: String?, referer: String?)async throws  -> ProbeResultRecord  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_probe_stream(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(url),FfiConverterOptionString.lower(headersJson),FfiConverterOptionString.lower(userAgent),FfiConverterOptionString.lower(referer)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeProbeResultRecord_lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
 open func queryCatalog(filter: CatalogFilter)throws  -> [IptvItemRecord]  {
     return try  FfiConverterSequenceTypeIptvItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_query_catalog(self.uniffiClonePointer(),
@@ -1107,6 +1578,15 @@ open func querySeries(filter: CatalogFilter)throws  -> [SeriesRecord]  {
     return try  FfiConverterSequenceTypeSeriesRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_query_series(self.uniffiClonePointer(),
         FfiConverterTypeCatalogFilter_lower(filter),$0
+    )
+})
+}
+    
+open func recordNow(itemId: Int64, durationMinutes: UInt32)throws  -> Int64  {
+    return try  FfiConverterInt64.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_record_now(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(itemId),
+        FfiConverterUInt32.lower(durationMinutes),$0
     )
 })
 }
@@ -1188,6 +1668,36 @@ open func removeDownload(taskId: Int64, deleteFiles: Bool)async throws   {
         )
 }
     
+open func removeFromFavoriteFolder(folderId: Int64, stableHash: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_remove_from_favorite_folder(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(folderId),
+        FfiConverterString.lower(stableHash),$0
+    )
+})
+}
+    
+open func removeSeriesRule(id: Int64)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_remove_series_rule(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(id),$0
+    )
+})
+}
+    
+open func resolveCatchupUrl(streamUrl: String, catchupType: String?, catchupSource: String?, catchupDays: UInt32?, startTs: Int64, endTs: Int64)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_resolve_catchup_url(self.uniffiClonePointer(),
+        FfiConverterString.lower(streamUrl),
+        FfiConverterOptionString.lower(catchupType),
+        FfiConverterOptionString.lower(catchupSource),
+        FfiConverterOptionUInt32.lower(catchupDays),
+        FfiConverterInt64.lower(startTs),
+        FfiConverterInt64.lower(endTs),$0
+    )
+})
+}
+    
 open func retryDownload(taskId: Int64)async throws   {
     return
         try  await uniffiRustCallAsync(
@@ -1203,6 +1713,82 @@ open func retryDownload(taskId: Int64)async throws   {
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeCndError_lift
         )
+}
+    
+open func runHealthCheckCycle(throttle: Bool)async throws  -> UInt32  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_run_health_check_cycle(
+                    self.uniffiClonePointer(),
+                    FfiConverterBool.lower(throttle)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_u32,
+            completeFunc: ffi_cnd_core_rust_future_complete_u32,
+            freeFunc: ffi_cnd_core_rust_future_free_u32,
+            liftFunc: FfiConverterUInt32.lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
+open func scheduleRecording(req: NewRecordingRequest)throws  -> Int64  {
+    return try  FfiConverterInt64.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_schedule_recording(self.uniffiClonePointer(),
+        FfiConverterTypeNewRecordingRequest_lower(req),$0
+    )
+})
+}
+    
+open func searchSubtitles(query: SubtitleSearchQuery, apiKey: String?)async throws  -> [SubtitleSearchResult]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_search_subtitles(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeSubtitleSearchQuery_lower(query),FfiConverterOptionString.lower(apiKey)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeSubtitleSearchResult.lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
+open func setActiveProfileId(id: Int64)  {try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_set_active_profile_id(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(id),$0
+    )
+}
+}
+    
+open func setBroken(stableHash: String, itemKind: String, broken: Bool)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_set_broken(self.uniffiClonePointer(),
+        FfiConverterString.lower(stableHash),
+        FfiConverterString.lower(itemKind),
+        FfiConverterBool.lower(broken),$0
+    )
+})
+}
+    
+open func setCustomOrder(profileId: Int64, scope: String, key: String, position: Int32)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_set_custom_order(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(profileId),
+        FfiConverterString.lower(scope),
+        FfiConverterString.lower(key),
+        FfiConverterInt32.lower(position),$0
+    )
+}
+}
+    
+open func setRecordingDirectory(dir: String)  {try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_set_recording_directory(self.uniffiClonePointer(),
+        FfiConverterString.lower(dir),$0
+    )
+}
 }
     
 open func startAllDownloads()async throws   {
@@ -1239,6 +1825,28 @@ open func startDownload(taskId: Int64)async throws   {
         )
 }
     
+open func startHealthChecks(intervalMinutes: UInt32?)  {try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_start_health_checks(self.uniffiClonePointer(),
+        FfiConverterOptionUInt32.lower(intervalMinutes),$0
+    )
+}
+}
+    
+open func stopHealthChecks()  {try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_stop_health_checks(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+open func toggleBroken(stableHash: String, itemKind: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_toggle_broken(self.uniffiClonePointer(),
+        FfiConverterString.lower(stableHash),
+        FfiConverterString.lower(itemKind),$0
+    )
+})
+}
+    
 open func toggleFavorite(stableHash: String, itemKind: String)throws  -> Bool  {
     return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_toggle_favorite(self.uniffiClonePointer(),
@@ -1246,6 +1854,35 @@ open func toggleFavorite(stableHash: String, itemKind: String)throws  -> Bool  {
         FfiConverterString.lower(itemKind),$0
     )
 })
+}
+    
+open func unhideGroup(profileId: Int64, kind: String, group: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_unhide_group(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(profileId),
+        FfiConverterString.lower(kind),
+        FfiConverterString.lower(group),$0
+    )
+})
+}
+    
+open func unhideItem(profileId: Int64, stableHash: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_unhide_item(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(profileId),
+        FfiConverterString.lower(stableHash),$0
+    )
+})
+}
+    
+open func updateProfile(id: Int64, name: String, avatar: String, isKids: Bool)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_update_profile(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(id),
+        FfiConverterString.lower(name),
+        FfiConverterString.lower(avatar),
+        FfiConverterBool.lower(isKids),$0
+    )
+}
 }
     
 open func updateSettings(settings: RuntimeSettings)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
@@ -1778,6 +2415,8 @@ public struct CatalogFilter {
     public var groupTitle: String?
     public var host: String?
     public var favoritesOnly: Bool
+    public var includeBroken: Bool
+    public var includeHidden: Bool
     public var sortBy: SortField
     public var sortAsc: Bool
     public var limit: UInt32
@@ -1785,13 +2424,15 @@ public struct CatalogFilter {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(kind: String, sourceId: Int64?, query: String, groupTitle: String?, host: String?, favoritesOnly: Bool, sortBy: SortField, sortAsc: Bool, limit: UInt32, offset: UInt32) {
+    public init(kind: String, sourceId: Int64?, query: String, groupTitle: String?, host: String?, favoritesOnly: Bool, includeBroken: Bool, includeHidden: Bool, sortBy: SortField, sortAsc: Bool, limit: UInt32, offset: UInt32) {
         self.kind = kind
         self.sourceId = sourceId
         self.query = query
         self.groupTitle = groupTitle
         self.host = host
         self.favoritesOnly = favoritesOnly
+        self.includeBroken = includeBroken
+        self.includeHidden = includeHidden
         self.sortBy = sortBy
         self.sortAsc = sortAsc
         self.limit = limit
@@ -1824,6 +2465,12 @@ extension CatalogFilter: Equatable, Hashable {
         if lhs.favoritesOnly != rhs.favoritesOnly {
             return false
         }
+        if lhs.includeBroken != rhs.includeBroken {
+            return false
+        }
+        if lhs.includeHidden != rhs.includeHidden {
+            return false
+        }
         if lhs.sortBy != rhs.sortBy {
             return false
         }
@@ -1846,6 +2493,8 @@ extension CatalogFilter: Equatable, Hashable {
         hasher.combine(groupTitle)
         hasher.combine(host)
         hasher.combine(favoritesOnly)
+        hasher.combine(includeBroken)
+        hasher.combine(includeHidden)
         hasher.combine(sortBy)
         hasher.combine(sortAsc)
         hasher.combine(limit)
@@ -1868,6 +2517,8 @@ public struct FfiConverterTypeCatalogFilter: FfiConverterRustBuffer {
                 groupTitle: FfiConverterOptionString.read(from: &buf), 
                 host: FfiConverterOptionString.read(from: &buf), 
                 favoritesOnly: FfiConverterBool.read(from: &buf), 
+                includeBroken: FfiConverterBool.read(from: &buf), 
+                includeHidden: FfiConverterBool.read(from: &buf), 
                 sortBy: FfiConverterTypeSortField.read(from: &buf), 
                 sortAsc: FfiConverterBool.read(from: &buf), 
                 limit: FfiConverterUInt32.read(from: &buf), 
@@ -1882,6 +2533,8 @@ public struct FfiConverterTypeCatalogFilter: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.groupTitle, into: &buf)
         FfiConverterOptionString.write(value.host, into: &buf)
         FfiConverterBool.write(value.favoritesOnly, into: &buf)
+        FfiConverterBool.write(value.includeBroken, into: &buf)
+        FfiConverterBool.write(value.includeHidden, into: &buf)
         FfiConverterTypeSortField.write(value.sortBy, into: &buf)
         FfiConverterBool.write(value.sortAsc, into: &buf)
         FfiConverterUInt32.write(value.limit, into: &buf)
@@ -1990,18 +2643,20 @@ public struct DbStats {
     public var totalSeries: UInt32
     public var totalEpisodes: UInt32
     public var totalFavorites: UInt32
+    public var totalBroken: UInt32
     public var totalDownloads: UInt32
     public var dbSizeBytes: UInt64
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(totalSources: UInt32, totalLiveChannels: UInt32, totalMovies: UInt32, totalSeries: UInt32, totalEpisodes: UInt32, totalFavorites: UInt32, totalDownloads: UInt32, dbSizeBytes: UInt64) {
+    public init(totalSources: UInt32, totalLiveChannels: UInt32, totalMovies: UInt32, totalSeries: UInt32, totalEpisodes: UInt32, totalFavorites: UInt32, totalBroken: UInt32, totalDownloads: UInt32, dbSizeBytes: UInt64) {
         self.totalSources = totalSources
         self.totalLiveChannels = totalLiveChannels
         self.totalMovies = totalMovies
         self.totalSeries = totalSeries
         self.totalEpisodes = totalEpisodes
         self.totalFavorites = totalFavorites
+        self.totalBroken = totalBroken
         self.totalDownloads = totalDownloads
         self.dbSizeBytes = dbSizeBytes
     }
@@ -2032,6 +2687,9 @@ extension DbStats: Equatable, Hashable {
         if lhs.totalFavorites != rhs.totalFavorites {
             return false
         }
+        if lhs.totalBroken != rhs.totalBroken {
+            return false
+        }
         if lhs.totalDownloads != rhs.totalDownloads {
             return false
         }
@@ -2048,6 +2706,7 @@ extension DbStats: Equatable, Hashable {
         hasher.combine(totalSeries)
         hasher.combine(totalEpisodes)
         hasher.combine(totalFavorites)
+        hasher.combine(totalBroken)
         hasher.combine(totalDownloads)
         hasher.combine(dbSizeBytes)
     }
@@ -2068,6 +2727,7 @@ public struct FfiConverterTypeDbStats: FfiConverterRustBuffer {
                 totalSeries: FfiConverterUInt32.read(from: &buf), 
                 totalEpisodes: FfiConverterUInt32.read(from: &buf), 
                 totalFavorites: FfiConverterUInt32.read(from: &buf), 
+                totalBroken: FfiConverterUInt32.read(from: &buf), 
                 totalDownloads: FfiConverterUInt32.read(from: &buf), 
                 dbSizeBytes: FfiConverterUInt64.read(from: &buf)
         )
@@ -2080,6 +2740,7 @@ public struct FfiConverterTypeDbStats: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.totalSeries, into: &buf)
         FfiConverterUInt32.write(value.totalEpisodes, into: &buf)
         FfiConverterUInt32.write(value.totalFavorites, into: &buf)
+        FfiConverterUInt32.write(value.totalBroken, into: &buf)
         FfiConverterUInt32.write(value.totalDownloads, into: &buf)
         FfiConverterUInt64.write(value.dbSizeBytes, into: &buf)
     }
@@ -2627,6 +3288,108 @@ public func FfiConverterTypeFacetCount_lower(_ value: FacetCount) -> RustBuffer 
 }
 
 
+public struct FavoriteFolderRecord {
+    public var id: Int64
+    public var profileId: Int64
+    public var name: String
+    public var position: Int32
+    public var createdAt: Int64
+    public var itemCount: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, profileId: Int64, name: String, position: Int32, createdAt: Int64, itemCount: UInt32) {
+        self.id = id
+        self.profileId = profileId
+        self.name = name
+        self.position = position
+        self.createdAt = createdAt
+        self.itemCount = itemCount
+    }
+}
+
+#if compiler(>=6)
+extension FavoriteFolderRecord: Sendable {}
+#endif
+
+
+extension FavoriteFolderRecord: Equatable, Hashable {
+    public static func ==(lhs: FavoriteFolderRecord, rhs: FavoriteFolderRecord) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.profileId != rhs.profileId {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.position != rhs.position {
+            return false
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return false
+        }
+        if lhs.itemCount != rhs.itemCount {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(profileId)
+        hasher.combine(name)
+        hasher.combine(position)
+        hasher.combine(createdAt)
+        hasher.combine(itemCount)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFavoriteFolderRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FavoriteFolderRecord {
+        return
+            try FavoriteFolderRecord(
+                id: FfiConverterInt64.read(from: &buf), 
+                profileId: FfiConverterInt64.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                position: FfiConverterInt32.read(from: &buf), 
+                createdAt: FfiConverterInt64.read(from: &buf), 
+                itemCount: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FavoriteFolderRecord, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterInt64.write(value.profileId, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterInt32.write(value.position, into: &buf)
+        FfiConverterInt64.write(value.createdAt, into: &buf)
+        FfiConverterUInt32.write(value.itemCount, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFavoriteFolderRecord_lift(_ buf: RustBuffer) throws -> FavoriteFolderRecord {
+    return try FfiConverterTypeFavoriteFolderRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFavoriteFolderRecord_lower(_ value: FavoriteFolderRecord) -> RustBuffer {
+    return FfiConverterTypeFavoriteFolderRecord.lower(value)
+}
+
+
 public struct IptvItemRecord {
     public var id: Int64
     public var sourceId: Int64
@@ -2655,13 +3418,14 @@ public struct IptvItemRecord {
     public var imdbId: String?
     public var imdbRating: Double?
     public var isFavorite: Bool
+    public var isBroken: Bool
     public var resumePositionMs: Int64
     public var durationMs: Int64
     public var isCompleted: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: Int64, sourceId: Int64, seriesId: Int64?, stableHash: String, kind: String, seasonNum: UInt32?, episodeNum: UInt32?, name: String, nameClean: String, year: UInt32?, groupTitle: String?, tvgId: String?, logoUrl: String?, chno: UInt32?, host: String, containerExt: String?, streamUrl: String, userAgent: String?, referer: String?, headersJson: String?, catchupType: String?, catchupSource: String?, catchupDays: UInt32?, plot: String?, imdbId: String?, imdbRating: Double?, isFavorite: Bool, resumePositionMs: Int64, durationMs: Int64, isCompleted: Bool) {
+    public init(id: Int64, sourceId: Int64, seriesId: Int64?, stableHash: String, kind: String, seasonNum: UInt32?, episodeNum: UInt32?, name: String, nameClean: String, year: UInt32?, groupTitle: String?, tvgId: String?, logoUrl: String?, chno: UInt32?, host: String, containerExt: String?, streamUrl: String, userAgent: String?, referer: String?, headersJson: String?, catchupType: String?, catchupSource: String?, catchupDays: UInt32?, plot: String?, imdbId: String?, imdbRating: Double?, isFavorite: Bool, isBroken: Bool, resumePositionMs: Int64, durationMs: Int64, isCompleted: Bool) {
         self.id = id
         self.sourceId = sourceId
         self.seriesId = seriesId
@@ -2689,6 +3453,7 @@ public struct IptvItemRecord {
         self.imdbId = imdbId
         self.imdbRating = imdbRating
         self.isFavorite = isFavorite
+        self.isBroken = isBroken
         self.resumePositionMs = resumePositionMs
         self.durationMs = durationMs
         self.isCompleted = isCompleted
@@ -2783,6 +3548,9 @@ extension IptvItemRecord: Equatable, Hashable {
         if lhs.isFavorite != rhs.isFavorite {
             return false
         }
+        if lhs.isBroken != rhs.isBroken {
+            return false
+        }
         if lhs.resumePositionMs != rhs.resumePositionMs {
             return false
         }
@@ -2823,6 +3591,7 @@ extension IptvItemRecord: Equatable, Hashable {
         hasher.combine(imdbId)
         hasher.combine(imdbRating)
         hasher.combine(isFavorite)
+        hasher.combine(isBroken)
         hasher.combine(resumePositionMs)
         hasher.combine(durationMs)
         hasher.combine(isCompleted)
@@ -2865,6 +3634,7 @@ public struct FfiConverterTypeIptvItemRecord: FfiConverterRustBuffer {
                 imdbId: FfiConverterOptionString.read(from: &buf), 
                 imdbRating: FfiConverterOptionDouble.read(from: &buf), 
                 isFavorite: FfiConverterBool.read(from: &buf), 
+                isBroken: FfiConverterBool.read(from: &buf), 
                 resumePositionMs: FfiConverterInt64.read(from: &buf), 
                 durationMs: FfiConverterInt64.read(from: &buf), 
                 isCompleted: FfiConverterBool.read(from: &buf)
@@ -2899,6 +3669,7 @@ public struct FfiConverterTypeIptvItemRecord: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.imdbId, into: &buf)
         FfiConverterOptionDouble.write(value.imdbRating, into: &buf)
         FfiConverterBool.write(value.isFavorite, into: &buf)
+        FfiConverterBool.write(value.isBroken, into: &buf)
         FfiConverterInt64.write(value.resumePositionMs, into: &buf)
         FfiConverterInt64.write(value.durationMs, into: &buf)
         FfiConverterBool.write(value.isCompleted, into: &buf)
@@ -3497,6 +4268,534 @@ public func FfiConverterTypeNewDownloadRequest_lower(_ value: NewDownloadRequest
 }
 
 
+public struct NewRecordingRequest {
+    public var itemId: Int64
+    public var channelTvgId: String?
+    public var channelName: String
+    public var title: String
+    public var subtitle: String?
+    public var streamUrl: String
+    public var startTs: Int64
+    public var endTs: Int64
+    public var prePaddingS: UInt32?
+    public var postPaddingS: UInt32?
+    public var ruleId: Int64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(itemId: Int64, channelTvgId: String?, channelName: String, title: String, subtitle: String?, streamUrl: String, startTs: Int64, endTs: Int64, prePaddingS: UInt32?, postPaddingS: UInt32?, ruleId: Int64?) {
+        self.itemId = itemId
+        self.channelTvgId = channelTvgId
+        self.channelName = channelName
+        self.title = title
+        self.subtitle = subtitle
+        self.streamUrl = streamUrl
+        self.startTs = startTs
+        self.endTs = endTs
+        self.prePaddingS = prePaddingS
+        self.postPaddingS = postPaddingS
+        self.ruleId = ruleId
+    }
+}
+
+#if compiler(>=6)
+extension NewRecordingRequest: Sendable {}
+#endif
+
+
+extension NewRecordingRequest: Equatable, Hashable {
+    public static func ==(lhs: NewRecordingRequest, rhs: NewRecordingRequest) -> Bool {
+        if lhs.itemId != rhs.itemId {
+            return false
+        }
+        if lhs.channelTvgId != rhs.channelTvgId {
+            return false
+        }
+        if lhs.channelName != rhs.channelName {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.subtitle != rhs.subtitle {
+            return false
+        }
+        if lhs.streamUrl != rhs.streamUrl {
+            return false
+        }
+        if lhs.startTs != rhs.startTs {
+            return false
+        }
+        if lhs.endTs != rhs.endTs {
+            return false
+        }
+        if lhs.prePaddingS != rhs.prePaddingS {
+            return false
+        }
+        if lhs.postPaddingS != rhs.postPaddingS {
+            return false
+        }
+        if lhs.ruleId != rhs.ruleId {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(itemId)
+        hasher.combine(channelTvgId)
+        hasher.combine(channelName)
+        hasher.combine(title)
+        hasher.combine(subtitle)
+        hasher.combine(streamUrl)
+        hasher.combine(startTs)
+        hasher.combine(endTs)
+        hasher.combine(prePaddingS)
+        hasher.combine(postPaddingS)
+        hasher.combine(ruleId)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNewRecordingRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NewRecordingRequest {
+        return
+            try NewRecordingRequest(
+                itemId: FfiConverterInt64.read(from: &buf), 
+                channelTvgId: FfiConverterOptionString.read(from: &buf), 
+                channelName: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                subtitle: FfiConverterOptionString.read(from: &buf), 
+                streamUrl: FfiConverterString.read(from: &buf), 
+                startTs: FfiConverterInt64.read(from: &buf), 
+                endTs: FfiConverterInt64.read(from: &buf), 
+                prePaddingS: FfiConverterOptionUInt32.read(from: &buf), 
+                postPaddingS: FfiConverterOptionUInt32.read(from: &buf), 
+                ruleId: FfiConverterOptionInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NewRecordingRequest, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.itemId, into: &buf)
+        FfiConverterOptionString.write(value.channelTvgId, into: &buf)
+        FfiConverterString.write(value.channelName, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.subtitle, into: &buf)
+        FfiConverterString.write(value.streamUrl, into: &buf)
+        FfiConverterInt64.write(value.startTs, into: &buf)
+        FfiConverterInt64.write(value.endTs, into: &buf)
+        FfiConverterOptionUInt32.write(value.prePaddingS, into: &buf)
+        FfiConverterOptionUInt32.write(value.postPaddingS, into: &buf)
+        FfiConverterOptionInt64.write(value.ruleId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNewRecordingRequest_lift(_ buf: RustBuffer) throws -> NewRecordingRequest {
+    return try FfiConverterTypeNewRecordingRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNewRecordingRequest_lower(_ value: NewRecordingRequest) -> RustBuffer {
+    return FfiConverterTypeNewRecordingRequest.lower(value)
+}
+
+
+public struct ProbeResultRecord {
+    public var isSuccess: Bool
+    public var status: String
+    public var httpCode: UInt16?
+    public var latencyMs: UInt32?
+    public var errorMessage: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(isSuccess: Bool, status: String, httpCode: UInt16?, latencyMs: UInt32?, errorMessage: String?) {
+        self.isSuccess = isSuccess
+        self.status = status
+        self.httpCode = httpCode
+        self.latencyMs = latencyMs
+        self.errorMessage = errorMessage
+    }
+}
+
+#if compiler(>=6)
+extension ProbeResultRecord: Sendable {}
+#endif
+
+
+extension ProbeResultRecord: Equatable, Hashable {
+    public static func ==(lhs: ProbeResultRecord, rhs: ProbeResultRecord) -> Bool {
+        if lhs.isSuccess != rhs.isSuccess {
+            return false
+        }
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.httpCode != rhs.httpCode {
+            return false
+        }
+        if lhs.latencyMs != rhs.latencyMs {
+            return false
+        }
+        if lhs.errorMessage != rhs.errorMessage {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(isSuccess)
+        hasher.combine(status)
+        hasher.combine(httpCode)
+        hasher.combine(latencyMs)
+        hasher.combine(errorMessage)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeProbeResultRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProbeResultRecord {
+        return
+            try ProbeResultRecord(
+                isSuccess: FfiConverterBool.read(from: &buf), 
+                status: FfiConverterString.read(from: &buf), 
+                httpCode: FfiConverterOptionUInt16.read(from: &buf), 
+                latencyMs: FfiConverterOptionUInt32.read(from: &buf), 
+                errorMessage: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ProbeResultRecord, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.isSuccess, into: &buf)
+        FfiConverterString.write(value.status, into: &buf)
+        FfiConverterOptionUInt16.write(value.httpCode, into: &buf)
+        FfiConverterOptionUInt32.write(value.latencyMs, into: &buf)
+        FfiConverterOptionString.write(value.errorMessage, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProbeResultRecord_lift(_ buf: RustBuffer) throws -> ProbeResultRecord {
+    return try FfiConverterTypeProbeResultRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProbeResultRecord_lower(_ value: ProbeResultRecord) -> RustBuffer {
+    return FfiConverterTypeProbeResultRecord.lower(value)
+}
+
+
+public struct ProfileRecord {
+    public var id: Int64
+    public var uuid: String
+    public var name: String
+    public var avatar: String
+    public var isKids: Bool
+    public var createdAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, uuid: String, name: String, avatar: String, isKids: Bool, createdAt: Int64) {
+        self.id = id
+        self.uuid = uuid
+        self.name = name
+        self.avatar = avatar
+        self.isKids = isKids
+        self.createdAt = createdAt
+    }
+}
+
+#if compiler(>=6)
+extension ProfileRecord: Sendable {}
+#endif
+
+
+extension ProfileRecord: Equatable, Hashable {
+    public static func ==(lhs: ProfileRecord, rhs: ProfileRecord) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.uuid != rhs.uuid {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.avatar != rhs.avatar {
+            return false
+        }
+        if lhs.isKids != rhs.isKids {
+            return false
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(uuid)
+        hasher.combine(name)
+        hasher.combine(avatar)
+        hasher.combine(isKids)
+        hasher.combine(createdAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeProfileRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProfileRecord {
+        return
+            try ProfileRecord(
+                id: FfiConverterInt64.read(from: &buf), 
+                uuid: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                avatar: FfiConverterString.read(from: &buf), 
+                isKids: FfiConverterBool.read(from: &buf), 
+                createdAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ProfileRecord, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterString.write(value.uuid, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.avatar, into: &buf)
+        FfiConverterBool.write(value.isKids, into: &buf)
+        FfiConverterInt64.write(value.createdAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProfileRecord_lift(_ buf: RustBuffer) throws -> ProfileRecord {
+    return try FfiConverterTypeProfileRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProfileRecord_lower(_ value: ProfileRecord) -> RustBuffer {
+    return FfiConverterTypeProfileRecord.lower(value)
+}
+
+
+public struct RecordingRecord {
+    public var id: Int64
+    public var itemId: Int64
+    public var channelTvgId: String?
+    public var channelName: String
+    public var title: String
+    public var subtitle: String?
+    public var streamUrl: String
+    public var startTs: Int64
+    public var endTs: Int64
+    public var prePaddingS: UInt32
+    public var postPaddingS: UInt32
+    public var state: String
+    public var filePath: String?
+    public var bytesWritten: UInt64
+    public var ruleId: Int64?
+    public var error: String?
+    public var createdAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, itemId: Int64, channelTvgId: String?, channelName: String, title: String, subtitle: String?, streamUrl: String, startTs: Int64, endTs: Int64, prePaddingS: UInt32, postPaddingS: UInt32, state: String, filePath: String?, bytesWritten: UInt64, ruleId: Int64?, error: String?, createdAt: Int64) {
+        self.id = id
+        self.itemId = itemId
+        self.channelTvgId = channelTvgId
+        self.channelName = channelName
+        self.title = title
+        self.subtitle = subtitle
+        self.streamUrl = streamUrl
+        self.startTs = startTs
+        self.endTs = endTs
+        self.prePaddingS = prePaddingS
+        self.postPaddingS = postPaddingS
+        self.state = state
+        self.filePath = filePath
+        self.bytesWritten = bytesWritten
+        self.ruleId = ruleId
+        self.error = error
+        self.createdAt = createdAt
+    }
+}
+
+#if compiler(>=6)
+extension RecordingRecord: Sendable {}
+#endif
+
+
+extension RecordingRecord: Equatable, Hashable {
+    public static func ==(lhs: RecordingRecord, rhs: RecordingRecord) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.itemId != rhs.itemId {
+            return false
+        }
+        if lhs.channelTvgId != rhs.channelTvgId {
+            return false
+        }
+        if lhs.channelName != rhs.channelName {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.subtitle != rhs.subtitle {
+            return false
+        }
+        if lhs.streamUrl != rhs.streamUrl {
+            return false
+        }
+        if lhs.startTs != rhs.startTs {
+            return false
+        }
+        if lhs.endTs != rhs.endTs {
+            return false
+        }
+        if lhs.prePaddingS != rhs.prePaddingS {
+            return false
+        }
+        if lhs.postPaddingS != rhs.postPaddingS {
+            return false
+        }
+        if lhs.state != rhs.state {
+            return false
+        }
+        if lhs.filePath != rhs.filePath {
+            return false
+        }
+        if lhs.bytesWritten != rhs.bytesWritten {
+            return false
+        }
+        if lhs.ruleId != rhs.ruleId {
+            return false
+        }
+        if lhs.error != rhs.error {
+            return false
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(itemId)
+        hasher.combine(channelTvgId)
+        hasher.combine(channelName)
+        hasher.combine(title)
+        hasher.combine(subtitle)
+        hasher.combine(streamUrl)
+        hasher.combine(startTs)
+        hasher.combine(endTs)
+        hasher.combine(prePaddingS)
+        hasher.combine(postPaddingS)
+        hasher.combine(state)
+        hasher.combine(filePath)
+        hasher.combine(bytesWritten)
+        hasher.combine(ruleId)
+        hasher.combine(error)
+        hasher.combine(createdAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRecordingRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RecordingRecord {
+        return
+            try RecordingRecord(
+                id: FfiConverterInt64.read(from: &buf), 
+                itemId: FfiConverterInt64.read(from: &buf), 
+                channelTvgId: FfiConverterOptionString.read(from: &buf), 
+                channelName: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                subtitle: FfiConverterOptionString.read(from: &buf), 
+                streamUrl: FfiConverterString.read(from: &buf), 
+                startTs: FfiConverterInt64.read(from: &buf), 
+                endTs: FfiConverterInt64.read(from: &buf), 
+                prePaddingS: FfiConverterUInt32.read(from: &buf), 
+                postPaddingS: FfiConverterUInt32.read(from: &buf), 
+                state: FfiConverterString.read(from: &buf), 
+                filePath: FfiConverterOptionString.read(from: &buf), 
+                bytesWritten: FfiConverterUInt64.read(from: &buf), 
+                ruleId: FfiConverterOptionInt64.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf), 
+                createdAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RecordingRecord, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterInt64.write(value.itemId, into: &buf)
+        FfiConverterOptionString.write(value.channelTvgId, into: &buf)
+        FfiConverterString.write(value.channelName, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.subtitle, into: &buf)
+        FfiConverterString.write(value.streamUrl, into: &buf)
+        FfiConverterInt64.write(value.startTs, into: &buf)
+        FfiConverterInt64.write(value.endTs, into: &buf)
+        FfiConverterUInt32.write(value.prePaddingS, into: &buf)
+        FfiConverterUInt32.write(value.postPaddingS, into: &buf)
+        FfiConverterString.write(value.state, into: &buf)
+        FfiConverterOptionString.write(value.filePath, into: &buf)
+        FfiConverterUInt64.write(value.bytesWritten, into: &buf)
+        FfiConverterOptionInt64.write(value.ruleId, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+        FfiConverterInt64.write(value.createdAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecordingRecord_lift(_ buf: RustBuffer) throws -> RecordingRecord {
+    return try FfiConverterTypeRecordingRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecordingRecord_lower(_ value: RecordingRecord) -> RustBuffer {
+    return FfiConverterTypeRecordingRecord.lower(value)
+}
+
+
 public struct RuntimeSettings {
     public var segmentsPerFile: UInt32
     public var partSizeBytes: UInt64
@@ -3724,10 +5023,11 @@ public struct SeriesRecord {
     public var episodeCount: UInt32
     public var seasonCount: UInt32
     public var isFavorite: Bool
+    public var isBroken: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: Int64, sourceId: Int64, canonicalKey: String, stableHash: String, title: String, groupTitle: String?, posterUrl: String?, backdropUrl: String?, imdbId: String?, imdbRating: Double?, plot: String?, episodeCount: UInt32, seasonCount: UInt32, isFavorite: Bool) {
+    public init(id: Int64, sourceId: Int64, canonicalKey: String, stableHash: String, title: String, groupTitle: String?, posterUrl: String?, backdropUrl: String?, imdbId: String?, imdbRating: Double?, plot: String?, episodeCount: UInt32, seasonCount: UInt32, isFavorite: Bool, isBroken: Bool) {
         self.id = id
         self.sourceId = sourceId
         self.canonicalKey = canonicalKey
@@ -3742,6 +5042,7 @@ public struct SeriesRecord {
         self.episodeCount = episodeCount
         self.seasonCount = seasonCount
         self.isFavorite = isFavorite
+        self.isBroken = isBroken
     }
 }
 
@@ -3794,6 +5095,9 @@ extension SeriesRecord: Equatable, Hashable {
         if lhs.isFavorite != rhs.isFavorite {
             return false
         }
+        if lhs.isBroken != rhs.isBroken {
+            return false
+        }
         return true
     }
 
@@ -3812,6 +5116,7 @@ extension SeriesRecord: Equatable, Hashable {
         hasher.combine(episodeCount)
         hasher.combine(seasonCount)
         hasher.combine(isFavorite)
+        hasher.combine(isBroken)
     }
 }
 
@@ -3837,7 +5142,8 @@ public struct FfiConverterTypeSeriesRecord: FfiConverterRustBuffer {
                 plot: FfiConverterOptionString.read(from: &buf), 
                 episodeCount: FfiConverterUInt32.read(from: &buf), 
                 seasonCount: FfiConverterUInt32.read(from: &buf), 
-                isFavorite: FfiConverterBool.read(from: &buf)
+                isFavorite: FfiConverterBool.read(from: &buf), 
+                isBroken: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -3856,6 +5162,7 @@ public struct FfiConverterTypeSeriesRecord: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.episodeCount, into: &buf)
         FfiConverterUInt32.write(value.seasonCount, into: &buf)
         FfiConverterBool.write(value.isFavorite, into: &buf)
+        FfiConverterBool.write(value.isBroken, into: &buf)
     }
 }
 
@@ -3872,6 +5179,1242 @@ public func FfiConverterTypeSeriesRecord_lift(_ buf: RustBuffer) throws -> Serie
 #endif
 public func FfiConverterTypeSeriesRecord_lower(_ value: SeriesRecord) -> RustBuffer {
     return FfiConverterTypeSeriesRecord.lower(value)
+}
+
+
+public struct SeriesRuleRecord {
+    public var id: Int64
+    public var channelTvgId: String?
+    public var titleKey: String
+    public var createdAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, channelTvgId: String?, titleKey: String, createdAt: Int64) {
+        self.id = id
+        self.channelTvgId = channelTvgId
+        self.titleKey = titleKey
+        self.createdAt = createdAt
+    }
+}
+
+#if compiler(>=6)
+extension SeriesRuleRecord: Sendable {}
+#endif
+
+
+extension SeriesRuleRecord: Equatable, Hashable {
+    public static func ==(lhs: SeriesRuleRecord, rhs: SeriesRuleRecord) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.channelTvgId != rhs.channelTvgId {
+            return false
+        }
+        if lhs.titleKey != rhs.titleKey {
+            return false
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(channelTvgId)
+        hasher.combine(titleKey)
+        hasher.combine(createdAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSeriesRuleRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SeriesRuleRecord {
+        return
+            try SeriesRuleRecord(
+                id: FfiConverterInt64.read(from: &buf), 
+                channelTvgId: FfiConverterOptionString.read(from: &buf), 
+                titleKey: FfiConverterString.read(from: &buf), 
+                createdAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SeriesRuleRecord, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterOptionString.write(value.channelTvgId, into: &buf)
+        FfiConverterString.write(value.titleKey, into: &buf)
+        FfiConverterInt64.write(value.createdAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSeriesRuleRecord_lift(_ buf: RustBuffer) throws -> SeriesRuleRecord {
+    return try FfiConverterTypeSeriesRuleRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSeriesRuleRecord_lower(_ value: SeriesRuleRecord) -> RustBuffer {
+    return FfiConverterTypeSeriesRuleRecord.lower(value)
+}
+
+
+public struct ShareDecision {
+    public var index: UInt32
+    public var action: ShareImportAction
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(index: UInt32, action: ShareImportAction) {
+        self.index = index
+        self.action = action
+    }
+}
+
+#if compiler(>=6)
+extension ShareDecision: Sendable {}
+#endif
+
+
+extension ShareDecision: Equatable, Hashable {
+    public static func ==(lhs: ShareDecision, rhs: ShareDecision) -> Bool {
+        if lhs.index != rhs.index {
+            return false
+        }
+        if lhs.action != rhs.action {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(index)
+        hasher.combine(action)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShareDecision: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShareDecision {
+        return
+            try ShareDecision(
+                index: FfiConverterUInt32.read(from: &buf), 
+                action: FfiConverterTypeShareImportAction.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ShareDecision, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.index, into: &buf)
+        FfiConverterTypeShareImportAction.write(value.action, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareDecision_lift(_ buf: RustBuffer) throws -> ShareDecision {
+    return try FfiConverterTypeShareDecision.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareDecision_lower(_ value: ShareDecision) -> RustBuffer {
+    return FfiConverterTypeShareDecision.lower(value)
+}
+
+
+public struct ShareExport {
+    public var json: String
+    public var sourceCount: UInt32
+    public var warnings: [ShareWarning]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(json: String, sourceCount: UInt32, warnings: [ShareWarning]) {
+        self.json = json
+        self.sourceCount = sourceCount
+        self.warnings = warnings
+    }
+}
+
+#if compiler(>=6)
+extension ShareExport: Sendable {}
+#endif
+
+
+extension ShareExport: Equatable, Hashable {
+    public static func ==(lhs: ShareExport, rhs: ShareExport) -> Bool {
+        if lhs.json != rhs.json {
+            return false
+        }
+        if lhs.sourceCount != rhs.sourceCount {
+            return false
+        }
+        if lhs.warnings != rhs.warnings {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(json)
+        hasher.combine(sourceCount)
+        hasher.combine(warnings)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShareExport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShareExport {
+        return
+            try ShareExport(
+                json: FfiConverterString.read(from: &buf), 
+                sourceCount: FfiConverterUInt32.read(from: &buf), 
+                warnings: FfiConverterSequenceTypeShareWarning.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ShareExport, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.json, into: &buf)
+        FfiConverterUInt32.write(value.sourceCount, into: &buf)
+        FfiConverterSequenceTypeShareWarning.write(value.warnings, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareExport_lift(_ buf: RustBuffer) throws -> ShareExport {
+    return try FfiConverterTypeShareExport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareExport_lower(_ value: ShareExport) -> RustBuffer {
+    return FfiConverterTypeShareExport.lower(value)
+}
+
+
+public struct ShareImportResult {
+    public var imported: [ShareImportedSource]
+    public var skipped: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(imported: [ShareImportedSource], skipped: UInt32) {
+        self.imported = imported
+        self.skipped = skipped
+    }
+}
+
+#if compiler(>=6)
+extension ShareImportResult: Sendable {}
+#endif
+
+
+extension ShareImportResult: Equatable, Hashable {
+    public static func ==(lhs: ShareImportResult, rhs: ShareImportResult) -> Bool {
+        if lhs.imported != rhs.imported {
+            return false
+        }
+        if lhs.skipped != rhs.skipped {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(imported)
+        hasher.combine(skipped)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShareImportResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShareImportResult {
+        return
+            try ShareImportResult(
+                imported: FfiConverterSequenceTypeShareImportedSource.read(from: &buf), 
+                skipped: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ShareImportResult, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeShareImportedSource.write(value.imported, into: &buf)
+        FfiConverterUInt32.write(value.skipped, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareImportResult_lift(_ buf: RustBuffer) throws -> ShareImportResult {
+    return try FfiConverterTypeShareImportResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareImportResult_lower(_ value: ShareImportResult) -> RustBuffer {
+    return FfiConverterTypeShareImportResult.lower(value)
+}
+
+
+public struct ShareImportedSource {
+    public var sourceId: Int64
+    public var uuid: String
+    public var name: String
+    public var sourceType: String
+    /**
+     * To be stored in the Keychain by the app (`cnd.xtream.<uuid>`); never persisted here.
+     */
+    public var password: String?
+    public var replaced: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sourceId: Int64, uuid: String, name: String, sourceType: String, 
+        /**
+         * To be stored in the Keychain by the app (`cnd.xtream.<uuid>`); never persisted here.
+         */password: String?, replaced: Bool) {
+        self.sourceId = sourceId
+        self.uuid = uuid
+        self.name = name
+        self.sourceType = sourceType
+        self.password = password
+        self.replaced = replaced
+    }
+}
+
+#if compiler(>=6)
+extension ShareImportedSource: Sendable {}
+#endif
+
+
+extension ShareImportedSource: Equatable, Hashable {
+    public static func ==(lhs: ShareImportedSource, rhs: ShareImportedSource) -> Bool {
+        if lhs.sourceId != rhs.sourceId {
+            return false
+        }
+        if lhs.uuid != rhs.uuid {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.sourceType != rhs.sourceType {
+            return false
+        }
+        if lhs.password != rhs.password {
+            return false
+        }
+        if lhs.replaced != rhs.replaced {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(sourceId)
+        hasher.combine(uuid)
+        hasher.combine(name)
+        hasher.combine(sourceType)
+        hasher.combine(password)
+        hasher.combine(replaced)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShareImportedSource: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShareImportedSource {
+        return
+            try ShareImportedSource(
+                sourceId: FfiConverterInt64.read(from: &buf), 
+                uuid: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                sourceType: FfiConverterString.read(from: &buf), 
+                password: FfiConverterOptionString.read(from: &buf), 
+                replaced: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ShareImportedSource, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.sourceId, into: &buf)
+        FfiConverterString.write(value.uuid, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.sourceType, into: &buf)
+        FfiConverterOptionString.write(value.password, into: &buf)
+        FfiConverterBool.write(value.replaced, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareImportedSource_lift(_ buf: RustBuffer) throws -> ShareImportedSource {
+    return try FfiConverterTypeShareImportedSource.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareImportedSource_lower(_ value: ShareImportedSource) -> RustBuffer {
+    return FfiConverterTypeShareImportedSource.lower(value)
+}
+
+
+public struct SharePreview {
+    public var from: String
+    public var createdAt: Int64
+    public var expiresAt: Int64
+    public var sources: [SharePreviewSource]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(from: String, createdAt: Int64, expiresAt: Int64, sources: [SharePreviewSource]) {
+        self.from = from
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+        self.sources = sources
+    }
+}
+
+#if compiler(>=6)
+extension SharePreview: Sendable {}
+#endif
+
+
+extension SharePreview: Equatable, Hashable {
+    public static func ==(lhs: SharePreview, rhs: SharePreview) -> Bool {
+        if lhs.from != rhs.from {
+            return false
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return false
+        }
+        if lhs.expiresAt != rhs.expiresAt {
+            return false
+        }
+        if lhs.sources != rhs.sources {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(from)
+        hasher.combine(createdAt)
+        hasher.combine(expiresAt)
+        hasher.combine(sources)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSharePreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SharePreview {
+        return
+            try SharePreview(
+                from: FfiConverterString.read(from: &buf), 
+                createdAt: FfiConverterInt64.read(from: &buf), 
+                expiresAt: FfiConverterInt64.read(from: &buf), 
+                sources: FfiConverterSequenceTypeSharePreviewSource.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SharePreview, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.from, into: &buf)
+        FfiConverterInt64.write(value.createdAt, into: &buf)
+        FfiConverterInt64.write(value.expiresAt, into: &buf)
+        FfiConverterSequenceTypeSharePreviewSource.write(value.sources, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSharePreview_lift(_ buf: RustBuffer) throws -> SharePreview {
+    return try FfiConverterTypeSharePreview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSharePreview_lower(_ value: SharePreview) -> RustBuffer {
+    return FfiConverterTypeSharePreview.lower(value)
+}
+
+
+public struct SharePreviewSource {
+    public var index: UInt32
+    public var name: String
+    public var sourceType: String
+    public var server: String?
+    public var username: String?
+    /**
+     * Address with its credentials blanked, for display only.
+     */
+    public var urlDisplay: String?
+    public var hasPassword: Bool
+    public var hasPlaylist: Bool
+    public var needsCredentials: Bool
+    public var duplicateOf: Int64?
+    public var duplicateName: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(index: UInt32, name: String, sourceType: String, server: String?, username: String?, 
+        /**
+         * Address with its credentials blanked, for display only.
+         */urlDisplay: String?, hasPassword: Bool, hasPlaylist: Bool, needsCredentials: Bool, duplicateOf: Int64?, duplicateName: String?) {
+        self.index = index
+        self.name = name
+        self.sourceType = sourceType
+        self.server = server
+        self.username = username
+        self.urlDisplay = urlDisplay
+        self.hasPassword = hasPassword
+        self.hasPlaylist = hasPlaylist
+        self.needsCredentials = needsCredentials
+        self.duplicateOf = duplicateOf
+        self.duplicateName = duplicateName
+    }
+}
+
+#if compiler(>=6)
+extension SharePreviewSource: Sendable {}
+#endif
+
+
+extension SharePreviewSource: Equatable, Hashable {
+    public static func ==(lhs: SharePreviewSource, rhs: SharePreviewSource) -> Bool {
+        if lhs.index != rhs.index {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.sourceType != rhs.sourceType {
+            return false
+        }
+        if lhs.server != rhs.server {
+            return false
+        }
+        if lhs.username != rhs.username {
+            return false
+        }
+        if lhs.urlDisplay != rhs.urlDisplay {
+            return false
+        }
+        if lhs.hasPassword != rhs.hasPassword {
+            return false
+        }
+        if lhs.hasPlaylist != rhs.hasPlaylist {
+            return false
+        }
+        if lhs.needsCredentials != rhs.needsCredentials {
+            return false
+        }
+        if lhs.duplicateOf != rhs.duplicateOf {
+            return false
+        }
+        if lhs.duplicateName != rhs.duplicateName {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(index)
+        hasher.combine(name)
+        hasher.combine(sourceType)
+        hasher.combine(server)
+        hasher.combine(username)
+        hasher.combine(urlDisplay)
+        hasher.combine(hasPassword)
+        hasher.combine(hasPlaylist)
+        hasher.combine(needsCredentials)
+        hasher.combine(duplicateOf)
+        hasher.combine(duplicateName)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSharePreviewSource: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SharePreviewSource {
+        return
+            try SharePreviewSource(
+                index: FfiConverterUInt32.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                sourceType: FfiConverterString.read(from: &buf), 
+                server: FfiConverterOptionString.read(from: &buf), 
+                username: FfiConverterOptionString.read(from: &buf), 
+                urlDisplay: FfiConverterOptionString.read(from: &buf), 
+                hasPassword: FfiConverterBool.read(from: &buf), 
+                hasPlaylist: FfiConverterBool.read(from: &buf), 
+                needsCredentials: FfiConverterBool.read(from: &buf), 
+                duplicateOf: FfiConverterOptionInt64.read(from: &buf), 
+                duplicateName: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SharePreviewSource, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.index, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.sourceType, into: &buf)
+        FfiConverterOptionString.write(value.server, into: &buf)
+        FfiConverterOptionString.write(value.username, into: &buf)
+        FfiConverterOptionString.write(value.urlDisplay, into: &buf)
+        FfiConverterBool.write(value.hasPassword, into: &buf)
+        FfiConverterBool.write(value.hasPlaylist, into: &buf)
+        FfiConverterBool.write(value.needsCredentials, into: &buf)
+        FfiConverterOptionInt64.write(value.duplicateOf, into: &buf)
+        FfiConverterOptionString.write(value.duplicateName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSharePreviewSource_lift(_ buf: RustBuffer) throws -> SharePreviewSource {
+    return try FfiConverterTypeSharePreviewSource.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSharePreviewSource_lower(_ value: SharePreviewSource) -> RustBuffer {
+    return FfiConverterTypeSharePreviewSource.lower(value)
+}
+
+
+public struct ShareSourceOption {
+    public var sourceId: Int64
+    /**
+     * Include the password and the credentials found in URLs (inside the encrypted envelope).
+     */
+    public var includeCredentials: Bool
+    /**
+     * The password read from the Keychain by the app; used only when `include_credentials`.
+     */
+    public var password: String?
+    /**
+     * For a local (`file://`) playlist: attach its content.
+     */
+    public var includePlaylist: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sourceId: Int64, 
+        /**
+         * Include the password and the credentials found in URLs (inside the encrypted envelope).
+         */includeCredentials: Bool, 
+        /**
+         * The password read from the Keychain by the app; used only when `include_credentials`.
+         */password: String?, 
+        /**
+         * For a local (`file://`) playlist: attach its content.
+         */includePlaylist: Bool) {
+        self.sourceId = sourceId
+        self.includeCredentials = includeCredentials
+        self.password = password
+        self.includePlaylist = includePlaylist
+    }
+}
+
+#if compiler(>=6)
+extension ShareSourceOption: Sendable {}
+#endif
+
+
+extension ShareSourceOption: Equatable, Hashable {
+    public static func ==(lhs: ShareSourceOption, rhs: ShareSourceOption) -> Bool {
+        if lhs.sourceId != rhs.sourceId {
+            return false
+        }
+        if lhs.includeCredentials != rhs.includeCredentials {
+            return false
+        }
+        if lhs.password != rhs.password {
+            return false
+        }
+        if lhs.includePlaylist != rhs.includePlaylist {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(sourceId)
+        hasher.combine(includeCredentials)
+        hasher.combine(password)
+        hasher.combine(includePlaylist)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShareSourceOption: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShareSourceOption {
+        return
+            try ShareSourceOption(
+                sourceId: FfiConverterInt64.read(from: &buf), 
+                includeCredentials: FfiConverterBool.read(from: &buf), 
+                password: FfiConverterOptionString.read(from: &buf), 
+                includePlaylist: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ShareSourceOption, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.sourceId, into: &buf)
+        FfiConverterBool.write(value.includeCredentials, into: &buf)
+        FfiConverterOptionString.write(value.password, into: &buf)
+        FfiConverterBool.write(value.includePlaylist, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareSourceOption_lift(_ buf: RustBuffer) throws -> ShareSourceOption {
+    return try FfiConverterTypeShareSourceOption.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareSourceOption_lower(_ value: ShareSourceOption) -> RustBuffer {
+    return FfiConverterTypeShareSourceOption.lower(value)
+}
+
+
+public struct ShareWarning {
+    public var sourceName: String
+    /**
+     * `url_credentials_removed`, `password_not_included`, `local_file_not_shared`,
+     * `local_file_missing`, `playlist_too_large`.
+     */
+    public var kind: String
+    public var detail: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sourceName: String, 
+        /**
+         * `url_credentials_removed`, `password_not_included`, `local_file_not_shared`,
+         * `local_file_missing`, `playlist_too_large`.
+         */kind: String, detail: String) {
+        self.sourceName = sourceName
+        self.kind = kind
+        self.detail = detail
+    }
+}
+
+#if compiler(>=6)
+extension ShareWarning: Sendable {}
+#endif
+
+
+extension ShareWarning: Equatable, Hashable {
+    public static func ==(lhs: ShareWarning, rhs: ShareWarning) -> Bool {
+        if lhs.sourceName != rhs.sourceName {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.detail != rhs.detail {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(sourceName)
+        hasher.combine(kind)
+        hasher.combine(detail)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShareWarning: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShareWarning {
+        return
+            try ShareWarning(
+                sourceName: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterString.read(from: &buf), 
+                detail: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ShareWarning, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.sourceName, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.detail, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareWarning_lift(_ buf: RustBuffer) throws -> ShareWarning {
+    return try FfiConverterTypeShareWarning.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareWarning_lower(_ value: ShareWarning) -> RustBuffer {
+    return FfiConverterTypeShareWarning.lower(value)
+}
+
+
+public struct StreamHealthRecord {
+    public var stableHash: String
+    public var status: String
+    public var latencyMs: UInt32?
+    public var checkedAt: Int64
+    public var consecutiveFailures: UInt32
+    public var lastOkAt: Int64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(stableHash: String, status: String, latencyMs: UInt32?, checkedAt: Int64, consecutiveFailures: UInt32, lastOkAt: Int64?) {
+        self.stableHash = stableHash
+        self.status = status
+        self.latencyMs = latencyMs
+        self.checkedAt = checkedAt
+        self.consecutiveFailures = consecutiveFailures
+        self.lastOkAt = lastOkAt
+    }
+}
+
+#if compiler(>=6)
+extension StreamHealthRecord: Sendable {}
+#endif
+
+
+extension StreamHealthRecord: Equatable, Hashable {
+    public static func ==(lhs: StreamHealthRecord, rhs: StreamHealthRecord) -> Bool {
+        if lhs.stableHash != rhs.stableHash {
+            return false
+        }
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.latencyMs != rhs.latencyMs {
+            return false
+        }
+        if lhs.checkedAt != rhs.checkedAt {
+            return false
+        }
+        if lhs.consecutiveFailures != rhs.consecutiveFailures {
+            return false
+        }
+        if lhs.lastOkAt != rhs.lastOkAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(stableHash)
+        hasher.combine(status)
+        hasher.combine(latencyMs)
+        hasher.combine(checkedAt)
+        hasher.combine(consecutiveFailures)
+        hasher.combine(lastOkAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStreamHealthRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StreamHealthRecord {
+        return
+            try StreamHealthRecord(
+                stableHash: FfiConverterString.read(from: &buf), 
+                status: FfiConverterString.read(from: &buf), 
+                latencyMs: FfiConverterOptionUInt32.read(from: &buf), 
+                checkedAt: FfiConverterInt64.read(from: &buf), 
+                consecutiveFailures: FfiConverterUInt32.read(from: &buf), 
+                lastOkAt: FfiConverterOptionInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: StreamHealthRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.stableHash, into: &buf)
+        FfiConverterString.write(value.status, into: &buf)
+        FfiConverterOptionUInt32.write(value.latencyMs, into: &buf)
+        FfiConverterInt64.write(value.checkedAt, into: &buf)
+        FfiConverterUInt32.write(value.consecutiveFailures, into: &buf)
+        FfiConverterOptionInt64.write(value.lastOkAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStreamHealthRecord_lift(_ buf: RustBuffer) throws -> StreamHealthRecord {
+    return try FfiConverterTypeStreamHealthRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStreamHealthRecord_lower(_ value: StreamHealthRecord) -> RustBuffer {
+    return FfiConverterTypeStreamHealthRecord.lower(value)
+}
+
+
+public struct SubtitleCue {
+    public var index: UInt32
+    public var startMs: Int64
+    public var endMs: Int64
+    public var text: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(index: UInt32, startMs: Int64, endMs: Int64, text: String) {
+        self.index = index
+        self.startMs = startMs
+        self.endMs = endMs
+        self.text = text
+    }
+}
+
+#if compiler(>=6)
+extension SubtitleCue: Sendable {}
+#endif
+
+
+extension SubtitleCue: Equatable, Hashable {
+    public static func ==(lhs: SubtitleCue, rhs: SubtitleCue) -> Bool {
+        if lhs.index != rhs.index {
+            return false
+        }
+        if lhs.startMs != rhs.startMs {
+            return false
+        }
+        if lhs.endMs != rhs.endMs {
+            return false
+        }
+        if lhs.text != rhs.text {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(index)
+        hasher.combine(startMs)
+        hasher.combine(endMs)
+        hasher.combine(text)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSubtitleCue: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SubtitleCue {
+        return
+            try SubtitleCue(
+                index: FfiConverterUInt32.read(from: &buf), 
+                startMs: FfiConverterInt64.read(from: &buf), 
+                endMs: FfiConverterInt64.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SubtitleCue, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.index, into: &buf)
+        FfiConverterInt64.write(value.startMs, into: &buf)
+        FfiConverterInt64.write(value.endMs, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSubtitleCue_lift(_ buf: RustBuffer) throws -> SubtitleCue {
+    return try FfiConverterTypeSubtitleCue.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSubtitleCue_lower(_ value: SubtitleCue) -> RustBuffer {
+    return FfiConverterTypeSubtitleCue.lower(value)
+}
+
+
+public struct SubtitleSearchQuery {
+    public var query: String?
+    public var imdbId: String?
+    public var moviehash: String?
+    public var seasonNumber: UInt32?
+    public var episodeNumber: UInt32?
+    public var languages: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(query: String?, imdbId: String?, moviehash: String?, seasonNumber: UInt32?, episodeNumber: UInt32?, languages: String?) {
+        self.query = query
+        self.imdbId = imdbId
+        self.moviehash = moviehash
+        self.seasonNumber = seasonNumber
+        self.episodeNumber = episodeNumber
+        self.languages = languages
+    }
+}
+
+#if compiler(>=6)
+extension SubtitleSearchQuery: Sendable {}
+#endif
+
+
+extension SubtitleSearchQuery: Equatable, Hashable {
+    public static func ==(lhs: SubtitleSearchQuery, rhs: SubtitleSearchQuery) -> Bool {
+        if lhs.query != rhs.query {
+            return false
+        }
+        if lhs.imdbId != rhs.imdbId {
+            return false
+        }
+        if lhs.moviehash != rhs.moviehash {
+            return false
+        }
+        if lhs.seasonNumber != rhs.seasonNumber {
+            return false
+        }
+        if lhs.episodeNumber != rhs.episodeNumber {
+            return false
+        }
+        if lhs.languages != rhs.languages {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(query)
+        hasher.combine(imdbId)
+        hasher.combine(moviehash)
+        hasher.combine(seasonNumber)
+        hasher.combine(episodeNumber)
+        hasher.combine(languages)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSubtitleSearchQuery: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SubtitleSearchQuery {
+        return
+            try SubtitleSearchQuery(
+                query: FfiConverterOptionString.read(from: &buf), 
+                imdbId: FfiConverterOptionString.read(from: &buf), 
+                moviehash: FfiConverterOptionString.read(from: &buf), 
+                seasonNumber: FfiConverterOptionUInt32.read(from: &buf), 
+                episodeNumber: FfiConverterOptionUInt32.read(from: &buf), 
+                languages: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SubtitleSearchQuery, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.query, into: &buf)
+        FfiConverterOptionString.write(value.imdbId, into: &buf)
+        FfiConverterOptionString.write(value.moviehash, into: &buf)
+        FfiConverterOptionUInt32.write(value.seasonNumber, into: &buf)
+        FfiConverterOptionUInt32.write(value.episodeNumber, into: &buf)
+        FfiConverterOptionString.write(value.languages, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSubtitleSearchQuery_lift(_ buf: RustBuffer) throws -> SubtitleSearchQuery {
+    return try FfiConverterTypeSubtitleSearchQuery.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSubtitleSearchQuery_lower(_ value: SubtitleSearchQuery) -> RustBuffer {
+    return FfiConverterTypeSubtitleSearchQuery.lower(value)
+}
+
+
+public struct SubtitleSearchResult {
+    public var id: String
+    public var fileId: Int64
+    public var fileName: String
+    public var language: String
+    public var release: String
+    public var downloadCount: UInt32
+    public var rating: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, fileId: Int64, fileName: String, language: String, release: String, downloadCount: UInt32, rating: Double) {
+        self.id = id
+        self.fileId = fileId
+        self.fileName = fileName
+        self.language = language
+        self.release = release
+        self.downloadCount = downloadCount
+        self.rating = rating
+    }
+}
+
+#if compiler(>=6)
+extension SubtitleSearchResult: Sendable {}
+#endif
+
+
+extension SubtitleSearchResult: Equatable, Hashable {
+    public static func ==(lhs: SubtitleSearchResult, rhs: SubtitleSearchResult) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.fileId != rhs.fileId {
+            return false
+        }
+        if lhs.fileName != rhs.fileName {
+            return false
+        }
+        if lhs.language != rhs.language {
+            return false
+        }
+        if lhs.release != rhs.release {
+            return false
+        }
+        if lhs.downloadCount != rhs.downloadCount {
+            return false
+        }
+        if lhs.rating != rhs.rating {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(fileId)
+        hasher.combine(fileName)
+        hasher.combine(language)
+        hasher.combine(release)
+        hasher.combine(downloadCount)
+        hasher.combine(rating)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSubtitleSearchResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SubtitleSearchResult {
+        return
+            try SubtitleSearchResult(
+                id: FfiConverterString.read(from: &buf), 
+                fileId: FfiConverterInt64.read(from: &buf), 
+                fileName: FfiConverterString.read(from: &buf), 
+                language: FfiConverterString.read(from: &buf), 
+                release: FfiConverterString.read(from: &buf), 
+                downloadCount: FfiConverterUInt32.read(from: &buf), 
+                rating: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SubtitleSearchResult, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterInt64.write(value.fileId, into: &buf)
+        FfiConverterString.write(value.fileName, into: &buf)
+        FfiConverterString.write(value.language, into: &buf)
+        FfiConverterString.write(value.release, into: &buf)
+        FfiConverterUInt32.write(value.downloadCount, into: &buf)
+        FfiConverterDouble.write(value.rating, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSubtitleSearchResult_lift(_ buf: RustBuffer) throws -> SubtitleSearchResult {
+    return try FfiConverterTypeSubtitleSearchResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSubtitleSearchResult_lower(_ value: SubtitleSearchResult) -> RustBuffer {
+    return FfiConverterTypeSubtitleSearchResult.lower(value)
 }
 
 
@@ -4678,6 +7221,8 @@ public enum AiAction {
     )
     case nextChannel
     case previousChannel
+    case multiView(itemIds: [Int64]
+    )
     case none
 }
 
@@ -4709,7 +7254,10 @@ public struct FfiConverterTypeAiAction: FfiConverterRustBuffer {
         
         case 5: return .previousChannel
         
-        case 6: return .none
+        case 6: return .multiView(itemIds: try FfiConverterSequenceInt64.read(from: &buf)
+        )
+        
+        case 7: return .none
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -4742,8 +7290,13 @@ public struct FfiConverterTypeAiAction: FfiConverterRustBuffer {
             writeInt(&buf, Int32(5))
         
         
-        case .none:
+        case let .multiView(itemIds):
             writeInt(&buf, Int32(6))
+            FfiConverterSequenceInt64.write(itemIds, into: &buf)
+            
+        
+        case .none:
+            writeInt(&buf, Int32(7))
         
         }
     }
@@ -5065,6 +7618,89 @@ extension LogLevel: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum ShareImportAction {
+    
+    case skip
+    /**
+     * Create a new source (even when one like it exists).
+     */
+    case `import`
+    /**
+     * Update the existing source recognised as the same.
+     */
+    case replace
+}
+
+
+#if compiler(>=6)
+extension ShareImportAction: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShareImportAction: FfiConverterRustBuffer {
+    typealias SwiftType = ShareImportAction
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShareImportAction {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .skip
+        
+        case 2: return .`import`
+        
+        case 3: return .replace
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ShareImportAction, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .skip:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .`import`:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .replace:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareImportAction_lift(_ buf: RustBuffer) throws -> ShareImportAction {
+    return try FfiConverterTypeShareImportAction.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShareImportAction_lower(_ value: ShareImportAction) -> RustBuffer {
+    return FfiConverterTypeShareImportAction.lower(value)
+}
+
+
+extension ShareImportAction: Equatable, Hashable {}
+
+
+
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum SortField {
     
     case name
@@ -5073,6 +7709,7 @@ public enum SortField {
     case rating
     case recentlyAdded
     case channelNumber
+    case custom
 }
 
 
@@ -5101,6 +7738,8 @@ public struct FfiConverterTypeSortField: FfiConverterRustBuffer {
         case 5: return .recentlyAdded
         
         case 6: return .channelNumber
+        
+        case 7: return .custom
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -5132,6 +7771,10 @@ public struct FfiConverterTypeSortField: FfiConverterRustBuffer {
         
         case .channelNumber:
             writeInt(&buf, Int32(6))
+        
+        
+        case .custom:
+            writeInt(&buf, Int32(7))
         
         }
     }
@@ -5379,6 +8022,30 @@ fileprivate struct FfiConverterOptionTypeMediaMetadata: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeProfileRecord: FfiConverterRustBuffer {
+    typealias SwiftType = ProfileRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeProfileRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeProfileRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeSeriesRecord: FfiConverterRustBuffer {
     typealias SwiftType = SeriesRecord?
 
@@ -5395,6 +8062,30 @@ fileprivate struct FfiConverterOptionTypeSeriesRecord: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeSeriesRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeStreamHealthRecord: FfiConverterRustBuffer {
+    typealias SwiftType = StreamHealthRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeStreamHealthRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeStreamHealthRecord.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -5603,6 +8294,31 @@ fileprivate struct FfiConverterSequenceTypeFacetCount: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeFavoriteFolderRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [FavoriteFolderRecord]
+
+    public static func write(_ value: [FavoriteFolderRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFavoriteFolderRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FavoriteFolderRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FavoriteFolderRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFavoriteFolderRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeIptvItemRecord: FfiConverterRustBuffer {
     typealias SwiftType = [IptvItemRecord]
 
@@ -5678,6 +8394,56 @@ fileprivate struct FfiConverterSequenceTypeNetworkLogEntry: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeProfileRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [ProfileRecord]
+
+    public static func write(_ value: [ProfileRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeProfileRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ProfileRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ProfileRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeProfileRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRecordingRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [RecordingRecord]
+
+    public static func write(_ value: [RecordingRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRecordingRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RecordingRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RecordingRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRecordingRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeSeasonSummary: FfiConverterRustBuffer {
     typealias SwiftType = [SeasonSummary]
 
@@ -5720,6 +8486,231 @@ fileprivate struct FfiConverterSequenceTypeSeriesRecord: FfiConverterRustBuffer 
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeSeriesRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSeriesRuleRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [SeriesRuleRecord]
+
+    public static func write(_ value: [SeriesRuleRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSeriesRuleRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SeriesRuleRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SeriesRuleRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSeriesRuleRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeShareDecision: FfiConverterRustBuffer {
+    typealias SwiftType = [ShareDecision]
+
+    public static func write(_ value: [ShareDecision], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeShareDecision.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ShareDecision] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ShareDecision]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeShareDecision.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeShareImportedSource: FfiConverterRustBuffer {
+    typealias SwiftType = [ShareImportedSource]
+
+    public static func write(_ value: [ShareImportedSource], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeShareImportedSource.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ShareImportedSource] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ShareImportedSource]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeShareImportedSource.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSharePreviewSource: FfiConverterRustBuffer {
+    typealias SwiftType = [SharePreviewSource]
+
+    public static func write(_ value: [SharePreviewSource], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSharePreviewSource.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SharePreviewSource] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SharePreviewSource]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSharePreviewSource.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeShareSourceOption: FfiConverterRustBuffer {
+    typealias SwiftType = [ShareSourceOption]
+
+    public static func write(_ value: [ShareSourceOption], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeShareSourceOption.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ShareSourceOption] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ShareSourceOption]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeShareSourceOption.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeShareWarning: FfiConverterRustBuffer {
+    typealias SwiftType = [ShareWarning]
+
+    public static func write(_ value: [ShareWarning], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeShareWarning.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ShareWarning] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ShareWarning]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeShareWarning.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeStreamHealthRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [StreamHealthRecord]
+
+    public static func write(_ value: [StreamHealthRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeStreamHealthRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [StreamHealthRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [StreamHealthRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeStreamHealthRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSubtitleCue: FfiConverterRustBuffer {
+    typealias SwiftType = [SubtitleCue]
+
+    public static func write(_ value: [SubtitleCue], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSubtitleCue.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SubtitleCue] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SubtitleCue]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSubtitleCue.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSubtitleSearchResult: FfiConverterRustBuffer {
+    typealias SwiftType = [SubtitleSearchResult]
+
+    public static func write(_ value: [SubtitleSearchResult], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSubtitleSearchResult.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SubtitleSearchResult] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SubtitleSearchResult]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSubtitleSearchResult.read(from: &buf))
         }
         return seq
     }
@@ -5895,7 +8886,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_func_cnd_core_version() != 1641) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_active_profile_id() != 12118) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_add_series_rule() != 21700) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_add_source() != 59274) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_add_to_favorite_folder() != 46356) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_ai_resolve_command() != 8434) {
@@ -5904,16 +8904,46 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_ai_test_provider() != 28292) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_build_catchup_url() != 61603) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_cancel_recording() != 39354) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_clear_logs() != 44053) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_compute_file_moviehash() != 56313) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_create_favorite_folder() != 44867) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_create_profile() != 61637) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_delete_favorite_folder() != 7641) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_delete_profile() != 25602) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_delete_recording() != 1564) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_delete_source() != 58086) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_download_subtitle() != 31801) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_enqueue_download() != 24470) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_ensure_xtream_series_episodes() != 45600) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_export_share_document() != 44576) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_export_sync_delta() != 8526) {
@@ -5923,6 +8953,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_fetch_series_metadata() != 42202) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_find_mirrors() != 47437) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_get_channel_epg() != 33464) {
@@ -5937,6 +8970,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_get_groups() != 63818) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_get_groups_with_hidden() != 51853) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_get_hosts() != 13690) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5944,6 +8980,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_get_logs_since() != 8821) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_get_profile() != 53894) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_get_series_by_id() != 35400) {
@@ -5961,13 +9000,52 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_get_stats() != 37373) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_get_stream_health() != 6972) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_get_stream_health_batch() != 62601) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_hide_group() != 55008) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_hide_item() != 56806) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_import_local_m3u() != 13379) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_import_share_document() != 53255) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_import_sync_delta() != 52267) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_is_adult_category() != 20479) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_is_broken() != 55758) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_is_catchup_available() != 62855) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_is_health_check_running() != 14603) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_list_broken_items() != 34102) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_list_broken_series() != 17062) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_list_downloads() != 18449) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_list_favorite_folder_items() != 10255) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_list_favorite_folders() != 28787) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_list_favorite_items() != 32917) {
@@ -5976,19 +9054,43 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_list_favorite_series() != 2207) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_list_hidden_groups() != 21685) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_list_hidden_items() != 46562) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_list_profiles() != 50055) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_list_recent_items() != 3426) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_list_recent_series() != 40994) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_list_recordings() != 54177) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_list_series_rules() != 26809) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_list_sources() != 10771) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_parse_srt() != 63021) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_pause_all_downloads() != 9290) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_pause_download() != 48394) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_preview_share_document() != 2937) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_probe_stream() != 17857) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_query_catalog() != 44076) {
@@ -5998,6 +9100,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_query_series() != 15417) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_record_now() != 48558) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_record_watch_progress() != 64786) {
@@ -6015,7 +9120,37 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_remove_download() != 35325) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_remove_from_favorite_folder() != 39575) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_remove_series_rule() != 20083) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_resolve_catchup_url() != 35548) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_retry_download() != 11426) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_run_health_check_cycle() != 35067) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_schedule_recording() != 9925) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_search_subtitles() != 11615) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_set_active_profile_id() != 13927) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_set_broken() != 22734) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_set_custom_order() != 10915) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_set_recording_directory() != 6578) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_start_all_downloads() != 46323) {
@@ -6024,7 +9159,25 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_start_download() != 20493) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_start_health_checks() != 31517) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_stop_health_checks() != 10880) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_toggle_broken() != 30986) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_toggle_favorite() != 5795) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_unhide_group() != 7091) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_unhide_item() != 56458) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_update_profile() != 1794) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_update_settings() != 2425) {

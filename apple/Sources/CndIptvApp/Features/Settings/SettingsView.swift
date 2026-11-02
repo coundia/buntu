@@ -13,9 +13,18 @@ struct SettingsView: View {
     @State private var showsAiKey = false
     @State private var aiStatus: AiProviderStatus?
     @State private var isTestingAi = false
+    @AppStorage("autoFailoverEnabled") private var autoFailoverEnabled = true
+    @AppStorage("healthChecksEnabled") private var healthChecksEnabled = true
+    @AppStorage("timeshiftDuration") private var timeshiftDurationRaw: String = TimeshiftDuration.oneHour.rawValue
+    @AppStorage("openSubtitlesApiKey") private var openSubtitlesApiKey: String = ""
+    @AppStorage("openSubtitlesLanguages") private var openSubtitlesLanguages: String = "fr,en"
+    @State private var showingProfilesManagement = false
 
     var body: some View {
         Form {
+            playbackAndHealthSection
+            profilesAndBouquetsSection
+            subtitlesSection
             downloadsSection
             networkSection
             omdbSection
@@ -31,8 +40,55 @@ struct SettingsView: View {
 
     // MARK: Sections
 
+    private var playbackAndHealthSection: some View {
+        Section("Lecture & Santé des Flux") {
+            Toggle("Bascule automatique vers un miroir", isOn: $autoFailoverEnabled)
+            Toggle("Vérification périodique de santé", isOn: $healthChecksEnabled)
+            Picker("Tampon du direct (Timeshift)", selection: $timeshiftDurationRaw) {
+                ForEach(TimeshiftDuration.allCases) { item in
+                    Text(item.title).tag(item.rawValue)
+                }
+            }
+        }
+    }
+
+    private var profilesAndBouquetsSection: some View {
+        Section("Profils & Bouquets") {
+            Button {
+                showingProfilesManagement = true
+            } label: {
+                Label("Gérer les profils, bouquets et contrôle parental", systemImage: "person.2.badge.gearshape")
+            }
+        }
+        .sheet(isPresented: $showingProfilesManagement) {
+            NavigationStack {
+                ProfilesManagementView(engine: model.engine)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Fermer") { showingProfilesManagement = false }
+                        }
+                    }
+            }
+        }
+    }
+
+    private var subtitlesSection: some View {
+        Section("Sous-titres en ligne (OpenSubtitles)") {
+            SecureField("Clé API OpenSubtitles", text: $openSubtitlesApiKey)
+            TextField("Langues préférées", text: $openSubtitlesLanguages)
+            Text("Utilisé pour rechercher et télécharger les sous-titres manquants via api.opensubtitles.com.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private var downloadsSection: some View {
         Section("Téléchargements") {
+            #if os(tvOS)
+            LabeledContent("Segments par fichier", value: "\(model.segmentsPerFile)")
+            LabeledContent("Taille d'une partie", value: "\(model.partSizeMB) Mo")
+            LabeledContent("Fichiers simultanés", value: "\(model.maxActiveFiles)")
+            #else
             Stepper(value: $model.segmentsPerFile, in: SettingsModel.segmentRange) {
                 LabeledContent("Segments par fichier", value: "\(model.segmentsPerFile)")
             }
@@ -42,11 +98,18 @@ struct SettingsView: View {
             Stepper(value: $model.maxActiveFiles, in: SettingsModel.activeFilesRange) {
                 LabeledContent("Fichiers simultanés", value: "\(model.maxActiveFiles)")
             }
+            #endif
             VStack(alignment: .leading, spacing: 6) {
                 LabeledContent("Dossier") {
+                    #if os(tvOS)
+                    Text(directory.directory.path)
+                        .font(.callout).lineLimit(2).truncationMode(.middle)
+                        .multilineTextAlignment(.trailing)
+                    #else
                     Text(directory.directory.path)
                         .font(.callout).lineLimit(2).truncationMode(.middle).textSelection(.enabled)
                         .multilineTextAlignment(.trailing)
+                    #endif
                 }
                 #if os(macOS)
                 HStack {
@@ -173,8 +236,10 @@ struct SettingsView: View {
                 if let keychainError = ai.keychainError {
                     Label(keychainError, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.callout)
                 }
+                #if !os(tvOS)
                 DisclosureGroup("Ce qui est envoyé") { sentTable }
                     .font(.callout)
+                #endif
             }
         } header: {
             Text("Assistant IA")
@@ -262,6 +327,7 @@ struct SettingsView: View {
             if let stats {
                 LabeledContent("Base de données", value: ByteCountFormatter.string(fromByteCount: Int64(stats.dbSizeBytes), countStyle: .file))
                 LabeledContent("Chaînes / Films / Séries", value: "\(stats.totalLiveChannels) / \(stats.totalMovies) / \(stats.totalSeries)")
+                LabeledContent("Favoris / En panne", value: "\(stats.totalFavorites) / \(stats.totalBroken)")
             }
         }
     }

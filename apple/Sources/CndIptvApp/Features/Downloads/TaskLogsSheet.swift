@@ -39,7 +39,11 @@ struct TaskLogsSheet: View {
                                 Text(Date(timeIntervalSince1970: TimeInterval(log.timestamp)).formatted(date: .omitted, time: .standard))
                                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                             }
+                            #if os(tvOS)
+                            Text(log.message).font(.callout.monospaced())
+                            #else
                             Text(log.message).font(.callout.monospaced()).textSelection(.enabled)
+                            #endif
                         }
                     }
                 }

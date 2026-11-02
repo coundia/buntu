@@ -7,6 +7,7 @@ pub const ITEM_SELECT_COLUMNS: &str = r#"
     i.container_ext, i.stream_url, i.user_agent, i.referer, i.headers_json,
     i.catchup_type, i.catchup_source, i.catchup_days, i.plot, i.imdb_id, i.imdb_rating,
     (f.stable_hash IS NOT NULL) AS is_favorite,
+    (bf.stable_hash IS NOT NULL) AS is_broken,
     COALESCE(wh.position_ms, 0) AS resume_position_ms,
     COALESCE(wh.duration_ms, 0) AS duration_ms,
     (COALESCE(wh.completed, 0) != 0) AS is_completed
@@ -26,6 +27,7 @@ pub enum SortField {
     Rating,
     RecentlyAdded,
     ChannelNumber,
+    Custom,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -36,6 +38,8 @@ pub struct CatalogFilter {
     pub group_title: Option<String>,
     pub host: Option<String>,
     pub favorites_only: bool,
+    pub include_broken: bool,
+    pub include_hidden: bool,
     pub sort_by: SortField,
     pub sort_asc: bool,
     pub limit: u32,
@@ -58,6 +62,7 @@ pub struct SeriesRecord {
     pub episode_count: u32,
     pub season_count: u32,
     pub is_favorite: bool,
+    pub is_broken: bool,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -104,6 +109,8 @@ fn static_item_order_clause(sort_by: SortField, sort_asc: bool) -> &'static str 
         (SortField::RecentlyAdded, false) => "i.id DESC",
         (SortField::ChannelNumber, true) => "COALESCE(i.chno, 999999) ASC, i.name COLLATE NOCASE ASC",
         (SortField::ChannelNumber, false) => "COALESCE(i.chno, 0) DESC, i.name COLLATE NOCASE ASC",
+        (SortField::Custom, true) => "COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = 1 AND c.scope = 'channel' AND c.key = i.stable_hash), 999999) ASC, i.name COLLATE NOCASE ASC",
+        (SortField::Custom, false) => "COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = 1 AND c.scope = 'channel' AND c.key = i.stable_hash), 0) DESC, i.name COLLATE NOCASE ASC",
     }
 }
 
@@ -115,6 +122,8 @@ fn static_series_order_clause(sort_by: SortField, sort_asc: bool) -> &'static st
         (SortField::Group, false) => "COALESCE(sc.group_title, '') COLLATE NOCASE DESC, sc.title COLLATE NOCASE ASC",
         (SortField::RecentlyAdded, true) => "sc.updated_at ASC, sc.id ASC",
         (SortField::RecentlyAdded, false) => "sc.updated_at DESC, sc.id DESC",
+        (SortField::Custom, true) => "COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = 1 AND c.scope = 'series' AND c.key = sc.stable_hash), 999999) ASC, sc.title COLLATE NOCASE ASC",
+        (SortField::Custom, false) => "COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = 1 AND c.scope = 'series' AND c.key = sc.stable_hash), 0) DESC, sc.title COLLATE NOCASE ASC",
         (_, true) => "sc.title COLLATE NOCASE ASC",
         (_, false) => "sc.title COLLATE NOCASE DESC",
     }
@@ -149,9 +158,10 @@ pub(crate) fn map_item_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<IptvItemRe
         imdb_id: r.get(24)?,
         imdb_rating: r.get(25)?,
         is_favorite: r.get(26)?,
-        resume_position_ms: r.get(27)?,
-        duration_ms: r.get(28)?,
-        is_completed: r.get(29)?,
+        is_broken: r.get(27)?,
+        resume_position_ms: r.get(28)?,
+        duration_ms: r.get(29)?,
+        is_completed: r.get(30)?,
     })
 }
 
@@ -171,33 +181,46 @@ fn map_series_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<SeriesRecord> {
         episode_count: r.get(11)?,
         season_count: r.get(12)?,
         is_favorite: r.get(13)?,
+        is_broken: r.get(14)?,
     })
 }
 
 impl DatabaseManager {
-    pub fn get_groups(&self, kind: &str, source_id: Option<i64>) -> Result<Vec<FacetCount>, DbError> {
+    pub fn get_groups(&self, kind: &str, source_id: Option<i64>, include_hidden: bool) -> Result<Vec<FacetCount>, DbError> {
         self.with_conn(|conn| {
-            let sql = if kind == "series" {
-                "SELECT group_title, COUNT(*)
-                 FROM series_catalog
-                 WHERE group_title IS NOT NULL AND TRIM(group_title) != ''
-                   AND (?1 IS NULL OR source_id = ?1)
-                 GROUP BY group_title
-                 ORDER BY group_title COLLATE NOCASE ASC"
+            let hidden_clause = if include_hidden {
+                ""
             } else {
-                "SELECT group_title, COUNT(*)
-                 FROM iptv_items
-                 WHERE kind = ?2
-                   AND group_title IS NOT NULL AND TRIM(group_title) != ''
-                   AND (?1 IS NULL OR source_id = ?1)
-                 GROUP BY group_title
-                 ORDER BY group_title COLLATE NOCASE ASC"
+                " AND NOT EXISTS (SELECT 1 FROM hidden_groups h WHERE h.profile_id = 1 AND h.kind = ?2 AND h.group_key = LOWER(TRIM(group_title)))"
             };
 
-            let mut stmt = conn.prepare_cached(sql)?;
+            let sql = if kind == "series" {
+                format!(
+                    "SELECT group_title, COUNT(*)
+                     FROM series_catalog
+                     WHERE group_title IS NOT NULL AND TRIM(group_title) != ''
+                       AND (?1 IS NULL OR source_id = ?1)
+                       {hidden_clause}
+                     GROUP BY group_title
+                     ORDER BY COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = 1 AND c.scope = 'group' AND c.key = LOWER(TRIM(group_title))), 999999) ASC, group_title COLLATE NOCASE ASC"
+                )
+            } else {
+                format!(
+                    "SELECT group_title, COUNT(*)
+                     FROM iptv_items
+                     WHERE kind = ?2
+                       AND group_title IS NOT NULL AND TRIM(group_title) != ''
+                       AND (?1 IS NULL OR source_id = ?1)
+                       {hidden_clause}
+                     GROUP BY group_title
+                     ORDER BY COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = 1 AND c.scope = 'group' AND c.key = LOWER(TRIM(group_title))), 999999) ASC, group_title COLLATE NOCASE ASC"
+                )
+            };
+
+            let mut stmt = conn.prepare(&sql)?;
             let mut out = Vec::new();
             if kind == "series" {
-                let rows = stmt.query_map(params![source_id], |r| {
+                let rows = stmt.query_map(params![source_id, kind], |r| {
                     Ok(FacetCount {
                         value: r.get(0)?,
                         count: r.get(1)?,
@@ -255,6 +278,17 @@ impl DatabaseManager {
             } else {
                 "LEFT JOIN favorites f ON f.stable_hash = i.stable_hash"
             };
+            let broken_clause = if filter.include_broken {
+                ""
+            } else {
+                "AND bf.stable_hash IS NULL"
+            };
+            let hidden_clause = if filter.include_hidden {
+                ""
+            } else {
+                "AND NOT EXISTS (SELECT 1 FROM hidden_items h WHERE h.profile_id = 1 AND h.stable_hash = i.stable_hash) \
+                 AND (i.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = 1 AND g.kind = i.kind AND g.group_key = LOWER(TRIM(i.group_title))))"
+            };
 
             let trimmed_q = filter.query.trim();
             if !trimmed_q.is_empty() {
@@ -264,12 +298,15 @@ impl DatabaseManager {
                          FROM iptv_items i
                          JOIN iptv_items_fts ON iptv_items_fts.rowid = i.id
                          {fav_join}
+                         LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
                          LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
                          WHERE iptv_items_fts MATCH ?1
                            AND i.kind = ?2
                            AND (?3 IS NULL OR i.source_id = ?3)
                            AND (?4 IS NULL OR i.group_title = ?4)
                            AND (?5 IS NULL OR i.host = ?5)
+                           {broken_clause}
+                           {hidden_clause}
                          ORDER BY bm25(iptv_items_fts), {order_sql}
                          LIMIT ?6 OFFSET ?7"
                     );
@@ -298,12 +335,15 @@ impl DatabaseManager {
                         "SELECT {ITEM_SELECT_COLUMNS}
                          FROM iptv_items i
                          {fav_join}
+                         LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
                          LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
                          WHERE i.kind = ?1
                            AND i.name LIKE ?2 ESCAPE '\\'
                            AND (?3 IS NULL OR i.source_id = ?3)
                            AND (?4 IS NULL OR i.group_title = ?4)
                            AND (?5 IS NULL OR i.host = ?5)
+                           {broken_clause}
+                           {hidden_clause}
                          ORDER BY {order_sql}
                          LIMIT ?6 OFFSET ?7"
                     );
@@ -332,11 +372,14 @@ impl DatabaseManager {
                 "SELECT {ITEM_SELECT_COLUMNS}
                  FROM iptv_items i
                  {fav_join}
+                 LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
                  LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
                  WHERE i.kind = ?1
                    AND (?2 IS NULL OR i.source_id = ?2)
                    AND (?3 IS NULL OR i.group_title = ?3)
                    AND (?4 IS NULL OR i.host = ?4)
+                   {broken_clause}
+                   {hidden_clause}
                  ORDER BY {order_sql}
                  LIMIT ?5 OFFSET ?6"
             );
@@ -368,6 +411,16 @@ impl DatabaseManager {
             } else {
                 "LEFT JOIN favorites f ON f.stable_hash = sc.stable_hash"
             };
+            let broken_clause = if filter.include_broken {
+                ""
+            } else {
+                "AND bf.stable_hash IS NULL"
+            };
+            let hidden_clause = if filter.include_hidden {
+                ""
+            } else {
+                "AND (sc.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = 1 AND g.kind = 'series' AND g.group_key = LOWER(TRIM(sc.group_title))))"
+            };
 
             let trimmed_q = filter.query.trim();
             let like_param = if trimmed_q.is_empty() {
@@ -383,12 +436,16 @@ impl DatabaseManager {
                 "SELECT sc.id, sc.source_id, sc.canonical_key, sc.stable_hash, sc.title,
                         sc.group_title, sc.poster_url, sc.backdrop_url, sc.imdb_id,
                         sc.imdb_rating, sc.plot, sc.episode_count, sc.season_count,
-                        (f.stable_hash IS NOT NULL) AS is_favorite
+                        (f.stable_hash IS NOT NULL) AS is_favorite,
+                        (bf.stable_hash IS NOT NULL) AS is_broken
                  FROM series_catalog sc
                  {fav_join}
+                 LEFT JOIN broken_flags bf ON bf.stable_hash = sc.stable_hash
                  WHERE (?1 IS NULL OR sc.source_id = ?1)
                    AND (?2 IS NULL OR sc.group_title = ?2)
                    AND (?3 IS NULL OR sc.title LIKE ?3 ESCAPE '\\' OR sc.group_title LIKE ?3 ESCAPE '\\')
+                   {broken_clause}
+                   {hidden_clause}
                  ORDER BY {order_sql}
                  LIMIT ?4 OFFSET ?5"
             );
@@ -445,6 +502,7 @@ impl DatabaseManager {
                 "SELECT {ITEM_SELECT_COLUMNS}
                  FROM iptv_items i
                  LEFT JOIN favorites f ON f.stable_hash = i.stable_hash
+                 LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
                  LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
                  WHERE i.series_id = ?1
                    AND i.kind = 'episode'
@@ -467,6 +525,7 @@ impl DatabaseManager {
                 "SELECT {ITEM_SELECT_COLUMNS}
                  FROM favorites f
                  INNER JOIN iptv_items i ON i.stable_hash = f.stable_hash
+                 LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
                  LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
                  WHERE i.kind = ?1
                  ORDER BY f.created_at DESC, i.name COLLATE NOCASE ASC"
@@ -487,9 +546,11 @@ impl DatabaseManager {
                 "SELECT sc.id, sc.source_id, sc.canonical_key, sc.stable_hash, sc.title,
                         sc.group_title, sc.poster_url, sc.backdrop_url, sc.imdb_id,
                         sc.imdb_rating, sc.plot, sc.episode_count, sc.season_count,
-                        1 AS is_favorite
+                        1 AS is_favorite,
+                        (bf.stable_hash IS NOT NULL) AS is_broken
                  FROM favorites f
                  INNER JOIN series_catalog sc ON sc.stable_hash = f.stable_hash
+                 LEFT JOIN broken_flags bf ON bf.stable_hash = sc.stable_hash
                  ORDER BY f.created_at DESC, sc.title COLLATE NOCASE ASC",
             )?;
             let rows = stmt.query_map([], map_series_row)?;
@@ -538,6 +599,7 @@ impl DatabaseManager {
                 "SELECT {ITEM_SELECT_COLUMNS}
                  FROM iptv_items i
                  LEFT JOIN favorites f ON f.stable_hash = i.stable_hash
+                 LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
                  LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
                  WHERE i.id = ?1"
             );
@@ -554,9 +616,11 @@ impl DatabaseManager {
                 "SELECT sc.id, sc.source_id, sc.canonical_key, sc.stable_hash, sc.title,
                         sc.group_title, sc.poster_url, sc.backdrop_url, sc.imdb_id,
                         sc.imdb_rating, sc.plot, sc.episode_count, sc.season_count,
-                        (f.stable_hash IS NOT NULL) AS is_favorite
+                        (f.stable_hash IS NOT NULL) AS is_favorite,
+                        (bf.stable_hash IS NOT NULL) AS is_broken
                  FROM series_catalog sc
                  LEFT JOIN favorites f ON f.stable_hash = sc.stable_hash
+                 LEFT JOIN broken_flags bf ON bf.stable_hash = sc.stable_hash
                  WHERE sc.id = ?1",
             )?;
             let series = stmt
@@ -576,6 +640,7 @@ impl DatabaseManager {
                  FROM watch_history wh
                  INNER JOIN iptv_items i ON i.stable_hash = wh.stable_hash
                  LEFT JOIN favorites f ON f.stable_hash = i.stable_hash
+                 LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
                  WHERE i.kind = ?1
                  ORDER BY wh.last_watched_at DESC, i.id DESC
                  LIMIT ?2"
@@ -599,16 +664,61 @@ impl DatabaseManager {
                 "SELECT sc.id, sc.source_id, sc.canonical_key, sc.stable_hash, sc.title,
                         sc.group_title, sc.poster_url, sc.backdrop_url, sc.imdb_id,
                         sc.imdb_rating, sc.plot, sc.episode_count, sc.season_count,
-                        (f.stable_hash IS NOT NULL) AS is_favorite
+                        (f.stable_hash IS NOT NULL) AS is_favorite,
+                        (bf.stable_hash IS NOT NULL) AS is_broken
                  FROM series_catalog sc
                  INNER JOIN iptv_items ep ON ep.series_id = sc.id AND ep.kind = 'episode'
                  INNER JOIN watch_history wh ON wh.stable_hash = ep.stable_hash
                  LEFT JOIN favorites f ON f.stable_hash = sc.stable_hash
+                 LEFT JOIN broken_flags bf ON bf.stable_hash = sc.stable_hash
                  GROUP BY sc.id
                  ORDER BY MAX(wh.last_watched_at) DESC
                  LIMIT ?1",
             )?;
             let rows = stmt.query_map(params![limit], map_series_row)?;
+            let mut out = Vec::new();
+            for item in rows {
+                out.push(item?);
+            }
+            Ok(out)
+        })
+    }
+
+    pub fn list_broken_items(&self, kind: &str) -> Result<Vec<IptvItemRecord>, DbError> {
+        self.with_conn(|conn| {
+            let sql = format!(
+                "SELECT {ITEM_SELECT_COLUMNS}
+                 FROM broken_flags bf
+                 INNER JOIN iptv_items i ON i.stable_hash = bf.stable_hash
+                 LEFT JOIN favorites f ON f.stable_hash = i.stable_hash
+                 LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
+                 WHERE i.kind = ?1
+                 ORDER BY bf.flagged_at DESC, i.name COLLATE NOCASE ASC"
+            );
+            let mut stmt = conn.prepare_cached(&sql)?;
+            let rows = stmt.query_map(params![kind], map_item_row)?;
+            let mut out = Vec::new();
+            for item in rows {
+                out.push(item?);
+            }
+            Ok(out)
+        })
+    }
+
+    pub fn list_broken_series(&self) -> Result<Vec<SeriesRecord>, DbError> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT sc.id, sc.source_id, sc.canonical_key, sc.stable_hash, sc.title,
+                        sc.group_title, sc.poster_url, sc.backdrop_url, sc.imdb_id,
+                        sc.imdb_rating, sc.plot, sc.episode_count, sc.season_count,
+                        (f.stable_hash IS NOT NULL) AS is_favorite,
+                        1 AS is_broken
+                 FROM broken_flags bf
+                 INNER JOIN series_catalog sc ON sc.stable_hash = bf.stable_hash
+                 LEFT JOIN favorites f ON f.stable_hash = sc.stable_hash
+                 ORDER BY bf.flagged_at DESC, sc.title COLLATE NOCASE ASC",
+            )?;
+            let rows = stmt.query_map([], map_series_row)?;
             let mut out = Vec::new();
             for item in rows {
                 out.push(item?);
@@ -651,6 +761,8 @@ mod tests {
                 group_title: None,
                 host: None,
                 favorites_only: false,
+                include_broken: false,
+                include_hidden: false,
                 sort_by: SortField::Name,
                 sort_asc: true,
                 limit: 20,
@@ -669,6 +781,8 @@ mod tests {
                 group_title: None,
                 host: None,
                 favorites_only: false,
+                include_broken: false,
+                include_hidden: false,
                 sort_by: SortField::Name,
                 sort_asc: true,
                 limit: 20,
@@ -688,6 +802,8 @@ mod tests {
                     group_title: None,
                     host: None,
                     favorites_only: false,
+                    include_broken: false,
+                    include_hidden: false,
                     sort_by: SortField::Name,
                     sort_asc: true,
                     limit: 20,
@@ -780,7 +896,7 @@ mod tests {
             })
             .unwrap();
 
-        let groups = db.get_groups("series", None).expect("series groups");
+        let groups = db.get_groups("series", None, false).expect("series groups");
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].value, "Sci-Fi");
         assert_eq!(groups[0].count, 1);
@@ -813,5 +929,150 @@ mod tests {
         let rec_series = db.list_recent_series(10).expect("recent series");
         assert_eq!(rec_series.len(), 1);
         assert_eq!(rec_series[0].title, "Severance");
+    }
+
+    #[test]
+    fn test_broken_flag_filtering_and_persistence() {
+        let db = DatabaseManager::open_in_memory().expect("open db");
+        let src_id = db
+            .add_source("Source 1", "m3u", None, None, None, None)
+            .unwrap();
+
+        db.with_conn_mut(|conn| {
+            conn.execute(
+                "INSERT INTO iptv_items (source_id, stable_hash, kind, name, name_clean, group_title, host, stream_url, created_at, updated_at)
+                 VALUES
+                 (?1, 'hash_live_working', 'live', 'France 2 HD', 'France 2', 'General', 'live.cdn', 'http://live.cdn/1.ts', 1, 1),
+                 (?1, 'hash_live_broken', 'live', 'France 3 HD', 'France 3', 'General', 'live.cdn', 'http://live.cdn/2.ts', 1, 1),
+                 (?1, 'hash_movie_broken', 'movie', 'Dune Part Two', 'Dune Part Two', 'Sci-Fi', 'vod.cdn', 'http://vod.cdn/dune.mkv', 1, 1)",
+                params![src_id],
+            )?;
+
+            conn.execute(
+                "INSERT INTO series_catalog (source_id, canonical_key, stable_hash, title, group_title, episode_count, season_count, updated_at)
+                 VALUES
+                 (?1, 'key_series_working', 'hash_series_working', 'Breaking Bad', 'Drama', 62, 5, 1),
+                 (?1, 'key_series_broken', 'hash_series_broken', 'Game of Thrones', 'Fantasy', 73, 8, 1)",
+                params![src_id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        // Initially nothing is broken
+        assert_eq!(db.get_stats().unwrap().total_broken, 0);
+
+        // Flag France 3 and Game of Thrones as broken
+        assert!(db.toggle_broken("hash_live_broken", "live").unwrap());
+        assert!(db.is_broken("hash_live_broken").unwrap());
+        assert!(db.toggle_broken("hash_series_broken", "series").unwrap());
+        assert!(db.is_broken("hash_series_broken").unwrap());
+
+        assert_eq!(db.get_stats().unwrap().total_broken, 2);
+
+        // 1. Query live channels with default include_broken = false:
+        // Broken item France 3 must NOT be returned!
+        let filter_live_clean = CatalogFilter {
+            kind: "live".to_string(),
+            source_id: None,
+            query: "".to_string(),
+            group_title: None,
+            host: None,
+            favorites_only: false,
+            include_broken: false,
+            include_hidden: false,
+            sort_by: SortField::Name,
+            sort_asc: true,
+            limit: 10,
+            offset: 0,
+        };
+        let clean_live = db.query_catalog(&filter_live_clean).unwrap();
+        assert_eq!(clean_live.len(), 1);
+        assert_eq!(clean_live[0].stable_hash, "hash_live_working");
+        assert!(!clean_live[0].is_broken);
+
+        // Even searching specifically for "France 3" returns empty when include_broken = false
+        let search_broken = CatalogFilter {
+            kind: "live".to_string(),
+            source_id: None,
+            query: "France 3".to_string(),
+            group_title: None,
+            host: None,
+            favorites_only: false,
+            include_broken: false,
+            include_hidden: false,
+            sort_by: SortField::Name,
+            sort_asc: true,
+            limit: 10,
+            offset: 0,
+        };
+        assert!(db.query_catalog(&search_broken).unwrap().is_empty());
+
+        // 2. Query live channels with include_broken = true:
+        // Both items returned, and France 3 is marked is_broken = true
+        let mut filter_live_all = filter_live_clean;
+        filter_live_all.include_broken = true;
+        let all_live = db.query_catalog(&filter_live_all).unwrap();
+        assert_eq!(all_live.len(), 2);
+        let broken_item = all_live.iter().find(|i| i.stable_hash == "hash_live_broken").unwrap();
+        assert!(broken_item.is_broken);
+
+        // 3. Query series with include_broken = false:
+        let filter_series_clean = CatalogFilter {
+            kind: "series".to_string(),
+            source_id: None,
+            query: "".to_string(),
+            group_title: None,
+            host: None,
+            favorites_only: false,
+            include_broken: false,
+            include_hidden: false,
+            sort_by: SortField::Name,
+            sort_asc: true,
+            limit: 10,
+            offset: 0,
+        };
+        let clean_series = db.query_series(&filter_series_clean).unwrap();
+        assert_eq!(clean_series.len(), 1);
+        assert_eq!(clean_series[0].title, "Breaking Bad");
+
+        // With include_broken = true:
+        let mut filter_series_all = filter_series_clean;
+        filter_series_all.include_broken = true;
+        let all_series = db.query_series(&filter_series_all).unwrap();
+        assert_eq!(all_series.len(), 2);
+        let broken_series = all_series.iter().find(|s| s.title == "Game of Thrones").unwrap();
+        assert!(broken_series.is_broken);
+
+        // 4. list_broken_items and list_broken_series
+        let broken_items = db.list_broken_items("live").unwrap();
+        assert_eq!(broken_items.len(), 1);
+        assert_eq!(broken_items[0].stable_hash, "hash_live_broken");
+
+        let broken_series_list = db.list_broken_series().unwrap();
+        assert_eq!(broken_series_list.len(), 1);
+        assert_eq!(broken_series_list[0].stable_hash, "hash_series_broken");
+
+        // 5. Unflagging France 3
+        assert!(!db.toggle_broken("hash_live_broken", "live").unwrap());
+        assert!(!db.is_broken("hash_live_broken").unwrap());
+        assert_eq!(db.get_stats().unwrap().total_broken, 1);
+
+        // Now France 3 appears in default query
+        let clean_live_after = db.query_catalog(&CatalogFilter {
+            kind: "live".to_string(),
+            source_id: None,
+            query: "".to_string(),
+            group_title: None,
+            host: None,
+            favorites_only: false,
+            include_broken: false,
+            include_hidden: false,
+            sort_by: SortField::Name,
+            sort_asc: true,
+            limit: 10,
+            offset: 0,
+        }).unwrap();
+        assert_eq!(clean_live_after.len(), 2);
     }
 }

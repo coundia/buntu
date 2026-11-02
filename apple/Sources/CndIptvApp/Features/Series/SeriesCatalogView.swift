@@ -34,7 +34,12 @@ struct SeriesCatalogView: View {
             searchPrompt: "Rechercher une série",
             emptyDescription: "Ajoutez une source dans l'onglet Sources pour importer des séries."
         ) { series, style in
-            SeriesCard(series: series, style: style) { toggleFavorite(series) }
+            SeriesCard(
+                series: series,
+                style: style,
+                onToggleFavorite: { toggleFavorite(series) },
+                onToggleBroken: { toggleBroken(series) }
+            )
         }
     }
 
@@ -45,12 +50,21 @@ struct SeriesCatalogView: View {
             }
         }
     }
+
+    private func toggleBroken(_ series: SeriesRecord) {
+        Task {
+            if let value = await vod.toggleBroken(stableHash: series.stableHash, kind: "series") {
+                model.applyBroken(value, to: series)
+            }
+        }
+    }
 }
 
 struct SeriesCard: View {
     let series: SeriesRecord
     let style: VodCardStyle
     var onToggleFavorite: () -> Void
+    var onToggleBroken: (() -> Void)? = nil
 
     var body: some View {
         VodCardLink(route: .series(series)) {
@@ -62,6 +76,11 @@ struct SeriesCard: View {
         .contextMenu {
             Button(series.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
                    systemImage: series.isFavorite ? "star.slash" : "star", action: onToggleFavorite)
+            if let onToggleBroken {
+                Button(series.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel",
+                       systemImage: series.isBroken ? "checkmark.circle" : "exclamationmark.triangle",
+                       action: onToggleBroken)
+            }
         }
         .accessibilityLabel(series.title)
     }
@@ -74,6 +93,13 @@ struct SeriesCard: View {
             )
             .hoverLift()
             Text(series.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+            if series.isBroken {
+                Label("En panne", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .background(Color.red.opacity(0.2), in: RoundedRectangle(cornerRadius: 3))
+                    .foregroundStyle(Color.red)
+            }
             Text(SeriesLabels.counts(series)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }
@@ -86,6 +112,11 @@ struct SeriesCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 3) {
                 Text(series.title).font(.body.weight(.semibold)).lineLimit(1)
+                if series.isBroken {
+                    Label("En panne", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.red)
+                }
                 Text(SeriesLabels.counts(series)).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()

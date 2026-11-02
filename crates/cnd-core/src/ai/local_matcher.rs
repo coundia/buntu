@@ -270,6 +270,11 @@ pub fn resolve_local(
         }
     }
 
+    // Multi-View (2 to 4 channels: "TF1 et M6 côte à côte", "mosaïque France 2, France 3").
+    if let Some(multi) = try_resolve_multiview(db, command)? {
+        return Ok(LocalOutcome::action(multi));
+    }
+
     // Channel name.
     let mut found: Vec<IptvItemRecord> = Vec::new();
     for query in fts_variants(command) {
@@ -280,6 +285,8 @@ pub fn resolve_local(
             group_title: None,
             host: None,
             favorites_only: false,
+            include_broken: false,
+            include_hidden: false,
             sort_by: SortField::ChannelNumber,
             sort_asc: true,
             limit: 80,
@@ -334,14 +341,132 @@ pub fn resolve_local(
     Ok(LocalOutcome::candidates(candidates))
 }
 
+fn try_resolve_multiview(db: &DatabaseManager, command: &str) -> Result<Option<AiAction>, DbError> {
+    let lower = command.to_lowercase();
+    let is_multiview_keyword = lower.contains("mosaïque")
+        || lower.contains("mosaique")
+        || lower.contains("multiview")
+        || lower.contains("multi-view")
+        || lower.contains("côte à côte")
+        || lower.contains("cote a cote");
+
+    let has_separator = lower.contains(" et ")
+        || lower.contains(" and ")
+        || lower.contains('&')
+        || lower.contains('+')
+        || lower.contains(',');
+
+    if !is_multiview_keyword && !has_separator {
+        return Ok(None);
+    }
+
+    let cleaned = lower
+        .replace("mosaïque", "")
+        .replace("mosaique", "")
+        .replace("multiview", "")
+        .replace("multi-view", "")
+        .replace("côte à côte", "")
+        .replace("cote a cote", "")
+        .replace("mets", "")
+        .replace("lance", "")
+        .replace("affiche", "")
+        .replace("regarde", "")
+        .replace("regarder", "")
+        .replace("en direct", "");
+
+    let parts: Vec<&str> = cleaned
+        .split([',', '&', '+'])
+        .flat_map(|p| p.split(" et "))
+        .flat_map(|p| p.split(" and "))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if parts.len() < 2 || parts.len() > 4 {
+        return Ok(None);
+    }
+
+    let mut item_ids = Vec::new();
+    for part in &parts {
+        let sig = significant_tokens(part);
+        if sig.is_empty() {
+            return Ok(None);
+        }
+        if let Some(id) = find_confident_channel(db, &sig, part)? {
+            if !item_ids.contains(&id) {
+                item_ids.push(id);
+            }
+        } else {
+            return Ok(None);
+        }
+    }
+
+    if item_ids.len() == parts.len() && item_ids.len() >= 2 {
+        Ok(Some(AiAction::MultiView { item_ids }))
+    } else {
+        Ok(None)
+    }
+}
+
+fn find_confident_channel(db: &DatabaseManager, significant: &[String], raw_str: &str) -> Result<Option<i64>, DbError> {
+    if significant.len() == 1 {
+        if let Ok(number) = significant[0].parse::<u32>() {
+            let matches = items_with_number(db, number)?;
+            let unique = dedupe_by_name(matches);
+            if unique.len() == 1 {
+                return Ok(Some(unique[0].id));
+            }
+        }
+    }
+    let mut found: Vec<IptvItemRecord> = Vec::new();
+    for query in fts_variants(raw_str) {
+        for item in db.query_catalog(&CatalogFilter {
+            kind: "live".to_string(),
+            source_id: None,
+            query,
+            group_title: None,
+            host: None,
+            favorites_only: false,
+            include_broken: false,
+            include_hidden: false,
+            sort_by: SortField::ChannelNumber,
+            sort_asc: true,
+            limit: 80,
+            offset: 0,
+        })? {
+            if !found.iter().any(|f| f.id == item.id) {
+                found.push(item);
+            }
+        }
+    }
+    let mut scored: Vec<(f32, IptvItemRecord)> = found
+        .into_iter()
+        .map(|item| (name_score(significant, &item.name), item))
+        .collect();
+    scored.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.1.is_favorite.cmp(&a.1.is_favorite))
+    });
+    let confident: Vec<IptvItemRecord> = dedupe_by_name(
+        scored.iter().filter(|(score, _)| *score >= CONFIDENT).map(|(_, item)| item.clone()).collect(),
+    );
+    if confident.len() == 1 {
+        Ok(Some(confident[0].id))
+    } else {
+        Ok(None)
+    }
+}
+
 fn items_with_number(db: &DatabaseManager, number: u32) -> Result<Vec<IptvItemRecord>, DbError> {
     db.with_conn(|conn| {
         let sql = format!(
             "SELECT {ITEM_SELECT_COLUMNS}
              FROM iptv_items i
              LEFT JOIN favorites f ON f.stable_hash = i.stable_hash
+             LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
              LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
-             WHERE i.kind = 'live' AND i.chno = ?1
+             WHERE i.kind = 'live' AND i.chno = ?1 AND bf.stable_hash IS NULL
              ORDER BY i.id ASC LIMIT 20"
         );
         let mut stmt = conn.prepare_cached(&sql)?;
@@ -642,5 +767,19 @@ mod tests {
             resolve_local(&s.db, phrase, &ctx(None), s.now).expect(phrase);
         }
         assert!(s.db.get_stats().unwrap().total_live_channels >= 13);
+    }
+
+    #[test]
+    fn multiview_resolves_locally_for_two_to_four_channels() {
+        let s = seed();
+        let tf1 = id_of(&s.db, "FR: TF1 HD");
+        let m6 = id_of(&s.db, "FR: M6 HD");
+        let france2 = id_of(&s.db, "FR: France 2 FHD");
+
+        let mv2 = resolve_local(&s.db, "TF1 et M6 côte à côte", &ctx(None), s.now).unwrap();
+        assert_eq!(mv2.action, Some(AiAction::MultiView { item_ids: vec![tf1, m6] }));
+
+        let mv3 = resolve_local(&s.db, "mosaïque TF1, France 2 et M6", &ctx(None), s.now).unwrap();
+        assert_eq!(mv3.action, Some(AiAction::MultiView { item_ids: vec![tf1, france2, m6] }));
     }
 }

@@ -176,7 +176,7 @@ struct NetworkConsoleDrawer: View {
                     .task { await model.run() }
             }
         }
-        .background(.bar)
+        .background(.thinMaterial)
         .overlay(alignment: .top) { Divider() }
     }
 
@@ -186,6 +186,7 @@ struct NetworkConsoleDrawer: View {
             .frame(height: 8)
             .overlay { Capsule().fill(.secondary.opacity(0.4)).frame(width: 36, height: 3) }
             .contentShape(Rectangle())
+            #if !os(tvOS)
             .gesture(
                 DragGesture(minimumDistance: 1)
                     .onChanged { value in
@@ -196,6 +197,7 @@ struct NetworkConsoleDrawer: View {
                     }
                     .onEnded { _ in dragStartHeight = nil }
             )
+            #endif
             #if os(macOS)
             .onHover { inside in if inside && !collapsed { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
             #endif
@@ -256,7 +258,9 @@ private struct ConsoleLogList: View {
                         Text(ConsoleModel.format(entry))
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(color(for: entry))
+                            #if !os(tvOS)
                             .textSelection(.enabled)
+                            #endif
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .id(entry.seqId)
                     }

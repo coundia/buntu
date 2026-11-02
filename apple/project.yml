@@ -1,0 +1,73 @@
+name: CndIPTV
+options:
+  bundleIdPrefix: com.cnd.iptv
+  deploymentTarget:
+    macOS: "14.0"
+    iOS: "17.0"
+    tvOS: "17.0"
+  generateEmptyDirectories: true
+
+packages:
+  CndCoreBridge:
+    path: Packages/CndCoreBridge
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+    PRODUCT_NAME: CndIPTV
+    DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM:}
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  CndIPTV-macOS:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources/CndIptvApp
+    dependencies:
+      - package: CndCoreBridge
+        product: CndCoreBridge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cnd.iptv.macos
+        INFOPLIST_FILE: Resources/Info-macOS.plist
+        CODE_SIGN_ENTITLEMENTS: Resources/CndIPTV-macOS.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_IDENTITY: "-"
+
+  CndIPTV-iOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources/CndIptvApp
+    dependencies:
+      - package: CndCoreBridge
+        product: CndCoreBridge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cnd.iptv.ios
+        INFOPLIST_FILE: Resources/Info-iOS.plist
+        CODE_SIGN_ENTITLEMENTS: Resources/CndIPTV-iOS.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_IDENTITY: "-"
+
+  CndIPTV-tvOS:
+    type: application
+    platform: tvOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources/CndIptvApp
+    dependencies:
+      - package: CndCoreBridge
+        product: CndCoreBridge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cnd.iptv.tvos
+        INFOPLIST_FILE: Resources/Info-tvOS.plist
+        CODE_SIGN_ENTITLEMENTS: Resources/CndIPTV-tvOS.entitlements
+        CODE_SIGN_IDENTITY: "-"
+        ARCHS: arm64
+        ONLY_ACTIVE_ARCH: YES

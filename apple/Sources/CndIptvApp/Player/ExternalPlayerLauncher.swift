@@ -144,8 +144,10 @@ public enum ExternalPlayerLauncher {
         #if os(macOS)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        #else
+        #elseif os(iOS)
         UIPasteboard.general.string = text
+        #elseif os(tvOS)
+        // tvOS has no general UIPasteboard
         #endif
     }
 

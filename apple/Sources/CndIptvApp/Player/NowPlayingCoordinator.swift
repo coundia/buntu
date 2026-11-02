@@ -40,6 +40,7 @@ enum NowPlayingInfoBuilder {
         case .live: return "Direct"
         case .movie: return "Film"
         case .episode: return "Série"
+        case .recording: return "Enregistrement"
         }
     }
 }

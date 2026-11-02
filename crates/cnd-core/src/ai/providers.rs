@@ -181,6 +181,7 @@ pub struct ModelDecision {
     pub action: String,
     #[serde(deserialize_with = "lenient_i64")]
     pub item_id: Option<i64>,
+    pub item_ids: Option<Vec<i64>>,
     pub query: Option<String>,
     pub reply: Option<String>,
 }

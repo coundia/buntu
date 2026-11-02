@@ -2,9 +2,14 @@ pub mod catalog_repo;
 pub mod download_repo;
 pub mod epg_repo;
 pub mod ingestion_writer;
+pub mod profile_repo;
+pub mod recording_repo;
 pub mod schema;
 pub mod settings_repo;
 pub mod sync_repo;
+
+pub use profile_repo::{is_adult_category, FavoriteFolderRecord, ProfileRecord};
+pub use recording_repo::{NewRecordingRequest, RecordingRecord, SeriesRuleRecord};
 
 use rusqlite::{params, Connection};
 use std::path::Path;
@@ -21,6 +26,8 @@ pub enum DbError {
     NotFound(String),
     #[error("Serialization error: {0}")]
     Serialization(String),
+    #[error("Query error: {0}")]
+    Query(String),
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -31,8 +38,19 @@ pub struct DbStats {
     pub total_series: u32,
     pub total_episodes: u32,
     pub total_favorites: u32,
+    pub total_broken: u32,
     pub total_downloads: u32,
     pub db_size_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct StreamHealthRecord {
+    pub stable_hash: String,
+    pub status: String,
+    pub latency_ms: Option<u32>,
+    pub checked_at: i64,
+    pub consecutive_failures: u32,
+    pub last_ok_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -83,6 +101,7 @@ pub struct IptvItemRecord {
     pub imdb_id: Option<String>,
     pub imdb_rating: Option<f64>,
     pub is_favorite: bool,
+    pub is_broken: bool,
     pub resume_position_ms: i64,
     pub duration_ms: i64,
     pub is_completed: bool,
@@ -130,6 +149,59 @@ impl DatabaseManager {
             "ALTER TABLE download_tasks ADD COLUMN headers_json TEXT",
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_download_parts_task_idx ON download_parts(task_id, part_index)",
             "CREATE INDEX IF NOT EXISTS idx_download_logs_task ON download_logs(task_id, id DESC)",
+            "ALTER TABLE broken_flags ADD COLUMN origin TEXT NOT NULL DEFAULT 'user'",
+            "CREATE TABLE IF NOT EXISTS stream_health (
+                stable_hash TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                latency_ms INTEGER,
+                checked_at INTEGER NOT NULL,
+                consecutive_failures INTEGER NOT NULL DEFAULT 0,
+                last_ok_at INTEGER
+            )",
+            "CREATE INDEX IF NOT EXISTS idx_stream_health_checked ON stream_health(checked_at)",
+            "CREATE TABLE IF NOT EXISTS profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                uuid TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                avatar TEXT NOT NULL DEFAULT 'person.crop.circle',
+                is_kids INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            )",
+            "INSERT OR IGNORE INTO profiles(id, uuid, name, avatar, is_kids, created_at) VALUES (1, '00000000-0000-0000-0000-000000000001', 'Principal', 'person.crop.circle', 0, 1700000000)",
+            "CREATE TABLE IF NOT EXISTS hidden_groups (
+                profile_id INTEGER NOT NULL DEFAULT 1,
+                kind TEXT NOT NULL,
+                group_key TEXT NOT NULL,
+                PRIMARY KEY(profile_id, kind, group_key)
+            )",
+            "CREATE TABLE IF NOT EXISTS hidden_items (
+                profile_id INTEGER NOT NULL DEFAULT 1,
+                stable_hash TEXT NOT NULL,
+                PRIMARY KEY(profile_id, stable_hash)
+            )",
+            "CREATE TABLE IF NOT EXISTS custom_order (
+                profile_id INTEGER NOT NULL DEFAULT 1,
+                scope TEXT NOT NULL,
+                key TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                PRIMARY KEY(profile_id, scope, key)
+            )",
+            "CREATE TABLE IF NOT EXISTS favorite_folders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                profile_id INTEGER NOT NULL DEFAULT 1,
+                name TEXT NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            )",
+            "CREATE TABLE IF NOT EXISTS favorite_folder_items (
+                folder_id INTEGER NOT NULL,
+                stable_hash TEXT NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(folder_id, stable_hash),
+                FOREIGN KEY(folder_id) REFERENCES favorite_folders(id) ON DELETE CASCADE
+            )",
+            "ALTER TABLE favorites ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE watch_history ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1",
         ];
         for sql in alter_stmts {
             // Ignore duplicate column error on already-migrated databases
@@ -193,6 +265,12 @@ impl DatabaseManager {
             |r| r.get(0),
         ).unwrap_or(0);
 
+        let total_broken: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM broken_flags",
+            [],
+            |r| r.get(0),
+        ).unwrap_or(0);
+
         let total_downloads: u32 = conn.query_row(
             "SELECT COUNT(*) FROM download_tasks",
             [],
@@ -214,6 +292,7 @@ impl DatabaseManager {
             total_series,
             total_episodes,
             total_favorites,
+            total_broken,
             total_downloads,
             db_size_bytes,
         })
@@ -294,6 +373,145 @@ impl DatabaseManager {
         }
     }
 
+    pub fn toggle_broken(&self, stable_hash: &str, item_kind: &str) -> std::result::Result<bool, DbError> {
+        let conn = self.conn.lock().map_err(|e| DbError::Lock(e.to_string()))?;
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM broken_flags WHERE stable_hash = ?1)",
+            params![stable_hash],
+            |r| r.get(0),
+        ).unwrap_or(false);
+
+        if exists {
+            conn.execute("DELETE FROM broken_flags WHERE stable_hash = ?1", params![stable_hash])?;
+            Ok(false)
+        } else {
+            let now = chrono_now_ts();
+            conn.execute(
+                "INSERT INTO broken_flags (stable_hash, item_kind, flagged_at, origin) VALUES (?1, ?2, ?3, 'user')",
+                params![stable_hash, item_kind, now],
+            )?;
+            Ok(true)
+        }
+    }
+
+    pub fn set_broken(&self, stable_hash: &str, item_kind: &str, broken: bool) -> std::result::Result<bool, DbError> {
+        self.set_broken_with_origin(stable_hash, item_kind, broken, "user")
+    }
+
+    pub fn set_broken_with_origin(
+        &self,
+        stable_hash: &str,
+        item_kind: &str,
+        broken: bool,
+        origin: &str,
+    ) -> std::result::Result<bool, DbError> {
+        let conn = self.conn.lock().map_err(|e| DbError::Lock(e.to_string()))?;
+        if broken {
+            let now = chrono_now_ts();
+            conn.execute(
+                "INSERT INTO broken_flags (stable_hash, item_kind, flagged_at, origin)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(stable_hash) DO UPDATE SET
+                     flagged_at = excluded.flagged_at,
+                     origin = CASE WHEN broken_flags.origin = 'user' THEN 'user' ELSE excluded.origin END",
+                params![stable_hash, item_kind, now, origin],
+            )?;
+            Ok(true)
+        } else {
+            if origin == "auto" {
+                conn.execute(
+                    "DELETE FROM broken_flags WHERE stable_hash = ?1 AND origin = 'auto'",
+                    params![stable_hash],
+                )?;
+            } else {
+                conn.execute("DELETE FROM broken_flags WHERE stable_hash = ?1", params![stable_hash])?;
+            }
+            Ok(false)
+        }
+    }
+
+    pub fn is_broken(&self, stable_hash: &str) -> std::result::Result<bool, DbError> {
+        let conn = self.conn.lock().map_err(|e| DbError::Lock(e.to_string()))?;
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM broken_flags WHERE stable_hash = ?1)",
+            params![stable_hash],
+            |r| r.get(0),
+        ).unwrap_or(false);
+        Ok(exists)
+    }
+
+    pub fn save_stream_health(&self, record: &StreamHealthRecord) -> std::result::Result<(), DbError> {
+        let conn = self.conn.lock().map_err(|e| DbError::Lock(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO stream_health (stable_hash, status, latency_ms, checked_at, consecutive_failures, last_ok_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(stable_hash) DO UPDATE SET
+                 status = excluded.status,
+                 latency_ms = excluded.latency_ms,
+                 checked_at = excluded.checked_at,
+                 consecutive_failures = excluded.consecutive_failures,
+                 last_ok_at = COALESCE(excluded.last_ok_at, stream_health.last_ok_at)",
+            params![
+                record.stable_hash,
+                record.status,
+                record.latency_ms,
+                record.checked_at,
+                record.consecutive_failures,
+                record.last_ok_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_stream_health(&self, stable_hash: &str) -> std::result::Result<Option<StreamHealthRecord>, DbError> {
+        let conn = self.conn.lock().map_err(|e| DbError::Lock(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT stable_hash, status, latency_ms, checked_at, consecutive_failures, last_ok_at
+             FROM stream_health WHERE stable_hash = ?1",
+        )?;
+        let mut rows = stmt.query(params![stable_hash])?;
+        if let Some(r) = rows.next()? {
+            Ok(Some(StreamHealthRecord {
+                stable_hash: r.get(0)?,
+                status: r.get(1)?,
+                latency_ms: r.get(2)?,
+                checked_at: r.get(3)?,
+                consecutive_failures: r.get(4)?,
+                last_ok_at: r.get(5)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn get_stream_health_batch(&self, hashes: &[String]) -> std::result::Result<Vec<StreamHealthRecord>, DbError> {
+        if hashes.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock().map_err(|e| DbError::Lock(e.to_string()))?;
+        let placeholders = hashes.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT stable_hash, status, latency_ms, checked_at, consecutive_failures, last_ok_at
+             FROM stream_health WHERE stable_hash IN ({placeholders})"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(hashes.iter()), |r| {
+            Ok(StreamHealthRecord {
+                stable_hash: r.get(0)?,
+                status: r.get(1)?,
+                latency_ms: r.get(2)?,
+                checked_at: r.get(3)?,
+                consecutive_failures: r.get(4)?,
+                last_ok_at: r.get(5)?,
+            })
+        })?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row?);
+        }
+        Ok(result)
+    }
+
     pub fn query_items(
         &self,
         kind: &str,
@@ -310,6 +528,8 @@ impl DatabaseManager {
             group_title: group.map(|s| s.to_string()),
             host: host.map(|s| s.to_string()),
             favorites_only: false,
+            include_broken: false,
+            include_hidden: false,
             sort_by: catalog_repo::SortField::Name,
             sort_asc: true,
             limit,

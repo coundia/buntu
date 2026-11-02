@@ -103,7 +103,7 @@ struct DownloadsDashboardView: View {
         }
         .font(.caption)
         .padding(.horizontal, 14).padding(.vertical, 8)
-        .background(.bar)
+        .background(.thinMaterial)
         .overlay(alignment: .top) { Divider() }
     }
 

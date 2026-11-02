@@ -104,6 +104,12 @@ tasks:
     cmds:
       - swift test
 
+  xcode:generate:
+    desc: Regenerate the Xcode project from apple/project.yml using XcodeGen
+    dir: "{{.APPLE_DIR}}"
+    cmds:
+      - xcodegen generate
+
   xcode:macos:
     desc: xcodebuild for macOS (CONFIG=Release for a release build)
     dir: "{{.APPLE_DIR}}"

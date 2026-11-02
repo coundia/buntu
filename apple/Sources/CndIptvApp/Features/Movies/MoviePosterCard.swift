@@ -6,6 +6,7 @@ struct MovieActionsMenu: View {
     let item: IptvItemRecord
     let vod: VodContext
     var onToggleFavorite: () -> Void = {}
+    var onToggleBroken: (() -> Void)? = nil
     var onRefreshMetadata: (() -> Void)?
 
     var body: some View {
@@ -21,6 +22,11 @@ struct MovieActionsMenu: View {
         }
         Button(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
                systemImage: item.isFavorite ? "star.slash" : "star", action: onToggleFavorite)
+        if let onToggleBroken {
+            Button(item.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel",
+                   systemImage: item.isBroken ? "checkmark.circle" : "exclamationmark.triangle",
+                   action: onToggleBroken)
+        }
         Button("Télécharger", systemImage: "arrow.down.circle") { vod.downloadMovie(item) }
         if let media = PlayableMedia(item: item) {
             Menu("Ouvrir dans…", systemImage: "arrow.up.forward.app") {
@@ -47,6 +53,7 @@ struct MoviePosterCard: View {
     let style: VodCardStyle
     let vod: VodContext
     var onToggleFavorite: () -> Void
+    var onToggleBroken: (() -> Void)? = nil
 
     private var progress: Double? {
         guard item.resumePositionMs > 0, item.durationMs > 0, !item.isCompleted else { return nil }
@@ -62,7 +69,14 @@ struct MoviePosterCard: View {
             case .row: row
             }
         }
-        .contextMenu { MovieActionsMenu(item: item, vod: vod, onToggleFavorite: onToggleFavorite) }
+        .contextMenu {
+            MovieActionsMenu(
+                item: item,
+                vod: vod,
+                onToggleFavorite: onToggleFavorite,
+                onToggleBroken: onToggleBroken
+            )
+        }
         .accessibilityLabel(displayTitle)
     }
 
@@ -74,6 +88,13 @@ struct MoviePosterCard: View {
             )
             .hoverLift()
             Text(displayTitle).font(.subheadline.weight(.semibold)).lineLimit(2)
+            if item.isBroken {
+                Label("En panne", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .background(Color.red.opacity(0.2), in: RoundedRectangle(cornerRadius: 3))
+                    .foregroundStyle(Color.red)
+            }
             if let year = item.year {
                 Text(String(year)).font(.caption).foregroundStyle(.secondary)
             }
@@ -88,6 +109,11 @@ struct MoviePosterCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 3) {
                 Text(displayTitle).font(.body.weight(.semibold)).lineLimit(1)
+                if item.isBroken {
+                    Label("En panne", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.red)
+                }
                 HStack(spacing: 6) {
                     if let year = item.year { Text(String(year)) }
                     if let group = item.groupTitle, !group.isEmpty { Text(group) }

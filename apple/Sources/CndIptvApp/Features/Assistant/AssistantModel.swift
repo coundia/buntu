@@ -18,6 +18,7 @@ struct AssistantActions {
     var next: () -> Void = {}
     var previous: () -> Void = {}
     var search: (String) -> Void = { _ in }
+    var multiView: ([IptvItemRecord]) -> Void = { _ in }
 }
 
 /// State of the command palette: typed phrase, live local suggestions, the resolved action and the
@@ -166,6 +167,12 @@ final class AssistantModel {
         case .search(let query):
             actions.search(query)
             onDismiss()
+        case .multiView(let itemIds):
+            let items = itemIds.compactMap { item($0) }
+            if !items.isEmpty {
+                actions.multiView(items)
+                onDismiss()
+            }
         case .none:
             break // the palette stays open to show the reply or the proposed channels
         }

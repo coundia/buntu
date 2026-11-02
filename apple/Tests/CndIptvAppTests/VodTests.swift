@@ -87,6 +87,7 @@ class VodTestCase: XCTestCase {
     func movies() throws -> [IptvItemRecord] {
         try engine.queryCatalog(filter: CatalogFilter(
             kind: "movie", sourceId: nil, query: "", groupTitle: nil, host: nil, favoritesOnly: false,
+            includeBroken: false, includeHidden: false,
             sortBy: .name, sortAsc: true, limit: 500, offset: 0
         ))
     }
@@ -94,6 +95,7 @@ class VodTestCase: XCTestCase {
     func allSeries() throws -> [SeriesRecord] {
         try engine.querySeries(filter: CatalogFilter(
             kind: "series", sourceId: nil, query: "", groupTitle: nil, host: nil, favoritesOnly: false,
+            includeBroken: false, includeHidden: false,
             sortBy: .name, sortAsc: true, limit: 100, offset: 0
         ))
     }

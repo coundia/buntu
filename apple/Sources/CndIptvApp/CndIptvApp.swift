@@ -12,7 +12,9 @@ struct CndIptvApp: App {
                 .frame(minWidth: 800, minHeight: 500)
                 #endif
         }
+        #if !os(tvOS)
         .commands { KeyboardCommands(center: commandCenter) }
+        #endif
         #if os(macOS)
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)

@@ -16,6 +16,7 @@
 | | |
 |---|---|
 | **Sources** | Playlists M3U / M3U8 (URL ou fichier déposé sur la fenêtre), comptes Xtream Codes avec test du compte. Création, modification, suppression, synchronisation unitaire ou globale. Mots de passe dans le Trousseau. |
+| **Partage de sources** | « Partager… » sur une source (clic droit) ou « Partager des sources… » : fichier `.cndshare`, lien `cndiptv://` ou QR code, **chiffrés** (AES-GCM, code aléatoire de 26 caractères) et valables 1 h, 24 h ou 7 jours. Sans identifiants par défaut ; le mot de passe n'est inclus que sur demande. Import avec aperçu, gestion des doublons et mot de passe écrit dans le Trousseau (menu Fichier > « Importer un partage… », double-clic sur un `.cndshare`, ou dépôt sur la fenêtre). |
 | **Live TV** | Catalogue de dizaines de milliers de chaînes, catégories avec compteurs, sections Récents / Favoris, grille ou liste, programme en cours et jauge de progression, zapping suivant / précédent. |
 | **Guide TV (EPG)** | Grille horaire XMLTV, fiche d'un programme, programme complet d'une chaîne. |
 | **Assistant IA** | Palette `⌘K` : « France 2 », « chaîne 6 », « suivante », « mets le match du PSG », « une chaîne d'info en anglais »… Résolution **locale d'abord** (sans réseau), puis votre propre fournisseur (**Gemini**, tout serveur **compatible OpenAI** dont Ollama / LM Studio en local, **Anthropic Claude**) avec votre clé. La réponse est validée : seule une chaîne de votre catalogue peut être lancée. |

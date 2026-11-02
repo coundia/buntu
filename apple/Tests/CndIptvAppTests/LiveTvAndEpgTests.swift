@@ -234,4 +234,62 @@ final class EpgGuideModelTests: XCTestCase {
         XCTAssertEqual(days.flatMap(\.programs).count, 3)
         XCTAssertEqual(days.map(\.day), days.map(\.day).sorted())
     }
+
+    func testCatchupReplayUrlAndAvailability() async throws {
+        let m3u = """
+        #EXTM3U
+        #EXTINF:-1 tvg-id="replay.channel" catchup="default" catchup-days="7",Replay Channel
+        http://iptv.server.io:8080/live/user1/pass1/42.ts
+        """
+        let m3uUrl = directory.appendingPathComponent("replay.m3u")
+        try m3u.write(to: m3uUrl, atomically: true, encoding: .utf8)
+
+        _ = try await engine.importLocalM3u(name: "Catchup Source", filePath: m3uUrl.path)
+
+        let model = EpgGuideModel(engine: engine)
+        await model.reload()
+        let channel = try XCTUnwrap(model.channels.first(where: { $0.tvgId == "replay.channel" }))
+
+        let now = Int64(Date().timeIntervalSince1970)
+        let pastProgram = EpgProgramRecord(
+            id: 1,
+            channelTvgId: "replay.channel",
+            startTs: now - 3600,
+            endTs: now - 1800,
+            title: "Past News",
+            subtitle: "Edition speciale",
+            description: "Replay test",
+            category: "News",
+            progressRatio: 1.0
+        )
+
+        let futureProgram = EpgProgramRecord(
+            id: 2,
+            channelTvgId: "replay.channel",
+            startTs: now + 3600,
+            endTs: now + 5400,
+            title: "Future Show",
+            subtitle: nil,
+            description: nil,
+            category: nil,
+            progressRatio: 0.0
+        )
+
+        XCTAssertTrue(model.isCatchupAvailable(for: channel, program: pastProgram))
+        XCTAssertFalse(model.isCatchupAvailable(for: channel, program: futureProgram))
+
+        let replayUrl = try XCTUnwrap(model.buildCatchupUrl(for: channel, program: pastProgram))
+        XCTAssertTrue(replayUrl.contains("/timeshift/user1/pass1/30/"))
+        XCTAssertTrue(replayUrl.hasSuffix("/42.ts"))
+
+        let media = try XCTUnwrap(PlayableMedia(
+            item: channel,
+            overrideUrl: URL(string: replayUrl),
+            customTitle: "\(channel.name) — \(pastProgram.title) [Replay]",
+            kind: .movie
+        ))
+        XCTAssertEqual(media.title, "Replay Channel — Past News [Replay]")
+        XCTAssertEqual(media.kind, PlayableKind.movie)
+        XCTAssertEqual(media.url.absoluteString, replayUrl)
+    }
 }

@@ -54,6 +54,22 @@ flowchart TD
     P11 --> P12
     P09 --> P13["13 - AI Channel Assistant (Gemini, OpenAI-compatible, Claude)"]
     P11 --> P13
+    P13 --> P14["14 - État des lieux & roadmap innovation"]
+    P14 --> P15["15 - Catch-up TV (Replay) & Start-Over"]
+    P14 --> P16["16 - Multi-View mosaïque 2 à 4 flux"]
+    P13 --> P16
+    P14 --> P17["17 - Health-Check & bascule miroir"]
+    P14 --> P18["18 - Dialogue Boost & OpenSubtitles"]
+    P14 --> P19["19 - PVR enregistrement programmé"]
+    P19 --> P24["24 - Time-shifting local (pause du direct)"]
+    P14 --> P20["20 - Éditeur de bouquets, profils & contrôle parental"]
+    P14 --> P23["23 - Projet Xcode signé & distribution"]
+    P23 --> P21["21 - Application Apple TV (tvOS)"]
+    P21 --> P25["25 - Auto-Framerate Matching"]
+    P12 --> P26["26 - Partage des sources (appareils & proches)"]
+    P23 --> P26
+    P23 --> P22["22 - Live Activities & visionOS"]
+    P19 --> P22
 ```
 
 ---
@@ -75,6 +91,29 @@ flowchart TD
 | **11** | [`11_SWIFTUI_DOWNLOADS_SETTINGS_CONSOLE.md`](./11_SWIFTUI_DOWNLOADS_SETTINGS_CONSOLE.md) | UI SwiftUI Téléchargements (batch, Bookmarks macOS, Fichiers iOS, LogsSheet), Réglages complets & Console Réseau pliable. | `[x]` |
 | **12** | [`12_APPLE_ECOSYSTEM_PIP_AIRPLAY_CLOUDKIT.md`](./12_APPLE_ECOSYSTEM_PIP_AIRPLAY_CLOUDKIT.md) | Picture-in-Picture système, AirPlay 2, `MPNowPlayingInfoCenter`, Raccourcis/Gestes zapping & Sync iCloud (`CKSyncEngine`). | `[x]` |
 | **13** | [`13_AI_CHANNEL_ASSISTANT.md`](./13_AI_CHANNEL_ASSISTANT.md) | Assistant de commande en langage naturel (`⌘K`) : résolution locale d'abord, puis Gemini / compatible OpenAI (dont Ollama local) / Claude avec la clé de l'utilisateur, sortie JSON validée. | `[x]` |
+| **14** | [`14_ETAT_DES_LIEUX_ET_ROADMAP_INNOVATION.md`](./14_ETAT_DES_LIEUX_ET_ROADMAP_INNOVATION.md) | **Bilan exhaustif du socle implémenté** (271 tests au vert), inventaire des manques et feuille de route des **innovations de rupture** (Multi-view, Replay EPG, Failover Miroir, Dialogue Boost, PVR, tvOS). | `[x]` |
+| **15** | [`15_CATCHUP_REPLAY_START_OVER.md`](./15_CATCHUP_REPLAY_START_OVER.md) | Replay serveur (Xtream `timeshift`, modes M3U `default`/`append`/`shift`/`flussonic`), rétention EPG selon `catchup_days`, grille EPG rétrospective, « Revoir depuis le début ». | `[x]` |
+| **16** | [`16_MULTIVIEW_MOSAIC.md`](./16_MULTIVIEW_MOSAIC.md) | Mosaïque 2 à 4 directs (1+1, 2×2, 1+3), son exclusif, limite `max_connections`, glisser-déposer, commande ⌘K « A et B côte à côte ». | `[x]` |
+| **17** | [`17_HEALTH_CHECK_AUTO_FAILOVER.md`](./17_HEALTH_CHECK_AUTO_FAILOVER.md) | Détection de miroirs (tvg-id / nom normalisé), sonde TS/HLS légère, signalement auto en panne, bascule automatique du lecteur. | `[x]` |
+| **18** | [`18_DIALOGUE_BOOST_OPENSUBTITLES.md`](./18_DIALOGUE_BOOST_OPENSUBTITLES.md) | Dialogue Boost & mode nuit (filtres mpv), sous-titres OpenSubtitles (hash, IMDb, surcouche AVPlayer, décalage). | `[x]` |
+| **19** | [`19_PVR_SCHEDULED_RECORDING.md`](./19_PVR_SCHEDULED_RECORDING.md) | Enregistrement programmé depuis l'EPG (TS & HLS live), Series-Link, conflits de connexions, macOS d'abord. | `[x]` |
+| **20** | [`20_PROFILES_PARENTAL_CHANNEL_EDITOR.md`](./20_PROFILES_PARENTAL_CHANNEL_EDITOR.md) | Éditeur de bouquets & dossiers de favoris, multi-profils, code PIN + Face ID / Touch ID, catégories adultes. | `[x]` |
+| **21** | [`21_TVOS_APPLE_TV_APP.md`](./21_TVOS_APPLE_TV_APP.md) | Cible tvOS : Rust `aarch64-apple-tvos` & `sim`, XCFramework universel, interface au focus de la Siri Remote, zapping plein écran. | `[x]` |
+| **22** | [`22_LIVE_ACTIVITIES_VISIONOS.md`](./22_LIVE_ACTIVITIES_VISIONOS.md) | Live Activities & Dynamic Island (PVR & lecture, throttle 1/min), app visionOS & mode Cinéma spatial. | `[x]` |
+| **23** | [`23_XCODE_PROJECT_SIGNING_DISTRIBUTION.md`](./23_XCODE_PROJECT_SIGNING_DISTRIBUTION.md) | Projet Xcode signé (XcodeGen), bibliothèque `CndIptvKit`, Info.plist & entitlements (iCloud, sandbox, Fichiers), libmpv embarqué, icône, archives. | `[x]` |
+| **24** | [`24_LOCAL_TIMESHIFT_PAUSE_LIVE.md`](./24_LOCAL_TIMESHIFT_PAUSE_LIVE.md) | Pause du direct et retour arrière sans replay fournisseur : tampon mpv borné, puis anneau Rust + HLS local (facultatif). | `[x]` |
+| **25** | [`25_AUTO_FRAMERATE_MATCHING.md`](./25_AUTO_FRAMERATE_MATCHING.md) | Fréquence d'écran alignée sur la vidéo (tvOS `AVDisplayCriteria`, détection 23.976 à 60 i/s, SDR/HDR10/HLG, debounce 2s). | `[x]` |
+| **26** | [`26_SOURCE_SHARING_DEVICES_FRIENDS.md`](./26_SOURCE_SHARING_DEVICES_FRIENDS.md) | Partage des sources : mots de passe via Trousseau iCloud (opt-in), enveloppe chiffrée AES-GCM 256, transfert direct à proximité Bonjour, partage vivant `CKShare`. | `[x]` |
+
+---
+
+### Ordre d'exécution recommandé (PRD 15 à 25)
+
+Les numéros 15 à 22 reprennent ceux du `PRD-14`. Les PRD 23 à 25 couvrent des besoins que le `PRD-14` cite sans leur attribuer de PRD (projet Xcode signé, pause du direct en local, fréquence d'image). Ordre conseillé, chaque PRD terminé et validé avant le suivant :
+
+1. **15** Replay — 2. **16** Multi-View — 3. **17** Health-Check & bascule — 4. **18** Dialogue Boost & sous-titres — 5. **19** PVR — 6. **24** Pause du direct — 7. **20** Bouquets, profils & contrôle parental — 8. **23** Projet Xcode signé — 9. **21** Apple TV — 10. **25** Fréquence d'image — 11. **22** Live Activities & visionOS — 12. **26** Partage des sources (son lot 26.2, partage chiffré par fichier, peut être fait dès maintenant ; les lots 26.1, 26.3 et 26.4 attendent le PRD 23).
+
+Les PRD 16, 18, 20, 22 et 24 sont découpés en **lots** livrables et validables séparément (un lot = une session d'agent).
 
 ---
 

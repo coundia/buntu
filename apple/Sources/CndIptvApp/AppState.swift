@@ -52,6 +52,27 @@ public final class AppState {
     private func attach(_ engine: CndEngine) {
         recorder.attach(engine)
         self.engine = engine
+        player.autoFailoverEnabled = UserDefaults.standard.object(forKey: "autoFailoverEnabled") as? Bool ?? true
+        if let raw = UserDefaults.standard.string(forKey: "timeshiftDuration"),
+           let duration = TimeshiftDuration(rawValue: raw) {
+            player.timeshiftDuration = duration
+        }
+        player.favoriteHandler = { [weak self, weak engine] media in
+            guard let self, let engine else { return false }
+            return try await self.toggleFavorite(for: media, using: engine)
+        }
+        player.brokenHandler = { [weak self, weak engine] media in
+            guard let self, let engine else { return false }
+            return try await self.toggleBroken(for: media, using: engine)
+        }
+        player.mirrorFinder = { [weak engine] itemId in
+            guard let engine else { return [] }
+            return try engine.findMirrors(itemId: itemId)
+        }
+        let healthChecksEnabled = UserDefaults.standard.object(forKey: "healthChecksEnabled") as? Bool ?? true
+        if healthChecksEnabled {
+            engine.startHealthChecks(intervalMinutes: 30)
+        }
         showNetworkConsole = engine.getSettings().showNetworkConsole
         let sync = CloudKitSyncManager(engine: engine)
         sync.onRemoteChange = { [weak self] _ in self?.reloadSnapshot() }
@@ -95,5 +116,70 @@ public final class AppState {
                 self?.errorMessage = error.localizedDescription
             }
         }
+    }
+
+    /// Toggles the favorite status for any playable media (live channel, movie, episode/series, download).
+    func toggleFavorite(for media: PlayableMedia, using engine: CndEngine) async throws -> Bool {
+        if media.kind == .episode {
+            var targetHash = media.seriesStableHash
+            if targetHash == nil, let seriesId = media.seriesId {
+                let series = try await Task.detached(priority: .userInitiated) {
+                    try engine.getSeriesById(seriesId: seriesId)
+                }.value
+                targetHash = series?.stableHash
+            }
+            if let seriesHash = targetHash {
+                let newFav = try await Task.detached(priority: .userInitiated) {
+                    try engine.toggleFavorite(stableHash: seriesHash, itemKind: "series")
+                }.value
+                if let epHash = media.stableHash {
+                    _ = try? await Task.detached(priority: .userInitiated) {
+                        try engine.toggleFavorite(stableHash: epHash, itemKind: "episode")
+                    }.value
+                }
+                self.reloadSnapshot(notifyScreens: false)
+                return newFav
+            }
+        }
+
+        let hash = media.stableHash ?? "media:\(media.id)"
+        let kind = media.itemKind ?? media.kind.rawValue
+        let newFav = try await Task.detached(priority: .userInitiated) {
+            try engine.toggleFavorite(stableHash: hash, itemKind: kind)
+        }.value
+        self.reloadSnapshot(notifyScreens: false)
+        return newFav
+    }
+
+    func toggleBroken(for media: PlayableMedia, using engine: CndEngine) async throws -> Bool {
+        if media.kind == .episode {
+            var targetHash = media.seriesStableHash
+            if targetHash == nil, let seriesId = media.seriesId {
+                let series = try? await Task.detached(priority: .userInitiated) {
+                    try engine.getSeriesById(seriesId: seriesId)
+                }.value
+                targetHash = series?.stableHash
+            }
+            if let seriesHash = targetHash {
+                let newBroken = try await Task.detached(priority: .userInitiated) {
+                    try engine.toggleBroken(stableHash: seriesHash, itemKind: "series")
+                }.value
+                if let epHash = media.stableHash {
+                    _ = try? await Task.detached(priority: .userInitiated) {
+                        try engine.toggleBroken(stableHash: epHash, itemKind: "episode")
+                    }.value
+                }
+                self.reloadSnapshot(notifyScreens: false)
+                return newBroken
+            }
+        }
+
+        let hash = media.stableHash ?? "media:\(media.id)"
+        let kind = media.itemKind ?? media.kind.rawValue
+        let newBroken = try await Task.detached(priority: .userInitiated) {
+            try engine.toggleBroken(stableHash: hash, itemKind: kind)
+        }.value
+        self.reloadSnapshot(notifyScreens: false)
+        return newBroken
     }
 }
