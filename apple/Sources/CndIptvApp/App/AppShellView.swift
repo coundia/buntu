@@ -62,6 +62,8 @@ private struct LoadedShellView: View {
 
     @AppStorage("shell.selectedTab") private var selectedTabRaw = AppTab.live.rawValue
     @State private var sourcesModel: SourcesModel
+    @State private var toasts: ToastCenter
+    @State private var vodContext: VodContext
     @State private var epgFocus: IptvItemRecord?
     @State private var isPlayerExpanded = false
     @State private var isDropTargeted = false
@@ -72,6 +74,16 @@ private struct LoadedShellView: View {
         _sourcesModel = State(initialValue: SourcesModel(engine: engine, onChange: { [weak state] in
             state?.reloadSnapshot()
         }))
+        let toasts = ToastCenter()
+        _toasts = State(initialValue: toasts)
+        _vodContext = State(initialValue: VodContext(
+            engine: engine,
+            toasts: toasts,
+            playMedia: { [weak state] media in state?.player.open(media) },
+            playQueue: { [weak state] medias, index in state?.player.openQueue(medias, startIndex: index) },
+            openDownloads: { UserDefaults.standard.set(AppTab.downloads.rawValue, forKey: "shell.selectedTab") },
+            onFavoriteChanged: { [weak state] in state?.reloadSnapshot(notifyScreens: false) }
+        ))
     }
 
     private var selectedTab: AppTab { AppTab(rawValue: selectedTabRaw) ?? .live }
@@ -80,6 +92,14 @@ private struct LoadedShellView: View {
 
     var body: some View {
         platformShell
+            .environment(vodContext)
+            .overlay(alignment: .bottom) {
+                if let toast = toasts.current {
+                    ToastView(toast: toast) { toasts.dismiss() }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: toasts.current?.id)
             .dropDestination(for: URL.self) { urls, _ in handleDrop(urls) } isTargeted: { isDropTargeted = $0 }
             .overlay {
                 if isDropTargeted {
@@ -174,7 +194,7 @@ private struct LoadedShellView: View {
                     playingURL: player.media?.url.absoluteString,
                     onPlay: play,
                     onShowGuide: showGuide,
-                    onFavoriteChanged: { state.reloadSnapshot() }
+                    onFavoriteChanged: { state.reloadSnapshot(notifyScreens: false) }
                 )
             case .guide:
                 EpgGuideView(
@@ -186,7 +206,15 @@ private struct LoadedShellView: View {
                 )
             case .sources:
                 SourcesListView(engine: engine, sources: state.sources, model: sourcesModel)
-            case .movies, .series, .downloads, .settings:
+            case .movies:
+                vodScreen(MoviesCatalogView(
+                    engine: engine, revision: state.catalogRevision, totalMovies: Int(state.stats?.totalMovies ?? 0)
+                ))
+            case .series:
+                vodScreen(SeriesCatalogView(
+                    engine: engine, revision: state.catalogRevision, totalSeries: Int(state.stats?.totalSeries ?? 0)
+                ))
+            case .downloads, .settings:
                 ContentUnavailableView(
                     tab.title,
                     systemImage: tab.systemImage,
@@ -199,6 +227,26 @@ private struct LoadedShellView: View {
             if let banner = sourcesModel.banner {
                 SourcesBannerView(banner: banner) { sourcesModel.dismissBanner() }
             }
+        }
+    }
+
+    /// Movies and series push their details; macOS needs its own stack inside the split view's detail.
+    @ViewBuilder
+    private func vodScreen<Screen: View>(_ screen: Screen) -> some View {
+        #if os(macOS)
+        NavigationStack {
+            screen.navigationDestination(for: VodRoute.self) { vodDestination($0) }
+        }
+        #else
+        screen.navigationDestination(for: VodRoute.self) { vodDestination($0) }
+        #endif
+    }
+
+    @ViewBuilder
+    private func vodDestination(_ route: VodRoute) -> some View {
+        switch route {
+        case .movie(let item): MovieDetailsView(item: item, vod: vodContext)
+        case .series(let series): SeriesDetailsView(series: series, vod: vodContext)
         }
     }
 
