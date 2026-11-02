@@ -13,6 +13,7 @@ final class AppCommandCenter {
     @ObservationIgnored var togglePlayPause: () -> Void = {}
     @ObservationIgnored var toggleMute: () -> Void = {}
     @ObservationIgnored var togglePictureInPicture: () -> Void = {}
+    @ObservationIgnored var openAssistant: () -> Void = {}
     /// Enables the player menu items; set by the shell while something is playing.
     var hasMedia = false
 }
@@ -37,6 +38,9 @@ struct KeyboardCommands: Commands {
                 .keyboardShortcut("c", modifiers: [.command, .shift])
         }
         CommandMenu("Lecteur") {
+            Button("Assistant de chaînes…") { center.openAssistant() }
+                .keyboardShortcut("k", modifiers: .command)
+            Divider()
             Button("Lecture / Pause") { center.togglePlayPause() }
                 .disabled(!center.hasMedia)
             Button("Couper / rétablir le son") { center.toggleMute() }

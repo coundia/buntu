@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod db;
 pub mod downloader;
 pub mod http_client;
@@ -5,6 +6,9 @@ pub mod iptv;
 pub mod metadata;
 pub mod telemetry;
 
+pub use ai::{
+    AiAction, AiCommandContext, AiCommandResult, AiProviderConfig, AiProviderKind, AiProviderStatus,
+};
 pub use db::catalog_repo::{CatalogFilter, FacetCount, SeasonSummary, SeriesRecord, SortField};
 pub use db::download_repo::{
     DownloadLogRecord, DownloadPartRecord, DownloadTaskRecord, NewDownloadRequest,
@@ -734,6 +738,22 @@ impl CndEngine {
         limit: u32,
     ) -> Result<Vec<DownloadLogRecord>, CndError> {
         self.downloads.logs(task_id, limit)
+    }
+
+    /// Turns a typed or spoken command into a channel action: local resolution first, then the
+    /// user's own model provider, validated against a short candidate list.
+    pub async fn ai_resolve_command(
+        &self,
+        command: String,
+        context: AiCommandContext,
+        config: AiProviderConfig,
+    ) -> Result<AiCommandResult, CndError> {
+        ai::resolve(self, command, context, config).await
+    }
+
+    /// Checks that the provider answers (key, model, address) and how fast.
+    pub async fn ai_test_provider(&self, config: AiProviderConfig) -> Result<AiProviderStatus, CndError> {
+        ai::test_provider(self, config).await
     }
 
     /// Changes made after `since_ts` (Unix seconds) to sources, favorites and watch progress.

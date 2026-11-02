@@ -6,14 +6,20 @@ struct SettingsView: View {
     @Bindable var directory: DownloadDirectoryManager
     let stats: DbStats?
     var sync: CloudKitSyncManager?
+    var ai: AiProviderSettings?
+    var assistant: AssistantModel?
 
     @State private var showsOmdbKey = false
+    @State private var showsAiKey = false
+    @State private var aiStatus: AiProviderStatus?
+    @State private var isTestingAi = false
 
     var body: some View {
         Form {
             downloadsSection
             networkSection
             omdbSection
+            if let ai, let assistant { assistantSection(ai, assistant) }
             if let sync { iCloudSection(sync) }
             diagnosticSection
             aboutSection
@@ -102,6 +108,107 @@ struct SettingsView: View {
         } footer: {
             Text("Stockée dans le Trousseau, jamais dans la base de données. Utilisée pour enrichir les fiches films et séries.")
         }
+    }
+
+    // MARK: Assistant IA
+
+    @ViewBuilder
+    private func assistantSection(_ ai: AiProviderSettings, _ assistant: AssistantModel) -> some View {
+        @Bindable var ai = ai
+        Section {
+            Picker("Fournisseur", selection: $ai.choice) {
+                ForEach(AiChoice.allCases) { Text($0.title).tag($0) }
+            }
+            if ai.choice.isRemote {
+                TextField("Modèle", text: $ai.model, prompt: Text("Modèle par défaut du fournisseur"))
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    #endif
+                TextField("Adresse du serveur", text: $ai.baseURL, prompt: Text(ai.choice.baseURLPlaceholder))
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    #endif
+                HStack {
+                    Group {
+                        if showsAiKey {
+                            TextField(ai.choice.requiresKey ? "Clé API" : "Clé API (facultative)", text: $ai.apiKey)
+                        } else {
+                            SecureField(ai.choice.requiresKey ? "Clé API" : "Clé API (facultative)", text: $ai.apiKey)
+                        }
+                    }
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    #endif
+                    Button { showsAiKey.toggle() } label: { Image(systemName: showsAiKey ? "eye.slash" : "eye") }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(showsAiKey ? "Masquer la clé" : "Afficher la clé")
+                }
+                if ai.endpointIsLocal {
+                    Label("Serveur sur cet appareil : rien ne le quitte.", systemImage: "lock.shield")
+                        .font(.callout).foregroundStyle(.green)
+                } else {
+                    Toggle("J'accepte d'envoyer mes commandes à ce fournisseur", isOn: $ai.consent)
+                }
+                HStack {
+                    Button("Tester") { Task { await runAiTest(assistant) } }
+                        .disabled(isTestingAi || (ai.choice.requiresKey && !ai.hasKey))
+                    if isTestingAi { ProgressView().controlSize(.small) }
+                    if let status = aiStatus {
+                        Label(
+                            status.ok ? "\(status.message) (\(status.latencyMs) ms, \(status.model))" : status.message,
+                            systemImage: status.ok ? "checkmark.circle.fill" : "xmark.octagon.fill"
+                        )
+                        .font(.callout)
+                        .foregroundStyle(status.ok ? .green : .red)
+                    }
+                }
+                if let blocker = ai.blocker {
+                    Label("\(blocker) En attendant, la résolution reste locale.", systemImage: "info.circle")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                if let keychainError = ai.keychainError {
+                    Label(keychainError, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.callout)
+                }
+                DisclosureGroup("Ce qui est envoyé") { sentTable }
+                    .font(.callout)
+            }
+        } header: {
+            Text("Assistant IA")
+        } footer: {
+            Text(assistantFooter(ai))
+        }
+        .onChange(of: ai.choice) { _, _ in aiStatus = nil }
+    }
+
+    private func assistantFooter(_ ai: AiProviderSettings) -> String {
+        switch ai.choice {
+        case .disabled: return "L'assistant (⌘K, bouton ✨) est masqué."
+        case .localOnly: return "Les commandes explicites (« France 2 », « chaîne 6 », « suivante ») sont résolues sur l'appareil, sans aucun envoi. Choisissez un fournisseur pour les demandes plus libres."
+        default: return "La clé est conservée dans le Trousseau. Sans clé, sans consentement ou en cas d'erreur, l'assistant retombe sur la résolution locale."
+        }
+    }
+
+    private var sentTable: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Envoyé").font(.caption.weight(.semibold))
+            Text("• la phrase que vous tapez\n• pour 40 chaînes au plus : nom, catégorie, numéro, programme en cours et suivant\n• la langue de l'interface")
+                .font(.caption)
+            Text("Jamais envoyé").font(.caption.weight(.semibold)).padding(.top, 4)
+            Text("• les adresses des flux et le serveur IPTV\n• identifiants, mots de passe, en-têtes\n• l'historique, les favoris hors propositions, les téléchargements")
+                .font(.caption)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.top, 4)
+    }
+
+    private func runAiTest(_ assistant: AssistantModel) async {
+        isTestingAi = true
+        aiStatus = await assistant.testProvider()
+        isTestingAi = false
     }
 
     private func iCloudSection(_ sync: CloudKitSyncManager) -> some View {

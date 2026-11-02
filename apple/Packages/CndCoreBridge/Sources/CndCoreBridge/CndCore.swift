@@ -549,6 +549,17 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func addSource(name: String, sourceType: String, url: String?, server: String?, username: String?, passwordRef: String?) throws  -> Int64
     
+    /**
+     * Turns a typed or spoken command into a channel action: local resolution first, then the
+     * user's own model provider, validated against a short candidate list.
+     */
+    func aiResolveCommand(command: String, context: AiCommandContext, config: AiProviderConfig) async throws  -> AiCommandResult
+    
+    /**
+     * Checks that the provider answers (key, model, address) and how fast.
+     */
+    func aiTestProvider(config: AiProviderConfig) async throws  -> AiProviderStatus
+    
     func clearLogs() 
     
     func deleteSource(sourceId: Int64) throws 
@@ -726,6 +737,47 @@ open func addSource(name: String, sourceType: String, url: String?, server: Stri
         FfiConverterOptionString.lower(passwordRef),$0
     )
 })
+}
+    
+    /**
+     * Turns a typed or spoken command into a channel action: local resolution first, then the
+     * user's own model provider, validated against a short candidate list.
+     */
+open func aiResolveCommand(command: String, context: AiCommandContext, config: AiProviderConfig)async throws  -> AiCommandResult  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_ai_resolve_command(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(command),FfiConverterTypeAiCommandContext_lower(context),FfiConverterTypeAiProviderConfig_lower(config)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeAiCommandResult_lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
+    /**
+     * Checks that the provider answers (key, model, address) and how fast.
+     */
+open func aiTestProvider(config: AiProviderConfig)async throws  -> AiProviderStatus  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_ai_test_provider(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeAiProviderConfig_lower(config)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeAiProviderStatus_lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
 }
     
 open func clearLogs()  {try! rustCall() {
@@ -1303,6 +1355,420 @@ public func FfiConverterTypeCndEngine_lower(_ value: CndEngine) -> UnsafeMutable
 }
 
 
+
+
+public struct AiCommandContext {
+    /**
+     * Channel currently playing, used by "next", "previous" and "go back".
+     */
+    public var playingStableHash: String?
+    /**
+     * Category on screen, a relevance hint only.
+     */
+    public var groupTitle: String?
+    /**
+     * UI language such as `fr-FR`; the short reply is written in it.
+     */
+    public var locale: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Channel currently playing, used by "next", "previous" and "go back".
+         */playingStableHash: String?, 
+        /**
+         * Category on screen, a relevance hint only.
+         */groupTitle: String?, 
+        /**
+         * UI language such as `fr-FR`; the short reply is written in it.
+         */locale: String) {
+        self.playingStableHash = playingStableHash
+        self.groupTitle = groupTitle
+        self.locale = locale
+    }
+}
+
+#if compiler(>=6)
+extension AiCommandContext: Sendable {}
+#endif
+
+
+extension AiCommandContext: Equatable, Hashable {
+    public static func ==(lhs: AiCommandContext, rhs: AiCommandContext) -> Bool {
+        if lhs.playingStableHash != rhs.playingStableHash {
+            return false
+        }
+        if lhs.groupTitle != rhs.groupTitle {
+            return false
+        }
+        if lhs.locale != rhs.locale {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(playingStableHash)
+        hasher.combine(groupTitle)
+        hasher.combine(locale)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAiCommandContext: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AiCommandContext {
+        return
+            try AiCommandContext(
+                playingStableHash: FfiConverterOptionString.read(from: &buf), 
+                groupTitle: FfiConverterOptionString.read(from: &buf), 
+                locale: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AiCommandContext, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.playingStableHash, into: &buf)
+        FfiConverterOptionString.write(value.groupTitle, into: &buf)
+        FfiConverterString.write(value.locale, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAiCommandContext_lift(_ buf: RustBuffer) throws -> AiCommandContext {
+    return try FfiConverterTypeAiCommandContext.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAiCommandContext_lower(_ value: AiCommandContext) -> RustBuffer {
+    return FfiConverterTypeAiCommandContext.lower(value)
+}
+
+
+public struct AiCommandResult {
+    public var action: AiAction
+    /**
+     * 0 to 5 channels to offer when the request is ambiguous or the provider failed.
+     */
+    public var alternatives: [IptvItemRecord]
+    public var reply: String
+    /**
+     * `"local"`, `"gemini"`, `"openai_compatible"` or `"anthropic"`.
+     */
+    public var resolvedBy: String
+    public var latencyMs: UInt64
+    public var fallbackReason: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(action: AiAction, 
+        /**
+         * 0 to 5 channels to offer when the request is ambiguous or the provider failed.
+         */alternatives: [IptvItemRecord], reply: String, 
+        /**
+         * `"local"`, `"gemini"`, `"openai_compatible"` or `"anthropic"`.
+         */resolvedBy: String, latencyMs: UInt64, fallbackReason: String?) {
+        self.action = action
+        self.alternatives = alternatives
+        self.reply = reply
+        self.resolvedBy = resolvedBy
+        self.latencyMs = latencyMs
+        self.fallbackReason = fallbackReason
+    }
+}
+
+#if compiler(>=6)
+extension AiCommandResult: Sendable {}
+#endif
+
+
+extension AiCommandResult: Equatable, Hashable {
+    public static func ==(lhs: AiCommandResult, rhs: AiCommandResult) -> Bool {
+        if lhs.action != rhs.action {
+            return false
+        }
+        if lhs.alternatives != rhs.alternatives {
+            return false
+        }
+        if lhs.reply != rhs.reply {
+            return false
+        }
+        if lhs.resolvedBy != rhs.resolvedBy {
+            return false
+        }
+        if lhs.latencyMs != rhs.latencyMs {
+            return false
+        }
+        if lhs.fallbackReason != rhs.fallbackReason {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(action)
+        hasher.combine(alternatives)
+        hasher.combine(reply)
+        hasher.combine(resolvedBy)
+        hasher.combine(latencyMs)
+        hasher.combine(fallbackReason)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAiCommandResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AiCommandResult {
+        return
+            try AiCommandResult(
+                action: FfiConverterTypeAiAction.read(from: &buf), 
+                alternatives: FfiConverterSequenceTypeIptvItemRecord.read(from: &buf), 
+                reply: FfiConverterString.read(from: &buf), 
+                resolvedBy: FfiConverterString.read(from: &buf), 
+                latencyMs: FfiConverterUInt64.read(from: &buf), 
+                fallbackReason: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AiCommandResult, into buf: inout [UInt8]) {
+        FfiConverterTypeAiAction.write(value.action, into: &buf)
+        FfiConverterSequenceTypeIptvItemRecord.write(value.alternatives, into: &buf)
+        FfiConverterString.write(value.reply, into: &buf)
+        FfiConverterString.write(value.resolvedBy, into: &buf)
+        FfiConverterUInt64.write(value.latencyMs, into: &buf)
+        FfiConverterOptionString.write(value.fallbackReason, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAiCommandResult_lift(_ buf: RustBuffer) throws -> AiCommandResult {
+    return try FfiConverterTypeAiCommandResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAiCommandResult_lower(_ value: AiCommandResult) -> RustBuffer {
+    return FfiConverterTypeAiCommandResult.lower(value)
+}
+
+
+public struct AiProviderConfig {
+    public var kind: AiProviderKind
+    /**
+     * Empty means "use the provider's default".
+     */
+    public var model: String
+    /**
+     * Override of the API root (required to reach a local server). `None` means the official one.
+     */
+    public var baseUrl: String?
+    /**
+     * Passed in for each call from the Keychain; never stored on the Rust side.
+     */
+    public var apiKey: String?
+    public var timeoutMs: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: AiProviderKind, 
+        /**
+         * Empty means "use the provider's default".
+         */model: String, 
+        /**
+         * Override of the API root (required to reach a local server). `None` means the official one.
+         */baseUrl: String?, 
+        /**
+         * Passed in for each call from the Keychain; never stored on the Rust side.
+         */apiKey: String?, timeoutMs: UInt32) {
+        self.kind = kind
+        self.model = model
+        self.baseUrl = baseUrl
+        self.apiKey = apiKey
+        self.timeoutMs = timeoutMs
+    }
+}
+
+#if compiler(>=6)
+extension AiProviderConfig: Sendable {}
+#endif
+
+
+extension AiProviderConfig: Equatable, Hashable {
+    public static func ==(lhs: AiProviderConfig, rhs: AiProviderConfig) -> Bool {
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.model != rhs.model {
+            return false
+        }
+        if lhs.baseUrl != rhs.baseUrl {
+            return false
+        }
+        if lhs.apiKey != rhs.apiKey {
+            return false
+        }
+        if lhs.timeoutMs != rhs.timeoutMs {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(model)
+        hasher.combine(baseUrl)
+        hasher.combine(apiKey)
+        hasher.combine(timeoutMs)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAiProviderConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AiProviderConfig {
+        return
+            try AiProviderConfig(
+                kind: FfiConverterTypeAiProviderKind.read(from: &buf), 
+                model: FfiConverterString.read(from: &buf), 
+                baseUrl: FfiConverterOptionString.read(from: &buf), 
+                apiKey: FfiConverterOptionString.read(from: &buf), 
+                timeoutMs: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AiProviderConfig, into buf: inout [UInt8]) {
+        FfiConverterTypeAiProviderKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.model, into: &buf)
+        FfiConverterOptionString.write(value.baseUrl, into: &buf)
+        FfiConverterOptionString.write(value.apiKey, into: &buf)
+        FfiConverterUInt32.write(value.timeoutMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAiProviderConfig_lift(_ buf: RustBuffer) throws -> AiProviderConfig {
+    return try FfiConverterTypeAiProviderConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAiProviderConfig_lower(_ value: AiProviderConfig) -> RustBuffer {
+    return FfiConverterTypeAiProviderConfig.lower(value)
+}
+
+
+public struct AiProviderStatus {
+    public var ok: Bool
+    public var latencyMs: UInt64
+    public var model: String
+    /**
+     * Human readable: "Connexion réussie" or the reason of the failure.
+     */
+    public var message: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(ok: Bool, latencyMs: UInt64, model: String, 
+        /**
+         * Human readable: "Connexion réussie" or the reason of the failure.
+         */message: String) {
+        self.ok = ok
+        self.latencyMs = latencyMs
+        self.model = model
+        self.message = message
+    }
+}
+
+#if compiler(>=6)
+extension AiProviderStatus: Sendable {}
+#endif
+
+
+extension AiProviderStatus: Equatable, Hashable {
+    public static func ==(lhs: AiProviderStatus, rhs: AiProviderStatus) -> Bool {
+        if lhs.ok != rhs.ok {
+            return false
+        }
+        if lhs.latencyMs != rhs.latencyMs {
+            return false
+        }
+        if lhs.model != rhs.model {
+            return false
+        }
+        if lhs.message != rhs.message {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(ok)
+        hasher.combine(latencyMs)
+        hasher.combine(model)
+        hasher.combine(message)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAiProviderStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AiProviderStatus {
+        return
+            try AiProviderStatus(
+                ok: FfiConverterBool.read(from: &buf), 
+                latencyMs: FfiConverterUInt64.read(from: &buf), 
+                model: FfiConverterString.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AiProviderStatus, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.ok, into: &buf)
+        FfiConverterUInt64.write(value.latencyMs, into: &buf)
+        FfiConverterString.write(value.model, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAiProviderStatus_lift(_ buf: RustBuffer) throws -> AiProviderStatus {
+    return try FfiConverterTypeAiProviderStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAiProviderStatus_lower(_ value: AiProviderStatus) -> RustBuffer {
+    return FfiConverterTypeAiProviderStatus.lower(value)
+}
 
 
 public struct CatalogFilter {
@@ -4199,6 +4665,203 @@ public func FfiConverterTypeXtreamAccountInfo_lower(_ value: XtreamAccountInfo) 
     return FfiConverterTypeXtreamAccountInfo.lower(value)
 }
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum AiAction {
+    
+    case playChannel(itemId: Int64
+    )
+    case showGuide(itemId: Int64
+    )
+    case search(query: String
+    )
+    case nextChannel
+    case previousChannel
+    case none
+}
+
+
+#if compiler(>=6)
+extension AiAction: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAiAction: FfiConverterRustBuffer {
+    typealias SwiftType = AiAction
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AiAction {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .playChannel(itemId: try FfiConverterInt64.read(from: &buf)
+        )
+        
+        case 2: return .showGuide(itemId: try FfiConverterInt64.read(from: &buf)
+        )
+        
+        case 3: return .search(query: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .nextChannel
+        
+        case 5: return .previousChannel
+        
+        case 6: return .none
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AiAction, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .playChannel(itemId):
+            writeInt(&buf, Int32(1))
+            FfiConverterInt64.write(itemId, into: &buf)
+            
+        
+        case let .showGuide(itemId):
+            writeInt(&buf, Int32(2))
+            FfiConverterInt64.write(itemId, into: &buf)
+            
+        
+        case let .search(query):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(query, into: &buf)
+            
+        
+        case .nextChannel:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .previousChannel:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .none:
+            writeInt(&buf, Int32(6))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAiAction_lift(_ buf: RustBuffer) throws -> AiAction {
+    return try FfiConverterTypeAiAction.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAiAction_lower(_ value: AiAction) -> RustBuffer {
+    return FfiConverterTypeAiAction.lower(value)
+}
+
+
+extension AiAction: Equatable, Hashable {}
+
+
+
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum AiProviderKind {
+    
+    /**
+     * No model: only the local resolution runs.
+     */
+    case localOnly
+    case gemini
+    /**
+     * Any `/chat/completions` server: OpenAI, Mistral, Groq, OpenRouter, Ollama, LM Studio...
+     */
+    case openAiCompatible
+    case anthropic
+}
+
+
+#if compiler(>=6)
+extension AiProviderKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAiProviderKind: FfiConverterRustBuffer {
+    typealias SwiftType = AiProviderKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AiProviderKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .localOnly
+        
+        case 2: return .gemini
+        
+        case 3: return .openAiCompatible
+        
+        case 4: return .anthropic
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AiProviderKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .localOnly:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .gemini:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .openAiCompatible:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .anthropic:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAiProviderKind_lift(_ buf: RustBuffer) throws -> AiProviderKind {
+    return try FfiConverterTypeAiProviderKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAiProviderKind_lower(_ value: AiProviderKind) -> RustBuffer {
+    return FfiConverterTypeAiProviderKind.lower(value)
+}
+
+
+extension AiProviderKind: Equatable, Hashable {}
+
+
+
+
+
+
 
 public enum CndError: Swift.Error {
 
@@ -5233,6 +5896,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_add_source() != 59274) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_ai_resolve_command() != 8434) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_ai_test_provider() != 28292) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_clear_logs() != 44053) {

@@ -137,7 +137,8 @@ impl TelemetryHub {
 fn is_sensitive_query_key(key: &str) -> bool {
     matches!(
         key.trim().to_ascii_lowercase().as_str(),
-        "password"
+        "key"
+            | "password"
             | "pass"
             | "passwd"
             | "pwd"

@@ -74,7 +74,7 @@ flowchart TD
 | **10** | [`10_SWIFTUI_MOVIES_SERIES_VOD.md`](./10_SWIFTUI_MOVIES_SERIES_VOD.md) | UI SwiftUI VOD : Posters downsamplés 120 fps, Détails Film OMDb, Détails Série par Saisons, lecture & téléchargement 1-clic. | `[x]` |
 | **11** | [`11_SWIFTUI_DOWNLOADS_SETTINGS_CONSOLE.md`](./11_SWIFTUI_DOWNLOADS_SETTINGS_CONSOLE.md) | UI SwiftUI Téléchargements (batch, Bookmarks macOS, Fichiers iOS, LogsSheet), Réglages complets & Console Réseau pliable. | `[x]` |
 | **12** | [`12_APPLE_ECOSYSTEM_PIP_AIRPLAY_CLOUDKIT.md`](./12_APPLE_ECOSYSTEM_PIP_AIRPLAY_CLOUDKIT.md) | Picture-in-Picture système, AirPlay 2, `MPNowPlayingInfoCenter`, Raccourcis/Gestes zapping & Sync iCloud (`CKSyncEngine`). | `[x]` |
-| **13** | [`13_AI_CHANNEL_ASSISTANT.md`](./13_AI_CHANNEL_ASSISTANT.md) | Assistant de commande en langage naturel (`⌘K`) : résolution locale d'abord, puis Gemini / compatible OpenAI (dont Ollama local) / Claude avec la clé de l'utilisateur, sortie JSON validée. | `[ ]` |
+| **13** | [`13_AI_CHANNEL_ASSISTANT.md`](./13_AI_CHANNEL_ASSISTANT.md) | Assistant de commande en langage naturel (`⌘K`) : résolution locale d'abord, puis Gemini / compatible OpenAI (dont Ollama local) / Claude avec la clé de l'utilisateur, sortie JSON validée. | `[x]` |
 
 ---
 
