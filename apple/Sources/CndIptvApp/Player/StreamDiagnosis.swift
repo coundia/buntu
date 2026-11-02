@@ -15,7 +15,7 @@ public enum StreamDiagnosis: Equatable, Sendable {
     public var message: String {
         switch self {
         case .http(429):
-            return "Le serveur refuse la connexion (HTTP 429, trop de requêtes). Cause la plus fréquente : la limite de connexions simultanées de l'abonnement est atteinte (autre appareil, mosaïque, téléchargement ou enregistrement en cours). Fermez-les puis réessayez."
+            return "Le serveur refuse la connexion (HTTP 429, trop de requêtes). Soit la limite de connexions simultanées de l'abonnement est atteinte (autre appareil, mosaïque, téléchargement ou enregistrement en cours), soit le fournisseur limite ce contenu précis : si d'autres flux se lancent, c'est ce fichier-là. Réessayez dans quelques minutes."
         case .http(let code) where code == 401 || code == 403:
             return "Accès refusé par le serveur (HTTP \(code)) : identifiants invalides, abonnement expiré ou adresse IP non autorisée."
         case .http(let code) where code == 404 || code == 410:
