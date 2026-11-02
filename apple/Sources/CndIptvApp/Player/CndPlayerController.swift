@@ -308,7 +308,7 @@ public final class CndPlayerController {
                 AppLog.shared.info("PLAYER", "Chaîne lue en HLS (.m3u8) : le moteur libmpv n'est pas disponible sur cet appareil")
             } else {
                 let ext = media.url.pathExtension.isEmpty ? "ce format" : "le format .\(media.url.pathExtension.lowercased())"
-                let reason = "\(ext.prefix(1).uppercased() + ext.dropFirst()) n'est pas pris en charge sur cet appareil (le moteur libmpv n'y est pas inclus). Les films .mp4 et les chaînes disponibles en HLS fonctionnent."
+                let reason = "\(ext.prefix(1).uppercased() + ext.dropFirst()) n'est pas pris en charge sur cet appareil (le moteur libmpv n'y est pas inclus). Les films .mp4 et les chaînes disponibles en HLS fonctionnent ; sinon, ouvrez-le dans VLC ou Infuse avec le bouton ci-dessous."
                 AppLog.shared.error("PLAYER", reason)
                 state = .failed(reason)
                 return
