@@ -463,7 +463,8 @@ private struct LoadedShellView: View {
             }
         }
         .fullScreenCover(isPresented: $isPlayerExpanded) {
-            expandedPlayer.ignoresSafeArea()
+            // The video fills the screen; the controls stay inside the safe area (status bar, Dynamic Island).
+            expandedPlayer.background(Color.black.ignoresSafeArea())
         }
         .fullScreenCover(isPresented: $multiViewController.isPresented) {
             MultiViewScreen(
