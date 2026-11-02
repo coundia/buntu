@@ -55,12 +55,17 @@ final class LiveTvModel {
         filter.query.isEmpty && filter.group == nil && filter.host == nil
     }
 
+    /// A search looks in every category; the selected one comes back when the search is cleared.
+    var searchIgnoresCategory: Bool {
+        !filter.query.isEmpty && filter.group != nil
+    }
+
     private func makeFilter(offset: Int) -> CatalogFilter {
         CatalogFilter(
             kind: "live",
             sourceId: nil,
             query: filter.query,
-            groupTitle: filter.group,
+            groupTitle: filter.query.isEmpty ? filter.group : nil,
             host: filter.host,
             favoritesOnly: false,
             sortBy: filter.sort,
