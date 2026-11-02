@@ -109,6 +109,14 @@ public actor ImageThumbnailCache {
         memory.removeAllObjects()
     }
 
+    /// Drops the memory cache and every file in `Caches/CndThumbnails/`.
+    public func clearAll() {
+        memory.removeAllObjects()
+        guard let directory,
+              let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
+        for file in files { try? FileManager.default.removeItem(at: file) }
+    }
+
     // MARK: Disk
 
     private func trimDiskIfNeeded() {

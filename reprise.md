@@ -1,10 +1,10 @@
 # Guide de Reprise pour Agent IA — `cnd-iptv-native`
 
-> **Objectif de ce document :** Permettre à un nouvel agent IA (ou développeur) de reprendre **immédiatement et sans perte de contexte** l'implémentation séquentielle de la roadmap [`PRD/00_INDEX_ROADMAP.md`](./PRD/00_INDEX_ROADMAP.md) à partir du **PRD 11**.
+> **Objectif de ce document :** Permettre à un nouvel agent IA (ou développeur) de reprendre **immédiatement et sans perte de contexte** l'implémentation séquentielle de la roadmap [`PRD/00_INDEX_ROADMAP.md`](./PRD/00_INDEX_ROADMAP.md) à partir du **PRD 12**.
 
 ---
 
-## 1. Résumé de l'État Actuel (PRDs 01 à 10 Terminés & Validés ✅)
+## 1. Résumé de l'État Actuel (PRDs 01 à 11 Terminés & Validés ✅)
 
 | Ordre | PRD | Statut | Fichiers Clés Implémentés |
 | :---: | :--- | :---: | :--- |
@@ -18,14 +18,14 @@
 | **08** | [`PRD/08_HYBRID_VIDEO_PLAYER_ENGINE.md`](./PRD/08_HYBRID_VIDEO_PLAYER_ENGINE.md) | `[x]` | `apple/Sources/CndIptvApp/Player/{PlayableMedia,VideoBackendProtocol,AVPlayerBackend,MpvVideoToolboxBackend,CndPlayerController,CndVideoPlayerView,ExternalPlayerLauncher}.swift`, `apple/Tests/CndIptvAppTests/CndPlayerTests.swift` |
 | **09** | [`PRD/09_SWIFTUI_SOURCES_LIVE_TV_EPG.md`](./PRD/09_SWIFTUI_SOURCES_LIVE_TV_EPG.md) | `[x]` | `apple/Sources/CndIptvApp/{AppState.swift,App/AppShellView.swift,Shared/{ImageThumbnailCache,SearchFilterToolbar}.swift,Features/Sources/{SourcesModel,SourceFormModel,SourceFormSheet,SourcesListView}.swift,Features/LiveTV/{LiveTvModel,ChannelCardView,LiveTvView}.swift,Features/EPG/{EpgGuideModel,EpgGuideView}.swift}`, tests `SharedComponentsTests`, `LiveTvAndEpgTests`, `SourcesTests`, `Prd09TestSupport` |
 | **10** | [`PRD/10_SWIFTUI_MOVIES_SERIES_VOD.md`](./PRD/10_SWIFTUI_MOVIES_SERIES_VOD.md) | `[x]` | `apple/Sources/CndIptvApp/Features/{VOD/{VodContext,VodCatalogModel,VodCatalogView},Movies/{MoviesCatalogView,MoviePosterCard,MovieDetailsView},Series/{SeriesCatalogView,SeriesDetailsView}}.swift`, `Shared/{DownloadPlanner,ToastCenter,CategoryNavigation,FlowLayout}.swift`, test `VodTests` |
-| **11** | [`PRD/11_SWIFTUI_DOWNLOADS_SETTINGS_CONSOLE.md`](./PRD/11_SWIFTUI_DOWNLOADS_SETTINGS_CONSOLE.md) | `[ ]` | À implémenter après PRD 10 |
+| **11** | [`PRD/11_SWIFTUI_DOWNLOADS_SETTINGS_CONSOLE.md`](./PRD/11_SWIFTUI_DOWNLOADS_SETTINGS_CONSOLE.md) | `[x]` | `apple/Sources/CndIptvApp/Security/DownloadDirectoryManager.swift`, `Features/Downloads/{DownloadsModel,DownloadsDashboardView,DownloadTaskCard,AddUrlsSheet,TaskLogsSheet}.swift`, `Features/Settings/{SettingsModel,SettingsView}.swift`, `Features/Console/NetworkConsoleDrawer.swift` (inclut `ConsoleModel`), `Shared/Clipboard.swift`, tests `DownloadsUiTests`, `SettingsAndConsoleTests` |
 | **12** | [`PRD/12_APPLE_ECOSYSTEM_PIP_AIRPLAY_CLOUDKIT.md`](./PRD/12_APPLE_ECOSYSTEM_PIP_AIRPLAY_CLOUDKIT.md) | `[ ]` | À implémenter après PRD 11 |
 
 ### État de santé actuel du repo
 - **Tests Rust (`cargo test --workspace`) :** `30 passed; 0 failed` (inclut le benchmark streaming 50 000 items M3U `< 1.5s`, Xtream REST + fallback M3U+, XMLTV `.xml.gz` magic bytes, FTS5 caractères spéciaux, favori rang 1 000, cascade OMDb + cache SQLite + masquage `apikey=***`).
 - **Linter Rust (`cargo clippy --workspace --all-targets -- -D warnings`) :** `0 warning, 0 error`.
 - **XCFramework Universel (`./scripts/build-xcframework.sh`) :** À jour avec les bindings UniFFI des PRDs 01 à 07 (`macOS arm64+x86_64`, `iOS Simulator arm64+x86_64`, `iOS Device arm64`).
-- **Tests Swift :** `apple/Packages/CndCoreBridge` (`swift test`) et `apple` (`swift test` : 74 tests = `KeychainStoreTests` + 15 `CndPlayerTests` (dont un smoke test `libmpv` réel ignoré si `libmpv`/`ffmpeg` sont absents) + 37 tests du PRD 09 + 21 tests du PRD 10 contre un vrai `CndEngine.inMemory()`) passent à 100 %.
+- **Tests Swift :** `apple/Packages/CndCoreBridge` (`swift test`) et `apple` (`swift test` : 105 tests = `KeychainStoreTests` + 15 `CndPlayerTests` (dont un smoke test `libmpv` réel ignoré si `libmpv`/`ffmpeg` sont absents) + 37 tests du PRD 09 + 21 tests du PRD 10 + 31 tests du PRD 11 contre un vrai `CndEngine.inMemory()`) passent à 100 %.
 - **Builds Xcode :** `xcodebuild -scheme CndIptvNative` passe sur `generic/platform=macOS` et `generic/platform=iOS Simulator`.
 
 ---
@@ -60,6 +60,8 @@
 6. **UI (PRD 09) :** `AppShellView` remplace `ContentView` (supprimé) ; `AppState` est `@MainActor`, expose `engine`, `stats`, `sources`, `catalogRevision` (incrémenté après sync/suppression/import, les écrans rechargent via `.task(id:)`) et le `CndPlayerController` partagé (progression via `DeferredProgressRecorder`, branché sur l'engine une fois ouvert). `CndVideoPlayerView` a un paramètre `closesOnDisappear` : le shell le passe à `false` car il pilote lui-même la fermeture (mini-lecteur <-> plein écran). Le mot de passe Xtream ne va jamais en SQLite : `KeychainStore` clé `cnd.xtream.<uuid>`, `passwordRef` = cette clé. Les onglets Films / Séries / Téléchargements / Réglages sont des `ContentUnavailableView` à remplacer dans les PRD 10 et 11. Dans les init des `@Observable @MainActor`, ne pas mettre `SearchFilterState()` en valeur par défaut d'argument (erreur d'isolation) : paramètre optionnel puis `?? SearchFilterState(...)`.
 
 7. **VOD (PRD 10) :** `VodCatalogModel<Entry>` / `VodCatalogView` sont génériques (Films = `IptvItemRecord` via `queryCatalog`, Séries = `SeriesRecord` via `querySeries`) ; les cartes sont fournies par l'appelant. `VodContext` (injecté par `.environment`) regroupe moteur, lecture (`play`, `playEpisodes` -> `PlaylistQueue`), téléchargements et toasts. `DownloadPlanner` construit les `NewDownloadRequest` (noms nettoyés, `Series/Season 01/S01E02 - Titre.ext`, headers du flux). `enqueueDownload` sonde l'URL avant de rendre la main : une saison s'enfile donc épisode par épisode (ordre conservé). `DownloadLocation.baseDirectory` est un placeholder (clé `UserDefaults` `downloads.directory`, sinon `~/Downloads/CndIPTV` / `Documents/Downloads`) à remplacer par `DownloadDirectoryManager` au PRD 11. La clé OMDb se lit à la demande dans `KeychainStore` (`omdbApiKeyRef`) : le PRD 11 doit offrir sa saisie dans les Réglages. Les favoris n'incrémentent plus `catalogRevision` (`reloadSnapshot(notifyScreens: false)`) pour ne pas recharger les listes. Les tests de téléchargement utilisent `127.0.0.1:9` (refus immédiat) et non un hôte DNS inexistant, qui rendait la sonde lente. L'hydratation Xtream des séries (`ensureXtreamSeriesEpisodes`) n'est pas testée : elle exige un serveur Xtream.
+
+8. **Téléchargements / Réglages / Console (PRD 11) :** `AppState` possède le `DownloadDirectoryManager` (dossier + bookmark `.withSecurityScope` macOS, clé `downloads.directory.bookmark` ; la clé `downloads.directory` garde le chemin pour `DownloadLocation.baseDirectory`) et `showNetworkConsole`. `DownloadsModel` ne poll (250 ms) que tant qu'une tâche est `running`/`queued` : la boucle se termine seule, et la vue appelle `stopPolling()` en quittant l'onglet. `ConsoleModel.run()` ne tourne que dans le `.task` du tiroir déplié. `SettingsModel` sauvegarde avec 400 ms de debounce (`flush()` à la fermeture) ; la clé OMDb va dans le Trousseau (`omdbApiKeyRef`), jamais en SQLite. Les écrans prennent des protocoles/modèles injectables (`DownloadsBackend` implémenté par `CndEngine`) pour tester sans réseau. **Bug connu du cœur Rust (non corrigé) :** `db.add_source` fabrique l'`uuid` de `src_<secondes>_<hash(nom)>` : deux sources de même nom créées dans la même seconde échouent en `UNIQUE constraint failed: iptv_sources.uuid` (ex. deux `playlist.m3u` déposés ensemble). Pas de `Info.plist` avec SwiftPM : la visibilité dans l'app Fichiers sur iOS (`UIFileSharingEnabled`, `LSSupportsOpeningDocumentsInPlace`) reste à déclarer dans le projet Xcode final.
 
 ---
 
@@ -115,7 +117,7 @@
   - `apple/Sources/CndIptvApp/Features/Movies/MoviesCatalogView.swift`, `MoviePosterCard.swift`, `MovieDetailsView.swift` (posters 2:3, barre de reprise, enrichissement asynchrone `fetchItemMetadata` avec clé OMDb du `KeychainStore`, boutons Reprendre > 30s / Recommencer, Télécharger 1-clic `enqueueDownload`, menu lecteur externe + FFmpeg/cURL)
   - `apple/Sources/CndIptvApp/Features/Series/SeriesCatalogView.swift`, `SeriesDetailsView.swift` (`querySeries`, favoris séries unifiés, hydratation lazy `ensureXtreamSeriesEpisodes` si `episodeCount == 0`, sélecteur de saison, *"Lire toute la saison"* via `PlaylistQueue`, *"Télécharger toute la saison"* dans `<DownloadDir>/<SafeSeriesTitle>/Season <XX>/`).
 
-### Étape 5 — Implémenter & Valider `PRD 11` (`PRD/11_SWIFTUI_DOWNLOADS_SETTINGS_CONSOLE.md`)
+### ~~Étape 5~~ — `PRD 11` (terminée ✅, détails conservés pour référence) — `PRD 11` (`PRD/11_SWIFTUI_DOWNLOADS_SETTINGS_CONSOLE.md`)
 - Créer :
   - `apple/Sources/CndIptvApp/Security/DownloadDirectoryManager.swift` (`#if os(macOS)` `NSOpenPanel` + Security-Scoped Bookmark `.withSecurityScope` persisté dans `UserDefaults`; `#if os(iOS)` `Documents/Downloads` + `ShareLink`)
   - `apple/Sources/CndIptvApp/Features/Downloads/DownloadsDashboardView.swift`, `DownloadTaskCard.swift` (barre multi-segments `parts`, polling 4 Hz qui s'arrête totalement quand aucune tâche n'est `running`/`queued`, barre de stats globale), `AddUrlsSheet.swift`, `TaskLogsSheet.swift`
@@ -158,6 +160,6 @@ cargo clippy --workspace --all-targets -- -D warnings
 Pour reprendre le travail avec un nouvel agent IA, donnez-lui simplement :
 
 ```text
-/goal Lis reprise.md et PRD/00_INDEX_ROADMAP.md, puis poursuis l'implémentation séquentielle à partir du PRD 11 jusqu'au PRD 12 inclus en respectant toutes les validations et en cochant [x] dans PRD/00_INDEX_ROADMAP.md à chaque étape.
+/goal Lis reprise.md et PRD/00_INDEX_ROADMAP.md, puis poursuis l'implémentation séquentielle à partir du PRD 12 jusqu'au PRD 12 inclus en respectant toutes les validations et en cochant [x] dans PRD/00_INDEX_ROADMAP.md à chaque étape.
 ```
 
