@@ -36,6 +36,21 @@ tasks:
     cmds:
       - ./scripts/run-macos.sh --foreground
 
+  run:iphone:
+    desc: Build, install and launch the app on a connected iPhone/iPad (DEVICE="name or UDID" to pick one)
+    cmds:
+      - ./scripts/run-iphone.sh {{if .DEVICE}}--device "{{.DEVICE}}"{{end}}
+
+  run:iphone:release:
+    desc: Same as run:iphone with an optimized build
+    cmds:
+      - ./scripts/run-iphone.sh --release {{if .DEVICE}}--device "{{.DEVICE}}"{{end}}
+
+  iphone:devices:
+    desc: List the connected iPhones/iPads
+    cmds:
+      - ./scripts/run-iphone.sh --list
+
   bundle:
     desc: Assemble build/CndIPTV.app without launching it
     cmds:
