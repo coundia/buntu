@@ -18,6 +18,7 @@
 | **Sources** | Playlists M3U / M3U8 (URL ou fichier déposé sur la fenêtre), comptes Xtream Codes avec test du compte. Création, modification, suppression, synchronisation unitaire ou globale. Mots de passe dans le Trousseau. |
 | **Live TV** | Catalogue de dizaines de milliers de chaînes, catégories avec compteurs, sections Récents / Favoris, grille ou liste, programme en cours et jauge de progression, zapping suivant / précédent. |
 | **Guide TV (EPG)** | Grille horaire XMLTV, fiche d'un programme, programme complet d'une chaîne. |
+| **Assistant IA** | Palette `⌘K` : « France 2 », « chaîne 6 », « suivante », « mets le match du PSG », « une chaîne d'info en anglais »… Résolution **locale d'abord** (sans réseau), puis votre propre fournisseur (**Gemini**, tout serveur **compatible OpenAI** dont Ollama / LM Studio en local, **Anthropic Claude**) avec votre clé. La réponse est validée : seule une chaîne de votre catalogue peut être lancée. |
 | **Films et Séries** | Affiches, reprise de lecture, favoris, séries multi-saisons, lecture d'une saison entière, enrichissement OMDb à la demande. La fiche s'affiche à droite, sous le lecteur. |
 | **Recherche** | Plein texte (FTS5) : début de mot, sans accents, **dans toutes les catégories**. |
 | **Lecteur** | `AVPlayer` pour HLS / MP4 / MOV, `libmpv` pour MKV / TS / AVI / FLV. Bascule automatique, reconnexion (3 essais), pistes audio et sous-titres, vitesse, plein écran (bouton ou double-clic), image dans l'image, AirPlay, Now Playing, lecteurs externes (IINA, VLC, Infuse, Outplayer). |
@@ -114,7 +115,7 @@ cnd-iptv-native/
 
 ## Raccourcis
 
-**Menus macOS** : `⌘N` ajouter une source · `⌘O` importer un M3U · `⌘R` actualiser les sources · `⇧⌘C` journaux · `⌘↑` / `⌘↓` chaîne ou épisode précédent / suivant · `⌥⌘P` image dans l'image.
+**Menus macOS** : `⌘N` ajouter une source · `⌘O` importer un M3U · `⌘R` actualiser les sources · `⇧⌘C` journaux · `⌘↑` / `⌘↓` chaîne ou épisode précédent / suivant · `⌥⌘P` image dans l'image · `⌘K` assistant de chaînes.
 
 **Dans le lecteur** (macOS, lecteur actif) : `Espace` lecture / pause · `M` muet · `F` plein écran · `←` / `→` ±10 s · `↑` / `↓` volume · double-clic : plein écran.
 
@@ -127,7 +128,7 @@ cnd-iptv-native/
 | Base SQLite | `~/Library/Application Support/CndIptvNative/cnd_iptv.db` |
 | Playlists importées | `~/Library/Application Support/CndIptvNative/Imports/` |
 | Téléchargements | `~/Downloads/CndIPTV` (modifiable dans Réglages) · `Documents/Downloads` sur iOS |
-| Mots de passe Xtream, clé OMDb | Trousseau (`com.cnd.iptv.credentials`) — jamais dans la base |
+| Mots de passe Xtream, clés OMDb et IA | Trousseau (`com.cnd.iptv.credentials`) — jamais dans la base |
 | Cache des images | `~/Library/Caches/CndThumbnails/` |
 
 ## Tests et qualité
@@ -142,13 +143,14 @@ Les tests Swift tournent contre un vrai moteur Rust en mémoire (`CndEngine.inMe
 ## Limites connues
 
 - **iCloud** : le transport CloudKit compile mais n'a pas été essayé sur un vrai compte. L'activer demande un projet Xcode signé avec l'entitlement CloudKit et la clé `CndCloudKitContainerIdentifier` dans l'`Info.plist`. Les mots de passe Xtream ne se synchronisent pas (Trousseau local).
+- **Assistant IA** : les formats de requête des trois fournisseurs sont vérifiés par des tests contre de faux serveurs, mais l'app n'a jamais été essayée avec une vraie clé (`GEMINI_API_KEY=… cargo test -p cnd-core --release ai_live_smoke -- --ignored --nocapture` le fait à la demande). Les noms de modèle par défaut sont modifiables dans Réglages.
 - **iOS** : le projet est un Swift Package : pas d'icône d'app, d'`Info.plist` ni de `libmpv` embarqué tant qu'il n'y a pas de projet Xcode. Sans `libmpv`, le lecteur reste sur `AVPlayer`. Le dossier `Documents/Downloads` n'apparaît dans l'app Fichiers qu'avec `UIFileSharingEnabled`.
 - **mpv** : le décodage matériel passe par `videotoolbox-copy` (une copie par image) ; AirPlay vidéo ne fonctionne qu'avec `AVPlayer`.
 - Les gestes iOS, l'image dans l'image et l'AirPlay sont compilés mais n'ont pas été éprouvés sur appareil.
 
 ## Feuille de route
 
-Les PRD 01 à 12 du dossier [`PRD/`](PRD/00_INDEX_ROADMAP.md) sont implémentés et cochés (cœur Rust, ingestion, Xtream, EPG, catalogue, OMDb, téléchargements, lecteur, interfaces, écosystème Apple). Le PRD 13 (assistant IA pour changer de chaîne en langage naturel, avec une clé Gemini ou d'un autre fournisseur) est spécifié et reste à implémenter. Les notes techniques détaillées et les pièges à éviter sont dans [`reprise.md`](reprise.md).
+Les PRD 01 à 13 du dossier [`PRD/`](PRD/00_INDEX_ROADMAP.md) sont implémentés et cochés (cœur Rust, ingestion, Xtream, EPG, catalogue, OMDb, téléchargements, lecteur, interfaces, écosystème Apple). Le PRD 13 (assistant IA pour changer de chaîne en langage naturel, avec une clé Gemini ou d'un autre fournisseur) est implémenté. Les notes techniques détaillées et les pièges à éviter sont dans [`reprise.md`](reprise.md).
 
 ## Licence
 

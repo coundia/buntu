@@ -9,6 +9,8 @@ struct LiveTvView: View {
     let onPlay: (IptvItemRecord) -> Void
     let onShowGuide: (IptvItemRecord) -> Void
     var zapper: LiveZapper?
+    var onOpenAssistant: (() -> Void)?
+    @Binding var searchRequest: String?
 
     @AppStorage("live.viewMode") private var viewModeRaw = LiveViewMode.grid.rawValue
     init(
@@ -19,7 +21,9 @@ struct LiveTvView: View {
         onPlay: @escaping (IptvItemRecord) -> Void,
         onShowGuide: @escaping (IptvItemRecord) -> Void,
         onFavoriteChanged: @escaping () -> Void,
-        zapper: LiveZapper? = nil
+        zapper: LiveZapper? = nil,
+        onOpenAssistant: (() -> Void)? = nil,
+        searchRequest: Binding<String?> = .constant(nil)
     ) {
         let model = LiveTvModel(engine: engine)
         model.onFavoriteChanged = onFavoriteChanged
@@ -30,6 +34,17 @@ struct LiveTvView: View {
         self.onPlay = onPlay
         self.onShowGuide = onShowGuide
         self.zapper = zapper
+        self.onOpenAssistant = onOpenAssistant
+        _searchRequest = searchRequest
+    }
+
+    /// A "search" decided by the assistant: shown here, across every category.
+    private func applySearchRequest() {
+        guard let query = searchRequest else { return }
+        searchRequest = nil
+        model.filter.group = nil
+        model.filter.text = query
+        model.filter.commit()
     }
 
     private var viewMode: LiveViewMode { LiveViewMode(rawValue: viewModeRaw) ?? .grid }
@@ -73,7 +88,15 @@ struct LiveTvView: View {
             sortOptions: [.channelNumber, .name, .group, .host],
             prompt: "Rechercher une chaîne"
         )
+        .onAppear { applySearchRequest() }
+        .onChange(of: searchRequest) { _, _ in applySearchRequest() }
         .toolbar {
+            if let onOpenAssistant {
+                ToolbarItem(placement: .automatic) {
+                    Button(action: onOpenAssistant) { Label("Assistant", systemImage: "sparkles") }
+                        .help("Changer de chaîne en langage naturel (⌘K)")
+                }
+            }
             ToolbarItem(placement: .automatic) {
                 Picker("Affichage", selection: $viewModeRaw) {
                     Label("Grille", systemImage: "square.grid.2x2").tag(LiveViewMode.grid.rawValue)

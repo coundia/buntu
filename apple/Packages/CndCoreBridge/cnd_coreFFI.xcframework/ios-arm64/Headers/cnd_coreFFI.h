@@ -277,6 +277,16 @@ void*_Nonnull uniffi_cnd_core_fn_constructor_cndengine_new(RustBuffer db_path, R
 int64_t uniffi_cnd_core_fn_method_cndengine_add_source(void*_Nonnull ptr, RustBuffer name, RustBuffer source_type, RustBuffer url, RustBuffer server, RustBuffer username, RustBuffer password_ref, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_AI_RESOLVE_COMMAND
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_AI_RESOLVE_COMMAND
+uint64_t uniffi_cnd_core_fn_method_cndengine_ai_resolve_command(void*_Nonnull ptr, RustBuffer command, RustBuffer context, RustBuffer config
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_AI_TEST_PROVIDER
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_AI_TEST_PROVIDER
+uint64_t uniffi_cnd_core_fn_method_cndengine_ai_test_provider(void*_Nonnull ptr, RustBuffer config
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_CLEAR_LOGS
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_CLEAR_LOGS
 void uniffi_cnd_core_fn_method_cndengine_clear_logs(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
@@ -802,6 +812,18 @@ uint16_t uniffi_cnd_core_checksum_func_cnd_core_version(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_ADD_SOURCE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_ADD_SOURCE
 uint16_t uniffi_cnd_core_checksum_method_cndengine_add_source(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_AI_RESOLVE_COMMAND
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_AI_RESOLVE_COMMAND
+uint16_t uniffi_cnd_core_checksum_method_cndengine_ai_resolve_command(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_AI_TEST_PROVIDER
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_AI_TEST_PROVIDER
+uint16_t uniffi_cnd_core_checksum_method_cndengine_ai_test_provider(void
     
 );
 #endif

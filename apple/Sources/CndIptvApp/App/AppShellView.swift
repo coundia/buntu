@@ -72,6 +72,9 @@ private struct LoadedShellView: View {
     @State private var pip = PiPManager()
     @State private var nowPlaying: NowPlayingCoordinator
     @State private var zapper = LiveZapper()
+    @State private var assistant: AssistantModel
+    @State private var showingAssistant = false
+    @State private var liveSearchRequest: String?
     @State private var epgFocus: IptvItemRecord?
     @State private var isPlayerExpanded = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
@@ -85,6 +88,7 @@ private struct LoadedShellView: View {
         self.engine = engine
         self.commands = commands
         _nowPlaying = State(initialValue: NowPlayingCoordinator(controller: state.player))
+        _assistant = State(initialValue: AssistantModel(backend: engine, settings: state.aiSettings))
         _sourcesModel = State(initialValue: SourcesModel(engine: engine, onChange: { [weak state] in
             state?.reloadSnapshot()
         }))
@@ -162,6 +166,12 @@ private struct LoadedShellView: View {
                 pip.attach(layer: player.surfaceLayer, controller: player)
             }
             .onAppear { connectPlayerIntegrations() }
+            .sheet(isPresented: $showingAssistant) {
+                CommandPaletteView(model: assistant)
+                    #if os(iOS)
+                    .presentationDetents([.medium, .large])
+                    #endif
+            }
             #if os(macOS)
             // The expanded player stays up when the window leaves full screen; "Réduire" docks it.
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
@@ -210,6 +220,16 @@ private struct LoadedShellView: View {
         #endif
     }
 
+    /// Opens the command palette, or says how to enable it.
+    private func openAssistant() {
+        guard state.aiSettings.isAssistantEnabled else {
+            toasts.show("L'assistant est désactivé : choisissez un fournisseur dans Réglages > Assistant IA.")
+            return
+        }
+        assistant.input = ""
+        showingAssistant = true
+    }
+
     /// The player's full-screen button when it is already large: toggles the window's full screen.
     private func toggleWindowFullscreen() {
         #if os(macOS)
@@ -234,6 +254,27 @@ private struct LoadedShellView: View {
                 : NowPlayingInfoBuilder.defaultSubtitle(for: media)
         }
         nowPlaying.activate()
+
+        assistant.playingStableHash = { player.media?.stableHash }
+        assistant.onDismiss = {
+            showingAssistant = false
+            assistant.input = ""
+        }
+        assistant.actions = AssistantActions(
+            play: { item in
+                Task.detached { try? engine.recordWatchProgress(stableHash: item.stableHash, positionMs: 0, durationMs: 0) }
+                play(item)
+                Haptics.light()
+            },
+            showGuide: { showGuide($0) },
+            next: { zap(1) },
+            previous: { zap(-1) },
+            search: { query in
+                selectedTabRaw = AppTab.live.rawValue
+                liveSearchRequest = query
+            }
+        )
+        commands.openAssistant = { openAssistant() }
 
         commands.addSource = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.addSource) }
         commands.importPlaylist = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.importPlaylist) }
@@ -401,7 +442,9 @@ private struct LoadedShellView: View {
                     onPlay: play,
                     onShowGuide: showGuide,
                     onFavoriteChanged: { state.reloadSnapshot(notifyScreens: false) },
-                    zapper: zapper
+                    zapper: zapper,
+                    onOpenAssistant: state.aiSettings.isAssistantEnabled ? { openAssistant() } : nil,
+                    searchRequest: $liveSearchRequest
                 )
             case .guide:
                 EpgGuideView(
@@ -424,7 +467,10 @@ private struct LoadedShellView: View {
             case .downloads:
                 DownloadsDashboardView(model: downloadsModel, directory: state.downloadDirectory, onPlay: playDownload)
             case .settings:
-                SettingsView(model: settingsModel, directory: state.downloadDirectory, stats: state.stats, sync: state.cloudSync)
+                SettingsView(
+                    model: settingsModel, directory: state.downloadDirectory, stats: state.stats, sync: state.cloudSync,
+                    ai: state.aiSettings, assistant: assistant
+                )
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -579,6 +625,10 @@ private struct LoadedShellView: View {
                     Image(systemName: player.state == .playing || player.state == .buffering ? "pause.fill" : "play.fill")
                 }
                 .accessibilityLabel("Lecture / Pause")
+                if state.aiSettings.isAssistantEnabled {
+                    Button { openAssistant() } label: { Image(systemName: "sparkles") }
+                        .accessibilityLabel("Assistant de chaînes")
+                }
                 Button(action: closePlayer) { Image(systemName: "xmark") }
                     .accessibilityLabel("Fermer le lecteur")
             }
