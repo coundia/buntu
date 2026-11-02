@@ -1,12 +1,66 @@
 use cnd_core::telemetry::redact_url;
-use cnd_core::CndEngine;
+use cnd_core::{CndEngine, NewDownloadRequest};
 use std::error::Error;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::io::BufReader;
+
+/// `cnd-cli download <url> [save_dir]`: multi-segment download with live progress.
+async fn run_download(url: String, save_dir: String) -> Result<(), Box<dyn Error>> {
+    let engine = CndEngine::in_memory()?;
+    let id = engine
+        .enqueue_download(NewDownloadRequest {
+            url,
+            file_name: None,
+            save_dir,
+            user_agent: None,
+            referer: None,
+            headers_json: None,
+            auto_start: true,
+        })
+        .await?;
+
+    loop {
+        let task = engine
+            .list_downloads(None)?
+            .into_iter()
+            .find(|t| t.id == id)
+            .ok_or("download task disappeared")?;
+        println!(
+            "[{}] {} {}/{} B  {:.1} MB/s  ETA {}s  ({} segments)",
+            task.state,
+            task.file_name,
+            task.downloaded_bytes,
+            task.total_bytes,
+            task.speed_bps / 1_048_576.0,
+            task.eta_seconds,
+            task.parts.len()
+        );
+        match task.state.as_str() {
+            "completed" => {
+                println!("Saved to {}", task.save_path);
+                return Ok(());
+            }
+            "error" => {
+                for log in engine.get_download_logs(id, 10)? {
+                    eprintln!("{} {}", log.level, log.message);
+                }
+                return Err("download failed".into());
+            }
+            _ => tokio::time::sleep(Duration::from_millis(500)).await,
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
+
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("download") {
+        let url = args.next().ok_or("usage: cnd-cli download <url> [save_dir]")?;
+        let save_dir = args.next().unwrap_or_else(|| ".".to_string());
+        return run_download(url, save_dir).await;
+    }
 
     println!("========================================");
     println!("  CND IPTV Native CLI (Zero-Lag Engine) ");

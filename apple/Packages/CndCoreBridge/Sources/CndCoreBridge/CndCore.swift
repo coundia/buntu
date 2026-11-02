@@ -553,6 +553,8 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func deleteSource(sourceId: Int64) throws 
     
+    func enqueueDownload(req: NewDownloadRequest) async throws  -> Int64
+    
     func ensureXtreamSeriesEpisodes(seriesDbId: Int64, password: String) async throws  -> UInt32
     
     func fetchItemMetadata(itemId: Int64, apiKey: String, forceRefresh: Bool) async throws  -> MediaMetadata?
@@ -560,6 +562,8 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     func fetchSeriesMetadata(seriesId: Int64, apiKey: String, forceRefresh: Bool) async throws  -> MediaMetadata?
     
     func getChannelEpg(tvgId: String, fromTs: Int64, toTs: Int64) throws  -> [EpgProgramRecord]
+    
+    func getDownloadLogs(taskId: Int64, limit: UInt32) throws  -> [DownloadLogRecord]
     
     func getEpgNowNext(tvgIds: [String]) throws  -> [ChannelNowNext]
     
@@ -583,6 +587,8 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func importLocalM3u(name: String, filePath: String) async throws  -> SyncSummary
     
+    func listDownloads(query: String?) throws  -> [DownloadTaskRecord]
+    
     func listFavoriteItems(kind: String) throws  -> [IptvItemRecord]
     
     func listFavoriteSeries() throws  -> [SeriesRecord]
@@ -592,6 +598,10 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     func listRecentSeries(limit: UInt32) throws  -> [SeriesRecord]
     
     func listSources() throws  -> [IptvSourceRecord]
+    
+    func pauseAllDownloads() async throws 
+    
+    func pauseDownload(taskId: Int64) async throws 
     
     func queryCatalog(filter: CatalogFilter) throws  -> [IptvItemRecord]
     
@@ -606,6 +616,14 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     func refreshSourceEpg(sourceId: Int64, password: String?) async throws  -> UInt32
     
     func refreshXtreamSource(sourceId: Int64, password: String) async throws  -> SyncSummary
+    
+    func removeDownload(taskId: Int64, deleteFiles: Bool) async throws 
+    
+    func retryDownload(taskId: Int64) async throws 
+    
+    func startAllDownloads() async throws 
+    
+    func startDownload(taskId: Int64) async throws 
     
     func toggleFavorite(stableHash: String, itemKind: String) throws  -> Bool
     
@@ -713,6 +731,23 @@ open func deleteSource(sourceId: Int64)throws   {try rustCallWithError(FfiConver
 }
 }
     
+open func enqueueDownload(req: NewDownloadRequest)async throws  -> Int64  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_enqueue_download(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeNewDownloadRequest_lower(req)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_i64,
+            completeFunc: ffi_cnd_core_rust_future_complete_i64,
+            freeFunc: ffi_cnd_core_rust_future_free_i64,
+            liftFunc: FfiConverterInt64.lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
 open func ensureXtreamSeriesEpisodes(seriesDbId: Int64, password: String)async throws  -> UInt32  {
     return
         try  await uniffiRustCallAsync(
@@ -770,6 +805,15 @@ open func getChannelEpg(tvgId: String, fromTs: Int64, toTs: Int64)throws  -> [Ep
         FfiConverterString.lower(tvgId),
         FfiConverterInt64.lower(fromTs),
         FfiConverterInt64.lower(toTs),$0
+    )
+})
+}
+    
+open func getDownloadLogs(taskId: Int64, limit: UInt32)throws  -> [DownloadLogRecord]  {
+    return try  FfiConverterSequenceTypeDownloadLogRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_get_download_logs(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(taskId),
+        FfiConverterUInt32.lower(limit),$0
     )
 })
 }
@@ -873,6 +917,14 @@ open func importLocalM3u(name: String, filePath: String)async throws  -> SyncSum
         )
 }
     
+open func listDownloads(query: String?)throws  -> [DownloadTaskRecord]  {
+    return try  FfiConverterSequenceTypeDownloadTaskRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_list_downloads(self.uniffiClonePointer(),
+        FfiConverterOptionString.lower(query),$0
+    )
+})
+}
+    
 open func listFavoriteItems(kind: String)throws  -> [IptvItemRecord]  {
     return try  FfiConverterSequenceTypeIptvItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_list_favorite_items(self.uniffiClonePointer(),
@@ -910,6 +962,40 @@ open func listSources()throws  -> [IptvSourceRecord]  {
     uniffi_cnd_core_fn_method_cndengine_list_sources(self.uniffiClonePointer(),$0
     )
 })
+}
+    
+open func pauseAllDownloads()async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_pause_all_downloads(
+                    self.uniffiClonePointer()
+                    
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_void,
+            completeFunc: ffi_cnd_core_rust_future_complete_void,
+            freeFunc: ffi_cnd_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
+open func pauseDownload(taskId: Int64)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_pause_download(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(taskId)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_void,
+            completeFunc: ffi_cnd_core_rust_future_complete_void,
+            freeFunc: ffi_cnd_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCndError_lift
+        )
 }
     
 open func queryCatalog(filter: CatalogFilter)throws  -> [IptvItemRecord]  {
@@ -997,6 +1083,74 @@ open func refreshXtreamSource(sourceId: Int64, password: String)async throws  ->
             completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeSyncSummary_lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
+open func removeDownload(taskId: Int64, deleteFiles: Bool)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_remove_download(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(taskId),FfiConverterBool.lower(deleteFiles)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_void,
+            completeFunc: ffi_cnd_core_rust_future_complete_void,
+            freeFunc: ffi_cnd_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
+open func retryDownload(taskId: Int64)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_retry_download(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(taskId)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_void,
+            completeFunc: ffi_cnd_core_rust_future_complete_void,
+            freeFunc: ffi_cnd_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
+open func startAllDownloads()async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_start_all_downloads(
+                    self.uniffiClonePointer()
+                    
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_void,
+            completeFunc: ffi_cnd_core_rust_future_complete_void,
+            freeFunc: ffi_cnd_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
+open func startDownload(taskId: Int64)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_start_download(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(taskId)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_void,
+            completeFunc: ffi_cnd_core_rust_future_complete_void,
+            freeFunc: ffi_cnd_core_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: FfiConverterTypeCndError_lift
         )
 }
@@ -1446,6 +1600,336 @@ public func FfiConverterTypeDbStats_lift(_ buf: RustBuffer) throws -> DbStats {
 #endif
 public func FfiConverterTypeDbStats_lower(_ value: DbStats) -> RustBuffer {
     return FfiConverterTypeDbStats.lower(value)
+}
+
+
+public struct DownloadLogRecord {
+    public var id: Int64
+    public var timestamp: Int64
+    public var level: String
+    public var message: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, timestamp: Int64, level: String, message: String) {
+        self.id = id
+        self.timestamp = timestamp
+        self.level = level
+        self.message = message
+    }
+}
+
+#if compiler(>=6)
+extension DownloadLogRecord: Sendable {}
+#endif
+
+
+extension DownloadLogRecord: Equatable, Hashable {
+    public static func ==(lhs: DownloadLogRecord, rhs: DownloadLogRecord) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.timestamp != rhs.timestamp {
+            return false
+        }
+        if lhs.level != rhs.level {
+            return false
+        }
+        if lhs.message != rhs.message {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(timestamp)
+        hasher.combine(level)
+        hasher.combine(message)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDownloadLogRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadLogRecord {
+        return
+            try DownloadLogRecord(
+                id: FfiConverterInt64.read(from: &buf), 
+                timestamp: FfiConverterInt64.read(from: &buf), 
+                level: FfiConverterString.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadLogRecord, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterInt64.write(value.timestamp, into: &buf)
+        FfiConverterString.write(value.level, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDownloadLogRecord_lift(_ buf: RustBuffer) throws -> DownloadLogRecord {
+    return try FfiConverterTypeDownloadLogRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDownloadLogRecord_lower(_ value: DownloadLogRecord) -> RustBuffer {
+    return FfiConverterTypeDownloadLogRecord.lower(value)
+}
+
+
+public struct DownloadPartRecord {
+    public var partIndex: UInt32
+    public var byteStart: UInt64
+    public var byteEnd: UInt64
+    public var downloadedBytes: UInt64
+    public var state: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(partIndex: UInt32, byteStart: UInt64, byteEnd: UInt64, downloadedBytes: UInt64, state: String) {
+        self.partIndex = partIndex
+        self.byteStart = byteStart
+        self.byteEnd = byteEnd
+        self.downloadedBytes = downloadedBytes
+        self.state = state
+    }
+}
+
+#if compiler(>=6)
+extension DownloadPartRecord: Sendable {}
+#endif
+
+
+extension DownloadPartRecord: Equatable, Hashable {
+    public static func ==(lhs: DownloadPartRecord, rhs: DownloadPartRecord) -> Bool {
+        if lhs.partIndex != rhs.partIndex {
+            return false
+        }
+        if lhs.byteStart != rhs.byteStart {
+            return false
+        }
+        if lhs.byteEnd != rhs.byteEnd {
+            return false
+        }
+        if lhs.downloadedBytes != rhs.downloadedBytes {
+            return false
+        }
+        if lhs.state != rhs.state {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(partIndex)
+        hasher.combine(byteStart)
+        hasher.combine(byteEnd)
+        hasher.combine(downloadedBytes)
+        hasher.combine(state)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDownloadPartRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadPartRecord {
+        return
+            try DownloadPartRecord(
+                partIndex: FfiConverterUInt32.read(from: &buf), 
+                byteStart: FfiConverterUInt64.read(from: &buf), 
+                byteEnd: FfiConverterUInt64.read(from: &buf), 
+                downloadedBytes: FfiConverterUInt64.read(from: &buf), 
+                state: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadPartRecord, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.partIndex, into: &buf)
+        FfiConverterUInt64.write(value.byteStart, into: &buf)
+        FfiConverterUInt64.write(value.byteEnd, into: &buf)
+        FfiConverterUInt64.write(value.downloadedBytes, into: &buf)
+        FfiConverterString.write(value.state, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDownloadPartRecord_lift(_ buf: RustBuffer) throws -> DownloadPartRecord {
+    return try FfiConverterTypeDownloadPartRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDownloadPartRecord_lower(_ value: DownloadPartRecord) -> RustBuffer {
+    return FfiConverterTypeDownloadPartRecord.lower(value)
+}
+
+
+public struct DownloadTaskRecord {
+    public var id: Int64
+    public var url: String
+    public var fileName: String
+    public var savePath: String
+    public var totalBytes: UInt64
+    public var downloadedBytes: UInt64
+    public var acceptRanges: Bool
+    public var state: String
+    public var speedBps: Double
+    public var etaSeconds: UInt64
+    public var parts: [DownloadPartRecord]
+    public var updatedAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, url: String, fileName: String, savePath: String, totalBytes: UInt64, downloadedBytes: UInt64, acceptRanges: Bool, state: String, speedBps: Double, etaSeconds: UInt64, parts: [DownloadPartRecord], updatedAt: Int64) {
+        self.id = id
+        self.url = url
+        self.fileName = fileName
+        self.savePath = savePath
+        self.totalBytes = totalBytes
+        self.downloadedBytes = downloadedBytes
+        self.acceptRanges = acceptRanges
+        self.state = state
+        self.speedBps = speedBps
+        self.etaSeconds = etaSeconds
+        self.parts = parts
+        self.updatedAt = updatedAt
+    }
+}
+
+#if compiler(>=6)
+extension DownloadTaskRecord: Sendable {}
+#endif
+
+
+extension DownloadTaskRecord: Equatable, Hashable {
+    public static func ==(lhs: DownloadTaskRecord, rhs: DownloadTaskRecord) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.url != rhs.url {
+            return false
+        }
+        if lhs.fileName != rhs.fileName {
+            return false
+        }
+        if lhs.savePath != rhs.savePath {
+            return false
+        }
+        if lhs.totalBytes != rhs.totalBytes {
+            return false
+        }
+        if lhs.downloadedBytes != rhs.downloadedBytes {
+            return false
+        }
+        if lhs.acceptRanges != rhs.acceptRanges {
+            return false
+        }
+        if lhs.state != rhs.state {
+            return false
+        }
+        if lhs.speedBps != rhs.speedBps {
+            return false
+        }
+        if lhs.etaSeconds != rhs.etaSeconds {
+            return false
+        }
+        if lhs.parts != rhs.parts {
+            return false
+        }
+        if lhs.updatedAt != rhs.updatedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(url)
+        hasher.combine(fileName)
+        hasher.combine(savePath)
+        hasher.combine(totalBytes)
+        hasher.combine(downloadedBytes)
+        hasher.combine(acceptRanges)
+        hasher.combine(state)
+        hasher.combine(speedBps)
+        hasher.combine(etaSeconds)
+        hasher.combine(parts)
+        hasher.combine(updatedAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDownloadTaskRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadTaskRecord {
+        return
+            try DownloadTaskRecord(
+                id: FfiConverterInt64.read(from: &buf), 
+                url: FfiConverterString.read(from: &buf), 
+                fileName: FfiConverterString.read(from: &buf), 
+                savePath: FfiConverterString.read(from: &buf), 
+                totalBytes: FfiConverterUInt64.read(from: &buf), 
+                downloadedBytes: FfiConverterUInt64.read(from: &buf), 
+                acceptRanges: FfiConverterBool.read(from: &buf), 
+                state: FfiConverterString.read(from: &buf), 
+                speedBps: FfiConverterDouble.read(from: &buf), 
+                etaSeconds: FfiConverterUInt64.read(from: &buf), 
+                parts: FfiConverterSequenceTypeDownloadPartRecord.read(from: &buf), 
+                updatedAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadTaskRecord, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterString.write(value.url, into: &buf)
+        FfiConverterString.write(value.fileName, into: &buf)
+        FfiConverterString.write(value.savePath, into: &buf)
+        FfiConverterUInt64.write(value.totalBytes, into: &buf)
+        FfiConverterUInt64.write(value.downloadedBytes, into: &buf)
+        FfiConverterBool.write(value.acceptRanges, into: &buf)
+        FfiConverterString.write(value.state, into: &buf)
+        FfiConverterDouble.write(value.speedBps, into: &buf)
+        FfiConverterUInt64.write(value.etaSeconds, into: &buf)
+        FfiConverterSequenceTypeDownloadPartRecord.write(value.parts, into: &buf)
+        FfiConverterInt64.write(value.updatedAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDownloadTaskRecord_lift(_ buf: RustBuffer) throws -> DownloadTaskRecord {
+    return try FfiConverterTypeDownloadTaskRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDownloadTaskRecord_lower(_ value: DownloadTaskRecord) -> RustBuffer {
+    return FfiConverterTypeDownloadTaskRecord.lower(value)
 }
 
 
@@ -2402,6 +2886,116 @@ public func FfiConverterTypeNetworkLogEntry_lift(_ buf: RustBuffer) throws -> Ne
 #endif
 public func FfiConverterTypeNetworkLogEntry_lower(_ value: NetworkLogEntry) -> RustBuffer {
     return FfiConverterTypeNetworkLogEntry.lower(value)
+}
+
+
+public struct NewDownloadRequest {
+    public var url: String
+    public var fileName: String?
+    public var saveDir: String
+    public var userAgent: String?
+    public var referer: String?
+    public var headersJson: String?
+    public var autoStart: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(url: String, fileName: String?, saveDir: String, userAgent: String?, referer: String?, headersJson: String?, autoStart: Bool) {
+        self.url = url
+        self.fileName = fileName
+        self.saveDir = saveDir
+        self.userAgent = userAgent
+        self.referer = referer
+        self.headersJson = headersJson
+        self.autoStart = autoStart
+    }
+}
+
+#if compiler(>=6)
+extension NewDownloadRequest: Sendable {}
+#endif
+
+
+extension NewDownloadRequest: Equatable, Hashable {
+    public static func ==(lhs: NewDownloadRequest, rhs: NewDownloadRequest) -> Bool {
+        if lhs.url != rhs.url {
+            return false
+        }
+        if lhs.fileName != rhs.fileName {
+            return false
+        }
+        if lhs.saveDir != rhs.saveDir {
+            return false
+        }
+        if lhs.userAgent != rhs.userAgent {
+            return false
+        }
+        if lhs.referer != rhs.referer {
+            return false
+        }
+        if lhs.headersJson != rhs.headersJson {
+            return false
+        }
+        if lhs.autoStart != rhs.autoStart {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(url)
+        hasher.combine(fileName)
+        hasher.combine(saveDir)
+        hasher.combine(userAgent)
+        hasher.combine(referer)
+        hasher.combine(headersJson)
+        hasher.combine(autoStart)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNewDownloadRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NewDownloadRequest {
+        return
+            try NewDownloadRequest(
+                url: FfiConverterString.read(from: &buf), 
+                fileName: FfiConverterOptionString.read(from: &buf), 
+                saveDir: FfiConverterString.read(from: &buf), 
+                userAgent: FfiConverterOptionString.read(from: &buf), 
+                referer: FfiConverterOptionString.read(from: &buf), 
+                headersJson: FfiConverterOptionString.read(from: &buf), 
+                autoStart: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NewDownloadRequest, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.url, into: &buf)
+        FfiConverterOptionString.write(value.fileName, into: &buf)
+        FfiConverterString.write(value.saveDir, into: &buf)
+        FfiConverterOptionString.write(value.userAgent, into: &buf)
+        FfiConverterOptionString.write(value.referer, into: &buf)
+        FfiConverterOptionString.write(value.headersJson, into: &buf)
+        FfiConverterBool.write(value.autoStart, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNewDownloadRequest_lift(_ buf: RustBuffer) throws -> NewDownloadRequest {
+    return try FfiConverterTypeNewDownloadRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNewDownloadRequest_lower(_ value: NewDownloadRequest) -> RustBuffer {
+    return FfiConverterTypeNewDownloadRequest.lower(value)
 }
 
 
@@ -3585,6 +4179,81 @@ fileprivate struct FfiConverterSequenceTypeChannelNowNext: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeDownloadLogRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [DownloadLogRecord]
+
+    public static func write(_ value: [DownloadLogRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDownloadLogRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DownloadLogRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DownloadLogRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDownloadLogRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeDownloadPartRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [DownloadPartRecord]
+
+    public static func write(_ value: [DownloadPartRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDownloadPartRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DownloadPartRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DownloadPartRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDownloadPartRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeDownloadTaskRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [DownloadTaskRecord]
+
+    public static func write(_ value: [DownloadTaskRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDownloadTaskRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DownloadTaskRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DownloadTaskRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDownloadTaskRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeEpgProgramRecord: FfiConverterRustBuffer {
     typealias SwiftType = [EpgProgramRecord]
 
@@ -3836,6 +4505,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_delete_source() != 58086) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_enqueue_download() != 24470) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_ensure_xtream_series_episodes() != 45600) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3846,6 +4518,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_get_channel_epg() != 33464) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_get_download_logs() != 1057) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_get_epg_now_next() != 3161) {
@@ -3881,6 +4556,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_import_local_m3u() != 13379) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_list_downloads() != 18449) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_list_favorite_items() != 32917) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3894,6 +4572,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_list_sources() != 10771) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_pause_all_downloads() != 9290) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_pause_download() != 48394) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_query_catalog() != 44076) {
@@ -3915,6 +4599,18 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_refresh_xtream_source() != 60951) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_remove_download() != 35325) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_retry_download() != 11426) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_start_all_downloads() != 46323) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_start_download() != 20493) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_toggle_favorite() != 5795) {
