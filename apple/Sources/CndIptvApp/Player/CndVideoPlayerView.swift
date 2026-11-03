@@ -95,6 +95,8 @@ public struct CndVideoPlayerView: View {
     var pip: PiPManager?
     /// Whether the host currently shows the player full screen (switches the button's icon).
     var isFullscreen: Bool
+    /// Previous (-1) / next (+1) channel; on Apple TV the Siri Remote's up and down arrows call it on live streams.
+    var onZap: ((Int) -> Void)?
 
     @State private var hudVisible = true
     @State private var hideTask: Task<Void, Never>?
@@ -110,7 +112,8 @@ public struct CndVideoPlayerView: View {
         onCollapse: (() -> Void)? = nil,
         closesOnDisappear: Bool = true,
         pip: PiPManager? = nil,
-        isFullscreen: Bool = false
+        isFullscreen: Bool = false,
+        onZap: ((Int) -> Void)? = nil
     ) {
         self.controller = controller
         self.isFullscreen = isFullscreen
@@ -123,6 +126,7 @@ public struct CndVideoPlayerView: View {
         #endif
         self.onClose = onClose
         self.onCollapse = onCollapse
+        self.onZap = onZap
     }
 
     public var body: some View {
@@ -231,6 +235,14 @@ public struct CndVideoPlayerView: View {
             case .right:
                 guard !controller.isLive || (controller.timeshiftDuration.isEnabled && controller.currentLiveDelaySeconds > 0) else { return }
                 controller.skip(bySeconds: 10)
+                showHUD()
+            case .up:
+                guard controller.isLive, let onZap else { return }
+                onZap(-1)
+                showHUD()
+            case .down:
+                guard controller.isLive, let onZap else { return }
+                onZap(1)
                 showHUD()
             default:
                 break
