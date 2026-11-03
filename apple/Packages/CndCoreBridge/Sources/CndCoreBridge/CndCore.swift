@@ -590,6 +590,14 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func computeFileMoviehash(filePath: String) throws  -> String
     
+    /**
+     * `moviehash` of a catalog item's stream, for an exact subtitle match. It costs two short requests to
+     * the provider, which count as an extra connection next to the stream being watched: nothing is sent
+     * unless the subscription is known to allow at least two connections, so playback is never at risk.
+     * `None` when skipped or when the server cannot answer range requests.
+     */
+    func computeStreamMoviehash(itemId: Int64) async throws  -> String?
+    
     func createFavoriteFolder(profileId: Int64, name: String, position: Int32) throws  -> Int64
     
     func createProfile(name: String, avatar: String, isKids: Bool) throws  -> ProfileRecord
@@ -974,6 +982,29 @@ open func computeFileMoviehash(filePath: String)throws  -> String  {
         FfiConverterString.lower(filePath),$0
     )
 })
+}
+    
+    /**
+     * `moviehash` of a catalog item's stream, for an exact subtitle match. It costs two short requests to
+     * the provider, which count as an extra connection next to the stream being watched: nothing is sent
+     * unless the subscription is known to allow at least two connections, so playback is never at risk.
+     * `None` when skipped or when the server cannot answer range requests.
+     */
+open func computeStreamMoviehash(itemId: Int64)async throws  -> String?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_compute_stream_moviehash(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(itemId)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionString.lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
 }
     
 open func createFavoriteFolder(profileId: Int64, name: String, position: Int32)throws  -> Int64  {
@@ -8945,6 +8976,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_compute_file_moviehash() != 56313) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_compute_stream_moviehash() != 37155) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_create_favorite_folder() != 44867) {

@@ -397,7 +397,11 @@ private struct LoadedShellView: View {
 
     /// Online subtitles for what is playing; the downloaded file is added to the current player.
     private func makeSubtitleSearch() -> SubtitleSearchModel {
-        let model = SubtitleSearchModel(backend: engine, mediaTitle: player.media?.title ?? "")
+        let media = player.media
+        let model = SubtitleSearchModel(
+            backend: engine, mediaTitle: media?.title ?? "", itemId: media?.itemId, imdbId: media?.imdbId,
+            seasonNumber: media?.seasonNumber, episodeNumber: media?.episodeNumber
+        )
         model.onDownloaded = { [weak player, engine] url in player?.loadExternalSubtitle(fileUrl: url, engine: engine) }
         return model
     }

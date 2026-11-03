@@ -47,6 +47,10 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
     public let seriesStableHash: String?
     /// Series title if known.
     public let seriesTitle: String?
+    /// IMDb identifier and episode numbers, when the catalog knows them (used to match subtitles exactly).
+    public let imdbId: String?
+    public let seasonNumber: UInt32?
+    public let episodeNumber: UInt32?
 
     public init(
         title: String,
@@ -62,7 +66,10 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
         itemKind: String? = nil,
         seriesId: Int64? = nil,
         seriesStableHash: String? = nil,
-        seriesTitle: String? = nil
+        seriesTitle: String? = nil,
+        imdbId: String? = nil,
+        seasonNumber: UInt32? = nil,
+        episodeNumber: UInt32? = nil
     ) {
         self.title = title
         self.url = url
@@ -78,6 +85,9 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
         self.seriesId = seriesId
         self.seriesStableHash = seriesStableHash
         self.seriesTitle = seriesTitle
+        self.imdbId = imdbId
+        self.seasonNumber = seasonNumber
+        self.episodeNumber = episodeNumber
     }
 
     /// The same media played from another address (headers, position and identity are kept).
@@ -86,7 +96,7 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
             title: title, url: newURL, headers: headers, kind: kind, startPositionMs: startPositionMs,
             stableHash: stableHash, itemId: itemId, artworkUrl: artworkUrl, isFavorite: isFavorite,
             isBroken: isBroken, itemKind: itemKind, seriesId: seriesId, seriesStableHash: seriesStableHash,
-            seriesTitle: seriesTitle
+            seriesTitle: seriesTitle, imdbId: imdbId, seasonNumber: seasonNumber, episodeNumber: episodeNumber
         )
     }
 
@@ -146,7 +156,10 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
             itemKind: item.kind,
             seriesId: item.seriesId,
             seriesStableHash: series?.stableHash,
-            seriesTitle: series?.title
+            seriesTitle: series?.title,
+            imdbId: item.imdbId,
+            seasonNumber: item.seasonNum,
+            episodeNumber: item.episodeNum
         )
     }
 }

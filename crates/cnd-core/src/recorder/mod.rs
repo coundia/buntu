@@ -147,22 +147,7 @@ impl PvrManager {
 
     /// The source of the recording's channel and its connection limit, when known.
     fn source_limit(&self, item_id: i64) -> Option<(i64, Option<u32>)> {
-        self.db
-            .with_conn(|conn| {
-                let mut stmt = conn.prepare(
-                    "SELECT s.id, s.max_connections FROM iptv_items i
-                     JOIN iptv_sources s ON s.id = i.source_id WHERE i.id = ?1",
-                )?;
-                let mut rows = stmt.query(rusqlite::params![item_id])?;
-                if let Some(r) = rows.next()? {
-                    let id: i64 = r.get(0)?;
-                    let max: Option<i64> = r.get(1)?;
-                    return Ok(Some((id, max.map(|m| m.max(0) as u32))));
-                }
-                Ok(None)
-            })
-            .ok()
-            .flatten()
+        self.db.source_limit_for_item(item_id)
     }
 
     /// PRD-19 guards before a recording starts: it uses one connection of the subscription, and the

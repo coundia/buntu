@@ -16,8 +16,10 @@ struct SubtitleSearchSheet: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case .failed(let message):
                     ContentUnavailableView("Sous-titres", systemImage: "captions.bubble", description: Text(message))
-                case .results(let rows):
-                    List(rows) { row in
+                case .results(let rows, let match):
+                    List {
+                    Section {
+                    ForEach(rows) { row in
                         Button {
                             Task { await model.download(row) }
                         } label: {
@@ -33,6 +35,10 @@ struct SubtitleSearchSheet: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                    }
+                    } footer: {
+                        Text(match.description)
+                    }
                     }
                 }
             }
