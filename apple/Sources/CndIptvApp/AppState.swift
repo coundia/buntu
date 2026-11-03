@@ -37,6 +37,8 @@ public final class AppState {
     let aiSettings = AiProviderSettings()
     /// iCloud sync of sources, favorites and progress; reports "local only" when iCloud is unusable.
     private(set) var cloudSync: CloudKitSyncManager?
+    /// Profiles (Principal, Enfants…) shared by the shell and the profile screens.
+    private(set) var profiles: ProfilesModel?
     @ObservationIgnored private let recorder = DeferredProgressRecorder()
 
     init(engine: CndEngine? = nil, downloadDirectory: DownloadDirectoryManager? = nil) {
@@ -75,6 +77,8 @@ public final class AppState {
             engine.startHealthChecks(intervalMinutes: 30)
         }
         showNetworkConsole = engine.getSettings().showNetworkConsole
+        ProfilesModel.restoreActiveProfile(engine: engine)
+        profiles = ProfilesModel(engine: engine)
         let sync = CloudKitSyncManager(engine: engine)
         sync.onRemoteChange = { [weak self] _ in self?.reloadSnapshot() }
         cloudSync = sync

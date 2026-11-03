@@ -1077,6 +1077,8 @@ impl CndEngine {
 
     pub fn set_active_profile_id(&self, id: i64) {
         self.active_profile_id.store(id, std::sync::atomic::Ordering::Relaxed);
+        // Hidden groups/items and the custom order of the catalog queries follow the active profile.
+        let _ = self.db.set_active_profile(id);
     }
 
     pub fn list_profiles(&self) -> Result<Vec<ProfileRecord>, CndError> {

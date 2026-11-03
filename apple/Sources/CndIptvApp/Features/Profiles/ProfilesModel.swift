@@ -19,10 +19,24 @@ public final class ProfilesModel {
         activeProfile?.isKids ?? false
     }
 
-    public init(engine: CndEngine) {
+    nonisolated static var activeProfileDefaultsKey: String { "profiles.activeId" }
+
+    private let defaults: UserDefaults
+
+    public init(engine: CndEngine, defaults: UserDefaults = .standard) {
         self.engine = engine
+        self.defaults = defaults
         self.activeProfileId = engine.activeProfileId()
         reload()
+    }
+
+    /// The active profile survives a relaunch: otherwise leaving the Kids profile would only take
+    /// quitting and reopening the app, without the PIN. Falls back to the main profile if it was deleted.
+    static func restoreActiveProfile(engine: CndEngine, defaults: UserDefaults = .standard) {
+        guard defaults.object(forKey: activeProfileDefaultsKey) != nil else { return }
+        let stored = Int64(defaults.integer(forKey: activeProfileDefaultsKey))
+        let exists = (try? engine.listProfiles())?.contains { $0.id == stored } ?? false
+        engine.setActiveProfileId(id: exists ? stored : 1)
     }
 
     public func reload() {
@@ -45,12 +59,14 @@ public final class ProfilesModel {
 
         engine.setActiveProfileId(id: profile.id)
         activeProfileId = profile.id
+        defaults.set(Int(profile.id), forKey: Self.activeProfileDefaultsKey)
         return true
     }
 
     public func forceSelectProfile(id: Int64) {
         engine.setActiveProfileId(id: id)
         activeProfileId = id
+        defaults.set(Int(id), forKey: Self.activeProfileDefaultsKey)
     }
 
     public func createProfile(name: String, avatar: String, isKids: Bool) -> ProfileRecord? {

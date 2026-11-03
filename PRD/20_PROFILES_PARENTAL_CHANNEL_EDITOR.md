@@ -47,3 +47,20 @@ Trois lots livrés et validés **dans l'ordre**, chacun utilisable seul.
 2. Lot 20.2 : tests de migration (données existantes → profil 1), isolement des favoris/historique entre profils, synchronisation avec l'`uuid` de profil.
 3. Lot 20.3 : tests Swift du PIN (création, vérification, hash salé dans le Trousseau isolé de test), masquage adulte par mots-clés et indicateur Xtream, restrictions du profil Enfants.
 4. `task check` au vert.
+
+---
+
+## Statut d'Implémentation & Validation (audit)
+
+**Partiel.** Réalisé : éditeur de bouquets (catégories et chaînes masquées, ordre personnalisé, dossiers de favoris : tables `hidden_groups`, `hidden_items`, `custom_order`, `favorite_folders`), table des profils, détection des catégories adultes par mots-clés, écran de gestion des profils, code PIN.
+
+**Corrigé à l'audit**
+- **Code PIN** : il était protégé par un simple SHA-256 salé (un PIN à 4–6 chiffres se retrouve alors instantanément si la valeur fuit). Désormais **PBKDF2-HMAC-SHA256** (600 000 itérations, sel aléatoire, comparaison à temps constant), 4 à 6 chiffres exigés ; les anciens PIN restent valides et sont ré-enregistrés au premier déverrouillage. Le test existant effaçait le vrai PIN de la personne qui lançait les tests : il utilise maintenant un service du Trousseau isolé.
+- **Isolation des profils (lot 20.1)** : les requêtes du catalogue lisaient les groupes masqués et l'ordre personnalisé du profil **1 en dur**, quel que soit le profil actif ; masquer un groupe pour le profil Enfants n'avait donc aucun effet. Elles suivent maintenant le profil actif (`set_active_profile`, table temporaire lue par le SQL). 3 tests Rust.
+- **Profil Enfants (lot 20.3)** : le profil actif était oublié à chaque lancement (on en sortait en relançant l'app, sans PIN) ; il est maintenant mémorisé. Le profil Enfants n'a plus accès aux onglets Sources et Réglages ni à l'assistant IA, et un bouton cadenas demande le PIN pour le quitter (sans PIN défini, la sortie est libre et l'écran le dit).
+
+**Non réalisé**
+- **Favoris et historique par profil** : les colonnes `profile_id` existent mais les requêtes de `favorites` et `watch_history` ne les utilisent pas (clé primaire sur `stable_hash` seul) : ces données restent communes à tous les profils.
+- **Catégories adultes masquées par défaut** et déverrouillage de 15 minutes avec le PIN dans le catalogue : la détection existe (`is_adult_category`) mais n'est appliquée qu'à l'éditeur de bouquets ; rien n'est masqué automatiquement.
+- **Profil Enfants en liste blanche** (« seules les catégories autorisées explicitement ») : le masquage fonctionne par liste noire.
+- Sélecteur de profil au lancement, synchronisation iCloud des profils (`uuid`), Face ID dans le flux de sortie du profil Enfants, mesure de performance sur 100 000 éléments.

@@ -109,8 +109,8 @@ fn static_item_order_clause(sort_by: SortField, sort_asc: bool) -> &'static str 
         (SortField::RecentlyAdded, false) => "i.id DESC",
         (SortField::ChannelNumber, true) => "COALESCE(i.chno, 999999) ASC, i.name COLLATE NOCASE ASC",
         (SortField::ChannelNumber, false) => "COALESCE(i.chno, 0) DESC, i.name COLLATE NOCASE ASC",
-        (SortField::Custom, true) => "COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = 1 AND c.scope = 'channel' AND c.key = i.stable_hash), 999999) ASC, i.name COLLATE NOCASE ASC",
-        (SortField::Custom, false) => "COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = 1 AND c.scope = 'channel' AND c.key = i.stable_hash), 0) DESC, i.name COLLATE NOCASE ASC",
+        (SortField::Custom, true) => "COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = (SELECT id FROM temp.active_profile) AND c.scope = 'channel' AND c.key = i.stable_hash), 999999) ASC, i.name COLLATE NOCASE ASC",
+        (SortField::Custom, false) => "COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = (SELECT id FROM temp.active_profile) AND c.scope = 'channel' AND c.key = i.stable_hash), 0) DESC, i.name COLLATE NOCASE ASC",
     }
 }
 
@@ -122,8 +122,8 @@ fn static_series_order_clause(sort_by: SortField, sort_asc: bool) -> &'static st
         (SortField::Group, false) => "COALESCE(sc.group_title, '') COLLATE NOCASE DESC, sc.title COLLATE NOCASE ASC",
         (SortField::RecentlyAdded, true) => "sc.updated_at ASC, sc.id ASC",
         (SortField::RecentlyAdded, false) => "sc.updated_at DESC, sc.id DESC",
-        (SortField::Custom, true) => "COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = 1 AND c.scope = 'series' AND c.key = sc.stable_hash), 999999) ASC, sc.title COLLATE NOCASE ASC",
-        (SortField::Custom, false) => "COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = 1 AND c.scope = 'series' AND c.key = sc.stable_hash), 0) DESC, sc.title COLLATE NOCASE ASC",
+        (SortField::Custom, true) => "COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = (SELECT id FROM temp.active_profile) AND c.scope = 'series' AND c.key = sc.stable_hash), 999999) ASC, sc.title COLLATE NOCASE ASC",
+        (SortField::Custom, false) => "COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = (SELECT id FROM temp.active_profile) AND c.scope = 'series' AND c.key = sc.stable_hash), 0) DESC, sc.title COLLATE NOCASE ASC",
         (_, true) => "sc.title COLLATE NOCASE ASC",
         (_, false) => "sc.title COLLATE NOCASE DESC",
     }
@@ -191,7 +191,7 @@ impl DatabaseManager {
             let hidden_clause = if include_hidden {
                 ""
             } else {
-                " AND NOT EXISTS (SELECT 1 FROM hidden_groups h WHERE h.profile_id = 1 AND h.kind = ?2 AND h.group_key = LOWER(TRIM(group_title)))"
+                " AND NOT EXISTS (SELECT 1 FROM hidden_groups h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.kind = ?2 AND h.group_key = LOWER(TRIM(group_title)))"
             };
 
             let sql = if kind == "series" {
@@ -202,7 +202,7 @@ impl DatabaseManager {
                        AND (?1 IS NULL OR source_id = ?1)
                        {hidden_clause}
                      GROUP BY group_title
-                     ORDER BY COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = 1 AND c.scope = 'group' AND c.key = LOWER(TRIM(group_title))), 999999) ASC, group_title COLLATE NOCASE ASC"
+                     ORDER BY COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = (SELECT id FROM temp.active_profile) AND c.scope = 'group' AND c.key = LOWER(TRIM(group_title))), 999999) ASC, group_title COLLATE NOCASE ASC"
                 )
             } else {
                 format!(
@@ -213,7 +213,7 @@ impl DatabaseManager {
                        AND (?1 IS NULL OR source_id = ?1)
                        {hidden_clause}
                      GROUP BY group_title
-                     ORDER BY COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = 1 AND c.scope = 'group' AND c.key = LOWER(TRIM(group_title))), 999999) ASC, group_title COLLATE NOCASE ASC"
+                     ORDER BY COALESCE((SELECT position FROM custom_order c WHERE c.profile_id = (SELECT id FROM temp.active_profile) AND c.scope = 'group' AND c.key = LOWER(TRIM(group_title))), 999999) ASC, group_title COLLATE NOCASE ASC"
                 )
             };
 
@@ -286,8 +286,8 @@ impl DatabaseManager {
             let hidden_clause = if filter.include_hidden {
                 ""
             } else {
-                "AND NOT EXISTS (SELECT 1 FROM hidden_items h WHERE h.profile_id = 1 AND h.stable_hash = i.stable_hash) \
-                 AND (i.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = 1 AND g.kind = i.kind AND g.group_key = LOWER(TRIM(i.group_title))))"
+                "AND NOT EXISTS (SELECT 1 FROM hidden_items h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.stable_hash = i.stable_hash) \
+                 AND (i.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = i.kind AND g.group_key = LOWER(TRIM(i.group_title))))"
             };
 
             let trimmed_q = filter.query.trim();
@@ -419,7 +419,7 @@ impl DatabaseManager {
             let hidden_clause = if filter.include_hidden {
                 ""
             } else {
-                "AND (sc.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = 1 AND g.kind = 'series' AND g.group_key = LOWER(TRIM(sc.group_title))))"
+                "AND (sc.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = 'series' AND g.group_key = LOWER(TRIM(sc.group_title))))"
             };
 
             let trimmed_q = filter.query.trim();
@@ -1074,5 +1074,79 @@ mod tests {
             offset: 0,
         }).unwrap();
         assert_eq!(clean_live_after.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod profile_isolation_tests {
+    use super::*;
+
+    fn db_with_groups(groups: &[&str]) -> DatabaseManager {
+        let db = DatabaseManager::open_in_memory().expect("in-memory db");
+        let source = db.add_source("S", "m3u", Some("http://x/list.m3u"), None, None, None).expect("source");
+        db.with_conn(|conn| {
+            for (i, group) in groups.iter().enumerate() {
+                conn.execute(
+                    "INSERT INTO iptv_items (source_id, stable_hash, kind, name, name_clean, group_title, host, stream_url, created_at, updated_at)
+                     VALUES (?1, ?2, 'live', ?3, ?3, ?4, 'x', 'http://x/1.ts', 0, 0)",
+                    params![source, format!("h{i}"), format!("Chaine {i}"), group],
+                )?;
+            }
+            Ok(())
+        })
+        .expect("items");
+        db
+    }
+
+    fn names(db: &DatabaseManager) -> Vec<String> {
+        db.get_groups("live", None, false).expect("groups").into_iter().map(|g| g.value).collect()
+    }
+
+    #[test]
+    fn a_group_hidden_by_one_profile_stays_visible_to_the_others() {
+        let db = db_with_groups(&["Sport", "Info", "Adulte"]);
+        db.hide_group(2, "live", "Adulte").expect("hide for profile 2");
+
+        assert!(names(&db).contains(&"Adulte".to_string()), "profile 1 still sees it");
+
+        db.set_active_profile(2).expect("switch");
+        assert!(!names(&db).contains(&"Adulte".to_string()), "profile 2 does not");
+        assert_eq!(names(&db).len(), 2);
+
+        db.set_active_profile(1).expect("switch back");
+        assert_eq!(names(&db).len(), 3);
+    }
+
+    #[test]
+    fn hidden_groups_also_filter_the_channel_list_of_the_active_profile() {
+        let db = db_with_groups(&["Sport", "Adulte"]);
+        db.hide_group(2, "live", "Adulte").expect("hide");
+        let count = |db: &DatabaseManager| {
+            db.with_conn(|conn| {
+                let n: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM iptv_items i WHERE i.kind = 'live'
+                     AND (i.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = i.kind AND g.group_key = LOWER(TRIM(i.group_title))))",
+                    [],
+                    |r| r.get(0),
+                )?;
+                Ok(n)
+            })
+            .expect("count")
+        };
+        assert_eq!(count(&db), 2);
+        db.set_active_profile(2).expect("switch");
+        assert_eq!(count(&db), 1);
+    }
+
+    #[test]
+    fn the_custom_group_order_is_per_profile() {
+        let db = db_with_groups(&["Alpha", "Zulu"]);
+        assert_eq!(names(&db), vec!["Alpha", "Zulu"], "alphabetical by default");
+
+        db.set_custom_order(2, "group", "zulu", 0).expect("order for profile 2");
+        assert_eq!(names(&db), vec!["Alpha", "Zulu"], "profile 1 is unchanged");
+
+        db.set_active_profile(2).expect("switch");
+        assert_eq!(names(&db), vec!["Zulu", "Alpha"]);
     }
 }

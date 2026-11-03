@@ -9,7 +9,8 @@ struct ProfilesAndBouquetsTests {
     @Test("ParentalControlManager PIN hashing and session unlock")
     @MainActor
     func testParentalControlManager() {
-        let parental = ParentalControlManager.shared
+        // An isolated Keychain service: never the real PIN of the person running the tests.
+        let parental = ParentalControlManager(service: "com.cnd.iptv.tests.parental.\(UUID().uuidString)")
         _ = parental.removePin()
         #expect(!parental.hasPin)
         #expect(!parental.isAdultUnlocked)
