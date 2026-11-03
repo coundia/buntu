@@ -58,6 +58,10 @@ public final class RecordingsModel {
 
     public init(backend: RecordingsBackend) {
         self.backend = backend
+        #if os(iOS)
+        // The "Arrêter" button of the Live Activity stops the recording in this process.
+        LiveActivityActions.stopRecording = { [weak self] id in await MainActor.run { self?.cancel(id: id) } }
+        #endif
         loadAll()
         startPolling()
     }
@@ -77,6 +81,7 @@ public final class RecordingsModel {
             seriesRules = try backend.listSeriesRules()
             errorMessage = nil
             updateSleepAssertion()
+            LiveActivityManager.shared.sync(recordings: recordings)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -86,7 +91,7 @@ public final class RecordingsModel {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard !Task.isCancelled else { break }
                 self?.loadAll()
             }

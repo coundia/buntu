@@ -99,7 +99,7 @@ flowchart TD
 | **19** | [`19_PVR_SCHEDULED_RECORDING.md`](./19_PVR_SCHEDULED_RECORDING.md) | Enregistrement programmé depuis l'EPG (TS & HLS live), Series-Link, conflits de connexions, macOS d'abord. | `[x]` |
 | **20** | [`20_PROFILES_PARENTAL_CHANNEL_EDITOR.md`](./20_PROFILES_PARENTAL_CHANNEL_EDITOR.md) | Éditeur de bouquets & dossiers de favoris, multi-profils, code PIN + Face ID / Touch ID, catégories adultes. | `[x]` |
 | **21** | [`21_TVOS_APPLE_TV_APP.md`](./21_TVOS_APPLE_TV_APP.md) | Cible tvOS : Rust `aarch64-apple-tvos` & `sim`, XCFramework universel, interface au focus de la Siri Remote, zapping plein écran. | `[x]` |
-| **22** | [`22_LIVE_ACTIVITIES_VISIONOS.md`](./22_LIVE_ACTIVITIES_VISIONOS.md) | Live Activities & Dynamic Island (PVR & lecture, throttle 1/min), app visionOS & mode Cinéma spatial. | `[x]` |
+| **22** | [`22_LIVE_ACTIVITIES_VISIONOS.md`](./22_LIVE_ACTIVITIES_VISIONOS.md) | Live Activities & Dynamic Island (PVR & lecture, throttle 1/min), app visionOS & mode Cinéma spatial. | `[x]` (lot 22.1 ; 22.2 visionOS non réalisé) |
 | **23** | [`23_XCODE_PROJECT_SIGNING_DISTRIBUTION.md`](./23_XCODE_PROJECT_SIGNING_DISTRIBUTION.md) | Projet Xcode signé (XcodeGen), bibliothèque `CndIptvKit`, Info.plist & entitlements (iCloud, sandbox, Fichiers), libmpv embarqué, icône, archives. | `[x]` |
 | **24** | [`24_LOCAL_TIMESHIFT_PAUSE_LIVE.md`](./24_LOCAL_TIMESHIFT_PAUSE_LIVE.md) | Pause du direct et retour arrière sans replay fournisseur : tampon mpv borné, puis anneau Rust + HLS local (facultatif). | `[x]` |
 | **25** | [`25_AUTO_FRAMERATE_MATCHING.md`](./25_AUTO_FRAMERATE_MATCHING.md) | Fréquence d'écran alignée sur la vidéo (tvOS `AVDisplayCriteria`, détection 23.976 à 60 i/s, SDR/HDR10/HLG, debounce 2s). | `[x]` |

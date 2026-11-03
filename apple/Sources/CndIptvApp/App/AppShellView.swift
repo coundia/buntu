@@ -174,6 +174,9 @@ private struct LoadedShellView: View {
             .onChange(of: player.media) { _, _ in
                 nowPlaying.refresh()
                 commands.isFavorite = player.isFavorite
+                #if os(iOS)
+                updatePlaybackActivity()
+                #endif
             }
             .onChange(of: player.isFavorite) { _, isFav in
                 commands.isFavorite = isFav
@@ -199,6 +202,25 @@ private struct LoadedShellView: View {
             }
             #endif
     }
+
+    #if os(iOS)
+    /// Lock screen / Dynamic Island "now playing": started with the media, ended when it is closed.
+    private func updatePlaybackActivity() {
+        guard let media = player.media else {
+            LiveActivityManager.shared.endPlaybackActivity()
+            return
+        }
+        LiveActivityManager.shared.startPlaybackActivity(
+            channelName: media.title,
+            programTitle: media.kind == .live ? "Direct" : "Lecture",
+            durationSeconds: Int(player.durationMs / 1000),
+            progress: { [weak player] in
+                guard let player else { return nil }
+                return (Int(player.positionMs / 1000), Int(player.durationMs / 1000))
+            }
+        )
+    }
+    #endif
 
     /// Shows the player large. `windowFullscreen` additionally puts the macOS window in full screen
     /// (the player's own button); starting a movie only fills the window, which is gentler.
