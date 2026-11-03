@@ -1202,6 +1202,19 @@ impl CndEngine {
         Ok(self.db.set_adult_content_visible(visible)?)
     }
 
+    /// Categories a Kids profile may see (everything else is hidden from it).
+    pub fn allow_group(&self, profile_id: i64, kind: String, group: String) -> Result<(), CndError> {
+        Ok(self.db.allow_group(profile_id, &kind, &group)?)
+    }
+
+    pub fn disallow_group(&self, profile_id: i64, kind: String, group: String) -> Result<bool, CndError> {
+        Ok(self.db.disallow_group(profile_id, &kind, &group)?)
+    }
+
+    pub fn list_allowed_groups(&self, profile_id: i64, kind: String) -> Result<Vec<String>, CndError> {
+        Ok(self.db.list_allowed_groups(profile_id, &kind)?)
+    }
+
     pub fn is_adult_category(&self, group: String) -> bool {
         db::profile_repo::is_adult_category(&group)
     }
@@ -1948,6 +1961,9 @@ http://iptv.local:8080/series/u/p/401.mkv
     #[tokio::test]
     async fn test_cnd_engine_pvr_schedule_and_rules() {
         let engine = CndEngine::in_memory().expect("engine");
+        // In the future: the background scheduler marks a past recording as missed, which made the
+        // "scheduled" assertion below depend on timing.
+        let soon = db::chrono_now_ts() + 3_600;
 
         let req = NewRecordingRequest {
             item_id: 101,
@@ -1956,8 +1972,8 @@ http://iptv.local:8080/series/u/p/401.mkv
             title: "Grand Film du Dimanche".to_string(),
             subtitle: None,
             stream_url: "http://stream.example/canal.ts".to_string(),
-            start_ts: 3000,
-            end_ts: 4000,
+            start_ts: soon,
+            end_ts: soon + 1000,
             pre_padding_s: Some(60),
             post_padding_s: Some(180),
             rule_id: None,

@@ -302,6 +302,11 @@ uint64_t uniffi_cnd_core_fn_method_cndengine_ai_resolve_command(void*_Nonnull pt
 uint64_t uniffi_cnd_core_fn_method_cndengine_ai_test_provider(void*_Nonnull ptr, RustBuffer config
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ALLOW_GROUP
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ALLOW_GROUP
+void uniffi_cnd_core_fn_method_cndengine_allow_group(void*_Nonnull ptr, int64_t profile_id, RustBuffer kind, RustBuffer group, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_BUILD_CATCHUP_URL
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_BUILD_CATCHUP_URL
 RustBuffer uniffi_cnd_core_fn_method_cndengine_build_catchup_url(void*_Nonnull ptr, int64_t item_id, int64_t start_ts, int64_t end_ts, RustCallStatus *_Nonnull out_status
@@ -355,6 +360,11 @@ int8_t uniffi_cnd_core_fn_method_cndengine_delete_recording(void*_Nonnull ptr, i
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_DELETE_SOURCE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_DELETE_SOURCE
 void uniffi_cnd_core_fn_method_cndengine_delete_source(void*_Nonnull ptr, int64_t source_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_DISALLOW_GROUP
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_DISALLOW_GROUP
+int8_t uniffi_cnd_core_fn_method_cndengine_disallow_group(void*_Nonnull ptr, int64_t profile_id, RustBuffer kind, RustBuffer group, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_DOWNLOAD_SUBTITLE
@@ -520,6 +530,11 @@ int8_t uniffi_cnd_core_fn_method_cndengine_is_catchup_available(void*_Nonnull pt
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_IS_HEALTH_CHECK_RUNNING
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_IS_HEALTH_CHECK_RUNNING
 int8_t uniffi_cnd_core_fn_method_cndengine_is_health_check_running(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LIST_ALLOWED_GROUPS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LIST_ALLOWED_GROUPS
+RustBuffer uniffi_cnd_core_fn_method_cndengine_list_allowed_groups(void*_Nonnull ptr, int64_t profile_id, RustBuffer kind, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LIST_BROKEN_ITEMS
@@ -1125,6 +1140,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_ai_test_provider(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_ALLOW_GROUP
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_ALLOW_GROUP
+uint16_t uniffi_cnd_core_checksum_method_cndengine_allow_group(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_BUILD_CATCHUP_URL
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_BUILD_CATCHUP_URL
 uint16_t uniffi_cnd_core_checksum_method_cndengine_build_catchup_url(void
@@ -1188,6 +1209,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_delete_recording(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_DELETE_SOURCE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_DELETE_SOURCE
 uint16_t uniffi_cnd_core_checksum_method_cndengine_delete_source(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_DISALLOW_GROUP
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_DISALLOW_GROUP
+uint16_t uniffi_cnd_core_checksum_method_cndengine_disallow_group(void
     
 );
 #endif
@@ -1386,6 +1413,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_is_catchup_available(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_IS_HEALTH_CHECK_RUNNING
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_IS_HEALTH_CHECK_RUNNING
 uint16_t uniffi_cnd_core_checksum_method_cndengine_is_health_check_running(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_LIST_ALLOWED_GROUPS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_LIST_ALLOWED_GROUPS
+uint16_t uniffi_cnd_core_checksum_method_cndengine_list_allowed_groups(void
     
 );
 #endif

@@ -191,7 +191,7 @@ impl DatabaseManager {
             let hidden_clause = if include_hidden {
                 ""
             } else {
-                " AND NOT EXISTS (SELECT 1 FROM hidden_groups h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.kind = ?2 AND h.group_key = LOWER(TRIM(group_title))) AND ((SELECT show_adult FROM temp.catalog_flags) = 1 OR NOT is_adult_group(group_title))"
+                " AND NOT EXISTS (SELECT 1 FROM hidden_groups h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.kind = ?2 AND h.group_key = LOWER(TRIM(group_title))) AND (((SELECT show_adult FROM temp.catalog_flags) = 1 AND (SELECT kids_only FROM temp.catalog_flags) = 0) OR NOT is_adult_group(group_title)) AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND k.kind = ?2 AND k.group_key = LOWER(TRIM(group_title))))"
             };
 
             let sql = if kind == "series" {
@@ -288,7 +288,7 @@ impl DatabaseManager {
             } else {
                 "AND NOT EXISTS (SELECT 1 FROM hidden_items h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.stable_hash = i.stable_hash) \
                  AND (i.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = i.kind AND g.group_key = LOWER(TRIM(i.group_title)))) \
-                 AND ((SELECT show_adult FROM temp.catalog_flags) = 1 OR NOT is_adult_group(i.group_title))"
+                 AND (((SELECT show_adult FROM temp.catalog_flags) = 1 AND (SELECT kids_only FROM temp.catalog_flags) = 0) OR NOT is_adult_group(i.group_title)) AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND k.kind = i.kind AND k.group_key = LOWER(TRIM(i.group_title))))"
             };
 
             let trimmed_q = filter.query.trim();
@@ -421,7 +421,7 @@ impl DatabaseManager {
                 ""
             } else {
                 "AND (sc.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = 'series' AND g.group_key = LOWER(TRIM(sc.group_title)))) \
-                 AND ((SELECT show_adult FROM temp.catalog_flags) = 1 OR NOT is_adult_group(sc.group_title))"
+                 AND (((SELECT show_adult FROM temp.catalog_flags) = 1 AND (SELECT kids_only FROM temp.catalog_flags) = 0) OR NOT is_adult_group(sc.group_title)) AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND k.kind = 'series' AND k.group_key = LOWER(TRIM(sc.group_title))))"
             };
 
             let trimmed_q = filter.query.trim();
@@ -1308,5 +1308,55 @@ mod profile_isolation_tests {
         let hashes: Vec<&str> = delta.favorites.iter().map(|f| f.stable_hash.as_str()).collect();
         assert_eq!(hashes, vec!["h0"], "profile 2's favorite is not synced");
         assert!(delta.tombstones.is_empty(), "profile 2 removing a channel must not delete it elsewhere");
+    }
+
+    #[test]
+    fn a_kids_profile_only_sees_the_categories_it_was_given() {
+        let db = db_with_groups(&["Sport", "Info", "Dessins animés", "Adult Movies"]);
+        let kids = db.create_profile("Léa", "star", true).expect("kids profile").id;
+        db.allow_group(kids, "live", "Dessins animés").expect("allow");
+        db.allow_group(kids, "live", "adult movies").expect("even an adult category cannot be allowed through");
+
+        db.set_active_profile(kids).unwrap();
+        assert_eq!(names(&db), vec!["Dessins animés"], "only the allowed regular category");
+        let channels = db.query_catalog(&filter("live", "", false)).unwrap();
+        assert_eq!(channels.len(), 1);
+        assert_eq!(channels[0].group_title.as_deref(), Some("Dessins animés"));
+        assert_eq!(db.query_catalog(&filter("live", "Chaine", false)).unwrap().len(), 1, "a search stays inside it");
+
+        // Unlocking adult content for the session changes nothing for a Kids profile.
+        db.set_adult_content_visible(true).unwrap();
+        assert_eq!(names(&db), vec!["Dessins animés"]);
+
+        // The main profile sees everything again (adult ones once unlocked).
+        db.set_active_profile(1).unwrap();
+        assert_eq!(names(&db).len(), 4);
+    }
+
+    #[test]
+    fn a_kids_profile_with_nothing_allowed_sees_nothing_and_editing_it_lifts_the_limit() {
+        let db = db_with_groups(&["Sport", "Info"]);
+        let kids = db.create_profile("Léa", "star", true).expect("kids profile").id;
+        db.set_active_profile(kids).unwrap();
+        assert!(names(&db).is_empty());
+        assert!(db.query_catalog(&filter("live", "", false)).unwrap().is_empty());
+
+        db.allow_group(kids, "live", "Sport").unwrap();
+        assert_eq!(names(&db), vec!["Sport"]);
+        assert!(db.disallow_group(kids, "live", "SPORT").unwrap(), "case does not matter");
+        assert!(names(&db).is_empty());
+
+        // The parent turns the profile into a regular one: the allow-list no longer applies.
+        db.update_profile(kids, "Léa", "star", false).unwrap();
+        assert_eq!(names(&db).len(), 2);
+    }
+
+    #[test]
+    fn deleting_a_kids_profile_forgets_its_allow_list() {
+        let db = db_with_groups(&["Sport"]);
+        let kids = db.create_profile("Léa", "star", true).unwrap().id;
+        db.allow_group(kids, "live", "Sport").unwrap();
+        assert!(db.delete_profile(kids).unwrap());
+        assert!(db.list_allowed_groups(kids, "live").unwrap().is_empty());
     }
 }

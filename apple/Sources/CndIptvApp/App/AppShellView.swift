@@ -398,8 +398,11 @@ private struct LoadedShellView: View {
     /// Online subtitles for what is playing; the downloaded file is added to the current player.
     private func makeSubtitleSearch() -> SubtitleSearchModel {
         let media = player.media
+        // An episode is matched through its series' IMDb id (known once OMDb enriched the series).
+        let seriesImdb = media?.seriesId.flatMap { (try? engine.getSeriesById(seriesId: $0)) ?? nil }?.imdbId
         let model = SubtitleSearchModel(
-            backend: engine, mediaTitle: media?.title ?? "", itemId: media?.itemId, imdbId: media?.imdbId,
+            backend: engine, mediaTitle: media?.seriesTitle ?? media?.title ?? "", itemId: media?.itemId,
+            imdbId: media?.imdbId, seriesImdbId: seriesImdb,
             seasonNumber: media?.seasonNumber, episodeNumber: media?.episodeNumber
         )
         model.onDownloaded = { [weak player, engine] url in player?.loadExternalSubtitle(fileUrl: url, engine: engine) }

@@ -52,12 +52,14 @@ final class SubtitleSearchModel {
     enum Match: Equatable {
         case file
         case imdb
+        case series
         case title
 
         var description: String {
             switch self {
             case .file: return "Correspondance exacte avec ce fichier"
             case .imdb: return "Trouvés par identifiant IMDb"
+            case .series: return "Trouvés par la série (IMDb), saison et épisode"
             case .title: return "Trouvés par titre : la synchronisation peut demander un réglage"
             }
         }
@@ -74,6 +76,7 @@ final class SubtitleSearchModel {
     let mediaTitle: String
     private let itemId: Int64?
     private let imdbId: String?
+    private let seriesImdbId: String?
     private let seasonNumber: UInt32?
     private let episodeNumber: UInt32?
     private let keychain: KeychainStore
@@ -90,6 +93,7 @@ final class SubtitleSearchModel {
         mediaTitle: String,
         itemId: Int64? = nil,
         imdbId: String? = nil,
+        seriesImdbId: String? = nil,
         seasonNumber: UInt32? = nil,
         episodeNumber: UInt32? = nil,
         keychain: KeychainStore = .shared,
@@ -100,6 +104,7 @@ final class SubtitleSearchModel {
         self.mediaTitle = mediaTitle
         self.itemId = itemId
         self.imdbId = imdbId
+        self.seriesImdbId = seriesImdbId
         self.seasonNumber = seasonNumber
         self.episodeNumber = episodeNumber
         self.keychain = keychain
@@ -143,16 +148,22 @@ final class SubtitleSearchModel {
         var attempts: [(Match, SubtitleSearchQuery)] = []
         if let itemId, let hash = try? await backend.computeStreamMoviehash(itemId: itemId), !hash.isEmpty {
             attempts.append((.file, SubtitleSearchQuery(
-                query: nil, imdbId: nil, moviehash: hash, seasonNumber: nil, episodeNumber: nil, languages: languages
+                query: nil, imdbId: nil, parentImdbId: nil, moviehash: hash, seasonNumber: nil, episodeNumber: nil, languages: languages
             )))
         }
         if let imdb = imdbId?.trimmingCharacters(in: .whitespaces), !imdb.isEmpty, !isEpisode {
             attempts.append((.imdb, SubtitleSearchQuery(
-                query: nil, imdbId: imdb, moviehash: nil, seasonNumber: nil, episodeNumber: nil, languages: languages
+                query: nil, imdbId: imdb, parentImdbId: nil, moviehash: nil, seasonNumber: nil, episodeNumber: nil, languages: languages
+            )))
+        }
+        if isEpisode, let series = seriesImdbId?.trimmingCharacters(in: .whitespaces), !series.isEmpty {
+            attempts.append((.series, SubtitleSearchQuery(
+                query: nil, imdbId: nil, parentImdbId: series, moviehash: nil,
+                seasonNumber: seasonNumber, episodeNumber: episodeNumber, languages: languages
             )))
         }
         attempts.append((.title, SubtitleSearchQuery(
-            query: title, imdbId: nil, moviehash: nil, seasonNumber: seasonNumber, episodeNumber: episodeNumber, languages: languages
+            query: title, imdbId: nil, parentImdbId: nil, moviehash: nil, seasonNumber: seasonNumber, episodeNumber: episodeNumber, languages: languages
         )))
 
         var lastError: Error?
