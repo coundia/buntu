@@ -47,3 +47,15 @@ Un film à 24 i/s affiché sur un écran à 60 Hz produit des saccades. Les lect
 2. Tests du contrôleur : application après 2 s de stabilité, réinitialisation à la sortie.
 3. Essai manuel sur Apple TV : un film 23,976 i/s puis une chaîne 50 i/s.
 4. `task check` au vert.
+
+---
+
+## Statut d'Implémentation & Validation (audit)
+
+**tvOS : réalisé ✅ (à vérifier sur Apple TV) ; macOS : non réalisé ; iOS : hors périmètre.**
+
+- Une première version avait le calcul (`StandardFrameRate`, `DisplayRateMatcher`) mais **rien ne lui fournissait la cadence** de la vidéo : la fonction ne se déclenchait jamais. La branche macOS déclarait « adapté » sans changer de mode.
+- **Détection** : `VideoBackend.currentVideoFormat()`. mpv lit `container-fps` puis `estimated-vf-fps`, `video-params/gamma` et `video-params/primaries` ; `AVPlayer` lit `nominalFrameRate` de la piste vidéo et la fonction de transfert (PQ, HLG) de son format. Le lecteur interroge le moteur après le début de la lecture (jusqu'à 10 s) puis transmet à `DisplayRateMatcher` ; la fermeture du lecteur réinitialise l'écran.
+- **tvOS** : `AVDisplayCriteria` avec la cadence arrondie et la plage dynamique (HDR10 et HLG passent par les clés de couleur du format, codec HEVC), après 2 s de stabilité ; réglage « Adapter la fréquence de l'écran au contenu » dans Réglages (activé par défaut).
+- **Hors réalisé** : changement de mode d'écran sur macOS (`CGDisplaySetDisplayMode`, option désactivée par défaut dans le PRD) ; Dolby Vision (traité comme HDR10) ; indication « → écran 24 Hz » dans le panneau d'infos (le format détecté s'affiche).
+- **Validation** : tests de l'arrondi, de la plage dynamique et du branchement lecteur → matcher (4 tests), compilation tvOS. Aucun essai sur une Apple TV.
