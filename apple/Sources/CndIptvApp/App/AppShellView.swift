@@ -78,6 +78,7 @@ private struct LoadedShellView: View {
     @State private var zapper = LiveZapper()
     @State private var assistant: AssistantModel
     @State private var showingAssistant = false
+    @State private var showingKidsExit = false
     @State private var liveSearchRequest: String?
     @State private var epgFocus: IptvItemRecord?
     @State private var isPlayerExpanded = false
@@ -117,7 +118,13 @@ private struct LoadedShellView: View {
         _consoleModel = State(initialValue: ConsoleModel(engine: engine))
     }
 
-    private var selectedTab: AppTab { AppTab(rawValue: selectedTabRaw) ?? .live }
+    private var isKidsMode: Bool { state.profiles?.isKidsModeActive ?? false }
+    private var visibleTabs: [AppTab] { KidsModePolicy.allowedTabs(isKids: isKidsMode) }
+    /// A tab the Kids profile may not open (a menu command, a link) falls back to Live TV.
+    private var selectedTab: AppTab {
+        let tab = AppTab(rawValue: selectedTabRaw) ?? .live
+        return visibleTabs.contains(tab) ? tab : .live
+    }
     private var player: CndPlayerController { state.player }
     private var hasMedia: Bool { player.media != nil }
 
@@ -133,6 +140,7 @@ private struct LoadedShellView: View {
     private var mainShell: some View {
         platformShell
             .environment(vodContext)
+            .environment(state.profiles)
             .overlay(alignment: .bottom) {
                 if let toast = toasts.current {
                     ToastView(toast: toast) { toasts.dismiss() }
@@ -185,6 +193,9 @@ private struct LoadedShellView: View {
                 pip.attach(layer: player.surfaceLayer, controller: player)
             }
             .onAppear { connectPlayerIntegrations() }
+            .sheet(isPresented: $showingKidsExit) {
+                if let profiles = state.profiles { KidsExitSheet(profiles: profiles) { showingKidsExit = false } }
+            }
             .sheet(isPresented: $showingAssistant) {
                 CommandPaletteView(model: assistant)
                     #if os(iOS)
@@ -260,6 +271,10 @@ private struct LoadedShellView: View {
 
     /// Opens the command palette, or says how to enable it.
     private func openAssistant() {
+        guard KidsModePolicy.canUseAssistant(isKids: isKidsMode) else {
+            toasts.show("L'assistant n'est pas disponible avec le profil Enfants.")
+            return
+        }
         guard state.aiSettings.isAssistantEnabled else {
             toasts.show("L'assistant est désactivé : choisissez un fournisseur dans Réglages > Assistant IA.")
             return
@@ -397,6 +412,7 @@ private struct LoadedShellView: View {
             AppLogoView(size: 30)
             Text("CND IPTV").font(.headline)
             Spacer(minLength: 0)
+            if isKidsMode { kidsExitButton }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -421,6 +437,18 @@ private struct LoadedShellView: View {
         .accessibilityLabel(state.showNetworkConsole ? "Masquer les journaux" : "Afficher les journaux")
     }
 
+    /// Only shown while the Kids profile is active: asks for the PIN, then returns to a regular profile.
+    private var kidsExitButton: some View {
+        Button { showingKidsExit = true } label: {
+            Label("Quitter le profil Enfants", systemImage: "lock.fill")
+                .labelStyle(.iconOnly)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.orange)
+        .help("Quitter le profil Enfants")
+        .accessibilityLabel("Quitter le profil Enfants")
+    }
+
     private var logsToolbarButton: some View {
         Button { toggleLogs() } label: {
             Label("Journaux", systemImage: state.showNetworkConsole ? "terminal.fill" : "terminal")
@@ -434,7 +462,7 @@ private struct LoadedShellView: View {
     private var platformShell: some View {
         #if os(macOS)
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(AppTab.allCases, selection: Binding<AppTab?>(
+            List(visibleTabs, selection: Binding<AppTab?>(
                 get: { selectedTab },
                 set: { if let tab = $0 { selectedTabRaw = tab.rawValue } }
             )) { tab in
@@ -476,12 +504,15 @@ private struct LoadedShellView: View {
         }
         #else
         TabView(selection: Binding(get: { selectedTab }, set: { selectedTabRaw = $0.rawValue })) {
-            ForEach(AppTab.allCases) { tab in
+            ForEach(visibleTabs) { tab in
                 NavigationStack {
                     content(for: tab)
                         .safeAreaInset(edge: .bottom, spacing: 0) { miniPlayerBar }
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) { logsToolbarButton }
+                            if isKidsMode {
+                                ToolbarItem(placement: .topBarTrailing) { kidsExitButton }
+                            }
                         }
                 }
                 .tabItem { Label(tab.title, systemImage: tab.systemImage) }

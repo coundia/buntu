@@ -3,6 +3,78 @@ import LocalAuthentication
 import Observation
 import Security
 import CryptoKit
+import CommonCrypto
+
+/// How the parental PIN is stored: PBKDF2-HMAC-SHA256 with a random salt, so a leaked value cannot be
+/// reversed by trying the few thousand possible PINs at memory speed.
+///
+/// Layout (v2): `"P2"` + iterations (UInt32, big endian) + salt (16) + derived key (32).
+/// The first version was `salt (16) + SHA256(salt + pin)` (48 bytes); it still verifies and is upgraded.
+enum PinHasher {
+    static let iterations: UInt32 = 600_000
+    private static let magic = Data("P2".utf8)
+    private static let saltLength = 16
+    private static let keyLength = 32
+
+    /// 4 to 6 digits.
+    static func isValid(pin: String) -> Bool {
+        (4...6).contains(pin.count) && pin.allSatisfy { $0.isASCII && $0.isNumber }
+    }
+
+    static func derive(pin: String, salt: Data, iterations: UInt32) -> Data? {
+        var key = Data(count: keyLength)
+        let pinBytes = Array(pin.utf8)
+        let status = key.withUnsafeMutableBytes { keyPointer in
+            salt.withUnsafeBytes { saltPointer in
+                CCKeyDerivationPBKDF(
+                    CCPBKDFAlgorithm(kCCPBKDF2),
+                    pinBytes.map { CChar(bitPattern: $0) }, pinBytes.count,
+                    saltPointer.bindMemory(to: UInt8.self).baseAddress, salt.count,
+                    CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), iterations,
+                    keyPointer.bindMemory(to: UInt8.self).baseAddress, keyLength
+                )
+            }
+        }
+        return status == kCCSuccess ? key : nil
+    }
+
+    static func encode(pin: String, iterations: UInt32 = PinHasher.iterations) -> Data? {
+        var generator = SystemRandomNumberGenerator()
+        let salt = Data((0..<saltLength).map { _ in UInt8.random(in: 0...255, using: &generator) })
+        guard let key = derive(pin: pin, salt: salt, iterations: iterations) else { return nil }
+        var count = iterations.bigEndian
+        return magic + Data(bytes: &count, count: 4) + salt + key
+    }
+
+    enum Verdict: Equatable {
+        case wrong
+        case correct
+        /// Correct, but stored with the old scheme: the caller should store it again with `encode`.
+        case correctNeedsUpgrade
+    }
+
+    static func verify(pin: String, stored: Data) -> Verdict {
+        if stored.count == magic.count + 4 + saltLength + keyLength, stored.prefix(magic.count) == magic {
+            let countStart = stored.startIndex + magic.count
+            let iterations = stored[countStart..<countStart + 4].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+            let salt = Data(stored[(countStart + 4)..<(countStart + 4 + saltLength)])
+            let expected = Data(stored.suffix(keyLength))
+            guard iterations > 0, let key = derive(pin: pin, salt: salt, iterations: iterations) else { return .wrong }
+            return constantTimeEqual(key, expected) ? .correct : .wrong
+        }
+        if stored.count == saltLength + keyLength { // version 1
+            let salt = stored.prefix(saltLength)
+            let computed = Data(SHA256.hash(data: salt + Data(pin.utf8)))
+            return constantTimeEqual(computed, Data(stored.suffix(keyLength))) ? .correctNeedsUpgrade : .wrong
+        }
+        return .wrong
+    }
+
+    private static func constantTimeEqual(_ a: Data, _ b: Data) -> Bool {
+        guard a.count == b.count else { return false }
+        return zip(a, b).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
+    }
+}
 
 /// Manages PIN storage, Face ID / Touch ID authentication, and adult content session unlock.
 @Observable
@@ -10,7 +82,7 @@ import CryptoKit
 public final class ParentalControlManager {
     public static let shared = ParentalControlManager()
 
-    private let service = "com.cnd.iptv.parental"
+    private let service: String
     private let account = "pin_hash"
 
     public private(set) var hasPin: Bool = false
@@ -21,7 +93,8 @@ public final class ParentalControlManager {
         return until > Date()
     }
 
-    public init() {
+    public init(service: String = "com.cnd.iptv.parental") {
+        self.service = service
         self.hasPin = checkHasPin()
     }
 
@@ -38,11 +111,7 @@ public final class ParentalControlManager {
     // MARK: - PIN Management (Keychain)
 
     public func setPin(_ pin: String) -> Bool {
-        guard pin.count >= 4 else { return false }
-        let salt = (0..<16).map { _ in UInt8.random(in: 0...255) }
-        let saltedData = Data(salt) + Data(pin.utf8)
-        let hash = SHA256.hash(data: saltedData)
-        let payload = Data(salt) + Data(hash)
+        guard PinHasher.isValid(pin: pin), let payload = PinHasher.encode(pin: pin) else { return false }
 
         let deleteQuery: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
@@ -76,13 +145,16 @@ public final class ParentalControlManager {
         ]
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data, data.count >= 48 else {
+        guard status == errSecSuccess, let data = result as? Data else { return false }
+        switch PinHasher.verify(pin: pin, stored: data) {
+        case .wrong:
             return false
+        case .correct:
+            return true
+        case .correctNeedsUpgrade:
+            _ = setPin(pin) // store it again with PBKDF2
+            return true
         }
-        let salt = data.prefix(16)
-        let storedHash = data.suffix(32)
-        let computedHash = SHA256.hash(data: salt + Data(pin.utf8))
-        return Data(computedHash) == storedHash
     }
 
     public func removePin() -> Bool {

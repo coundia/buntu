@@ -3,6 +3,7 @@ import CndCoreBridge
 
 public struct ProfilesManagementView: View {
     let engine: CndEngine
+    @Environment(ProfilesModel.self) private var sharedProfiles: ProfilesModel?
     @State private var profilesModel: ProfilesModel?
     @State private var parental = ParentalControlManager.shared
     @State private var showingAddProfile = false
@@ -171,7 +172,7 @@ public struct ProfilesManagementView: View {
             }
         }
         .task {
-            profilesModel = ProfilesModel(engine: engine)
+            profilesModel = sharedProfiles ?? ProfilesModel(engine: engine)
         }
     }
 
