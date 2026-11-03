@@ -291,10 +291,19 @@ struct SettingsView: View {
             }
             Button("Synchroniser maintenant") { Task { await sync.syncNow() } }
                 .disabled(!sync.isAvailable || sync.status == .syncing)
+            Toggle("Synchroniser aussi les mots de passe via le Trousseau iCloud", isOn: Binding(
+                get: { model.syncsPasswords },
+                set: { model.setPasswordSync($0) }
+            ))
+            if let error = model.passwordSyncError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
         } header: {
             Text("Synchronisation iCloud")
         } footer: {
-            Text("Seuls les sources, les favoris et la progression de lecture sont synchronisés. Le catalogue et le guide sont reconstruits sur chaque appareil, et les mots de passe restent dans le Trousseau.")
+            Text("Seuls les sources, les favoris et la progression de lecture sont synchronisés. Le catalogue et le guide sont reconstruits sur chaque appareil. Les mots de passe restent sur cet appareil, sauf si vous activez l'option : ils passent alors par le Trousseau iCloud de votre compte Apple (chiffré de bout en bout), à condition qu'il soit activé sur vos appareils.")
         }
     }
 

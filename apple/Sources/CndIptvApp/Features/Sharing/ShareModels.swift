@@ -313,7 +313,7 @@ final class ShareImportModel {
     /// The secret goes to the Keychain; only its reference is kept in the database.
     private func storePassword(_ password: String, for item: ShareImportedSource) throws {
         let key = KeychainStore.xtreamKey(forSourceUuid: item.uuid)
-        try keychain.saveSecret(password, forKey: key)
+        try keychain.savePassword(password, forKey: key)
         guard let record = try engine.listSources().first(where: { $0.id == item.sourceId }) else { return }
         try engine.updateXtreamSource(
             sourceId: record.id, name: record.name, server: record.server ?? "", username: record.username ?? "",
