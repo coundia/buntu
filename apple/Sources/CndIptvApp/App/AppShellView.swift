@@ -363,6 +363,13 @@ private struct LoadedShellView: View {
     }
 
     /// Next / previous episode when a queue is playing, otherwise next / previous channel.
+    /// Online subtitles for what is playing; the downloaded file is added to the current player.
+    private func makeSubtitleSearch() -> SubtitleSearchModel {
+        let model = SubtitleSearchModel(backend: engine, mediaTitle: player.media?.title ?? "")
+        model.onDownloaded = { [weak player, engine] url in player?.loadExternalSubtitle(fileUrl: url, engine: engine) }
+        return model
+    }
+
     private func zap(_ offset: Int) {
         if player.queue != nil {
             offset > 0 ? player.next() : player.previous()
@@ -762,7 +769,8 @@ private struct LoadedShellView: View {
             onToggleFullscreen: { setExpanded(true) },
             onClose: closePlayer,
             closesOnDisappear: false,
-            pip: pip
+            pip: pip,
+            subtitleSearch: { makeSubtitleSearch() }
         )
         .aspectRatio(16 / 9, contentMode: .fit)
     }
@@ -807,7 +815,8 @@ private struct LoadedShellView: View {
             closesOnDisappear: false,
             pip: pip,
             isFullscreen: expandedShowsFullscreen,
-            onZap: { zap($0) }
+            onZap: { zap($0) },
+            subtitleSearch: { makeSubtitleSearch() }
         )
         .background(Color.black)
     }
