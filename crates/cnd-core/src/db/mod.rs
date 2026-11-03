@@ -4,12 +4,14 @@ pub mod epg_repo;
 pub mod ingestion_writer;
 pub mod profile_repo;
 pub mod recording_repo;
+pub mod recommend_repo;
 pub mod schema;
 pub mod settings_repo;
 pub mod sync_repo;
 
 pub use profile_repo::{is_adult_category, FavoriteFolderRecord, ProfileRecord};
 pub use recording_repo::{NewRecordingRequest, RecordingRecord, SeriesRuleRecord};
+pub use recommend_repo::{CachedItemMetadata, SagaMemberRecord, SagaRecord};
 
 use rusqlite::{params, Connection};
 use std::path::Path;
@@ -301,6 +303,30 @@ impl DatabaseManager {
             )",
             "ALTER TABLE favorites ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE watch_history ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1",
+            "CREATE TABLE IF NOT EXISTS sagas (
+                saga_key TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                level TEXT NOT NULL DEFAULT 'saga',
+                source TEXT NOT NULL DEFAULT 'local',
+                confidence REAL NOT NULL DEFAULT 1.0,
+                fetched_at INTEGER NOT NULL,
+                missing_titles TEXT
+            )",
+            "CREATE TABLE IF NOT EXISTS saga_members (
+                saga_key TEXT NOT NULL,
+                work_key TEXT NOT NULL,
+                release_index INTEGER NOT NULL,
+                story_index INTEGER,
+                PRIMARY KEY (saga_key, work_key),
+                FOREIGN KEY (saga_key) REFERENCES sagas(saga_key) ON DELETE CASCADE
+            )",
+            "CREATE INDEX IF NOT EXISTS idx_saga_members_work ON saga_members(work_key)",
+            "CREATE TABLE IF NOT EXISTS recommendation_dismissals (
+                profile_id INTEGER NOT NULL DEFAULT 1,
+                stable_hash TEXT NOT NULL,
+                dismissed_at INTEGER NOT NULL,
+                PRIMARY KEY(profile_id, stable_hash)
+            )",
         ];
         for sql in alter_stmts {
             // Ignore duplicate column error on already-migrated databases
