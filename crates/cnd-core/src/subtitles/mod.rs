@@ -36,6 +36,40 @@ pub struct SubtitleSearchQuery {
     pub languages: Option<String>,
 }
 
+/// What a signed-in account can do, from OpenSubtitles' `/login` answer.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SubtitleAccount {
+    /// Downloads allowed per day for this account (0 when the service does not say).
+    pub allowed_downloads: u32,
+    pub level: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OsLoginResponse {
+    #[serde(default)]
+    token: String,
+    #[serde(default)]
+    base_url: String,
+    #[serde(default)]
+    user: Option<OsLoginUser>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OsLoginUser {
+    #[serde(default)]
+    allowed_downloads: u32,
+    #[serde(default)]
+    level: String,
+}
+
+/// A signed-in session, kept in memory only: the password is never stored here.
+#[derive(Debug, Clone)]
+struct Session {
+    token: String,
+    /// The API host the service asked this account to use (VIP accounts have their own).
+    base: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct OsSearchResponse {
     #[serde(default)]
@@ -90,6 +124,7 @@ struct OsDownloadResponse {
 pub struct SubtitleService {
     client: reqwest::Client,
     api_base: String,
+    session: std::sync::Mutex<Option<Session>>,
 }
 
 impl Default for SubtitleService {
@@ -111,7 +146,72 @@ impl SubtitleService {
             .build()
             .unwrap_or_default();
 
-        Self { client, api_base }
+        Self { client, api_base, session: std::sync::Mutex::new(None) }
+    }
+
+    /// Base address and bearer token to use: the account's own once signed in, the public one otherwise.
+    fn endpoint(&self) -> (String, Option<String>) {
+        match self.session.lock().ok().and_then(|s| s.clone()) {
+            Some(Session { token, base }) => (base.unwrap_or_else(|| self.api_base.clone()), Some(token)),
+            None => (self.api_base.clone(), None),
+        }
+    }
+
+    pub fn is_signed_in(&self) -> bool {
+        self.session.lock().map(|s| s.is_some()).unwrap_or(false)
+    }
+
+    pub fn sign_out(&self) {
+        if let Ok(mut session) = self.session.lock() {
+            *session = None;
+        }
+    }
+
+    /// Signs in to lift the anonymous download quota. Only the token is kept, in memory.
+    pub async fn sign_in(
+        &self,
+        username: &str,
+        password: &str,
+        api_key: Option<&str>,
+    ) -> Result<SubtitleAccount, CndError> {
+        let key = api_key
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| CndError::Parse {
+                message: "OpenSubtitles API key is required to sign in".to_string(),
+            })?;
+        let resp = self
+            .client
+            .post(format!("{}/login", self.api_base))
+            .header("Api-Key", key)
+            .json(&serde_json::json!({ "username": username, "password": password }))
+            .send()
+            .await
+            .map_err(|e| CndError::Network { message: format!("OpenSubtitles login failed: {e}") })?;
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return Err(CndError::Network {
+                message: "OpenSubtitles refused the user name or password (or the API key)".to_string(),
+            });
+        }
+        if !status.is_success() {
+            return Err(CndError::Network { message: format!("OpenSubtitles login HTTP error: {status}") });
+        }
+        let parsed: OsLoginResponse = resp
+            .json()
+            .await
+            .map_err(|e| CndError::Parse { message: format!("Failed to parse the login response: {e}") })?;
+        if parsed.token.is_empty() {
+            return Err(CndError::Network { message: "OpenSubtitles returned no session token".to_string() });
+        }
+        // The service names the host to use; only trusted for the real service (tests use a local one).
+        let base = (self.api_base == DEFAULT_OPENSUBTITLES_API_BASE && !parsed.base_url.trim().is_empty())
+            .then(|| format!("https://{}/api/v1", parsed.base_url.trim().trim_start_matches("https://").trim_end_matches('/')));
+        if let Ok(mut session) = self.session.lock() {
+            *session = Some(Session { token: parsed.token, base });
+        }
+        let user = parsed.user.unwrap_or(OsLoginUser { allowed_downloads: 0, level: String::new() });
+        Ok(SubtitleAccount { allowed_downloads: user.allowed_downloads, level: user.level })
     }
 
     /// Searches subtitles via OpenSubtitles REST v1.
@@ -129,8 +229,12 @@ impl SubtitleService {
                 message: "OpenSubtitles API key is required to search subtitles".to_string(),
             })?;
 
-        let url = format!("{}/subtitles", self.api_base);
+        let (base, token) = self.endpoint();
+        let url = format!("{base}/subtitles");
         let mut req = self.client.get(&url).header("Api-Key", key);
+        if let Some(token) = &token {
+            req = req.bearer_auth(token);
+        }
 
         if let Some(ref q) = query.query {
             if !q.trim().is_empty() {
@@ -178,8 +282,12 @@ impl SubtitleService {
 
         let status = resp.status();
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            if token.is_some() {
+                // The session expired: forget it so the next call can sign in again.
+                self.sign_out();
+            }
             return Err(CndError::Network {
-                message: "OpenSubtitles API key is invalid or quota exceeded (401/403)".to_string(),
+                message: "OpenSubtitles API key is invalid, the session expired or the quota is exceeded (401/403)".to_string(),
             });
         } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             return Err(CndError::Network {
@@ -231,14 +339,15 @@ impl SubtitleService {
                 message: "OpenSubtitles API key is required to download subtitles".to_string(),
             })?;
 
-        let download_endpoint = format!("{}/download", self.api_base);
+        let (base, token) = self.endpoint();
+        let download_endpoint = format!("{base}/download");
         let req_body = OsDownloadRequest { file_id };
 
-        let resp = self
-            .client
-            .post(&download_endpoint)
-            .header("Api-Key", key)
-            .json(&req_body)
+        let mut request = self.client.post(&download_endpoint).header("Api-Key", key).json(&req_body);
+        if let Some(token) = &token {
+            request = request.bearer_auth(token);
+        }
+        let resp = request
             .send()
             .await
             .map_err(|e| CndError::Network {
@@ -246,6 +355,14 @@ impl SubtitleService {
             })?;
 
         let status = resp.status();
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status == reqwest::StatusCode::NOT_ACCEPTABLE {
+            return Err(CndError::Network {
+                message: "OpenSubtitles download quota reached for today: sign in with an account (Réglages) or try tomorrow".to_string(),
+            });
+        }
+        if (status == reqwest::StatusCode::UNAUTHORIZED) && token.is_some() {
+            self.sign_out();
+        }
         if !status.is_success() {
             return Err(CndError::Network {
                 message: format!("OpenSubtitles download token HTTP error: {status}"),
@@ -424,5 +541,89 @@ mod tests {
         assert!(line.contains("parent_imdb_id=0944947"), "{line}");
         assert!(line.contains("season_number=2") && line.contains("episode_number=7"), "{line}");
         assert!(!line.contains("&imdb_id=") && !line.contains("?imdb_id="), "the episode's own id is not mixed in: {line}");
+    }
+
+    /// A scripted local server: each request gets the next answer; the request heads are recorded.
+    async fn scripted(answers: Vec<(&'static str, &'static str)>) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = seen.clone();
+        tokio::spawn(async move {
+            for (status, body) in answers {
+                let Ok((mut socket, _)) = listener.accept().await else { return };
+                let mut buf = vec![0u8; 8192];
+                let n = socket.read(&mut buf).await.unwrap_or(0);
+                log.lock().unwrap().push(String::from_utf8_lossy(&buf[..n]).to_lowercase());
+                let resp = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(resp.as_bytes()).await;
+            }
+        });
+        (base, seen)
+    }
+
+    #[tokio::test]
+    async fn signing_in_gives_a_bearer_token_to_the_next_requests() {
+        let (base, seen) = scripted(vec![
+            ("200 OK", r#"{"token":"abc123","base_url":"vip-api.opensubtitles.com","user":{"allowed_downloads":1000,"level":"Sub leecher"}}"#),
+            ("200 OK", r#"{"data": []}"#),
+        ])
+        .await;
+        let service = SubtitleService::new(base);
+        assert!(!service.is_signed_in());
+
+        let account = service.sign_in("papa", "secret", Some("key")).await.expect("login");
+        assert_eq!(account, SubtitleAccount { allowed_downloads: 1000, level: "Sub leecher".to_string() });
+        assert!(service.is_signed_in());
+
+        service.search(&SubtitleSearchQuery { query: Some("x".into()), ..Default::default() }, Some("key")).await.unwrap();
+        let requests = seen.lock().unwrap().clone();
+        assert!(requests[0].starts_with("post /login"), "{}", requests[0]);
+        assert!(requests[0].contains("api-key: key"));
+        assert!(requests[1].contains("authorization: bearer abc123"), "{}", requests[1]);
+        assert!(requests[1].starts_with("get /subtitles"), "a test server keeps its own address, not the VIP host");
+
+        service.sign_out();
+        assert!(!service.is_signed_in());
+    }
+
+    #[tokio::test]
+    async fn anonymous_requests_carry_no_token() {
+        let (base, seen) = scripted(vec![("200 OK", r#"{"data": []}"#)]).await;
+        let service = SubtitleService::new(base);
+        service.search(&SubtitleSearchQuery { query: Some("x".into()), ..Default::default() }, Some("key")).await.unwrap();
+        assert!(!seen.lock().unwrap()[0].contains("authorization"));
+    }
+
+    #[tokio::test]
+    async fn a_refused_login_says_so_and_keeps_no_session() {
+        let (base, _) = scripted(vec![("401 Unauthorized", r#"{"message":"bad"}"#)]).await;
+        let service = SubtitleService::new(base);
+        let err = service.sign_in("papa", "wrong", Some("key")).await.expect_err("refused");
+        assert!(err.to_string().contains("refused the user name or password"), "{err}");
+        assert!(!service.is_signed_in());
+        assert!(service.sign_in("papa", "x", None).await.is_err(), "an API key is required");
+    }
+
+    #[tokio::test]
+    async fn an_expired_session_is_forgotten_and_a_reached_quota_is_explained() {
+        let (base, _) = scripted(vec![
+            ("200 OK", r#"{"token":"t"}"#),
+            ("401 Unauthorized", "{}"),
+            ("406 Not Acceptable", r#"{"message":"You have downloaded your allowed 5 subtitles"}"#),
+        ])
+        .await;
+        let service = SubtitleService::new(base);
+        service.sign_in("u", "p", Some("k")).await.unwrap();
+        assert!(service.search(&SubtitleSearchQuery::default(), Some("k")).await.is_err());
+        assert!(!service.is_signed_in(), "a 401 on a signed-in call drops the session");
+
+        let dir = std::env::temp_dir().join(format!("cnd_quota_{}", std::process::id()));
+        let err = service.download(1, &dir, Some("k")).await.expect_err("quota");
+        assert!(err.to_string().contains("quota"), "{err}");
     }
 }

@@ -84,6 +84,7 @@ private struct LoadedShellView: View {
     @State private var assistant: AssistantModel
     @State private var showingAssistant = false
     @State private var showingKidsExit = false
+    @State private var autoSubtitleTask: Task<Void, Never>?
     @State private var showingProfilePicker = false
     @State private var offeredProfilePicker = false
     @State private var liveSearchRequest: String?
@@ -189,6 +190,7 @@ private struct LoadedShellView: View {
             .onChange(of: player.media) { _, _ in
                 nowPlaying.refresh()
                 commands.isFavorite = player.isFavorite
+                scheduleAutoSubtitles()
                 #if os(iOS)
                 updatePlaybackActivity()
                 #endif
@@ -398,6 +400,30 @@ private struct LoadedShellView: View {
     private func returnToLive() {
         guard let itemId = player.media?.itemId, let channel = try? engine.getItemById(itemId: itemId) else { return }
         play(channel)
+    }
+
+    /// Optional (Settings): a few seconds after a film or episode starts, when it has no subtitle track in a
+    /// preferred language, search online and load the best match.
+    private func scheduleAutoSubtitles() {
+        autoSubtitleTask?.cancel()
+        guard let media = player.media, media.kind != .live else { return }
+        autoSubtitleTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 6_000_000_000) // the engine needs a moment to list embedded tracks
+            guard !Task.isCancelled, player.media == media else { return }
+            let search = makeSubtitleSearch()
+            guard AutoSubtitlePolicy.shouldSearch(
+                media: media, tracks: player.subtitleTracks, overlayLoaded: player.subtitleOverlay.isLoaded,
+                languages: search.languages,
+                enabled: UserDefaults.standard.bool(forKey: OpenSubtitlesCredentials.autoSearchDefaultsKey),
+                hasKey: OpenSubtitlesCredentials.apiKey() != nil
+            ) else { return }
+            await search.search()
+            guard case .results(let rows, _) = search.state,
+                  let best = AutoSubtitlePolicy.best(of: rows, languages: search.languages),
+                  !Task.isCancelled, player.media == media else { return }
+            await search.download(best)
+            AppLog.shared.info("SUBTITLES", "Sous-titres ajoutés automatiquement (\(best.language.uppercased()))")
+        }
     }
 
     /// Online subtitles for what is playing; the downloaded file is added to the current player.

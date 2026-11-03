@@ -23,6 +23,19 @@ private final class FakeSubtitleBackend: SubtitleBackend, @unchecked Sendable {
         return results
     }
 
+    var signedIn = false
+    var signInError: Error?
+    private(set) var signIns: [(String, String, String?)] = []
+
+    func subtitlesSignIn(username: String, password: String, apiKey: String?) async throws -> SubtitleAccount {
+        signIns.append((username, password, apiKey))
+        if let signInError { throw signInError }
+        signedIn = true
+        return SubtitleAccount(allowedDownloads: 1000, level: "member")
+    }
+
+    func subtitlesSignedIn() -> Bool { signedIn }
+
     func computeStreamMoviehash(itemId: Int64) async throws -> String? {
         hashRequests.append(itemId)
         return hash
@@ -237,5 +250,86 @@ final class SubtitleSearchTests: XCTestCase {
         OpenSubtitlesCredentials.migrateLegacyKey(keychain: keychain, defaults: defaults)
         XCTAssertEqual(OpenSubtitlesCredentials.apiKey(keychain: keychain), "legacy-key")
         XCTAssertNil(defaults.string(forKey: OpenSubtitlesCredentials.legacyDefaultsKey))
+    }
+}
+
+@MainActor
+extension SubtitleSearchTests {
+    func testTheStoredAccountSignsInBeforeTheFirstSearchOnly() async throws {
+        try keychain.saveSecret("k", forKey: OpenSubtitlesCredentials.keychainKey)
+        try keychain.saveSecret("papa", forKey: OpenSubtitlesCredentials.userKey)
+        try keychain.saveSecret("s3cret", forKey: OpenSubtitlesCredentials.passwordKey)
+        let backend = FakeSubtitleBackend()
+        backend.results = [SubtitleSearchResult(id: "1", fileId: 1, fileName: "a.srt", language: "fr", release: "R", downloadCount: 1, rating: 1)]
+        let search = SubtitleSearchModel(backend: backend, mediaTitle: "Film", keychain: keychain, defaults: defaults, cacheDirectory: directory)
+
+        await search.search()
+        await search.search()
+
+        XCTAssertEqual(backend.signIns.count, 1, "the session is reused")
+        XCTAssertEqual(backend.signIns.first?.0, "papa")
+        XCTAssertEqual(backend.signIns.first?.2, "k")
+        XCTAssertNil(search.accountNote)
+    }
+
+    func testWithoutAnAccountNothingIsSignedIn() async throws {
+        try keychain.saveSecret("k", forKey: OpenSubtitlesCredentials.keychainKey)
+        try keychain.saveSecret("papa", forKey: OpenSubtitlesCredentials.userKey) // no password: half an account
+        let backend = FakeSubtitleBackend()
+        let search = SubtitleSearchModel(backend: backend, mediaTitle: "Film", keychain: keychain, defaults: defaults, cacheDirectory: directory)
+        await search.search()
+        XCTAssertTrue(backend.signIns.isEmpty)
+        try? keychain.deleteSecret(forKey: OpenSubtitlesCredentials.userKey)
+    }
+
+    func testARefusedLoginIsReportedButTheSearchContinues() async throws {
+        try keychain.saveSecret("k", forKey: OpenSubtitlesCredentials.keychainKey)
+        try keychain.saveSecret("papa", forKey: OpenSubtitlesCredentials.userKey)
+        try keychain.saveSecret("wrong", forKey: OpenSubtitlesCredentials.passwordKey)
+        let backend = FakeSubtitleBackend()
+        backend.signInError = CndError.Network(message: "mot de passe refusé")
+        backend.results = [SubtitleSearchResult(id: "1", fileId: 1, fileName: "a.srt", language: "fr", release: "R", downloadCount: 1, rating: 1)]
+        let search = SubtitleSearchModel(backend: backend, mediaTitle: "Film", keychain: keychain, defaults: defaults, cacheDirectory: directory)
+        await search.search()
+        XCTAssertTrue(try XCTUnwrap(search.accountNote).contains("mot de passe refusé"))
+        guard case .results = search.state else { return XCTFail("the anonymous search still ran: \(search.state)") }
+    }
+}
+
+final class AutoSubtitlePolicyTests: XCTestCase {
+    private func track(_ language: String?) -> MediaTrack { MediaTrack(id: UUID().uuidString, title: "t", language: language, isSelected: false) }
+    private let film = PlayableMedia(title: "Film", url: URL(string: "http://h/a.mp4")!, kind: .movie)
+    private let live = PlayableMedia(title: "Chaîne", url: URL(string: "http://h/a.m3u8")!, kind: .live)
+
+    func testLanguageNamesAreNormalised() {
+        XCTAssertEqual(AutoSubtitlePolicy.preferred("fr, EN ,pt-BR"), ["fr", "en", "pt"])
+        for name in ["fra", "fre", "fr-FR", "French", "FR"] { XCTAssertEqual(AutoSubtitlePolicy.normalize(name), "fr", name) }
+        XCTAssertEqual(AutoSubtitlePolicy.normalize("eng"), "en")
+    }
+
+    func testSearchesOnlyWhenEnabledWithAKeyAndNoTrackInAPreferredLanguage() {
+        func should(_ media: PlayableMedia? = nil, tracks: [MediaTrack] = [], overlay: Bool = false, enabled: Bool = true, key: Bool = true, languages: String = "fr,en") -> Bool {
+            AutoSubtitlePolicy.shouldSearch(media: media ?? film, tracks: tracks, overlayLoaded: overlay, languages: languages, enabled: enabled, hasKey: key)
+        }
+        XCTAssertTrue(should())
+        XCTAssertTrue(should(tracks: [track("de")]), "a track in another language does not count")
+        XCTAssertFalse(should(tracks: [track("fra")]), "an embedded French track is enough")
+        XCTAssertFalse(should(tracks: [track("en")]), "English is one of the preferred languages")
+        XCTAssertFalse(should(enabled: false), "off by default")
+        XCTAssertFalse(should(key: false))
+        XCTAssertFalse(should(overlay: true), "something is already loaded")
+        XCTAssertFalse(should(live), "never for a live stream")
+        XCTAssertFalse(should(languages: " , "))
+    }
+
+    func testTheBestResultFollowsTheLanguageOrderThenPopularity() {
+        func row(_ id: Int64, _ language: String, _ downloads: UInt32) -> SubtitleSearchModel.Row {
+            SubtitleSearchModel.Row(fileId: id, language: language, release: "r", downloads: downloads, rating: 5)
+        }
+        let rows = [row(1, "en", 9_000), row(2, "fr", 10), row(3, "fr", 500), row(4, "de", 99_999)]
+        XCTAssertEqual(AutoSubtitlePolicy.best(of: rows, languages: "fr,en")?.fileId, 3, "French first, then the most downloaded")
+        XCTAssertEqual(AutoSubtitlePolicy.best(of: rows, languages: "en,fr")?.fileId, 1)
+        XCTAssertEqual(AutoSubtitlePolicy.best(of: [row(4, "de", 1)], languages: "fr")?.fileId, 4, "better something than nothing")
+        XCTAssertNil(AutoSubtitlePolicy.best(of: [], languages: "fr"))
     }
 }

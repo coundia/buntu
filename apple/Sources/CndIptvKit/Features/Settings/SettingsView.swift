@@ -17,6 +17,7 @@ struct SettingsView: View {
     @AppStorage("healthChecksEnabled") private var healthChecksEnabled = true
     @AppStorage("timeshiftDuration") private var timeshiftDurationRaw: String = TimeshiftDuration.oneHour.rawValue
     @AppStorage("openSubtitlesLanguages") private var openSubtitlesLanguages: String = "fr,en"
+    @AppStorage("openSubtitlesAutoSearch") private var openSubtitlesAutoSearch = false
     @State private var showingProfilesManagement = false
     @State private var showingAdultUnlock = false
     @State private var parental = ParentalControlManager.shared
@@ -133,7 +134,11 @@ struct SettingsView: View {
         Section("Sous-titres en ligne (OpenSubtitles)") {
             SecureField("Clé API OpenSubtitles", text: $model.openSubtitlesKey)
             TextField("Langues préférées", text: $openSubtitlesLanguages)
-            Text("Utilisé pour rechercher et télécharger les sous-titres manquants via api.opensubtitles.com.")
+            TextField("Compte OpenSubtitles (facultatif)", text: $model.openSubtitlesUser)
+                .autocorrectionDisabled()
+            SecureField("Mot de passe du compte", text: $model.openSubtitlesPassword)
+            Toggle("Rechercher automatiquement quand il n'y a pas de sous-titres dans ma langue", isOn: $openSubtitlesAutoSearch)
+            Text("Utilisé pour rechercher et télécharger les sous-titres manquants via api.opensubtitles.com. Un compte lève la limite de téléchargements par jour. La recherche automatique ne concerne ni le direct ni les flux sans clé API.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
