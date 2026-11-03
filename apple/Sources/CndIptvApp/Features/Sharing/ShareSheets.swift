@@ -96,7 +96,7 @@ struct ShareSourcesSheet: View {
                     #else
                     Text(package.codeText)
                         .font(.system(.title2, design: .monospaced).weight(.semibold))
-                        .textSelection(.enabled)
+                        .selectableText()
                         .multilineTextAlignment(.center)
                     #endif
                     Text("Pour un fichier, communiquez ce code séparément.")
@@ -392,5 +392,17 @@ struct ImportShareSheet: View {
             Section { Text("Les sources prêtes sont synchronisées en arrière-plan.").font(.caption).foregroundStyle(.secondary) }
         }
         .formStyle(.grouped)
+    }
+}
+
+private extension View {
+    /// Text selection does not exist on tvOS.
+    @ViewBuilder
+    func selectableText() -> some View {
+        #if os(tvOS)
+        self
+        #else
+        self.textSelection(.enabled)
+        #endif
     }
 }
