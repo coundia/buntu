@@ -12,6 +12,7 @@ struct LiveTvView: View {
     var onOpenAssistant: (() -> Void)?
     var onAddToMultiView: ((IptvItemRecord) -> Void)? = nil
     var onOpenMultiView: (() -> Void)? = nil
+    var onStartOver: ((IptvItemRecord, EpgProgramRecord) -> Void)? = nil
     @Binding var searchRequest: String?
 
     @AppStorage("live.viewMode") private var viewModeRaw = LiveViewMode.grid.rawValue
@@ -29,6 +30,7 @@ struct LiveTvView: View {
         onOpenAssistant: (() -> Void)? = nil,
         onAddToMultiView: ((IptvItemRecord) -> Void)? = nil,
         onOpenMultiView: (() -> Void)? = nil,
+        onStartOver: ((IptvItemRecord, EpgProgramRecord) -> Void)? = nil,
         searchRequest: Binding<String?> = .constant(nil)
     ) {
         let model = LiveTvModel(engine: engine)
@@ -43,6 +45,7 @@ struct LiveTvView: View {
         self.onOpenAssistant = onOpenAssistant
         self.onAddToMultiView = onAddToMultiView
         self.onOpenMultiView = onOpenMultiView
+        self.onStartOver = onStartOver
         _searchRequest = searchRequest
     }
 
@@ -86,6 +89,7 @@ struct LiveTvView: View {
                     mirrorTarget = item
                 }
             },
+            startOver: onStartOver,
             showGuide: onShowGuide
         )
     }

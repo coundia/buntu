@@ -148,7 +148,7 @@ final class SourcesTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let active = XtreamAccountInfo(
             status: "active", expDateTs: 1_800_000_000 + 86_400 * 30, isTrial: false,
-            activeConnections: 1, maxConnections: 2, serverTimezone: nil
+            activeConnections: 1, maxConnections: 2, serverTimezone: nil, serverUtcOffsetSecs: nil
         )
         let text = SourceFormModel.describe(active, now: now)
         XCTAssertTrue(text.contains("Active"))
@@ -157,7 +157,7 @@ final class SourcesTests: XCTestCase {
 
         let expired = XtreamAccountInfo(
             status: "expired", expDateTs: 1_800_000_000 - 86_400, isTrial: true,
-            activeConnections: 0, maxConnections: 0, serverTimezone: nil
+            activeConnections: 0, maxConnections: 0, serverTimezone: nil, serverUtcOffsetSecs: nil
         )
         let expiredText = SourceFormModel.describe(expired, now: now)
         XCTAssertTrue(expiredText.contains("expiré le"))
