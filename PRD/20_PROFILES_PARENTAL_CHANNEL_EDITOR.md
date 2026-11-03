@@ -64,8 +64,10 @@ Trois lots livrés et validés **dans l'ordre**, chacun utilisable seul.
 - **Sélecteur de profil au lancement** : « Qui regarde ? » s'affiche une fois par lancement s'il y a plus d'un profil ; quitter le profil Enfants pour un autre demande le PIN.
 - Changer de profil recharge les catalogues (les listes masquées sont celles du profil actif).
 
+- **Favoris et historique par profil (lot 20.2)** : `favorites` et `watch_history` ont maintenant la clé primaire `(profile_id, stable_hash)` (migration idempotente qui reconstruit les tables sans perdre une ligne ; essayée sur une copie d'une vraie base), toutes les requêtes (étoiles du catalogue, listes de favoris, « Récents », reprise de lecture, compteurs, classement des miroirs, assistant) suivent le profil actif. La synchronisation iCloud ne transporte que le profil principal, et un autre profil qui retire une chaîne ne supprime plus le favori du profil principal sur les autres appareils. 5 tests Rust.
+
 **Non réalisé**
-- **Favoris et historique par profil** : les colonnes `profile_id` existent mais les requêtes de `favorites` et `watch_history` ne les utilisent pas (clé primaire sur `stable_hash` seul) : ces données restent communes à tous les profils. Les favoris d'une catégorie adulte restent visibles dans les favoris.
+- **Favoris des catégories adultes** : ils restent visibles dans les favoris du profil qui les a choisis.
 - **Indicateur `is_adult` des catégories Xtream** : non stocké, seule la détection par nom est utilisée.
 - **Profil Enfants en liste blanche** (« seules les catégories autorisées explicitement ») : le masquage fonctionne par liste noire.
 - Synchronisation iCloud des profils (`uuid`). Un test borne à 1,5 s une page de catalogue et les facettes sur 100 000 chaînes avec la règle adulte (mesure fine non faite).

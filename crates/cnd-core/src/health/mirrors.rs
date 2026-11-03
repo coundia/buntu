@@ -76,9 +76,9 @@ pub fn find_mirrors(
                           sh.status AS health_status,
                           sh.latency_ms AS health_latency_ms
                    FROM iptv_items i
-                   LEFT JOIN favorites fav ON fav.stable_hash = i.stable_hash
+                   LEFT JOIN favorites fav ON fav.profile_id = (SELECT id FROM temp.active_profile) AND fav.stable_hash = i.stable_hash
                    LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
-                   LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
+                   LEFT JOIN watch_history wh ON wh.profile_id = (SELECT id FROM temp.active_profile) AND wh.stable_hash = i.stable_hash
                    LEFT JOIN stream_health sh ON sh.stable_hash = i.stable_hash
                    WHERE i.kind = 'live'
                      AND i.id != ?1

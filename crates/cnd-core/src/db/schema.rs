@@ -138,9 +138,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_epg_unique_slot ON epg_programs(channel_tv
 
 -- User Favorites (independent of pagination)
 CREATE TABLE IF NOT EXISTS favorites (
-    stable_hash TEXT PRIMARY KEY,
+    profile_id INTEGER NOT NULL DEFAULT 1,
+    stable_hash TEXT NOT NULL,
     item_kind TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(profile_id, stable_hash)
 );
 
 -- Items flagged as broken / non-functional by the user or health probes
@@ -173,11 +175,13 @@ CREATE TABLE IF NOT EXISTS sync_tombstones (
 
 -- Watch History & Playback Progress (independent of pagination)
 CREATE TABLE IF NOT EXISTS watch_history (
-    stable_hash TEXT PRIMARY KEY,
+    profile_id INTEGER NOT NULL DEFAULT 1,
+    stable_hash TEXT NOT NULL,
     position_ms INTEGER NOT NULL,
     duration_ms INTEGER NOT NULL,
     completed INTEGER DEFAULT 0,
-    last_watched_at INTEGER NOT NULL
+    last_watched_at INTEGER NOT NULL,
+    PRIMARY KEY(profile_id, stable_hash)
 );
 
 -- Download Manager tables (Multi-segment support)

@@ -274,9 +274,9 @@ impl DatabaseManager {
         self.with_conn(|conn| {
             let order_sql = static_item_order_clause(filter.sort_by, filter.sort_asc);
             let fav_join = if filter.favorites_only {
-                "INNER JOIN favorites f ON f.stable_hash = i.stable_hash"
+                "INNER JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = i.stable_hash"
             } else {
-                "LEFT JOIN favorites f ON f.stable_hash = i.stable_hash"
+                "LEFT JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = i.stable_hash"
             };
             let broken_clause = if filter.include_broken {
                 ""
@@ -300,7 +300,7 @@ impl DatabaseManager {
                          JOIN iptv_items_fts ON iptv_items_fts.rowid = i.id
                          {fav_join}
                          LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
-                         LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
+                         LEFT JOIN watch_history wh ON wh.profile_id = (SELECT id FROM temp.active_profile) AND wh.stable_hash = i.stable_hash
                          WHERE iptv_items_fts MATCH ?1
                            AND i.kind = ?2
                            AND (?3 IS NULL OR i.source_id = ?3)
@@ -337,7 +337,7 @@ impl DatabaseManager {
                          FROM iptv_items i
                          {fav_join}
                          LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
-                         LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
+                         LEFT JOIN watch_history wh ON wh.profile_id = (SELECT id FROM temp.active_profile) AND wh.stable_hash = i.stable_hash
                          WHERE i.kind = ?1
                            AND i.name LIKE ?2 ESCAPE '\\'
                            AND (?3 IS NULL OR i.source_id = ?3)
@@ -374,7 +374,7 @@ impl DatabaseManager {
                  FROM iptv_items i
                  {fav_join}
                  LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
-                 LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
+                 LEFT JOIN watch_history wh ON wh.profile_id = (SELECT id FROM temp.active_profile) AND wh.stable_hash = i.stable_hash
                  WHERE i.kind = ?1
                    AND (?2 IS NULL OR i.source_id = ?2)
                    AND (?3 IS NULL OR i.group_title = ?3)
@@ -408,9 +408,9 @@ impl DatabaseManager {
         self.with_conn(|conn| {
             let order_sql = static_series_order_clause(filter.sort_by, filter.sort_asc);
             let fav_join = if filter.favorites_only {
-                "INNER JOIN favorites f ON f.stable_hash = sc.stable_hash"
+                "INNER JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = sc.stable_hash"
             } else {
-                "LEFT JOIN favorites f ON f.stable_hash = sc.stable_hash"
+                "LEFT JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = sc.stable_hash"
             };
             let broken_clause = if filter.include_broken {
                 ""
@@ -503,9 +503,9 @@ impl DatabaseManager {
             let sql = format!(
                 "SELECT {ITEM_SELECT_COLUMNS}
                  FROM iptv_items i
-                 LEFT JOIN favorites f ON f.stable_hash = i.stable_hash
+                 LEFT JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = i.stable_hash
                  LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
-                 LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
+                 LEFT JOIN watch_history wh ON wh.profile_id = (SELECT id FROM temp.active_profile) AND wh.stable_hash = i.stable_hash
                  WHERE i.series_id = ?1
                    AND i.kind = 'episode'
                    AND (?2 IS NULL OR COALESCE(i.season_num, 1) = ?2)
@@ -528,8 +528,8 @@ impl DatabaseManager {
                  FROM favorites f
                  INNER JOIN iptv_items i ON i.stable_hash = f.stable_hash
                  LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
-                 LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
-                 WHERE i.kind = ?1
+                 LEFT JOIN watch_history wh ON wh.profile_id = (SELECT id FROM temp.active_profile) AND wh.stable_hash = i.stable_hash
+                 WHERE f.profile_id = (SELECT id FROM temp.active_profile) AND i.kind = ?1
                  ORDER BY f.created_at DESC, i.name COLLATE NOCASE ASC"
             );
             let mut stmt = conn.prepare_cached(&sql)?;
@@ -553,6 +553,7 @@ impl DatabaseManager {
                  FROM favorites f
                  INNER JOIN series_catalog sc ON sc.stable_hash = f.stable_hash
                  LEFT JOIN broken_flags bf ON bf.stable_hash = sc.stable_hash
+                 WHERE f.profile_id = (SELECT id FROM temp.active_profile)
                  ORDER BY f.created_at DESC, sc.title COLLATE NOCASE ASC",
             )?;
             let rows = stmt.query_map([], map_series_row)?;
@@ -581,9 +582,9 @@ impl DatabaseManager {
 
         self.with_conn(|conn| {
             conn.execute(
-                "INSERT INTO watch_history (stable_hash, position_ms, duration_ms, completed, last_watched_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
-                 ON CONFLICT(stable_hash) DO UPDATE SET
+                "INSERT INTO watch_history (profile_id, stable_hash, position_ms, duration_ms, completed, last_watched_at)
+                 VALUES ((SELECT id FROM temp.active_profile), ?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(profile_id, stable_hash) DO UPDATE SET
                      position_ms = excluded.position_ms,
                      duration_ms = excluded.duration_ms,
                      completed = excluded.completed,
@@ -600,9 +601,9 @@ impl DatabaseManager {
             let sql = format!(
                 "SELECT {ITEM_SELECT_COLUMNS}
                  FROM iptv_items i
-                 LEFT JOIN favorites f ON f.stable_hash = i.stable_hash
+                 LEFT JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = i.stable_hash
                  LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
-                 LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
+                 LEFT JOIN watch_history wh ON wh.profile_id = (SELECT id FROM temp.active_profile) AND wh.stable_hash = i.stable_hash
                  WHERE i.id = ?1"
             );
             let mut stmt = conn.prepare_cached(&sql)?;
@@ -621,7 +622,7 @@ impl DatabaseManager {
                         (f.stable_hash IS NOT NULL) AS is_favorite,
                         (bf.stable_hash IS NOT NULL) AS is_broken
                  FROM series_catalog sc
-                 LEFT JOIN favorites f ON f.stable_hash = sc.stable_hash
+                 LEFT JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = sc.stable_hash
                  LEFT JOIN broken_flags bf ON bf.stable_hash = sc.stable_hash
                  WHERE sc.id = ?1",
             )?;
@@ -641,9 +642,9 @@ impl DatabaseManager {
                 "SELECT {ITEM_SELECT_COLUMNS}
                  FROM watch_history wh
                  INNER JOIN iptv_items i ON i.stable_hash = wh.stable_hash
-                 LEFT JOIN favorites f ON f.stable_hash = i.stable_hash
+                 LEFT JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = i.stable_hash
                  LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
-                 WHERE i.kind = ?1
+                 WHERE wh.profile_id = (SELECT id FROM temp.active_profile) AND i.kind = ?1
                  ORDER BY wh.last_watched_at DESC, i.id DESC
                  LIMIT ?2"
             );
@@ -670,8 +671,8 @@ impl DatabaseManager {
                         (bf.stable_hash IS NOT NULL) AS is_broken
                  FROM series_catalog sc
                  INNER JOIN iptv_items ep ON ep.series_id = sc.id AND ep.kind = 'episode'
-                 INNER JOIN watch_history wh ON wh.stable_hash = ep.stable_hash
-                 LEFT JOIN favorites f ON f.stable_hash = sc.stable_hash
+                 INNER JOIN watch_history wh ON wh.profile_id = (SELECT id FROM temp.active_profile) AND wh.stable_hash = ep.stable_hash
+                 LEFT JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = sc.stable_hash
                  LEFT JOIN broken_flags bf ON bf.stable_hash = sc.stable_hash
                  GROUP BY sc.id
                  ORDER BY MAX(wh.last_watched_at) DESC
@@ -692,8 +693,8 @@ impl DatabaseManager {
                 "SELECT {ITEM_SELECT_COLUMNS}
                  FROM broken_flags bf
                  INNER JOIN iptv_items i ON i.stable_hash = bf.stable_hash
-                 LEFT JOIN favorites f ON f.stable_hash = i.stable_hash
-                 LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
+                 LEFT JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = i.stable_hash
+                 LEFT JOIN watch_history wh ON wh.profile_id = (SELECT id FROM temp.active_profile) AND wh.stable_hash = i.stable_hash
                  WHERE i.kind = ?1
                  ORDER BY bf.flagged_at DESC, i.name COLLATE NOCASE ASC"
             );
@@ -717,7 +718,7 @@ impl DatabaseManager {
                         1 AS is_broken
                  FROM broken_flags bf
                  INNER JOIN series_catalog sc ON sc.stable_hash = bf.stable_hash
-                 LEFT JOIN favorites f ON f.stable_hash = sc.stable_hash
+                 LEFT JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = sc.stable_hash
                  ORDER BY bf.flagged_at DESC, sc.title COLLATE NOCASE ASC",
             )?;
             let rows = stmt.query_map([], map_series_row)?;
@@ -1235,5 +1236,77 @@ mod profile_isolation_tests {
         assert_eq!(page.len(), 100);
         assert!(groups.iter().all(|g| !g.value.starts_with("Adult")), "adult groups are not listed");
         assert!(elapsed.as_millis() < 1500, "a list and the category facets took {elapsed:?} on 100k channels");
+    }
+
+    fn favorites(db: &DatabaseManager) -> Vec<String> {
+        db.list_favorite_items("live").expect("favorites").into_iter().map(|i| i.stable_hash).collect()
+    }
+
+    #[test]
+    fn each_profile_has_its_own_favorites() {
+        let db = db_with_groups(&["Sport", "Info"]); // hashes h0 and h1
+        assert!(db.toggle_favorite("h0", "live").unwrap(), "added for profile 1");
+        assert_eq!(favorites(&db), vec!["h0"]);
+
+        db.set_active_profile(2).unwrap();
+        assert!(favorites(&db).is_empty(), "profile 2 starts without favorites");
+        assert!(db.toggle_favorite("h0", "live").unwrap(), "the same channel can be a favorite there too");
+        assert!(db.toggle_favorite("h1", "live").unwrap());
+        assert_eq!(favorites(&db).len(), 2);
+
+        // Removing it from profile 2 leaves profile 1 alone.
+        assert!(!db.toggle_favorite("h0", "live").unwrap());
+        db.set_active_profile(1).unwrap();
+        assert_eq!(favorites(&db), vec!["h0"]);
+        assert_eq!(db.get_stats().unwrap().total_favorites, 1, "the counter follows the profile too");
+        db.set_active_profile(2).unwrap();
+        assert_eq!(db.get_stats().unwrap().total_favorites, 1);
+        assert_eq!(favorites(&db), vec!["h1"]);
+    }
+
+    #[test]
+    fn the_channel_flags_and_lists_follow_the_active_profile() {
+        let db = db_with_groups(&["Sport"]);
+        db.toggle_favorite("h0", "live").unwrap();
+        let flag = |db: &DatabaseManager| db.query_catalog(&filter("live", "", false)).unwrap()[0].is_favorite;
+        assert!(flag(&db));
+        db.set_active_profile(2).unwrap();
+        assert!(!flag(&db), "the star shown in the catalog is the active profile's");
+    }
+
+    #[test]
+    fn watch_history_is_kept_per_profile() {
+        let db = db_with_groups(&["Sport"]);
+        let recent = |db: &DatabaseManager| db.list_recent_items("live", 10).unwrap().len();
+        db.record_watch_progress("h0", 1_000, 10_000).unwrap();
+        assert_eq!(recent(&db), 1);
+
+        db.set_active_profile(2).unwrap();
+        assert_eq!(recent(&db), 0, "profile 2 has watched nothing");
+        db.record_watch_progress("h0", 5_000, 10_000).unwrap();
+        assert_eq!(recent(&db), 1);
+
+        db.set_active_profile(1).unwrap();
+        let positions = db.with_conn(|c| {
+            let mut stmt = c.prepare("SELECT profile_id, position_ms FROM watch_history ORDER BY profile_id")?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        }).unwrap();
+        assert_eq!(positions, vec![(1, 1_000), (2, 5_000)], "two independent resume points for the same channel");
+    }
+
+    #[test]
+    fn only_the_main_profile_feeds_icloud_sync() {
+        let db = db_with_groups(&["Sport", "Info"]);
+        db.toggle_favorite("h0", "live").unwrap();
+        db.set_active_profile(2).unwrap();
+        db.toggle_favorite("h1", "live").unwrap();
+        db.toggle_favorite("h0", "live").unwrap(); // profile 2 adds then...
+        db.toggle_favorite("h0", "live").unwrap(); // ...removes h0
+
+        let delta = db.export_sync_delta(0).unwrap();
+        let hashes: Vec<&str> = delta.favorites.iter().map(|f| f.stable_hash.as_str()).collect();
+        assert_eq!(hashes, vec!["h0"], "profile 2's favorite is not synced");
+        assert!(delta.tombstones.is_empty(), "profile 2 removing a channel must not delete it elsewhere");
     }
 }
