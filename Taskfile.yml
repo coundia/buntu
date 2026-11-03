@@ -162,6 +162,30 @@ tasks:
         -destination 'generic/platform=visionOS Simulator'
         -derivedDataPath ../{{.DERIVED_DATA}} CODE_SIGNING_ALLOWED=NO -quiet build
 
+  # ------------------------------------------------------------ archives (PRD 23)
+  # DEVELOPMENT_TEAM=<team id> signs the archive; without it the archive is built unsigned.
+  app:macos:
+    desc: Release archive of the macOS app in build/archives (DEVELOPMENT_TEAM=<id> to sign)
+    dir: "{{.APPLE_DIR}}"
+    cmds:
+      - >-
+        xcodebuild -project CndIPTV.xcodeproj -scheme CndIPTV-macOS -configuration Release
+        -destination 'generic/platform=macOS' -archivePath ../build/archives/CndIPTV-macOS.xcarchive
+        -derivedDataPath ../{{.DERIVED_DATA}}
+        {{if .DEVELOPMENT_TEAM}}DEVELOPMENT_TEAM={{.DEVELOPMENT_TEAM}} -allowProvisioningUpdates{{else}}CODE_SIGNING_ALLOWED=NO{{end}}
+        -quiet archive
+
+  app:ios:
+    desc: Release archive of the iPhone/iPad app in build/archives (DEVELOPMENT_TEAM=<id> to sign)
+    dir: "{{.APPLE_DIR}}"
+    cmds:
+      - >-
+        xcodebuild -project CndIPTV.xcodeproj -scheme CndIPTV-iOS -configuration Release
+        -destination 'generic/platform=iOS' -archivePath ../build/archives/CndIPTV-iOS.xcarchive
+        -derivedDataPath ../{{.DERIVED_DATA}}
+        {{if .DEVELOPMENT_TEAM}}DEVELOPMENT_TEAM={{.DEVELOPMENT_TEAM}} -allowProvisioningUpdates{{else}}CODE_SIGNING_ALLOWED=NO{{end}}
+        -quiet archive
+
   # ------------------------------------------------------------ groups
   test:
     desc: All fast tests (Rust, bridge, app)
