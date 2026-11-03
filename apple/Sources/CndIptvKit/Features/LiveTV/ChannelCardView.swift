@@ -57,18 +57,34 @@ struct ChannelCardView: View {
     let actions: ChannelActions
 
     var body: some View {
+        content
+        .contextMenu { menu }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        #if os(tvOS)
+        // A tap gesture is not focusable with the Siri Remote: the whole card is the button
+        // (select plays, long press opens the menu, which holds the favorite toggle).
+        Button { actions.play(item) } label: { layout }
+            .buttonStyle(.card)
+        #else
+        layout
+            .contentShape(Rectangle())
+            .onTapGesture { actions.play(item) }
+        #endif
+    }
+
+    private var layout: some View {
         Group {
             switch style {
             case .card: card
             case .row: row
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture { actions.play(item) }
-        .contextMenu { menu }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(accessibilityText)
     }
 
     // MARK: Layouts
@@ -163,13 +179,18 @@ struct ChannelCardView: View {
         }
     }
 
+    @ViewBuilder
     private var favoriteButton: some View {
+        #if os(tvOS)
+        if item.isFavorite { Image(systemName: "star.fill").foregroundStyle(Color.yellow) }
+        #else
         Button { actions.toggleFavorite(item) } label: {
             Image(systemName: item.isFavorite ? "star.fill" : "star")
                 .foregroundStyle(item.isFavorite ? Color.yellow : Color.secondary)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+        #endif
     }
 
     @ViewBuilder

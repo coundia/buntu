@@ -251,12 +251,8 @@ struct LiveTvView: View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Label(title, systemImage: icon).font(.title3.bold())
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 12) {
-                        ForEach(items, id: \.id) { item in
-                            card(item, style: .card).frame(width: 280)
-                        }
-                    }
+                HorizontalShelf(items: items, spacing: 12) { item in
+                    card(item, style: .card).frame(width: 280)
                 }
             }
         }

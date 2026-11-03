@@ -2,7 +2,7 @@ import SwiftUI
 import CndCoreBridge
 
 /// Adaptive category picker around a screen's content: a permanent column with counters from
-/// 900 pt of width (macOS, iPad landscape), horizontal chips plus a searchable sheet below.
+/// 900 pt of width (iPad landscape; 520 pt on macOS), horizontal chips plus a searchable sheet below.
 struct CategoryNavigation<Content: View>: View {
     let groups: [FacetCount]
     let totalCount: Int
@@ -11,22 +11,35 @@ struct CategoryNavigation<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     @State private var isWide = false
+    @AppStorage("categories.collapsed") private var collapsed = false
     @State private var showingSheet = false
     @State private var query = ""
+    @State private var chipIndex = 0
 
-    static var wideLayoutThreshold: CGFloat { 900 }
+    /// On a Mac the vertical list stays up in small windows (a mouse wheel cannot scroll the chips
+    /// sideways); the column is narrower there.
+    static var wideLayoutThreshold: CGFloat {
+        #if os(macOS)
+        520
+        #else
+        900
+        #endif
+    }
     private static var chipLimit: Int { 40 }
 
     var body: some View {
         GeometryReader { geo in
             let wide = geo.size.width >= Self.wideLayoutThreshold
             HStack(spacing: 0) {
-                if wide {
+                if wide && !collapsed {
                     VStack(spacing: 0) {
-                        filterField
+                        HStack(spacing: 0) {
+                            homeButton
+                            filterField
+                        }
                         list
                     }
-                    .frame(width: 250)
+                    .frame(width: geo.size.width >= 900 ? 250 : 190)
                     Divider()
                 }
                 VStack(spacing: 0) {
@@ -41,6 +54,14 @@ struct CategoryNavigation<Content: View>: View {
                 ToolbarItem(placement: .automatic) {
                     Button { showingSheet = true } label: { Label("Catégories", systemImage: "folder") }
                 }
+            } else {
+                ToolbarItem(placement: .automatic) {
+                    Button { withAnimation { collapsed.toggle() } } label: {
+                        Label(collapsed ? "Afficher les catégories" : "Masquer les catégories",
+                              systemImage: "sidebar.left")
+                    }
+                    .help(collapsed ? "Afficher les catégories" : "Masquer les catégories")
+                }
             }
         }
         .sheet(isPresented: $showingSheet) { sheet }
@@ -50,6 +71,25 @@ struct CategoryNavigation<Content: View>: View {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return groups }
         return groups.filter { $0.value.localizedCaseInsensitiveContains(needle) }
+    }
+
+    /// Back to the start: every category, no category filter text. Also what "all" does.
+    private func goHome() {
+        selection = nil
+        query = ""
+    }
+
+    /// The home button.
+    private var homeButton: some View {
+        Button(action: goHome) {
+            Image(systemName: "house.fill")
+        }
+        .padding(.leading, 8)
+        .accessibilityLabel("Accueil : toutes les catégories")
+        #if !os(tvOS)
+        .buttonStyle(.borderless)
+        .help("Accueil : toutes les catégories")
+        #endif
     }
 
     private var filterField: some View {
@@ -68,6 +108,7 @@ struct CategoryNavigation<Content: View>: View {
             #if os(tvOS)
             Label(allTitle, systemImage: "square.grid.2x2")
                 .tag(String?.none)
+                .onChange(of: selection) { _, newValue in if newValue == nil { query = "" } }
             ForEach(filteredGroups, id: \.value) { group in
                 Text(group.value)
                     .lineLimit(1)
@@ -77,6 +118,7 @@ struct CategoryNavigation<Content: View>: View {
             Label(allTitle, systemImage: "square.grid.2x2")
                 .badge(totalCount)
                 .tag(String?.none)
+                .simultaneousGesture(TapGesture().onEnded { goHome() })
             ForEach(filteredGroups, id: \.value) { group in
                 Text(group.value)
                     .lineLimit(1)
@@ -113,22 +155,50 @@ struct CategoryNavigation<Content: View>: View {
     }
 
     private var chips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                chip("Toutes", selected: selection == nil) { selection = nil }
-                ForEach(groups.prefix(Self.chipLimit), id: \.value) { group in
-                    chip("\(group.value) \(group.count)", selected: selection == group.value) {
-                        selection = group.value
+        let shown = Array(groups.prefix(Self.chipLimit))
+        return ScrollViewReader { proxy in
+            HStack(spacing: 0) {
+                #if os(macOS)
+                // A mouse wheel does not scroll sideways: explicit arrows step through the chips.
+                chipArrow("chevron.left", "Catégories précédentes") {
+                    chipIndex = max(0, chipIndex - 4)
+                    withAnimation { proxy.scrollTo(chipIndex, anchor: .leading) }
+                }
+                #endif
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        chip("Toutes", selected: selection == nil) { selection = nil }.id(0)
+                        ForEach(Array(shown.enumerated()), id: \.element.value) { index, group in
+                            chip("\(group.value) \(group.count)", selected: selection == group.value) {
+                                selection = group.value
+                            }
+                            .id(index + 1)
+                        }
+                        if groups.count > Self.chipLimit {
+                            chip("Plus…", selected: false) { showingSheet = true }.id(shown.count + 1)
+                        }
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                 }
-                if groups.count > Self.chipLimit {
-                    chip("Plus…", selected: false) { showingSheet = true }
+                #if os(macOS)
+                chipArrow("chevron.right", "Catégories suivantes") {
+                    chipIndex = min(shown.count + 1, chipIndex + 4)
+                    withAnimation { proxy.scrollTo(chipIndex, anchor: .leading) }
                 }
+                #endif
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
         }
     }
+
+    #if os(macOS)
+    private func chipArrow(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: symbol).frame(width: 22, height: 28) }
+            .buttonStyle(.plain)
+            .accessibilityLabel(label)
+            .help(label)
+    }
+    #endif
 
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {

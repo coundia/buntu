@@ -93,6 +93,10 @@ private struct LoadedShellView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     /// True while the window is full screen because the player asked for it (not because the user chose it).
     @State private var fullscreenIsOurs = false
+    #if os(macOS)
+    @AppStorage("sidePanel.width") private var sidePanelWidthStored: Double = 0
+    @State private var sidePanelDragStart: Double?
+    #endif
     @State private var windowIsFullscreen = false
     @State private var isDropTargeted = false
     @State private var multiViewController = MultiViewController()
@@ -274,6 +278,15 @@ private struct LoadedShellView: View {
     private var collapseAction: (() -> Void)? {
         #if os(macOS)
         { setExpanded(false) }
+        #else
+        nil
+        #endif
+    }
+
+    /// macOS Mode Cinéma: the large player in full screen on black; the same button leaves it.
+    private var cinemaAction: (() -> Void)? {
+        #if os(macOS)
+        { toggleWindowFullscreen() }
         #else
         nil
         #endif
@@ -534,8 +547,8 @@ private struct LoadedShellView: View {
                 content(for: selectedTab)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if showsSidePanel {
-                    Divider()
-                    sidePanel.frame(width: detailSelection == nil ? 360 : 400)
+                    sidePanelResizeHandle
+                    sidePanel.frame(width: sidePanelWidth)
                 }
             }
             .overlay {
@@ -827,6 +840,38 @@ private struct LoadedShellView: View {
         selectedTab == .movies || selectedTab == .series ? vodContext.selection : nil
     }
 
+    #if os(macOS)
+    /// Drag the divider to enlarge the player column (double-click restores the default width).
+    private var sidePanelResizeHandle: some View {
+        Divider()
+            .padding(.horizontal, 3)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        if sidePanelDragStart == nil { sidePanelDragStart = sidePanelWidth }
+                        let proposed = (sidePanelDragStart ?? sidePanelWidth) - value.translation.width
+                        sidePanelWidthStored = min(max(proposed, Self.sidePanelMinWidth), Self.sidePanelMaxWidth)
+                    }
+                    .onEnded { _ in sidePanelDragStart = nil }
+            )
+            .onTapGesture(count: 2) { sidePanelWidthStored = 0 }
+            .help("Glisser pour agrandir le lecteur, double-clic pour rétablir")
+    }
+
+    private static var sidePanelMinWidth: CGFloat { 320 }
+    private static var sidePanelMaxWidth: CGFloat { 1100 }
+
+    private var sidePanelWidth: CGFloat {
+        sidePanelWidthStored > 0
+            ? sidePanelWidthStored
+            : (detailSelection == nil ? 360 : 400)
+    }
+    #endif
+
     private var showsSidePanel: Bool {
         (hasMedia && !isPlayerExpanded) || detailSelection != nil
     }
@@ -867,7 +912,8 @@ private struct LoadedShellView: View {
             closesOnDisappear: false,
             pip: pip,
             subtitleSearch: { makeSubtitleSearch() },
-            onReturnToLive: { returnToLive() }
+            onReturnToLive: { returnToLive() },
+            onToggleCinema: { setExpanded(true) }
         )
         .aspectRatio(16 / 9, contentMode: .fit)
     }
@@ -914,7 +960,9 @@ private struct LoadedShellView: View {
             isFullscreen: expandedShowsFullscreen,
             onZap: { zap($0) },
             subtitleSearch: { makeSubtitleSearch() },
-            onReturnToLive: { returnToLive() }
+            onReturnToLive: { returnToLive() },
+            onToggleCinema: cinemaAction,
+            isCinema: expandedShowsFullscreen
         )
         .background(Color.black)
     }
