@@ -463,9 +463,9 @@ fn items_with_number(db: &DatabaseManager, number: u32) -> Result<Vec<IptvItemRe
         let sql = format!(
             "SELECT {ITEM_SELECT_COLUMNS}
              FROM iptv_items i
-             LEFT JOIN favorites f ON f.stable_hash = i.stable_hash
+             LEFT JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = i.stable_hash
              LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash
-             LEFT JOIN watch_history wh ON wh.stable_hash = i.stable_hash
+             LEFT JOIN watch_history wh ON wh.profile_id = (SELECT id FROM temp.active_profile) AND wh.stable_hash = i.stable_hash
              WHERE i.kind = 'live' AND i.chno = ?1 AND bf.stable_hash IS NULL
              ORDER BY i.id ASC LIMIT 20"
         );

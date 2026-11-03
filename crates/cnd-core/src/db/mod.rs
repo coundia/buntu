@@ -192,6 +192,10 @@ impl DatabaseManager {
         .flatten()
     }
 
+    fn active_profile_is_main(conn: &Connection) -> bool {
+        conn.query_row("SELECT id FROM temp.active_profile", [], |r| r.get::<_, i64>(0)).unwrap_or(1) == 1
+    }
+
     pub fn set_active_profile(&self, id: i64) -> std::result::Result<(), DbError> {
         self.with_conn(|conn| {
             conn.execute("UPDATE temp.active_profile SET id = ?1", params![id])?;
@@ -270,6 +274,55 @@ impl DatabaseManager {
             // Ignore duplicate column error on already-migrated databases
             let _ = conn.execute(sql, []);
         }
+        Self::scope_user_data_to_profiles(conn)?;
+        Ok(())
+    }
+
+    /// Favorites and watch history used a primary key on `stable_hash` alone, so two profiles could not
+    /// each have the same channel as a favorite. Rebuilds both tables with `(profile_id, stable_hash)`,
+    /// keeping every existing row (they all belong to profile 1). Does nothing once migrated.
+    fn scope_user_data_to_profiles(conn: &Connection) -> std::result::Result<(), DbError> {
+        let key_columns = |table: &str| -> std::result::Result<Vec<String>, DbError> {
+            let mut stmt = conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}') WHERE pk > 0 ORDER BY pk"))?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+        };
+        if key_columns("favorites")? != ["profile_id", "stable_hash"] {
+            conn.execute_batch(
+                "BEGIN;
+                 CREATE TABLE favorites_scoped (
+                     profile_id INTEGER NOT NULL DEFAULT 1,
+                     stable_hash TEXT NOT NULL,
+                     item_kind TEXT NOT NULL,
+                     created_at INTEGER NOT NULL,
+                     PRIMARY KEY(profile_id, stable_hash)
+                 );
+                 INSERT INTO favorites_scoped (profile_id, stable_hash, item_kind, created_at)
+                     SELECT profile_id, stable_hash, item_kind, created_at FROM favorites;
+                 DROP TABLE favorites;
+                 ALTER TABLE favorites_scoped RENAME TO favorites;
+                 COMMIT;",
+            )?;
+        }
+        if key_columns("watch_history")? != ["profile_id", "stable_hash"] {
+            conn.execute_batch(
+                "BEGIN;
+                 CREATE TABLE watch_history_scoped (
+                     profile_id INTEGER NOT NULL DEFAULT 1,
+                     stable_hash TEXT NOT NULL,
+                     position_ms INTEGER NOT NULL,
+                     duration_ms INTEGER NOT NULL,
+                     completed INTEGER DEFAULT 0,
+                     last_watched_at INTEGER NOT NULL,
+                     PRIMARY KEY(profile_id, stable_hash)
+                 );
+                 INSERT INTO watch_history_scoped (profile_id, stable_hash, position_ms, duration_ms, completed, last_watched_at)
+                     SELECT profile_id, stable_hash, position_ms, duration_ms, completed, last_watched_at FROM watch_history;
+                 DROP TABLE watch_history;
+                 ALTER TABLE watch_history_scoped RENAME TO watch_history;
+                 COMMIT;",
+            )?;
+        }
         Ok(())
     }
 
@@ -323,7 +376,7 @@ impl DatabaseManager {
         ).unwrap_or(0);
 
         let total_favorites: u32 = conn.query_row(
-            "SELECT COUNT(*) FROM favorites",
+            "SELECT COUNT(*) FROM favorites WHERE profile_id = (SELECT id FROM temp.active_profile)",
             [],
             |r| r.get(0),
         ).unwrap_or(0);
@@ -413,25 +466,35 @@ impl DatabaseManager {
     pub fn toggle_favorite(&self, stable_hash: &str, item_kind: &str) -> std::result::Result<bool, DbError> {
         let conn = self.conn.lock().map_err(|e| DbError::Lock(e.to_string()))?;
         let exists: bool = conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM favorites WHERE stable_hash = ?1)",
+            "SELECT EXISTS(SELECT 1 FROM favorites WHERE profile_id = (SELECT id FROM temp.active_profile) AND stable_hash = ?1)",
             params![stable_hash],
             |r| r.get(0),
         ).unwrap_or(false);
 
         if exists {
-            conn.execute("DELETE FROM favorites WHERE stable_hash = ?1", params![stable_hash])?;
-            sync_repo::upsert_tombstone(&conn, sync_repo::TOMBSTONE_FAVORITE, stable_hash, chrono_now_ts())?;
+            conn.execute(
+                "DELETE FROM favorites WHERE profile_id = (SELECT id FROM temp.active_profile) AND stable_hash = ?1",
+                params![stable_hash],
+            )?;
+            // iCloud sync only carries the main profile's favorites: another profile removing a channel
+            // must not delete it from the main profile on the other devices.
+            if Self::active_profile_is_main(&conn) {
+                sync_repo::upsert_tombstone(&conn, sync_repo::TOMBSTONE_FAVORITE, stable_hash, chrono_now_ts())?;
+            }
             Ok(false)
         } else {
             let now = chrono_now_ts();
             conn.execute(
-                "INSERT INTO favorites (stable_hash, item_kind, created_at) VALUES (?1, ?2, ?3)",
+                "INSERT INTO favorites (profile_id, stable_hash, item_kind, created_at)
+                 VALUES ((SELECT id FROM temp.active_profile), ?1, ?2, ?3)",
                 params![stable_hash, item_kind, now],
             )?;
-            conn.execute(
-                "DELETE FROM sync_tombstones WHERE kind = ?1 AND key = ?2",
-                params![sync_repo::TOMBSTONE_FAVORITE, stable_hash],
-            )?;
+            if Self::active_profile_is_main(&conn) {
+                conn.execute(
+                    "DELETE FROM sync_tombstones WHERE kind = ?1 AND key = ?2",
+                    params![sync_repo::TOMBSTONE_FAVORITE, stable_hash],
+                )?;
+            }
             Ok(true)
         }
     }
@@ -683,4 +746,52 @@ mod tests {
         let search_none = db.query_items("live", "Canal", None, None, 10, 0).unwrap();
         assert_eq!(search_none.len(), 0);
     }
+
+    #[test]
+    fn old_favorites_and_history_move_to_profile_scoped_tables_without_loss() {
+        let conn = Connection::open_in_memory().unwrap();
+        // The shape before profiles: primary key on stable_hash alone, plus the late profile_id column.
+        conn.execute_batch(
+            "CREATE TABLE favorites (stable_hash TEXT PRIMARY KEY, item_kind TEXT NOT NULL, created_at INTEGER NOT NULL);
+             CREATE TABLE watch_history (stable_hash TEXT PRIMARY KEY, position_ms INTEGER NOT NULL, duration_ms INTEGER NOT NULL, completed INTEGER DEFAULT 0, last_watched_at INTEGER NOT NULL);
+             ALTER TABLE favorites ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1;
+             ALTER TABLE watch_history ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1;
+             INSERT INTO favorites (stable_hash, item_kind, created_at) VALUES ('a', 'live', 10), ('b', 'movie', 20);
+             INSERT INTO watch_history (stable_hash, position_ms, duration_ms, completed, last_watched_at) VALUES ('a', 5, 100, 0, 30);",
+        )
+        .unwrap();
+
+        DatabaseManager::scope_user_data_to_profiles(&conn).unwrap();
+        DatabaseManager::scope_user_data_to_profiles(&conn).expect("running it again is harmless");
+
+        let favorites: Vec<(i64, String)> = conn
+            .prepare("SELECT profile_id, stable_hash FROM favorites ORDER BY stable_hash").unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(Result::unwrap).collect();
+        assert_eq!(favorites, vec![(1, "a".to_string()), (1, "b".to_string())], "every old row belongs to profile 1");
+        let history: i64 = conn.query_row("SELECT position_ms FROM watch_history WHERE profile_id = 1 AND stable_hash = 'a'", [], |r| r.get(0)).unwrap();
+        assert_eq!(history, 5);
+
+        // The same channel can now be a favorite for another profile.
+        conn.execute("INSERT INTO favorites (profile_id, stable_hash, item_kind, created_at) VALUES (2, 'a', 'live', 40)", []).unwrap();
+        let pk: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('favorites') WHERE pk > 0 ORDER BY pk").unwrap()
+            .query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+        assert_eq!(pk, vec!["profile_id", "stable_hash"]);
+    }
+
+    /// Manual check on a copy of a real database: `CND_TEST_DB=/path/to/copy.db cargo test -- --ignored real_database`.
+    #[test]
+    #[ignore]
+    fn real_database_survives_the_profile_scoping_migration() {
+        let Ok(path) = std::env::var("CND_TEST_DB") else { return };
+        let count = |p: &str, table: &str| -> i64 {
+            Connection::open(p).unwrap().query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0)).unwrap()
+        };
+        let (favs, history) = (count(&path, "favorites"), count(&path, "watch_history"));
+        let db = DatabaseManager::open(&path).expect("opens and migrates");
+        drop(db);
+        assert_eq!(count(&path, "favorites"), favs);
+        assert_eq!(count(&path, "watch_history"), history);
+    }
 }
+
