@@ -50,13 +50,16 @@ final class MpvLibrary: @unchecked Sendable {
     private static var candidatePaths: [String] {
         var paths: [String] = []
         if let frameworks = Bundle.main.privateFrameworksPath {
+            paths.append(frameworks + "/Libmpv.framework/Libmpv")
             paths.append(frameworks + "/libmpv.2.dylib")
             paths.append(frameworks + "/libmpv.dylib")
         }
         if let executableDir = Bundle.main.executableURL?.deletingLastPathComponent().path {
+            paths.append(executableDir + "/Frameworks/Libmpv.framework/Libmpv")
             paths.append(executableDir + "/libmpv.2.dylib")
         }
         paths.append("libmpv.2.dylib")
+        paths.append("@rpath/Libmpv.framework/Libmpv")
         #if os(macOS)
         paths.append(contentsOf: [
             "/opt/homebrew/lib/libmpv.2.dylib",
@@ -68,10 +71,18 @@ final class MpvLibrary: @unchecked Sendable {
 
     private init?() {
         var opened: UnsafeMutableRawPointer?
-        for path in Self.candidatePaths {
-            if let handle = dlopen(path, RTLD_NOW | RTLD_LOCAL) {
-                opened = handle
-                break
+
+        // 1. If libmpv is already linked into the process (e.g. static/dynamic linkage via MPVKit XCFramework)
+        if let processHandle = dlopen(nil, RTLD_NOW | RTLD_LOCAL),
+           dlsym(processHandle, "mpv_create") != nil {
+            opened = processHandle
+        } else {
+            // 2. Otherwise search candidate paths (embedded Frameworks, Homebrew, etc.)
+            for path in Self.candidatePaths {
+                if let handle = dlopen(path, RTLD_NOW | RTLD_LOCAL) {
+                    opened = handle
+                    break
+                }
             }
         }
         guard let lib = opened else { return nil }
