@@ -124,6 +124,7 @@ public final class CndPlayerController {
     /// Last diagnosis for the current media; a final one stops any further reconnection.
     @ObservationIgnored public private(set) var diagnosis: StreamDiagnosis?
     @ObservationIgnored private var diagnosisTask: Task<Void, Never>?
+    @ObservationIgnored private var formatTask: Task<Void, Never>?
     @ObservationIgnored private var recentDropouts: [Date] = []
 
     /// Custom async handler for favorite persistence; returns the new `isFavorite` state.
@@ -363,6 +364,8 @@ public final class CndPlayerController {
     }
 
     private func releaseBackend() {
+        formatTask?.cancel()
+        formatTask = nil
         generation += 1
         backend?.teardown()
         backend = nil
@@ -495,6 +498,7 @@ public final class CndPlayerController {
         case .playing where previous != .playing:
             if previous == .loading { AppLog.shared.info("PLAYER", "Lecture démarrée") }
             refreshTracks()
+            scheduleFormatDetection()
         default:
             break
         }
@@ -529,6 +533,23 @@ public final class CndPlayerController {
                 self.state = .failed(result.message)
             } else {
                 AppLog.shared.warn("PLAYER", "Diagnostic : \(result.message)")
+            }
+        }
+    }
+
+    /// Asks the engine for the video's frame rate and dynamic range for a few seconds after the start (the
+    /// engines only know them once the first frames are decoded) and hands them to the display matcher.
+    private func scheduleFormatDetection() {
+        formatTask?.cancel()
+        let token = generation
+        formatTask = Task { @MainActor [weak self] in
+            for _ in 0..<10 {
+                guard let self, !Task.isCancelled, self.generation == token else { return }
+                if let reading = self.backend?.currentVideoFormat() {
+                    DisplayRateMatcher.shared.update(rawFps: reading.fps, gamma: reading.gamma, primaries: reading.primaries)
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
     }

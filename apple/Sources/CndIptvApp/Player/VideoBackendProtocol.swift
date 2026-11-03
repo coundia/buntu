@@ -25,6 +25,20 @@ public struct MediaTrack: Identifiable, Equatable, Sendable {
     }
 }
 
+/// What a backend measured on the video it is playing (for display frame-rate matching).
+public struct VideoFormatReading: Equatable, Sendable {
+    public var fps: Double
+    /// mpv-style names: "pq", "hlg", "bt.1886"...
+    public var gamma: String?
+    public var primaries: String?
+
+    public init(fps: Double, gamma: String? = nil, primaries: String? = nil) {
+        self.fps = fps
+        self.gamma = gamma
+        self.primaries = primaries
+    }
+}
+
 /// Common contract of the two playback engines. Every call happens on the main actor.
 @MainActor
 public protocol VideoBackend: AnyObject {
@@ -62,9 +76,12 @@ public protocol VideoBackend: AnyObject {
     func addExternalSubtitle(fileUrl: URL) -> Bool
     func seekLiveRelative(seconds: Double)
     func returnToLive()
+    /// Frame rate and dynamic range of the video being played, `nil` while not known yet.
+    func currentVideoFormat() -> VideoFormatReading?
 }
 
 extension VideoBackend {
+    public func currentVideoFormat() -> VideoFormatReading? { nil }
     public func setAudioEnhancement(_ config: AudioEnhancementConfig) {}
     public func setSubtitleDelay(seconds: Double) {}
     public func addExternalSubtitle(fileUrl: URL) -> Bool { false }
