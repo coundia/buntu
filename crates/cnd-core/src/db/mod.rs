@@ -120,6 +120,7 @@ impl DatabaseManager {
         // Execute PRAGMAs and Schema creation
         conn.execute_batch(schema::INIT_SQL)?;
         Self::apply_incremental_migrations(&conn)?;
+        Self::init_active_profile(&conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -131,9 +132,29 @@ impl DatabaseManager {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(schema::INIT_SQL)?;
         Self::apply_incremental_migrations(&conn)?;
+        Self::init_active_profile(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
             db_path: ":memory:".to_string(),
+        })
+    }
+
+    /// The profile whose hidden lists and custom order the catalog queries apply. It lives in a
+    /// connection-local table so the SQL can read it (`(SELECT id FROM temp.active_profile)`) without
+    /// threading a parameter through every query. Profile 1 ("Principal") is the default.
+    fn init_active_profile(conn: &Connection) -> std::result::Result<(), DbError> {
+        conn.execute_batch(
+            "CREATE TEMP TABLE IF NOT EXISTS active_profile (id INTEGER NOT NULL);
+             DELETE FROM temp.active_profile;
+             INSERT INTO temp.active_profile (id) VALUES (1);",
+        )?;
+        Ok(())
+    }
+
+    pub fn set_active_profile(&self, id: i64) -> std::result::Result<(), DbError> {
+        self.with_conn(|conn| {
+            conn.execute("UPDATE temp.active_profile SET id = ?1", params![id])?;
+            Ok(())
         })
     }
 
