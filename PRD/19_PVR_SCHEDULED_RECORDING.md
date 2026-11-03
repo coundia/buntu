@@ -70,3 +70,17 @@ Enregistrer une émission à venir depuis le guide, ou toutes les diffusions d'u
 2. Tests Swift : `RecordingsView` model (états, lecture d'un fichier), menus EPG.
 3. Test manuel macOS : enregistrement de 10 min d'une chaîne HLS et d'une chaîne TS, relecture.
 4. `task check` au vert.
+
+---
+
+## Statut d'Implémentation & Validation (audit)
+
+**Réalisé ✅** : capture TS et HLS (`recorder/ts_capture.rs`, `hls_capture.rs`), planificateur, Series-Link, écran Enregistrements, éveil de la machine sur macOS, marges avant/après.
+
+**Corrigé lors de l'audit** : le PRD exige des garde-fous qui n'existaient pas.
+- **Conflits de connexions** : un enregistrement qui dépasserait `max_connections` de sa source est refusé (état `failed`, motif en français). Seuls les enregistrements entre eux sont comptés : regarder une chaîne de la même source en même temps n'est pas détecté côté Rust, et le message le rappelle.
+- **Espace disque** : avant le départ (estimation 4 Go par heure plus 1 Go de marge, message avec les chiffres) et pendant la capture (vérification toutes les 10 s : sous 1 Go libre, l'enregistrement s'arrête proprement en `partial` en gardant ce qui est capturé).
+- Un enregistrement qui échouait à l'ouverture du client HTTP restait compté comme actif : corrigé.
+- Tests : `recorder/limits.rs` et `recorder/mod.rs` (limite à 1 connexion, sources distinctes, disque insuffisant, libération).
+
+**Non vérifié** : captures de bout en bout sur un vrai fournisseur ; l'option « ouvrir à l'ouverture de session » (`SMAppService`) n'a pas été contrôlée.
