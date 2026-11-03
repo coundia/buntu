@@ -55,6 +55,17 @@ tasks:
     cmds:
       - ./scripts/run-macos.sh --build-only
 
+  install:
+    desc: Build (release) and install CND IPTV into /Applications on this Mac
+    aliases: [app:install]
+    cmds:
+      - ./scripts/install-macos.sh
+
+  install:user:
+    desc: Build (release) and install CND IPTV into ~/Applications (user-only)
+    cmds:
+      - ./scripts/install-macos.sh --user
+
   cli:
     desc: "Run the Rust CLI, e.g. task cli -- download <url> [dir]"
     cmds:
