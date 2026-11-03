@@ -146,9 +146,31 @@ impl DatabaseManager {
         conn.execute_batch(
             "CREATE TEMP TABLE IF NOT EXISTS active_profile (id INTEGER NOT NULL);
              DELETE FROM temp.active_profile;
-             INSERT INTO temp.active_profile (id) VALUES (1);",
+             INSERT INTO temp.active_profile (id) VALUES (1);
+             CREATE TEMP TABLE IF NOT EXISTS catalog_flags (show_adult INTEGER NOT NULL);
+             DELETE FROM temp.catalog_flags;
+             INSERT INTO temp.catalog_flags (show_adult) VALUES (0);",
+        )?;
+        // The same word-boundary keyword rule as `is_adult_category`, callable from the catalog SQL.
+        conn.create_scalar_function(
+            "is_adult_group",
+            1,
+            rusqlite::functions::FunctionFlags::SQLITE_UTF8 | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+            |ctx| {
+                let group: Option<String> = ctx.get(0)?;
+                Ok(group.is_some_and(|g| profile_repo::is_adult_category(&g)))
+            },
         )?;
         Ok(())
+    }
+
+    /// Whether categories recognised as adult (keywords on the name) appear in the catalog. Off by
+    /// default; the app turns it on for a session once the parental PIN has been entered.
+    pub fn set_adult_content_visible(&self, visible: bool) -> std::result::Result<(), DbError> {
+        self.with_conn(|conn| {
+            conn.execute("UPDATE temp.catalog_flags SET show_adult = ?1", params![visible as i64])?;
+            Ok(())
+        })
     }
 
     pub fn set_active_profile(&self, id: i64) -> std::result::Result<(), DbError> {

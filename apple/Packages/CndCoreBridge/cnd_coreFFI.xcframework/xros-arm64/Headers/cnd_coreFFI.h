@@ -702,6 +702,11 @@ uint64_t uniffi_cnd_core_fn_method_cndengine_search_subtitles(void*_Nonnull ptr,
 void uniffi_cnd_core_fn_method_cndengine_set_active_profile_id(void*_Nonnull ptr, int64_t id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SET_ADULT_CONTENT_VISIBLE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SET_ADULT_CONTENT_VISIBLE
+void uniffi_cnd_core_fn_method_cndengine_set_adult_content_visible(void*_Nonnull ptr, int8_t visible, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SET_BROKEN
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SET_BROKEN
 int8_t uniffi_cnd_core_fn_method_cndengine_set_broken(void*_Nonnull ptr, RustBuffer stable_hash, RustBuffer item_kind, int8_t broken, RustCallStatus *_Nonnull out_status
@@ -1592,6 +1597,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_search_subtitles(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SET_ACTIVE_PROFILE_ID
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SET_ACTIVE_PROFILE_ID
 uint16_t uniffi_cnd_core_checksum_method_cndengine_set_active_profile_id(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SET_ADULT_CONTENT_VISIBLE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SET_ADULT_CONTENT_VISIBLE
+uint16_t uniffi_cnd_core_checksum_method_cndengine_set_adult_content_visible(void
     
 );
 #endif

@@ -78,12 +78,25 @@ public final class AppState {
         }
         showNetworkConsole = engine.getSettings().showNetworkConsole
         ProfilesModel.restoreActiveProfile(engine: engine)
-        profiles = ProfilesModel(engine: engine)
+        let profilesModel = ProfilesModel(engine: engine)
+        profilesModel.onActiveProfileChanged = { [weak self] in self?.applyParentalVisibility() }
+        profiles = profilesModel
+        ParentalControlManager.shared.onAdultSessionChange = { [weak self] in self?.applyParentalVisibility() }
+        applyParentalVisibility(reload: false)
         let sync = CloudKitSyncManager(engine: engine)
         sync.onRemoteChange = { [weak self] _ in self?.reloadSnapshot() }
         cloudSync = sync
         sync.start()
         reloadSnapshot()
+    }
+
+    /// Adult categories are hidden unless the PIN unlocked them for the session, and never shown to the
+    /// Kids profile. Hidden lists follow the active profile, so screens reload when either changes.
+    func applyParentalVisibility(reload: Bool = true) {
+        guard let engine else { return }
+        let visible = ParentalControlManager.shared.isAdultUnlocked && !(profiles?.isKidsModeActive ?? false)
+        try? engine.setAdultContentVisible(visible: visible)
+        if reload { catalogRevision += 1 }
     }
 
     private func openEngine() {
