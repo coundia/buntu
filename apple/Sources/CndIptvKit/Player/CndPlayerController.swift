@@ -92,9 +92,15 @@ public struct PlayerTimings: Sendable {
 @Observable
 @MainActor
 public final class CndPlayerController {
+    public let id: UUID
     public private(set) var media: PlayableMedia?
     public private(set) var queue: PlaylistQueue?
-    public private(set) var state: PlaybackState = .idle
+    public private(set) var state: PlaybackState = .idle {
+        didSet {
+            guard state != oldValue else { return }
+            updateSleepAssertion()
+        }
+    }
     public private(set) var positionMs: Int64 = 0
     public private(set) var durationMs: Int64 = 0
     public private(set) var activeEngine: PlayerEngineKind?
@@ -173,6 +179,7 @@ public final class CndPlayerController {
         return delay
     }
 
+    @ObservationIgnored private let sleepManager: PlaybackSleepManager
     @ObservationIgnored private var backend: (any VideoBackend)?
     @ObservationIgnored private let backendFactory: (PlayerEngineKind) -> (any VideoBackend)?
     @ObservationIgnored private let isEngineAvailable: (PlayerEngineKind) -> Bool
@@ -193,8 +200,12 @@ public final class CndPlayerController {
         reachability: NetworkReachability? = nil,
         timings: PlayerTimings = PlayerTimings(),
         backendFactory: ((PlayerEngineKind) -> (any VideoBackend)?)? = nil,
-        isEngineAvailable: ((PlayerEngineKind) -> Bool)? = nil
+        isEngineAvailable: ((PlayerEngineKind) -> Bool)? = nil,
+        sleepManager: PlaybackSleepManager? = nil,
+        id: UUID = UUID()
     ) {
+        self.id = id
+        self.sleepManager = sleepManager ?? PlaybackSleepManager.shared
         self.recorder = recorder
         self.reachability = reachability ?? NWPathReachability()
         self.timings = timings
@@ -202,6 +213,14 @@ public final class CndPlayerController {
         // With a custom factory every engine is assumed available unless told otherwise.
         self.isEngineAvailable = isEngineAvailable
             ?? (backendFactory == nil ? CndPlayerController.defaultEngineAvailability : { _ in true })
+    }
+
+    deinit {
+        let token = id
+        let manager = sleepManager
+        Task { @MainActor in
+            manager.remove(id: token)
+        }
     }
 
     public static func defaultEngineAvailability(_ kind: PlayerEngineKind) -> Bool {
@@ -546,7 +565,10 @@ public final class CndPlayerController {
             for _ in 0..<10 {
                 guard let self, !Task.isCancelled, self.generation == token else { return }
                 if let reading = self.backend?.currentVideoFormat() {
-                    DisplayRateMatcher.shared.update(rawFps: reading.fps, gamma: reading.gamma, primaries: reading.primaries)
+                    DisplayRateMatcher.shared.update(
+                        rawFps: reading.fps, gamma: reading.gamma, primaries: reading.primaries,
+                        width: reading.width, height: reading.height
+                    )
                     return
                 }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -762,6 +784,7 @@ public final class CndPlayerController {
         media = nil
         queue = nil
         state = .idle
+        sleepManager.remove(id: id)
         activeEngine = nil
         positionMs = 0
         durationMs = 0
@@ -773,5 +796,16 @@ public final class CndPlayerController {
         livePauseStartTime = nil
         TimeshiftCacheManager.cleanCacheDirectory()
         DisplayRateMatcher.shared.reset()
+    }
+
+    private func updateSleepAssertion() {
+        let isPlaying: Bool
+        switch state {
+        case .playing, .buffering, .loading:
+            isPlaying = true
+        case .idle, .paused, .ended, .failed:
+            isPlaying = false
+        }
+        sleepManager.setPlaying(isPlaying, for: id)
     }
 }
