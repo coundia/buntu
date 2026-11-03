@@ -59,8 +59,13 @@ Trois lots livrés et validés **dans l'ordre**, chacun utilisable seul.
 - **Isolation des profils (lot 20.1)** : les requêtes du catalogue lisaient les groupes masqués et l'ordre personnalisé du profil **1 en dur**, quel que soit le profil actif ; masquer un groupe pour le profil Enfants n'avait donc aucun effet. Elles suivent maintenant le profil actif (`set_active_profile`, table temporaire lue par le SQL). 3 tests Rust.
 - **Profil Enfants (lot 20.3)** : le profil actif était oublié à chaque lancement (on en sortait en relançant l'app, sans PIN) ; il est maintenant mémorisé. Le profil Enfants n'a plus accès aux onglets Sources et Réglages ni à l'assistant IA, et un bouton cadenas demande le PIN pour le quitter (sans PIN défini, la sortie est libre et l'écran le dit).
 
+**Ajouté ensuite**
+- **Catégories adultes masquées par défaut** (lot 20.3) : la règle de détection par mots entiers (`adult`, `adulte`, `xxx`, `+18`, `18+`, `porn`, `erotic`, `nsfw`, « pour adultes »…) est appelée directement par les requêtes du catalogue (fonction SQL `is_adult_group`), pour les catégories, les listes de chaînes, de films et de séries et la recherche. Elles ne sont pas affichées tant que le PIN n'a pas déverrouillé la session : Réglages > Contrôle parental > « Déverrouiller 15 minutes… » (PIN, Face ID / Touch ID ; libre si aucun PIN n'est défini, et l'écran le dit), reverrouillage automatique au bout de 15 minutes, jamais visibles pour le profil Enfants. L'éditeur de bouquets voit toujours tout. 8 tests (Rust et Swift).
+- **Sélecteur de profil au lancement** : « Qui regarde ? » s'affiche une fois par lancement s'il y a plus d'un profil ; quitter le profil Enfants pour un autre demande le PIN.
+- Changer de profil recharge les catalogues (les listes masquées sont celles du profil actif).
+
 **Non réalisé**
-- **Favoris et historique par profil** : les colonnes `profile_id` existent mais les requêtes de `favorites` et `watch_history` ne les utilisent pas (clé primaire sur `stable_hash` seul) : ces données restent communes à tous les profils.
-- **Catégories adultes masquées par défaut** et déverrouillage de 15 minutes avec le PIN dans le catalogue : la détection existe (`is_adult_category`) mais n'est appliquée qu'à l'éditeur de bouquets ; rien n'est masqué automatiquement.
+- **Favoris et historique par profil** : les colonnes `profile_id` existent mais les requêtes de `favorites` et `watch_history` ne les utilisent pas (clé primaire sur `stable_hash` seul) : ces données restent communes à tous les profils. Les favoris d'une catégorie adulte restent visibles dans les favoris.
+- **Indicateur `is_adult` des catégories Xtream** : non stocké, seule la détection par nom est utilisée.
 - **Profil Enfants en liste blanche** (« seules les catégories autorisées explicitement ») : le masquage fonctionne par liste noire.
-- Sélecteur de profil au lancement, synchronisation iCloud des profils (`uuid`), Face ID dans le flux de sortie du profil Enfants, mesure de performance sur 100 000 éléments.
+- Synchronisation iCloud des profils (`uuid`). Un test borne à 1,5 s une page de catalogue et les facettes sur 100 000 chaînes avec la règle adulte (mesure fine non faite).

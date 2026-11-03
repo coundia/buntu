@@ -191,7 +191,7 @@ impl DatabaseManager {
             let hidden_clause = if include_hidden {
                 ""
             } else {
-                " AND NOT EXISTS (SELECT 1 FROM hidden_groups h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.kind = ?2 AND h.group_key = LOWER(TRIM(group_title)))"
+                " AND NOT EXISTS (SELECT 1 FROM hidden_groups h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.kind = ?2 AND h.group_key = LOWER(TRIM(group_title))) AND ((SELECT show_adult FROM temp.catalog_flags) = 1 OR NOT is_adult_group(group_title))"
             };
 
             let sql = if kind == "series" {
@@ -287,7 +287,8 @@ impl DatabaseManager {
                 ""
             } else {
                 "AND NOT EXISTS (SELECT 1 FROM hidden_items h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.stable_hash = i.stable_hash) \
-                 AND (i.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = i.kind AND g.group_key = LOWER(TRIM(i.group_title))))"
+                 AND (i.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = i.kind AND g.group_key = LOWER(TRIM(i.group_title)))) \
+                 AND ((SELECT show_adult FROM temp.catalog_flags) = 1 OR NOT is_adult_group(i.group_title))"
             };
 
             let trimmed_q = filter.query.trim();
@@ -419,7 +420,8 @@ impl DatabaseManager {
             let hidden_clause = if filter.include_hidden {
                 ""
             } else {
-                "AND (sc.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = 'series' AND g.group_key = LOWER(TRIM(sc.group_title))))"
+                "AND (sc.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = 'series' AND g.group_key = LOWER(TRIM(sc.group_title)))) \
+                 AND ((SELECT show_adult FROM temp.catalog_flags) = 1 OR NOT is_adult_group(sc.group_title))"
             };
 
             let trimmed_q = filter.query.trim();
@@ -1104,13 +1106,13 @@ mod profile_isolation_tests {
 
     #[test]
     fn a_group_hidden_by_one_profile_stays_visible_to_the_others() {
-        let db = db_with_groups(&["Sport", "Info", "Adulte"]);
-        db.hide_group(2, "live", "Adulte").expect("hide for profile 2");
+        let db = db_with_groups(&["Sport", "Info", "Documentaires"]);
+        db.hide_group(2, "live", "Documentaires").expect("hide for profile 2");
 
-        assert!(names(&db).contains(&"Adulte".to_string()), "profile 1 still sees it");
+        assert!(names(&db).contains(&"Documentaires".to_string()), "profile 1 still sees it");
 
         db.set_active_profile(2).expect("switch");
-        assert!(!names(&db).contains(&"Adulte".to_string()), "profile 2 does not");
+        assert!(!names(&db).contains(&"Documentaires".to_string()), "profile 2 does not");
         assert_eq!(names(&db).len(), 2);
 
         db.set_active_profile(1).expect("switch back");
@@ -1119,8 +1121,8 @@ mod profile_isolation_tests {
 
     #[test]
     fn hidden_groups_also_filter_the_channel_list_of_the_active_profile() {
-        let db = db_with_groups(&["Sport", "Adulte"]);
-        db.hide_group(2, "live", "Adulte").expect("hide");
+        let db = db_with_groups(&["Sport", "Documentaires"]);
+        db.hide_group(2, "live", "Documentaires").expect("hide");
         let count = |db: &DatabaseManager| {
             db.with_conn(|conn| {
                 let n: i64 = conn.query_row(
@@ -1148,5 +1150,90 @@ mod profile_isolation_tests {
 
         db.set_active_profile(2).expect("switch");
         assert_eq!(names(&db), vec!["Zulu", "Alpha"]);
+    }
+
+    fn filter(kind: &str, query: &str, include_hidden: bool) -> CatalogFilter {
+        CatalogFilter {
+            kind: kind.to_string(),
+            source_id: None,
+            query: query.to_string(),
+            group_title: None,
+            host: None,
+            favorites_only: false,
+            include_broken: true,
+            include_hidden,
+            sort_by: SortField::Name,
+            sort_asc: true,
+            limit: 100,
+            offset: 0,
+        }
+    }
+
+    #[test]
+    fn adult_categories_are_hidden_until_they_are_unlocked() {
+        let db = db_with_groups(&["Sport", "Adult Movies", "+18 Night", "XXX", "Adultes", "Info"]);
+        let shown = names(&db);
+        assert_eq!(shown, vec!["Info", "Sport"], "only the regular categories: {shown:?}");
+
+        db.set_adult_content_visible(true).expect("unlock");
+        assert_eq!(names(&db).len(), 6, "all categories while unlocked");
+
+        db.set_adult_content_visible(false).expect("lock again");
+        assert_eq!(names(&db).len(), 2);
+    }
+
+    #[test]
+    fn adult_channels_are_left_out_of_lists_and_searches_too() {
+        let db = db_with_groups(&["Sport", "Adult Movies"]);
+        let list = |db: &DatabaseManager, query: &str, include_hidden: bool| {
+            db.query_catalog(&filter("live", query, include_hidden)).expect("query").len()
+        };
+        assert_eq!(list(&db, "", false), 1, "the adult channel is not listed");
+        assert_eq!(list(&db, "Chaine", false), 1, "nor found by a search");
+
+        assert_eq!(list(&db, "", true), 2, "the bouquet editor still sees everything");
+
+        db.set_adult_content_visible(true).expect("unlock");
+        assert_eq!(list(&db, "", false), 2);
+    }
+
+    #[test]
+    fn the_adult_rule_matches_whole_words_not_fragments() {
+        let db = db_with_groups(&["Madulthood Documentaires", "Chaînes pour adultes", "Sport"]);
+        let shown = names(&db);
+        assert!(shown.contains(&"Madulthood Documentaires".to_string()), "a word that merely contains the letters");
+        assert!(!shown.contains(&"Chaînes pour adultes".to_string()));
+    }
+
+    /// PRD-20: the parental rules must not make browsing a big catalog slow.
+    #[test]
+    fn hiding_adult_groups_stays_fast_on_a_large_catalog() {
+        let db = DatabaseManager::open_in_memory().expect("db");
+        let source = db.add_source("S", "m3u", Some("http://x/l.m3u"), None, None, None).expect("source");
+        db.with_conn(|conn| {
+            conn.execute_batch("BEGIN")?;
+            {
+                let mut stmt = conn.prepare(
+                    "INSERT INTO iptv_items (source_id, stable_hash, kind, name, name_clean, group_title, host, stream_url, created_at, updated_at)
+                     VALUES (?1, ?2, 'live', ?3, ?3, ?4, 'x', 'http://x/1.ts', 0, 0)",
+                )?;
+                for i in 0..100_000 {
+                    let group = if i % 50 == 0 { format!("Adult {}", i % 7) } else { format!("Groupe {}", i % 400) };
+                    stmt.execute(params![source, format!("h{i}"), format!("Chaine {i}"), group])?;
+                }
+            }
+            conn.execute_batch("COMMIT")?;
+            Ok(())
+        })
+        .expect("100k items");
+
+        let started = std::time::Instant::now();
+        let page = db.query_catalog(&filter("live", "", false)).expect("page");
+        let groups = db.get_groups("live", None, false).expect("groups");
+        let elapsed = started.elapsed();
+
+        assert_eq!(page.len(), 100);
+        assert!(groups.iter().all(|g| !g.value.starts_with("Adult")), "adult groups are not listed");
+        assert!(elapsed.as_millis() < 1500, "a list and the category facets took {elapsed:?} on 100k channels");
     }
 }
