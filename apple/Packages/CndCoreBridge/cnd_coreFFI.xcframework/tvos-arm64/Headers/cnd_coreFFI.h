@@ -367,6 +367,11 @@ void uniffi_cnd_core_fn_method_cndengine_delete_source(void*_Nonnull ptr, int64_
 int8_t uniffi_cnd_core_fn_method_cndengine_disallow_group(void*_Nonnull ptr, int64_t profile_id, RustBuffer kind, RustBuffer group, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_DISMISS_RECOMMENDATION
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_DISMISS_RECOMMENDATION
+void uniffi_cnd_core_fn_method_cndengine_dismiss_recommendation(void*_Nonnull ptr, RustBuffer stable_hash, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_DOWNLOAD_SUBTITLE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_DOWNLOAD_SUBTITLE
 uint64_t uniffi_cnd_core_fn_method_cndengine_download_subtitle(void*_Nonnull ptr, int64_t file_id, RustBuffer target_dir, RustBuffer api_key
@@ -612,6 +617,11 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_list_series_rules(void*_Nonnull p
 RustBuffer uniffi_cnd_core_fn_method_cndengine_list_sources(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_NEXT_UP
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_NEXT_UP
+RustBuffer uniffi_cnd_core_fn_method_cndengine_next_up(void*_Nonnull ptr, int64_t item_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PARSE_SRT
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PARSE_SRT
 RustBuffer uniffi_cnd_core_fn_method_cndengine_parse_srt(void*_Nonnull ptr, RustBuffer srt_content, RustCallStatus *_Nonnull out_status
@@ -650,6 +660,11 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_query_items(void*_Nonnull ptr, Ru
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_QUERY_SERIES
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_QUERY_SERIES
 RustBuffer uniffi_cnd_core_fn_method_cndengine_query_series(void*_Nonnull ptr, RustBuffer filter, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RECOMMENDATIONS_FOR
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RECOMMENDATIONS_FOR
+RustBuffer uniffi_cnd_core_fn_method_cndengine_recommendations_for(void*_Nonnull ptr, int64_t item_id, RustBuffer context, uint32_t limit, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RECORD_NOW
@@ -692,9 +707,19 @@ int8_t uniffi_cnd_core_fn_method_cndengine_remove_from_favorite_folder(void*_Non
 int8_t uniffi_cnd_core_fn_method_cndengine_remove_series_rule(void*_Nonnull ptr, int64_t id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESET_DISMISSED_RECOMMENDATIONS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESET_DISMISSED_RECOMMENDATIONS
+void uniffi_cnd_core_fn_method_cndengine_reset_dismissed_recommendations(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESOLVE_CATCHUP_URL
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESOLVE_CATCHUP_URL
 RustBuffer uniffi_cnd_core_fn_method_cndengine_resolve_catchup_url(void*_Nonnull ptr, RustBuffer stream_url, RustBuffer catchup_type, RustBuffer catchup_source, RustBuffer catchup_days, int64_t start_ts, int64_t end_ts, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESOLVE_SAGA_WITH_AI
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESOLVE_SAGA_WITH_AI
+uint64_t uniffi_cnd_core_fn_method_cndengine_resolve_saga_with_ai(void*_Nonnull ptr, int64_t item_id, RustBuffer config
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RETRY_DOWNLOAD
@@ -705,6 +730,11 @@ uint64_t uniffi_cnd_core_fn_method_cndengine_retry_download(void*_Nonnull ptr, i
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RUN_HEALTH_CHECK_CYCLE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RUN_HEALTH_CHECK_CYCLE
 uint64_t uniffi_cnd_core_fn_method_cndengine_run_health_check_cycle(void*_Nonnull ptr, int8_t throttle
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SAGA_FOR
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SAGA_FOR
+RustBuffer uniffi_cnd_core_fn_method_cndengine_saga_for(void*_Nonnull ptr, int64_t item_id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SCHEDULE_RECORDING
@@ -1233,6 +1263,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_disallow_group(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_DISMISS_RECOMMENDATION
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_DISMISS_RECOMMENDATION
+uint16_t uniffi_cnd_core_checksum_method_cndengine_dismiss_recommendation(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_DOWNLOAD_SUBTITLE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_DOWNLOAD_SUBTITLE
 uint16_t uniffi_cnd_core_checksum_method_cndengine_download_subtitle(void
@@ -1527,6 +1563,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_list_sources(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_NEXT_UP
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_NEXT_UP
+uint16_t uniffi_cnd_core_checksum_method_cndengine_next_up(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PARSE_SRT
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PARSE_SRT
 uint16_t uniffi_cnd_core_checksum_method_cndengine_parse_srt(void
@@ -1572,6 +1614,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_query_items(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_QUERY_SERIES
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_QUERY_SERIES
 uint16_t uniffi_cnd_core_checksum_method_cndengine_query_series(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RECOMMENDATIONS_FOR
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RECOMMENDATIONS_FOR
+uint16_t uniffi_cnd_core_checksum_method_cndengine_recommendations_for(void
     
 );
 #endif
@@ -1623,9 +1671,21 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_remove_series_rule(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESET_DISMISSED_RECOMMENDATIONS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESET_DISMISSED_RECOMMENDATIONS
+uint16_t uniffi_cnd_core_checksum_method_cndengine_reset_dismissed_recommendations(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESOLVE_CATCHUP_URL
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESOLVE_CATCHUP_URL
 uint16_t uniffi_cnd_core_checksum_method_cndengine_resolve_catchup_url(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESOLVE_SAGA_WITH_AI
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESOLVE_SAGA_WITH_AI
+uint16_t uniffi_cnd_core_checksum_method_cndengine_resolve_saga_with_ai(void
     
 );
 #endif
@@ -1638,6 +1698,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_retry_download(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RUN_HEALTH_CHECK_CYCLE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RUN_HEALTH_CHECK_CYCLE
 uint16_t uniffi_cnd_core_checksum_method_cndengine_run_health_check_cycle(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SAGA_FOR
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SAGA_FOR
+uint16_t uniffi_cnd_core_checksum_method_cndengine_saga_for(void
     
 );
 #endif

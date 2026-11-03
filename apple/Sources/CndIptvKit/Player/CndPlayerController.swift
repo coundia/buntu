@@ -143,6 +143,11 @@ public final class CndPlayerController {
     /// Callback invoked whenever a broken toggle completes.
     public var onBrokenToggled: ((PlayableMedia, Bool) -> Void)?
 
+    /// Callbacks for external features (e.g. Up Next recommendations, Live Activity)
+    public var onMediaChanged: ((PlayableMedia?) -> Void)?
+    public var onProgressUpdate: ((Int64, Int64) -> Void)?
+    public var onPlaybackEnded: (() -> Void)?
+
     public var enginePreference: PlayerEnginePreference = .auto
     public var rate: Float = 1 { didSet { backend?.setRate(rate) } }
     public var volume: Float = 1 { didSet { backend?.setVolume(volume) } }
@@ -285,6 +290,7 @@ public final class CndPlayerController {
         liveDelaySeconds = 0
         livePauseStartTime = nil
         TimeshiftCacheManager.cleanCacheDirectory()
+        onMediaChanged?(media)
         loadBackend(media, resumeAt: resumeAt, engine: PlayerRouting.engine(for: media.url, preference: enginePreference))
         startMonitor()
     }
@@ -300,6 +306,7 @@ public final class CndPlayerController {
         self.isBroken = mirrorMedia.isBroken
         self.reconnectBanner = nil
         self.recoveryTask = nil
+        onMediaChanged?(mirrorMedia)
 
         let engine = PlayerRouting.engine(for: mirrorMedia.url, preference: enginePreference)
         loadBackend(mirrorMedia, resumeAt: 0, engine: engine)
@@ -578,7 +585,11 @@ public final class CndPlayerController {
 
     private func handleEnded() {
         if let media, !isLive { saveProgress(positionOverride: durationMs > 0 ? durationMs : positionMs, for: media) }
-        if hasNext { next() }
+        if let onPlaybackEnded {
+            onPlaybackEnded()
+        } else if hasNext {
+            next()
+        }
     }
 
     // MARK: Monitor loop: position mirror, stall watchdog, progress saving
@@ -602,6 +613,7 @@ public final class CndPlayerController {
         positionMs = position
         durationMs = backend.durationMs
         subtitleOverlay.update(positionMs: position)
+        onProgressUpdate?(position, backend.durationMs)
 
         if abs(position - stallReferenceMs) >= 200 {
             stallReferenceMs = position
@@ -784,6 +796,7 @@ public final class CndPlayerController {
         media = nil
         queue = nil
         state = .idle
+        onMediaChanged?(nil)
         sleepManager.remove(id: id)
         activeEngine = nil
         positionMs = 0
