@@ -118,7 +118,7 @@ impl DatabaseManager {
             let mut favorites = Vec::new();
             let mut stmt = conn.prepare(
                 "SELECT stable_hash, item_kind, created_at FROM favorites
-                 WHERE created_at > ?1 ORDER BY created_at ASC, stable_hash ASC",
+                 WHERE profile_id = 1 AND created_at > ?1 ORDER BY created_at ASC, stable_hash ASC",
             )?;
             for row in stmt.query_map(params![since_ts], |r| {
                 Ok(SyncFavorite {
@@ -133,7 +133,7 @@ impl DatabaseManager {
             let mut watch_history = Vec::new();
             let mut stmt = conn.prepare(
                 "SELECT stable_hash, position_ms, duration_ms, completed, last_watched_at
-                 FROM watch_history WHERE last_watched_at > ?1
+                 FROM watch_history WHERE profile_id = 1 AND last_watched_at > ?1
                  ORDER BY last_watched_at ASC, stable_hash ASC",
             )?;
             for row in stmt.query_map(params![since_ts], |r| {
@@ -184,7 +184,7 @@ impl DatabaseManager {
                     TOMBSTONE_FAVORITE => {
                         let local: Option<i64> = tx
                             .query_row(
-                                "SELECT created_at FROM favorites WHERE stable_hash = ?1",
+                                "SELECT created_at FROM favorites WHERE profile_id = 1 AND stable_hash = ?1",
                                 params![tomb.key],
                                 |r| r.get(0),
                             )
@@ -194,7 +194,7 @@ impl DatabaseManager {
                             continue;
                         }
                         if local.is_some() {
-                            tx.execute("DELETE FROM favorites WHERE stable_hash = ?1", params![tomb.key])?;
+                            tx.execute("DELETE FROM favorites WHERE profile_id = 1 AND stable_hash = ?1", params![tomb.key])?;
                             summary.deletions_applied += 1;
                         } else {
                             summary.skipped += 1;
@@ -293,7 +293,7 @@ impl DatabaseManager {
                 }
                 let local: Option<i64> = tx
                     .query_row(
-                        "SELECT created_at FROM favorites WHERE stable_hash = ?1",
+                        "SELECT created_at FROM favorites WHERE profile_id = 1 AND stable_hash = ?1",
                         params![fav.stable_hash],
                         |r| r.get(0),
                     )
@@ -312,7 +312,7 @@ impl DatabaseManager {
                     }
                     Some(local_ts) if fav.created_at > local_ts => {
                         tx.execute(
-                            "UPDATE favorites SET item_kind = ?2, created_at = ?3 WHERE stable_hash = ?1",
+                            "UPDATE favorites SET item_kind = ?2, created_at = ?3 WHERE profile_id = 1 AND stable_hash = ?1",
                             params![fav.stable_hash, fav.item_kind, fav.created_at],
                         )?;
                         summary.favorites_applied += 1;
@@ -324,7 +324,7 @@ impl DatabaseManager {
             for watch in &delta.watch_history {
                 let local: Option<i64> = tx
                     .query_row(
-                        "SELECT last_watched_at FROM watch_history WHERE stable_hash = ?1",
+                        "SELECT last_watched_at FROM watch_history WHERE profile_id = 1 AND stable_hash = ?1",
                         params![watch.stable_hash],
                         |r| r.get(0),
                     )
@@ -334,9 +334,9 @@ impl DatabaseManager {
                     continue;
                 }
                 tx.execute(
-                    "INSERT INTO watch_history (stable_hash, position_ms, duration_ms, completed, last_watched_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5)
-                     ON CONFLICT(stable_hash) DO UPDATE SET
+                    "INSERT INTO watch_history (profile_id, stable_hash, position_ms, duration_ms, completed, last_watched_at)
+                     VALUES (1, ?1, ?2, ?3, ?4, ?5)
+                     ON CONFLICT(profile_id, stable_hash) DO UPDATE SET
                          position_ms = excluded.position_ms,
                          duration_ms = excluded.duration_ms,
                          completed = excluded.completed,
