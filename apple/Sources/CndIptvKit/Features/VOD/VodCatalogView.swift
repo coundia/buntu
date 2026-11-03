@@ -173,12 +173,8 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
         if !entries.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Label(title, systemImage: icon).font(.title3.bold())
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 16) {
-                        ForEach(entries, id: \.entryId) { entry in
-                            card(entry, .poster).frame(width: 150)
-                        }
-                    }
+                HorizontalShelf(items: entries, spacing: 16, alignment: .top) { entry in
+                    card(entry, .poster).frame(width: 150)
                 }
             }
         }
