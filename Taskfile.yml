@@ -153,6 +153,15 @@ tasks:
         -destination 'generic/platform=iOS Simulator'
         -derivedDataPath ../{{.DERIVED_DATA}} -quiet build
 
+  xcode:visionos:
+    desc: xcodebuild for the visionOS Simulator (needs the visionOS SDK; no simulator is needed to build)
+    dir: "{{.APPLE_DIR}}"
+    cmds:
+      - >-
+        xcodebuild -scheme CndIPTV-visionOS -configuration Debug
+        -destination 'generic/platform=visionOS Simulator'
+        -derivedDataPath ../{{.DERIVED_DATA}} CODE_SIGNING_ALLOWED=NO -quiet build
+
   # ------------------------------------------------------------ groups
   test:
     desc: All fast tests (Rust, bridge, app)
