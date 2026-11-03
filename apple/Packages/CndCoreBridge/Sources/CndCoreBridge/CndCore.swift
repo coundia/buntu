@@ -7114,16 +7114,26 @@ public struct XtreamAccountInfo {
     public var activeConnections: UInt32
     public var maxConnections: UInt32
     public var serverTimezone: String?
+    /**
+     * Seconds the server's clock is ahead of UTC (from `time_now` / `timestamp_now`); Xtream replay URLs
+     * are written on that clock.
+     */
+    public var serverUtcOffsetSecs: Int64?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(status: String, expDateTs: Int64?, isTrial: Bool, activeConnections: UInt32, maxConnections: UInt32, serverTimezone: String?) {
+    public init(status: String, expDateTs: Int64?, isTrial: Bool, activeConnections: UInt32, maxConnections: UInt32, serverTimezone: String?, 
+        /**
+         * Seconds the server's clock is ahead of UTC (from `time_now` / `timestamp_now`); Xtream replay URLs
+         * are written on that clock.
+         */serverUtcOffsetSecs: Int64?) {
         self.status = status
         self.expDateTs = expDateTs
         self.isTrial = isTrial
         self.activeConnections = activeConnections
         self.maxConnections = maxConnections
         self.serverTimezone = serverTimezone
+        self.serverUtcOffsetSecs = serverUtcOffsetSecs
     }
 }
 
@@ -7152,6 +7162,9 @@ extension XtreamAccountInfo: Equatable, Hashable {
         if lhs.serverTimezone != rhs.serverTimezone {
             return false
         }
+        if lhs.serverUtcOffsetSecs != rhs.serverUtcOffsetSecs {
+            return false
+        }
         return true
     }
 
@@ -7162,6 +7175,7 @@ extension XtreamAccountInfo: Equatable, Hashable {
         hasher.combine(activeConnections)
         hasher.combine(maxConnections)
         hasher.combine(serverTimezone)
+        hasher.combine(serverUtcOffsetSecs)
     }
 }
 
@@ -7179,7 +7193,8 @@ public struct FfiConverterTypeXtreamAccountInfo: FfiConverterRustBuffer {
                 isTrial: FfiConverterBool.read(from: &buf), 
                 activeConnections: FfiConverterUInt32.read(from: &buf), 
                 maxConnections: FfiConverterUInt32.read(from: &buf), 
-                serverTimezone: FfiConverterOptionString.read(from: &buf)
+                serverTimezone: FfiConverterOptionString.read(from: &buf), 
+                serverUtcOffsetSecs: FfiConverterOptionInt64.read(from: &buf)
         )
     }
 
@@ -7190,6 +7205,7 @@ public struct FfiConverterTypeXtreamAccountInfo: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.activeConnections, into: &buf)
         FfiConverterUInt32.write(value.maxConnections, into: &buf)
         FfiConverterOptionString.write(value.serverTimezone, into: &buf)
+        FfiConverterOptionInt64.write(value.serverUtcOffsetSecs, into: &buf)
     }
 }
 

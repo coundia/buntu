@@ -41,3 +41,11 @@ Même sans catch-up côté fournisseur (`PRD-15`), l'utilisateur doit pouvoir me
 1. Lot 24.1 : tests du contrôleur avec un faux backend (pause en direct, retard affiché, « Direct », zapping qui vide le tampon), options mpv appliquées selon le réglage ; essai manuel : pause de 5 min sur une chaîne TS puis reprise et rattrapage.
 2. Lot 24.2 : tests Rust de l'anneau (rotation, borne d'octets, coupe sur 188 octets), playlist `EVENT` valide, serveur local inaccessible sans jeton.
 3. `task check` au vert.
+
+---
+
+## Statut d'Implémentation & Validation (audit)
+
+**Lot 24.1 (tampon de `mpv`) : réalisé ✅ (code et tests vérifiés à l'audit ; essai manuel de 5 min non fait).** Options `demuxer-max-bytes`, `demuxer-max-back-bytes`, cache disque dans `Caches/CndTimeshift` selon le réglage (Désactivé, 30 min, 1 h, 2 h) ; en direct, retard affiché (« −04:12 »), bouton « Direct », ±10 s et pause actifs ; le dossier est vidé à l'ouverture d'un média et à la fermeture du lecteur ; `TimeshiftTests`. Les tampons ne coûtent aucune connexion supplémentaire (c'est le même flux).
+
+**Lot 24.2 (anneau Rust et serveur HLS local) : non réalisé** (facultatif dans le PRD). Conséquence : sur iPhone, iPad, Apple TV et Vision Pro (pas de `libmpv`), les chaînes sont lues par `AVPlayer` en HLS et la pause du direct ne dépasse pas la fenêtre DVR du serveur.

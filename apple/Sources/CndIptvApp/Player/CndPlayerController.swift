@@ -746,7 +746,7 @@ public final class CndPlayerController {
     }
 
     private func saveProgress(positionOverride: Int64, for media: PlayableMedia) {
-        guard media.kind != .live, let hash = media.stableHash, durationMs > 0 else { return }
+        guard media.kind != .live, media.kind != .replay, let hash = media.stableHash, durationMs > 0 else { return }
         try? recorder?.recordWatchProgress(stableHash: hash, positionMs: positionOverride, durationMs: durationMs)
     }
 

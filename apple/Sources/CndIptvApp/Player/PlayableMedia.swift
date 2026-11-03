@@ -6,6 +6,9 @@ public enum PlayableKind: String, Sendable, Equatable {
     case movie
     case episode
     case recording
+    /// A past programme played back from the provider's archive: seekable like a film, but it is not
+    /// watch history (the channel's own entry must not move) and it can return to the live stream.
+    case replay
 }
 
 public enum PlayerEngineKind: String, Sendable, Equatable {

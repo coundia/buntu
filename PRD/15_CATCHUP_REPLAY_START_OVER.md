@@ -92,3 +92,20 @@ fn catchup_programmes(item_id: i64, from_ts: i64, to_ts: i64) -> Result<Vec<EpgP
 2. Tests Swift : `EpgGuideModel` navigue jusqu'à J-`catchup_days` et pas au-delà ; le lecteur traite un replay comme borné et non live ; « Retour au direct ».
 3. Test manuel : une source Xtream avec `tv_archive=1` rejoue un programme d'hier.
 4. `task check` au vert (XCFramework régénéré).
+
+---
+
+## Audit (statut réel)
+
+Le statut « Complété & Validé » ci-dessus était trop large. Ce qui est réel : `catchup.rs` (modes Xtream `timeshift`, `default`, `append`, `shift`, Flussonic, développement des placeholders, fenêtre de disponibilité), conservation de l'EPG sur 14 jours, replay d'un programme passé depuis la grille EPG (`build_catchup_url`).
+
+**Corrigé à l'audit**
+- **Horloge du serveur Xtream** : l'heure de début de l'URL `timeshift` était écrite en UTC ; un serveur Xtream lit l'heure de **sa** horloge, donc le mauvais programme se lisait dès que le serveur n'est pas en UTC. Le décalage est maintenant déduit de `server_info` (`time_now` face à `timestamp_now`, arrondi au quart d'heure), enregistré à la synchronisation (`iptv_sources.server_utc_offset_secs`) et appliqué à l'URL. 4 tests Rust (zones entières et demi-heures, changement de date, valeurs absurdes). Limite : le décalage est celui de la dernière synchronisation (un changement d'heure d'été entre deux synchronisations décale d'une heure).
+- **Genre de média `replay`** : un replay se lisait comme un film avec l'identité de la chaîne, donc sa position était enregistrée dans l'historique de visionnage de la chaîne (le PRD l'interdit). Nouveau `PlayableKind.replay` : barre de progression bornée, jamais enregistré dans `watch_history`, badge « REPLAY » et bouton « Retour au direct » dans le lecteur. 4 tests Swift.
+- **« Revoir depuis le début »** : absent du menu des chaînes ; ajouté (affiché quand la chaîne a une archive et qu'un programme est en cours).
+
+**Non réalisé / écarts**
+- Le type `xc` du PRD n'est pas écrit en base : l'URL Xtream est reconnue par la forme de l'adresse de flux (équivalent, mais une source M3U dont les adresses ressemblent à du Xtream utilise aussi `timeshift`).
+- Exports `catchup_playback`, `catchup_window` et `catchup_programmes` : remplacés par `build_catchup_url` et `is_catchup_available` ; pas de section « Replay » dans le programme d'une chaîne (seule la grille EPG remonte dans le temps).
+- Flussonic : l'adresse produite est `timeshift_abs-{début}.m3u8`, pas le `archive-{début}-{durée}` décrit ci-dessus.
+- Aucun essai de lecture de replay contre un vrai fournisseur.
