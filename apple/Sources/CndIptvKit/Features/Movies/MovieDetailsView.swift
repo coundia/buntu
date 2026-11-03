@@ -10,6 +10,8 @@ final class MovieDetailsModel {
     let vod: VodContext
     private(set) var item: IptvItemRecord
     private(set) var metadata: MediaMetadata?
+    private(set) var recommendations: [Recommendation] = []
+    private(set) var sagaInfo: SagaInfo?
     private(set) var isLoadingMetadata = false
     private(set) var metadataMessage: String?
 
@@ -23,6 +25,20 @@ final class MovieDetailsModel {
     func load() async {
         await reloadItem()
         await refreshMetadata(force: false)
+        await loadRecommendations()
+    }
+
+    private func loadRecommendations() async {
+        let engine = vod.engine
+        let id = item.id
+        let recs = (try? await Task.detached(priority: .userInitiated) {
+            try engine.recommendationsFor(itemId: id, context: .playing, limit: 10)
+        }.value) ?? []
+        let saga = try? await Task.detached(priority: .userInitiated) {
+            try engine.sagaFor(itemId: id)
+        }.value
+        self.recommendations = recs
+        self.sagaInfo = saga
     }
 
     private func reloadItem() async {
@@ -104,6 +120,9 @@ struct MovieDetailsView: View {
                         Text(plot).font(.body)
                     }
                     credits
+                    if !model.recommendations.isEmpty {
+                        recommendationsSection
+                    }
                     debugPanel
                 }
                 .padding(.horizontal, compact ? 14 : 20)
@@ -270,6 +289,64 @@ struct MovieDetailsView: View {
     }
 
     // MARK: Credits and debug
+
+    @ViewBuilder
+    private var recommendationsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider().padding(.vertical, 4)
+            HStack {
+                let title = if let saga = model.sagaInfo {
+                    "Dans la saga \(saga.name)"
+                } else {
+                    "Titres recommandés"
+                }
+                Text(title)
+                    .font(.headline)
+                Spacer()
+                if let saga = model.sagaInfo, !saga.missingTitles.isEmpty {
+                    Text("\(saga.missingTitles.count) absent(s)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ForEach(model.recommendations, id: \.item.stableHash) { rec in
+                Button {
+                    model.vod.play(rec.item, resume: false)
+                } label: {
+                    HStack(spacing: 10) {
+                        ThumbnailImageView(urlString: rec.item.logoUrl, size: .poster, placeholderSystemImage: "film", fills: true)
+                            .frame(width: 44, height: 66)
+                            .background(.quaternary)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(rec.reasonText)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(Color.accentColor)
+                                .lineLimit(1)
+
+                            Text(rec.item.name)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+
+                            if let year = rec.item.year {
+                                Text(String(year))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(6)
+                    .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
 
     @ViewBuilder
     private var credits: some View {

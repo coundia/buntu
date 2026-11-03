@@ -8,6 +8,7 @@ struct SettingsView: View {
     var sync: CloudKitSyncManager?
     var ai: AiProviderSettings?
     var assistant: AssistantModel?
+    var upNext: UpNextModel?
 
     @State private var showsOmdbKey = false
     @State private var showsAiKey = false
@@ -25,6 +26,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             playbackAndHealthSection
+            if let upNext { recommendationsSection(upNext) }
             profilesAndBouquetsSection
             parentalSection
             #if os(iOS)
@@ -58,6 +60,57 @@ struct SettingsView: View {
                     Text(item.title).tag(item.rawValue)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func recommendationsSection(_ upNext: UpNextModel) -> some View {
+        Section {
+            Toggle("Afficher « À suivre » sous le lecteur", isOn: Binding(
+                get: { upNext.isUpNextShelfEnabled },
+                set: { upNext.isUpNextShelfEnabled = $0 }
+            ))
+            Toggle("Carte « Film suivant » en fin de lecture", isOn: Binding(
+                get: { upNext.isNextUpCardEnabled },
+                set: { upNext.isNextUpCardEnabled = $0 }
+            ))
+            if upNext.isNextUpCardEnabled {
+                Toggle("Lecture automatique", isOn: Binding(
+                    get: { upNext.isAutoPlayNextEnabled },
+                    set: { upNext.isAutoPlayNextEnabled = $0 }
+                ))
+                if upNext.isAutoPlayNextEnabled {
+                    Picker("Compte à rebours", selection: Binding(
+                        get: { upNext.countdownDuration },
+                        set: { upNext.countdownDuration = $0 }
+                    )) {
+                        Text("5 secondes").tag(5)
+                        Text("10 secondes").tag(10)
+                        Text("15 secondes").tag(15)
+                        Text("30 secondes").tag(30)
+                    }
+                }
+            }
+            Picker("Ordre des sagas", selection: Binding(
+                get: { upNext.sagaOrderPreference },
+                set: { upNext.sagaOrderPreference = $0 }
+            )) {
+                Text("Chronologie de l'histoire").tag(SagaOrderPreference.storyChronology)
+                Text("Ordre de sortie").tag(SagaOrderPreference.releaseOrder)
+            }
+            Toggle("Utiliser l'assistant IA pour reconnaître les sagas", isOn: Binding(
+                get: { upNext.useAiForSagas },
+                set: { upNext.useAiForSagas = $0 }
+            ))
+            .disabled(ai?.isAssistantEnabled != true)
+
+            Button("Réinitialiser les contenus « Pas intéressé »") {
+                upNext.resetDismissed()
+            }
+        } header: {
+            Text("Recommandations & Sagas")
+        } footer: {
+            Text("L'assistant IA facultatif permet d'ordonner les sagas selon la chronologie de l'histoire en analysant uniquement les titres et les années. Aucune donnée personnelle ni URL de flux n'est transmise.")
         }
     }
 

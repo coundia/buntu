@@ -343,5 +343,34 @@ CREATE TABLE IF NOT EXISTS favorite_folder_items (
     PRIMARY KEY(folder_id, stable_hash),
     FOREIGN KEY(folder_id) REFERENCES favorite_folders(id) ON DELETE CASCADE
 );
+
+-- Sagas & Universes (PRD-27)
+CREATE TABLE IF NOT EXISTS sagas (
+    saga_key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    level TEXT NOT NULL DEFAULT 'saga', -- 'saga' | 'universe'
+    source TEXT NOT NULL DEFAULT 'local', -- 'local' | 'tmdb' | 'llm'
+    confidence REAL NOT NULL DEFAULT 1.0,
+    fetched_at INTEGER NOT NULL,
+    missing_titles TEXT -- JSON array of strings
+);
+
+CREATE TABLE IF NOT EXISTS saga_members (
+    saga_key TEXT NOT NULL,
+    work_key TEXT NOT NULL, -- imdb_id or normalized title + year
+    release_index INTEGER NOT NULL,
+    story_index INTEGER, -- nullable
+    PRIMARY KEY (saga_key, work_key),
+    FOREIGN KEY (saga_key) REFERENCES sagas(saga_key) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_saga_members_work ON saga_members(work_key);
+
+-- Recommendation Dismissals ("Pas intéressé") (PRD-27)
+CREATE TABLE IF NOT EXISTS recommendation_dismissals (
+    profile_id INTEGER NOT NULL DEFAULT 1,
+    stable_hash TEXT NOT NULL,
+    dismissed_at INTEGER NOT NULL,
+    PRIMARY KEY(profile_id, stable_hash)
+);
 "#;
 

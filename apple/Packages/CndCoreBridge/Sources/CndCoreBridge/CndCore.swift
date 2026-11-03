@@ -617,6 +617,8 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func disallowGroup(profileId: Int64, kind: String, group: String) throws  -> Bool
     
+    func dismissRecommendation(stableHash: String) throws 
+    
     func downloadSubtitle(fileId: Int64, targetDir: String, apiKey: String?) async throws  -> String
     
     func enqueueDownload(req: NewDownloadRequest) async throws  -> Int64
@@ -728,6 +730,8 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func listSources() throws  -> [IptvSourceRecord]
     
+    func nextUp(itemId: Int64) throws  -> Recommendation?
+    
     func parseSrt(srtContent: String)  -> [SubtitleCue]
     
     func pauseAllDownloads() async throws 
@@ -747,6 +751,8 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func querySeries(filter: CatalogFilter) throws  -> [SeriesRecord]
     
+    func recommendationsFor(itemId: Int64, context: RecommendationContext, limit: UInt32) throws  -> [Recommendation]
+    
     func recordNow(itemId: Int64, durationMinutes: UInt32) throws  -> Int64
     
     func recordWatchProgress(stableHash: String, positionMs: Int64, durationMs: Int64) throws 
@@ -763,11 +769,17 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func removeSeriesRule(id: Int64) throws  -> Bool
     
+    func resetDismissedRecommendations() throws 
+    
     func resolveCatchupUrl(streamUrl: String, catchupType: String?, catchupSource: String?, catchupDays: UInt32?, startTs: Int64, endTs: Int64) throws  -> String?
+    
+    func resolveSagaWithAi(itemId: Int64, config: AiProviderConfig) async throws  -> SagaInfo?
     
     func retryDownload(taskId: Int64) async throws 
     
     func runHealthCheckCycle(throttle: Bool) async throws  -> UInt32
+    
+    func sagaFor(itemId: Int64) throws  -> SagaInfo?
     
     func scheduleRecording(req: NewRecordingRequest) throws  -> Int64
     
@@ -1097,6 +1109,13 @@ open func disallowGroup(profileId: Int64, kind: String, group: String)throws  ->
         FfiConverterString.lower(group),$0
     )
 })
+}
+    
+open func dismissRecommendation(stableHash: String)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_dismiss_recommendation(self.uniffiClonePointer(),
+        FfiConverterString.lower(stableHash),$0
+    )
+}
 }
     
 open func downloadSubtitle(fileId: Int64, targetDir: String, apiKey: String?)async throws  -> String  {
@@ -1568,6 +1587,14 @@ open func listSources()throws  -> [IptvSourceRecord]  {
 })
 }
     
+open func nextUp(itemId: Int64)throws  -> Recommendation?  {
+    return try  FfiConverterOptionTypeRecommendation.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_next_up(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(itemId),$0
+    )
+})
+}
+    
 open func parseSrt(srtContent: String) -> [SubtitleCue]  {
     return try!  FfiConverterSequenceTypeSubtitleCue.lift(try! rustCall() {
     uniffi_cnd_core_fn_method_cndengine_parse_srt(self.uniffiClonePointer(),
@@ -1663,6 +1690,16 @@ open func querySeries(filter: CatalogFilter)throws  -> [SeriesRecord]  {
     return try  FfiConverterSequenceTypeSeriesRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_query_series(self.uniffiClonePointer(),
         FfiConverterTypeCatalogFilter_lower(filter),$0
+    )
+})
+}
+    
+open func recommendationsFor(itemId: Int64, context: RecommendationContext, limit: UInt32)throws  -> [Recommendation]  {
+    return try  FfiConverterSequenceTypeRecommendation.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_recommendations_for(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(itemId),
+        FfiConverterTypeRecommendationContext_lower(context),
+        FfiConverterUInt32.lower(limit),$0
     )
 })
 }
@@ -1770,6 +1807,12 @@ open func removeSeriesRule(id: Int64)throws  -> Bool  {
 })
 }
     
+open func resetDismissedRecommendations()throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_reset_dismissed_recommendations(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
 open func resolveCatchupUrl(streamUrl: String, catchupType: String?, catchupSource: String?, catchupDays: UInt32?, startTs: Int64, endTs: Int64)throws  -> String?  {
     return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_resolve_catchup_url(self.uniffiClonePointer(),
@@ -1781,6 +1824,23 @@ open func resolveCatchupUrl(streamUrl: String, catchupType: String?, catchupSour
         FfiConverterInt64.lower(endTs),$0
     )
 })
+}
+    
+open func resolveSagaWithAi(itemId: Int64, config: AiProviderConfig)async throws  -> SagaInfo?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_resolve_saga_with_ai(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(itemId),FfiConverterTypeAiProviderConfig_lower(config)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeSagaInfo.lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
 }
     
 open func retryDownload(taskId: Int64)async throws   {
@@ -1815,6 +1875,14 @@ open func runHealthCheckCycle(throttle: Bool)async throws  -> UInt32  {
             liftFunc: FfiConverterUInt32.lift,
             errorHandler: FfiConverterTypeCndError_lift
         )
+}
+    
+open func sagaFor(itemId: Int64)throws  -> SagaInfo?  {
+    return try  FfiConverterOptionTypeSagaInfo.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_saga_for(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(itemId),$0
+    )
+})
 }
     
 open func scheduleRecording(req: NewRecordingRequest)throws  -> Int64  {
@@ -4734,6 +4802,100 @@ public func FfiConverterTypeProfileRecord_lower(_ value: ProfileRecord) -> RustB
 }
 
 
+public struct Recommendation {
+    public var item: IptvItemRecord
+    public var reasonKind: RecommendationReasonKind
+    public var reasonText: String
+    public var sagaPosition: SagaPosition?
+    public var alreadyWatched: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(item: IptvItemRecord, reasonKind: RecommendationReasonKind, reasonText: String, sagaPosition: SagaPosition?, alreadyWatched: Bool) {
+        self.item = item
+        self.reasonKind = reasonKind
+        self.reasonText = reasonText
+        self.sagaPosition = sagaPosition
+        self.alreadyWatched = alreadyWatched
+    }
+}
+
+#if compiler(>=6)
+extension Recommendation: Sendable {}
+#endif
+
+
+extension Recommendation: Equatable, Hashable {
+    public static func ==(lhs: Recommendation, rhs: Recommendation) -> Bool {
+        if lhs.item != rhs.item {
+            return false
+        }
+        if lhs.reasonKind != rhs.reasonKind {
+            return false
+        }
+        if lhs.reasonText != rhs.reasonText {
+            return false
+        }
+        if lhs.sagaPosition != rhs.sagaPosition {
+            return false
+        }
+        if lhs.alreadyWatched != rhs.alreadyWatched {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(item)
+        hasher.combine(reasonKind)
+        hasher.combine(reasonText)
+        hasher.combine(sagaPosition)
+        hasher.combine(alreadyWatched)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRecommendation: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Recommendation {
+        return
+            try Recommendation(
+                item: FfiConverterTypeIptvItemRecord.read(from: &buf), 
+                reasonKind: FfiConverterTypeRecommendationReasonKind.read(from: &buf), 
+                reasonText: FfiConverterString.read(from: &buf), 
+                sagaPosition: FfiConverterOptionTypeSagaPosition.read(from: &buf), 
+                alreadyWatched: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Recommendation, into buf: inout [UInt8]) {
+        FfiConverterTypeIptvItemRecord.write(value.item, into: &buf)
+        FfiConverterTypeRecommendationReasonKind.write(value.reasonKind, into: &buf)
+        FfiConverterString.write(value.reasonText, into: &buf)
+        FfiConverterOptionTypeSagaPosition.write(value.sagaPosition, into: &buf)
+        FfiConverterBool.write(value.alreadyWatched, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecommendation_lift(_ buf: RustBuffer) throws -> Recommendation {
+    return try FfiConverterTypeRecommendation.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecommendation_lower(_ value: Recommendation) -> RustBuffer {
+    return FfiConverterTypeRecommendation.lower(value)
+}
+
+
 public struct RecordingRecord {
     public var id: Int64
     public var itemId: Int64
@@ -5063,6 +5225,178 @@ public func FfiConverterTypeRuntimeSettings_lift(_ buf: RustBuffer) throws -> Ru
 #endif
 public func FfiConverterTypeRuntimeSettings_lower(_ value: RuntimeSettings) -> RustBuffer {
     return FfiConverterTypeRuntimeSettings.lower(value)
+}
+
+
+public struct SagaInfo {
+    public var sagaKey: String
+    public var name: String
+    public var level: String
+    public var orderKind: String
+    public var members: [IptvItemRecord]
+    public var missingTitles: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sagaKey: String, name: String, level: String, orderKind: String, members: [IptvItemRecord], missingTitles: [String]) {
+        self.sagaKey = sagaKey
+        self.name = name
+        self.level = level
+        self.orderKind = orderKind
+        self.members = members
+        self.missingTitles = missingTitles
+    }
+}
+
+#if compiler(>=6)
+extension SagaInfo: Sendable {}
+#endif
+
+
+extension SagaInfo: Equatable, Hashable {
+    public static func ==(lhs: SagaInfo, rhs: SagaInfo) -> Bool {
+        if lhs.sagaKey != rhs.sagaKey {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.level != rhs.level {
+            return false
+        }
+        if lhs.orderKind != rhs.orderKind {
+            return false
+        }
+        if lhs.members != rhs.members {
+            return false
+        }
+        if lhs.missingTitles != rhs.missingTitles {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(sagaKey)
+        hasher.combine(name)
+        hasher.combine(level)
+        hasher.combine(orderKind)
+        hasher.combine(members)
+        hasher.combine(missingTitles)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSagaInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SagaInfo {
+        return
+            try SagaInfo(
+                sagaKey: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                level: FfiConverterString.read(from: &buf), 
+                orderKind: FfiConverterString.read(from: &buf), 
+                members: FfiConverterSequenceTypeIptvItemRecord.read(from: &buf), 
+                missingTitles: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SagaInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.sagaKey, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.level, into: &buf)
+        FfiConverterString.write(value.orderKind, into: &buf)
+        FfiConverterSequenceTypeIptvItemRecord.write(value.members, into: &buf)
+        FfiConverterSequenceString.write(value.missingTitles, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSagaInfo_lift(_ buf: RustBuffer) throws -> SagaInfo {
+    return try FfiConverterTypeSagaInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSagaInfo_lower(_ value: SagaInfo) -> RustBuffer {
+    return FfiConverterTypeSagaInfo.lower(value)
+}
+
+
+public struct SagaPosition {
+    public var index: UInt32
+    public var total: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(index: UInt32, total: UInt32) {
+        self.index = index
+        self.total = total
+    }
+}
+
+#if compiler(>=6)
+extension SagaPosition: Sendable {}
+#endif
+
+
+extension SagaPosition: Equatable, Hashable {
+    public static func ==(lhs: SagaPosition, rhs: SagaPosition) -> Bool {
+        if lhs.index != rhs.index {
+            return false
+        }
+        if lhs.total != rhs.total {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(index)
+        hasher.combine(total)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSagaPosition: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SagaPosition {
+        return
+            try SagaPosition(
+                index: FfiConverterUInt32.read(from: &buf), 
+                total: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SagaPosition, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.index, into: &buf)
+        FfiConverterUInt32.write(value.total, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSagaPosition_lift(_ buf: RustBuffer) throws -> SagaPosition {
+    return try FfiConverterTypeSagaPosition.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSagaPosition_lower(_ value: SagaPosition) -> RustBuffer {
+    return FfiConverterTypeSagaPosition.lower(value)
 }
 
 
@@ -7993,6 +8327,265 @@ extension LogLevel: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum RecommendationContext {
+    
+    case playing
+    case ending
+    case live
+}
+
+
+#if compiler(>=6)
+extension RecommendationContext: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRecommendationContext: FfiConverterRustBuffer {
+    typealias SwiftType = RecommendationContext
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RecommendationContext {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .playing
+        
+        case 2: return .ending
+        
+        case 3: return .live
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RecommendationContext, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .playing:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .ending:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .live:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecommendationContext_lift(_ buf: RustBuffer) throws -> RecommendationContext {
+    return try FfiConverterTypeRecommendationContext.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecommendationContext_lower(_ value: RecommendationContext) -> RustBuffer {
+    return FfiConverterTypeRecommendationContext.lower(value)
+}
+
+
+extension RecommendationContext: Equatable, Hashable {}
+
+
+
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum RecommendationReasonKind {
+    
+    case sagaNext
+    case sagaMember
+    case nextEpisode
+    case sameDirector
+    case sameActor
+    case similarGenre
+    case resume
+    case liveNow
+}
+
+
+#if compiler(>=6)
+extension RecommendationReasonKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRecommendationReasonKind: FfiConverterRustBuffer {
+    typealias SwiftType = RecommendationReasonKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RecommendationReasonKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .sagaNext
+        
+        case 2: return .sagaMember
+        
+        case 3: return .nextEpisode
+        
+        case 4: return .sameDirector
+        
+        case 5: return .sameActor
+        
+        case 6: return .similarGenre
+        
+        case 7: return .resume
+        
+        case 8: return .liveNow
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RecommendationReasonKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .sagaNext:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .sagaMember:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .nextEpisode:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .sameDirector:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .sameActor:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .similarGenre:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .resume:
+            writeInt(&buf, Int32(7))
+        
+        
+        case .liveNow:
+            writeInt(&buf, Int32(8))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecommendationReasonKind_lift(_ buf: RustBuffer) throws -> RecommendationReasonKind {
+    return try FfiConverterTypeRecommendationReasonKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecommendationReasonKind_lower(_ value: RecommendationReasonKind) -> RustBuffer {
+    return FfiConverterTypeRecommendationReasonKind.lower(value)
+}
+
+
+extension RecommendationReasonKind: Equatable, Hashable {}
+
+
+
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum SagaOrderPreference {
+    
+    case storyChronology
+    case releaseOrder
+}
+
+
+#if compiler(>=6)
+extension SagaOrderPreference: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSagaOrderPreference: FfiConverterRustBuffer {
+    typealias SwiftType = SagaOrderPreference
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SagaOrderPreference {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .storyChronology
+        
+        case 2: return .releaseOrder
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SagaOrderPreference, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .storyChronology:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .releaseOrder:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSagaOrderPreference_lift(_ buf: RustBuffer) throws -> SagaOrderPreference {
+    return try FfiConverterTypeSagaOrderPreference.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSagaOrderPreference_lower(_ value: SagaOrderPreference) -> RustBuffer {
+    return FfiConverterTypeSagaOrderPreference.lower(value)
+}
+
+
+extension SagaOrderPreference: Equatable, Hashable {}
+
+
+
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum ShareImportAction {
     
     case skip
@@ -8421,6 +9014,78 @@ fileprivate struct FfiConverterOptionTypeProfileRecord: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeRecommendation: FfiConverterRustBuffer {
+    typealias SwiftType = Recommendation?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRecommendation.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRecommendation.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSagaInfo: FfiConverterRustBuffer {
+    typealias SwiftType = SagaInfo?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSagaInfo.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSagaInfo.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSagaPosition: FfiConverterRustBuffer {
+    typealias SwiftType = SagaPosition?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSagaPosition.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSagaPosition.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeSeriesRecord: FfiConverterRustBuffer {
     typealias SwiftType = SeriesRecord?
 
@@ -8786,6 +9451,31 @@ fileprivate struct FfiConverterSequenceTypeProfileRecord: FfiConverterRustBuffer
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeProfileRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRecommendation: FfiConverterRustBuffer {
+    typealias SwiftType = [Recommendation]
+
+    public static func write(_ value: [Recommendation], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRecommendation.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Recommendation] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Recommendation]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRecommendation.read(from: &buf))
         }
         return seq
     }
@@ -9343,6 +10033,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_disallow_group() != 7247) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_dismiss_recommendation() != 54629) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_download_subtitle() != 31801) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -9490,6 +10183,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_list_sources() != 10771) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_next_up() != 17489) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_parse_srt() != 63021) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -9512,6 +10208,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_query_series() != 15417) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_recommendations_for() != 15204) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_record_now() != 48558) {
@@ -9538,13 +10237,22 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_remove_series_rule() != 20083) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_reset_dismissed_recommendations() != 39800) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_resolve_catchup_url() != 35548) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_resolve_saga_with_ai() != 62394) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_retry_download() != 11426) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_run_health_check_cycle() != 35067) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_saga_for() != 2563) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_schedule_recording() != 9925) {

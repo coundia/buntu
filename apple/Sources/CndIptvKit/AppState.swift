@@ -32,6 +32,7 @@ public final class AppState {
     public var showNetworkConsole = false
 
     let player: CndPlayerController
+    public let upNext: UpNextModel
     let downloadDirectory: DownloadDirectoryManager
     /// Provider choice and consent of the channel assistant (key in the Keychain).
     let aiSettings = AiProviderSettings()
@@ -47,9 +48,40 @@ public final class AppState {
     }
 
     init(engine: CndEngine? = nil, downloadDirectory: DownloadDirectoryManager? = nil) {
-        player = CndPlayerController(recorder: recorder)
+        let player = CndPlayerController(recorder: recorder)
+        self.player = player
         player.streamDiagnoser = { media in await StreamDiagnosis.probe(url: media.url, headers: media.headers) }
         self.downloadDirectory = downloadDirectory ?? DownloadDirectoryManager()
+        let upNext = UpNextModel(engineProvider: { nil })
+        self.upNext = upNext
+
+        upNext.setEngineProvider { [weak self] in self?.engine }
+        upNext.setPlayHandler { [weak self] media in
+            guard let self else { return }
+            if self.player.hasNext {
+                self.player.next()
+            } else {
+                self.player.open(media)
+            }
+        }
+        upNext.setAiConfigProvider { [weak self] in
+            self?.aiSettings.providerConfig() ?? AiProviderConfig(kind: .localOnly, model: "", baseUrl: nil, apiKey: nil, timeoutMs: 8_000)
+        }
+        upNext.fallbackNextHandler = { [weak self] in
+            if self?.player.hasNext == true {
+                self?.player.next()
+            }
+        }
+        player.onMediaChanged = { [weak self] media in
+            self?.upNext.onMediaChanged(media)
+        }
+        player.onProgressUpdate = { [weak self] pos, dur in
+            self?.upNext.onPlaybackProgress(positionMs: pos, durationMs: dur)
+        }
+        player.onPlaybackEnded = { [weak self] in
+            self?.upNext.onPlaybackEnded()
+        }
+
         if let engine {
             attach(engine)
         } else {
@@ -93,6 +125,9 @@ public final class AppState {
         cloudSync = sync
         sync.start()
         reloadSnapshot()
+        if let currentMedia = player.media {
+            upNext.onMediaChanged(currentMedia)
+        }
     }
 
     /// Adult categories are hidden unless the PIN unlocked them for the session, and never shown to the

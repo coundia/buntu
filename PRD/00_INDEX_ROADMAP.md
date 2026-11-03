@@ -104,6 +104,7 @@ flowchart TD
 | **24** | [`24_LOCAL_TIMESHIFT_PAUSE_LIVE.md`](./24_LOCAL_TIMESHIFT_PAUSE_LIVE.md) | Pause du direct et retour arrière sans replay fournisseur : tampon mpv borné, puis anneau Rust + HLS local (facultatif). | `[x]` (lot 24.1 ; 24.2 non réalisé) |
 | **25** | [`25_AUTO_FRAMERATE_MATCHING.md`](./25_AUTO_FRAMERATE_MATCHING.md) | Fréquence d'écran alignée sur la vidéo (tvOS `AVDisplayCriteria`, détection 23.976 à 60 i/s, SDR/HDR10/HLG, debounce 2s). | `[x]` (tvOS ; macOS non réalisé) |
 | **26** | [`26_SOURCE_SHARING_DEVICES_FRIENDS.md`](./26_SOURCE_SHARING_DEVICES_FRIENDS.md) | Partage des sources : mots de passe via Trousseau iCloud (opt-in), enveloppe chiffrée AES-GCM 256, transfert direct à proximité Bonjour, partage vivant `CKShare`. | `[x]` (lots 26.1 à 26.3 ; 26.4 `CKShare` non réalisé) |
+| **27** | [`27_RECOMMENDATIONS_UP_NEXT.md`](./27_RECOMMENDATIONS_UP_NEXT.md) | Rangée « À suivre » sous le lecteur (comme YouTube), carte « Film suivant » en fin de lecture (Apple TV d'abord), chronologie des sagas (Avengers…) par moteur local et fournisseur IA de l'utilisateur. | `[x]` |
 
 ---
 

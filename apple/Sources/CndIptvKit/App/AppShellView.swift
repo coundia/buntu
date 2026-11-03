@@ -673,7 +673,7 @@ private struct LoadedShellView: View {
             case .settings:
                 SettingsView(
                     model: settingsModel, directory: state.downloadDirectory, stats: state.stats, sync: state.cloudSync,
-                    ai: state.aiSettings, assistant: assistant
+                    ai: state.aiSettings, assistant: assistant, upNext: state.upNext
                 )
             }
         }
@@ -886,7 +886,22 @@ private struct LoadedShellView: View {
                 detailsPanel(route)
             } else if hasMedia {
                 dockedInfo
-                Spacer(minLength: 0)
+                if state.upNext.isUpNextShelfEnabled && !state.upNext.recommendations.isEmpty {
+                    Divider()
+                    ScrollView {
+                        UpNextShelf(
+                            model: state.upNext,
+                            orientation: .vertical,
+                            onSelect: { [weak state] playable in
+                                state?.player.open(playable)
+                            }
+                        )
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                    }
+                } else {
+                    Spacer(minLength: 0)
+                }
             }
         }
         .background(.background)
@@ -907,6 +922,7 @@ private struct LoadedShellView: View {
     private var dockedVideo: some View {
         CndVideoPlayerView(
             controller: player,
+            upNext: state.upNext,
             onToggleFullscreen: { setExpanded(true) },
             onClose: closePlayer,
             closesOnDisappear: false,
@@ -946,6 +962,7 @@ private struct LoadedShellView: View {
     private var expandedPlayer: some View {
         CndVideoPlayerView(
             controller: player,
+            upNext: state.upNext,
             onToggleFullscreen: {
                 #if os(macOS)
                 toggleWindowFullscreen()

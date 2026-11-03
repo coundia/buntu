@@ -6,9 +6,15 @@ pub mod http_client;
 pub mod iptv;
 pub mod metadata;
 pub mod recorder;
+pub mod recommend;
 pub mod sharing;
 pub mod subtitles;
 pub mod telemetry;
+
+pub use recommend::{
+    Recommendation, RecommendationContext, RecommendationReasonKind, SagaInfo, SagaOrderPreference,
+    SagaPosition,
+};
 
 pub use ai::{
     AiAction, AiCommandContext, AiCommandResult, AiProviderConfig, AiProviderKind, AiProviderStatus,
@@ -1235,6 +1241,37 @@ impl CndEngine {
 
     pub fn is_adult_category(&self, group: String) -> bool {
         db::profile_repo::is_adult_category(&group)
+    }
+
+    // MARK: - Recommendations & Up Next (PRD-27)
+
+    pub fn recommendations_for(
+        &self,
+        item_id: i64,
+        context: RecommendationContext,
+        limit: u32,
+    ) -> Result<Vec<Recommendation>, CndError> {
+        self.recommendations_for_impl(item_id, context, limit)
+    }
+
+    pub fn next_up(&self, item_id: i64) -> Result<Option<Recommendation>, CndError> {
+        self.next_up_impl(item_id)
+    }
+
+    pub fn dismiss_recommendation(&self, stable_hash: String) -> Result<(), CndError> {
+        self.dismiss_recommendation_impl(stable_hash)
+    }
+
+    pub fn reset_dismissed_recommendations(&self) -> Result<(), CndError> {
+        self.reset_dismissed_recommendations_impl()
+    }
+
+    pub fn saga_for(&self, item_id: i64) -> Result<Option<SagaInfo>, CndError> {
+        self.saga_for_impl(item_id)
+    }
+
+    pub async fn resolve_saga_with_ai(&self, item_id: i64, config: AiProviderConfig) -> Result<Option<SagaInfo>, CndError> {
+        self.resolve_saga_with_ai_impl(item_id, config).await
     }
 }
 

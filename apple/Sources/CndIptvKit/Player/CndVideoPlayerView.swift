@@ -85,6 +85,7 @@ struct PlayerSurface: UIViewRepresentable {
 
 public struct CndVideoPlayerView: View {
     @Bindable var controller: CndPlayerController
+    var upNext: UpNextModel?
     var onToggleFullscreen: (() -> Void)?
     var onClose: (() -> Void)?
     /// Shrinks a large player back to its docked size; shown only when provided.
@@ -107,6 +108,7 @@ public struct CndVideoPlayerView: View {
     @State private var subtitleSearchModel: SubtitleSearchModel?
 
     @State private var hudVisible = true
+    @State private var showShelf = false
     @State private var hideTask: Task<Void, Never>?
     @State private var scrubValue: Double = 0
     @State private var isScrubbing = false
@@ -115,6 +117,7 @@ public struct CndVideoPlayerView: View {
 
     init(
         controller: CndPlayerController,
+        upNext: UpNextModel? = nil,
         onToggleFullscreen: (() -> Void)? = nil,
         onClose: (() -> Void)? = nil,
         onCollapse: (() -> Void)? = nil,
@@ -127,6 +130,7 @@ public struct CndVideoPlayerView: View {
         onToggleCinema: (() -> Void)? = nil,
         isCinema: Bool = false
     ) {
+        self.upNext = upNext
         self.onToggleCinema = onToggleCinema
         self.isCinema = isCinema
         self.controller = controller
@@ -194,10 +198,29 @@ public struct CndVideoPlayerView: View {
                 ProgressView().controlSize(.large).tint(.white)
             }
 
+            if let upNext {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        NextUpCard(model: upNext)
+                            .padding(.trailing, 24)
+                            .padding(.bottom, hudVisible ? (showShelf ? 230 : 100) : 24)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: hudVisible)
+                .animation(.easeInOut(duration: 0.2), value: showShelf)
+            }
+
             VStack(spacing: 0) {
                 topBar
                 Spacer()
-                if hudVisible { bottomBar }
+                if hudVisible {
+                    if showShelf, let upNext, upNext.isUpNextShelfEnabled, !upNext.recommendations.isEmpty {
+                        shelfOverlay(upNext)
+                    }
+                    bottomBar
+                }
             }
             .opacity(hudVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.2), value: hudVisible)
@@ -242,7 +265,9 @@ public struct CndVideoPlayerView: View {
         #elseif os(tvOS)
         .onPlayPauseCommand { controller.togglePlayPause(); showHUD() }
         .onExitCommand {
-            if hudVisible {
+            if showShelf {
+                withAnimation { showShelf = false }
+            } else if hudVisible {
                 hudVisible = false
             } else if let onClose {
                 onClose()
@@ -259,10 +284,19 @@ public struct CndVideoPlayerView: View {
                 controller.skip(bySeconds: 10)
                 showHUD()
             case .up:
+                if showShelf {
+                    withAnimation { showShelf = false }
+                    return
+                }
                 guard controller.isLive, let onZap else { return }
                 onZap(-1)
                 showHUD()
             case .down:
+                if !controller.isLive, let upNext, upNext.isUpNextShelfEnabled, !upNext.recommendations.isEmpty {
+                    withAnimation { showShelf = true }
+                    showHUD()
+                    return
+                }
                 guard controller.isLive, let onZap else { return }
                 onZap(1)
                 showHUD()
@@ -378,6 +412,42 @@ public struct CndVideoPlayerView: View {
         .help(controller.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel")
     }
 
+    @ViewBuilder
+    private func shelfOverlay(_ upNext: UpNextModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("À suivre")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showShelf = false
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Fermer la rangée À suivre")
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+
+            UpNextShelf(model: upNext, orientation: .horizontal) { [weak controller] media in
+                showShelf = false
+                controller?.open(media)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+        }
+        .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 6)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
     private var bottomBar: some View {
         VStack(spacing: 8) {
             progressRow
@@ -424,6 +494,13 @@ public struct CndVideoPlayerView: View {
 
     private var secondaryControls: some View {
         HStack(spacing: 14) {
+            if let upNext, upNext.isUpNextShelfEnabled, !upNext.recommendations.isEmpty {
+                hudButton("rectangle.stack", "À suivre") {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showShelf.toggle()
+                    }
+                }
+            }
             volumeControls
             speedMenu
             audioMenu
