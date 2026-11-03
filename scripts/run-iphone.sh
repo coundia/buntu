@@ -52,7 +52,7 @@ except Exception:
 for d in devices:
     hw, conn = d.get("hardwareProperties", {}), d.get("connectionProperties", {})
     if hw.get("platform") == "iOS" and hw.get("reality", "physical") == "physical" \
-            and conn.get("tunnelState") == "connected":
+            and (conn.get("tunnelState") == "connected" or conn.get("pairingState") == "paired"):
         print(f'{hw.get("udid", d.get("identifier"))}\t{d.get("deviceProperties", {}).get("name", "?")}')
 PY
   rm -f "${json}"
