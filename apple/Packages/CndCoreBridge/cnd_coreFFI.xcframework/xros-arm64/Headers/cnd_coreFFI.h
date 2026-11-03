@@ -762,6 +762,21 @@ void uniffi_cnd_core_fn_method_cndengine_start_health_checks(void*_Nonnull ptr, 
 void uniffi_cnd_core_fn_method_cndengine_stop_health_checks(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SUBTITLES_SIGN_IN
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SUBTITLES_SIGN_IN
+uint64_t uniffi_cnd_core_fn_method_cndengine_subtitles_sign_in(void*_Nonnull ptr, RustBuffer username, RustBuffer password, RustBuffer api_key
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SUBTITLES_SIGN_OUT
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SUBTITLES_SIGN_OUT
+void uniffi_cnd_core_fn_method_cndengine_subtitles_sign_out(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SUBTITLES_SIGNED_IN
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SUBTITLES_SIGNED_IN
+int8_t uniffi_cnd_core_fn_method_cndengine_subtitles_signed_in(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_TOGGLE_BROKEN
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_TOGGLE_BROKEN
 int8_t uniffi_cnd_core_fn_method_cndengine_toggle_broken(void*_Nonnull ptr, RustBuffer stable_hash, RustBuffer item_kind, RustCallStatus *_Nonnull out_status
@@ -1689,6 +1704,24 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_start_health_checks(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_STOP_HEALTH_CHECKS
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_STOP_HEALTH_CHECKS
 uint16_t uniffi_cnd_core_checksum_method_cndengine_stop_health_checks(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SUBTITLES_SIGN_IN
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SUBTITLES_SIGN_IN
+uint16_t uniffi_cnd_core_checksum_method_cndengine_subtitles_sign_in(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SUBTITLES_SIGN_OUT
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SUBTITLES_SIGN_OUT
+uint16_t uniffi_cnd_core_checksum_method_cndengine_subtitles_sign_out(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SUBTITLES_SIGNED_IN
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SUBTITLES_SIGNED_IN
+uint16_t uniffi_cnd_core_checksum_method_cndengine_subtitles_signed_in(void
     
 );
 #endif

@@ -794,6 +794,15 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func stopHealthChecks() 
     
+    /**
+     * Signs in to OpenSubtitles (lifts the anonymous download quota). The session lives in memory.
+     */
+    func subtitlesSignIn(username: String, password: String, apiKey: String?) async throws  -> SubtitleAccount
+    
+    func subtitlesSignOut() 
+    
+    func subtitlesSignedIn()  -> Bool
+    
     func toggleBroken(stableHash: String, itemKind: String) throws  -> Bool
     
     func toggleFavorite(stableHash: String, itemKind: String) throws  -> Bool
@@ -1922,6 +1931,39 @@ open func stopHealthChecks()  {try! rustCall() {
     uniffi_cnd_core_fn_method_cndengine_stop_health_checks(self.uniffiClonePointer(),$0
     )
 }
+}
+    
+    /**
+     * Signs in to OpenSubtitles (lifts the anonymous download quota). The session lives in memory.
+     */
+open func subtitlesSignIn(username: String, password: String, apiKey: String?)async throws  -> SubtitleAccount  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_subtitles_sign_in(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(username),FfiConverterString.lower(password),FfiConverterOptionString.lower(apiKey)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSubtitleAccount_lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
+open func subtitlesSignOut()  {try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_subtitles_sign_out(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+open func subtitlesSignedIn() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_subtitles_signed_in(self.uniffiClonePointer(),$0
+    )
+})
 }
     
 open func toggleBroken(stableHash: String, itemKind: String)throws  -> Bool  {
@@ -6206,6 +6248,85 @@ public func FfiConverterTypeStreamHealthRecord_lower(_ value: StreamHealthRecord
 }
 
 
+/**
+ * What a signed-in account can do, from OpenSubtitles' `/login` answer.
+ */
+public struct SubtitleAccount {
+    /**
+     * Downloads allowed per day for this account (0 when the service does not say).
+     */
+    public var allowedDownloads: UInt32
+    public var level: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Downloads allowed per day for this account (0 when the service does not say).
+         */allowedDownloads: UInt32, level: String) {
+        self.allowedDownloads = allowedDownloads
+        self.level = level
+    }
+}
+
+#if compiler(>=6)
+extension SubtitleAccount: Sendable {}
+#endif
+
+
+extension SubtitleAccount: Equatable, Hashable {
+    public static func ==(lhs: SubtitleAccount, rhs: SubtitleAccount) -> Bool {
+        if lhs.allowedDownloads != rhs.allowedDownloads {
+            return false
+        }
+        if lhs.level != rhs.level {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(allowedDownloads)
+        hasher.combine(level)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSubtitleAccount: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SubtitleAccount {
+        return
+            try SubtitleAccount(
+                allowedDownloads: FfiConverterUInt32.read(from: &buf), 
+                level: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SubtitleAccount, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.allowedDownloads, into: &buf)
+        FfiConverterString.write(value.level, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSubtitleAccount_lift(_ buf: RustBuffer) throws -> SubtitleAccount {
+    return try FfiConverterTypeSubtitleAccount.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSubtitleAccount_lower(_ value: SubtitleAccount) -> RustBuffer {
+    return FfiConverterTypeSubtitleAccount.lower(value)
+}
+
+
 public struct SubtitleCue {
     public var index: UInt32
     public var startMs: Int64
@@ -9294,6 +9415,15 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_stop_health_checks() != 10880) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_subtitles_sign_in() != 54069) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_subtitles_sign_out() != 17830) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_subtitles_signed_in() != 55309) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_toggle_broken() != 30986) {
