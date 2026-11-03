@@ -33,7 +33,13 @@ public final class AVPlayerBackend: VideoBackend {
                     primaries = "bt.2020"
                 }
             }
-            return VideoFormatReading(fps: fps, gamma: gamma, primaries: primaries)
+            // Decoded size; HLS reports it on the item once a variant is playing.
+            var size = item.presentationSize
+            if size.width <= 0 || size.height <= 0 { size = asset.naturalSize }
+            return VideoFormatReading(
+                fps: fps, gamma: gamma, primaries: primaries,
+                width: Int(size.width.rounded()), height: Int(size.height.rounded())
+            )
         }
         return nil
     }

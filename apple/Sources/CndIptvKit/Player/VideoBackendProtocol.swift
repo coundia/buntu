@@ -31,8 +31,13 @@ public struct VideoFormatReading: Equatable, Sendable {
     /// mpv-style names: "pq", "hlg", "bt.1886"...
     public var gamma: String?
     public var primaries: String?
+    /// Decoded picture size in pixels, when the engine knows it.
+    public var width: Int?
+    public var height: Int?
 
-    public init(fps: Double, gamma: String? = nil, primaries: String? = nil) {
+    public init(fps: Double, gamma: String? = nil, primaries: String? = nil, width: Int? = nil, height: Int? = nil) {
+        self.width = width
+        self.height = height
         self.fps = fps
         self.gamma = gamma
         self.primaries = primaries
