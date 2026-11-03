@@ -61,3 +61,15 @@ Deux lots indépendants, validés séparément.
 1. Lot 18.1 : tests des chaînes de filtres par niveau, application à chaud sur le backend mpv (faux backend), bascule proposée en HLS sur AVPlayer.
 2. Lot 18.2 : test du hash OpenSubtitles sur un fichier de référence, requêtes de recherche/téléchargement contre un faux serveur (en-têtes, paramètres, erreurs 401/429), parseur SRT (balises, multi-lignes, horodatages invalides), synchronisation de la surcouche et décalage.
 3. `task check` au vert.
+
+---
+
+## Statut d'Implémentation & Validation (audit)
+
+**Lot 18.1 (Dialogue Boost, mode nuit) : réalisé ✅.** Chaînes de filtres `lavfi` dans `AudioEnhancement.swift`, appliquées à chaud à mpv ; proposition de basculer sur mpv pour un flux HLS en AVPlayer.
+
+**Lot 18.2 (OpenSubtitles) : réalisé à l'audit ✅ (à essayer avec une vraie clé).**
+- Le client Rust (`subtitles/`, `search_subtitles`, `download_subtitle`, hash, parseur SRT) existait, mais **aucun écran ne l'appelait** : la recherche en ligne était inaccessible. Ajout de `Features/Subtitles/` (`SubtitleSearchModel`, `SubtitleSearchSheet`) et de l'entrée « Rechercher en ligne… » du menu Sous-titres du lecteur (hors direct) : liste des résultats (langue, version, téléchargements, note), téléchargement dans `Caches/CndSubtitles`, ajout au lecteur (mpv : `sub-add` ; AVPlayer : surcouche — la surcouche n'est plus chargée en plus de mpv, ce qui doublait le texte).
+- **Clé API dans le Trousseau** (`cnd.opensubtitles.apikey`) : elle était dans les préférences (`@AppStorage`), contre la règle du PRD ; elle est migrée au premier lancement puis effacée des préférences. Seuls le titre nettoyé (« Titre 2025 ») et les langues partent chez OpenSubtitles, jamais l'adresse du flux.
+- 8 tests (nettoyage du titre, absence de clé, requête envoyée, résultats vides et erreurs, téléchargement, migration).
+- **Non réalisé / non vérifié** : recherche par `moviehash` et par IMDb (seul le titre est utilisé), connexion facultative `/login`, recherche automatique, décalage mémorisé par média ; aucun essai contre le vrai service.

@@ -97,6 +97,9 @@ public struct CndVideoPlayerView: View {
     var isFullscreen: Bool
     /// Previous (-1) / next (+1) channel; on Apple TV the Siri Remote's up and down arrows call it on live streams.
     var onZap: ((Int) -> Void)?
+    /// Builds the online subtitle search for the current media; the menu entry shows only when provided.
+    var subtitleSearch: (() -> SubtitleSearchModel)?
+    @State private var subtitleSearchModel: SubtitleSearchModel?
 
     @State private var hudVisible = true
     @State private var hideTask: Task<Void, Never>?
@@ -113,7 +116,8 @@ public struct CndVideoPlayerView: View {
         closesOnDisappear: Bool = true,
         pip: PiPManager? = nil,
         isFullscreen: Bool = false,
-        onZap: ((Int) -> Void)? = nil
+        onZap: ((Int) -> Void)? = nil,
+        subtitleSearch: (() -> SubtitleSearchModel)? = nil
     ) {
         self.controller = controller
         self.isFullscreen = isFullscreen
@@ -127,6 +131,7 @@ public struct CndVideoPlayerView: View {
         self.onClose = onClose
         self.onCollapse = onCollapse
         self.onZap = onZap
+        self.subtitleSearch = subtitleSearch
     }
 
     public var body: some View {
@@ -196,6 +201,11 @@ public struct CndVideoPlayerView: View {
         .onTapGesture(count: 2) { onToggleFullscreen?() }
         .onTapGesture { hudVisible ? scheduleHide() : showHUD() }
         #endif
+        .sheet(isPresented: Binding(get: { subtitleSearchModel != nil }, set: { if !$0 { subtitleSearchModel = nil } })) {
+            if let subtitleSearchModel {
+                SubtitleSearchSheet(model: subtitleSearchModel) { self.subtitleSearchModel = nil }
+            }
+        }
         .onAppear { showHUD() }
         .onDisappear {
             hideTask?.cancel()
@@ -444,6 +454,12 @@ public struct CndVideoPlayerView: View {
                             controller.selectSubtitleTrack(id: track.id)
                         }
                     }
+                }
+            }
+
+            if let subtitleSearch, controller.media?.kind != .live {
+                Button("Rechercher en ligne…", systemImage: "magnifyingglass") {
+                    subtitleSearchModel = subtitleSearch()
                 }
             }
 
