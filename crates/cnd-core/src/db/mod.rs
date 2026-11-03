@@ -192,8 +192,15 @@ impl DatabaseManager {
         .flatten()
     }
 
-    fn active_profile_is_main(conn: &Connection) -> bool {
-        conn.query_row("SELECT id FROM temp.active_profile", [], |r| r.get::<_, i64>(0)).unwrap_or(1) == 1
+    /// The sync identity of the active profile: `None` for the main profile (it keeps the original
+    /// record names), its `uuid` for any other.
+    fn active_profile_uuid(conn: &Connection) -> Option<String> {
+        conn.query_row(
+            "SELECT CASE WHEN a.id = 1 THEN NULL ELSE (SELECT uuid FROM profiles WHERE id = a.id) END FROM temp.active_profile a",
+            [],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .unwrap_or(None)
     }
 
     pub fn set_active_profile(&self, id: i64) -> std::result::Result<(), DbError> {
@@ -225,6 +232,8 @@ impl DatabaseManager {
             "ALTER TABLE iptv_sources ADD COLUMN exp_date INTEGER",
             "ALTER TABLE iptv_sources ADD COLUMN max_connections INTEGER",
             "ALTER TABLE iptv_sources ADD COLUMN server_utc_offset_secs INTEGER",
+            "ALTER TABLE profiles ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
+            "UPDATE profiles SET updated_at = created_at WHERE updated_at = 0",
             "ALTER TABLE iptv_sources ADD COLUMN active_cons INTEGER",
             "ALTER TABLE iptv_sources ADD COLUMN account_status TEXT",
             "ALTER TABLE series_catalog ADD COLUMN stable_hash TEXT NOT NULL DEFAULT ''",
@@ -499,11 +508,10 @@ impl DatabaseManager {
                 "DELETE FROM favorites WHERE profile_id = (SELECT id FROM temp.active_profile) AND stable_hash = ?1",
                 params![stable_hash],
             )?;
-            // iCloud sync only carries the main profile's favorites: another profile removing a channel
-            // must not delete it from the main profile on the other devices.
-            if Self::active_profile_is_main(&conn) {
-                sync_repo::upsert_tombstone(&conn, sync_repo::TOMBSTONE_FAVORITE, stable_hash, chrono_now_ts())?;
-            }
+            // The tombstone names the profile, so removing a channel from one profile never deletes it
+            // from another profile on the other devices.
+            let key = sync_repo::favorite_key(Self::active_profile_uuid(&conn).as_deref(), stable_hash);
+            sync_repo::upsert_tombstone(&conn, sync_repo::TOMBSTONE_FAVORITE, &key, chrono_now_ts())?;
             Ok(false)
         } else {
             let now = chrono_now_ts();
@@ -512,12 +520,11 @@ impl DatabaseManager {
                  VALUES ((SELECT id FROM temp.active_profile), ?1, ?2, ?3)",
                 params![stable_hash, item_kind, now],
             )?;
-            if Self::active_profile_is_main(&conn) {
-                conn.execute(
-                    "DELETE FROM sync_tombstones WHERE kind = ?1 AND key = ?2",
-                    params![sync_repo::TOMBSTONE_FAVORITE, stable_hash],
-                )?;
-            }
+            let key = sync_repo::favorite_key(Self::active_profile_uuid(&conn).as_deref(), stable_hash);
+            conn.execute(
+                "DELETE FROM sync_tombstones WHERE kind = ?1 AND key = ?2",
+                params![sync_repo::TOMBSTONE_FAVORITE, key],
+            )?;
             Ok(true)
         }
     }

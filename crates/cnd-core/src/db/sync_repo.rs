@@ -14,6 +14,36 @@ use rusqlite::{params, OptionalExtension};
 
 pub const TOMBSTONE_FAVORITE: &str = "favorite";
 pub const TOMBSTONE_SOURCE: &str = "source";
+pub const TOMBSTONE_PROFILE: &str = "profile";
+
+/// The built-in "Principal" profile: same uuid on every device, and it keeps the original record names
+/// (no profile uuid), so what was synced before profiles existed stays valid.
+pub const MAIN_PROFILE_UUID: &str = "00000000-0000-0000-0000-000000000001";
+
+/// Key of a favorite in tombstones and record names: the bare hash for the main profile, `uuid|hash` for others.
+pub fn favorite_key(profile_uuid: Option<&str>, stable_hash: &str) -> String {
+    match profile_uuid {
+        None => stable_hash.to_string(),
+        Some(uuid) => format!("{uuid}|{stable_hash}"),
+    }
+}
+
+/// Inverse of `favorite_key`. A `|` only means "profile prefix" when what precedes it looks like a uuid.
+pub fn split_favorite_key(key: &str) -> (Option<&str>, &str) {
+    match key.split_once('|') {
+        Some((uuid, hash)) if uuid.len() == 36 => (Some(uuid), hash),
+        _ => (None, key),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct SyncProfile {
+    pub uuid: String,
+    pub name: String,
+    pub avatar: String,
+    pub is_kids: bool,
+    pub updated_at: i64,
+}
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct SyncSource {
@@ -34,6 +64,8 @@ pub struct SyncFavorite {
     pub stable_hash: String,
     pub item_kind: String,
     pub created_at: i64,
+    /// `None` for the main profile.
+    pub profile_uuid: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -43,6 +75,8 @@ pub struct SyncWatchProgress {
     pub duration_ms: i64,
     pub completed: bool,
     pub last_watched_at: i64,
+    /// `None` for the main profile.
+    pub profile_uuid: Option<String>,
 }
 
 /// A deletion. `kind` is `"favorite"` (key = stable hash) or `"source"` (key = source uuid).
@@ -55,6 +89,7 @@ pub struct SyncTombstone {
 
 #[derive(Debug, Clone, Default, PartialEq, uniffi::Record)]
 pub struct SyncDelta {
+    pub profiles: Vec<SyncProfile>,
     pub sources: Vec<SyncSource>,
     pub favorites: Vec<SyncFavorite>,
     pub watch_history: Vec<SyncWatchProgress>,
@@ -63,7 +98,8 @@ pub struct SyncDelta {
 
 impl SyncDelta {
     pub fn is_empty(&self) -> bool {
-        self.sources.is_empty()
+        self.profiles.is_empty()
+            && self.sources.is_empty()
             && self.favorites.is_empty()
             && self.watch_history.is_empty()
             && self.tombstones.is_empty()
@@ -72,6 +108,7 @@ impl SyncDelta {
 
 #[derive(Debug, Clone, Default, PartialEq, uniffi::Record)]
 pub struct SyncImportSummary {
+    pub profiles_applied: u32,
     pub sources_applied: u32,
     pub favorites_applied: u32,
     pub watch_applied: u32,
@@ -83,7 +120,7 @@ pub struct SyncImportSummary {
 
 impl SyncImportSummary {
     pub fn applied(&self) -> u32 {
-        self.sources_applied + self.favorites_applied + self.watch_applied + self.deletions_applied
+        self.profiles_applied + self.sources_applied + self.favorites_applied + self.watch_applied + self.deletions_applied
     }
 }
 
@@ -115,16 +152,36 @@ impl DatabaseManager {
                 sources.push(row?);
             }
 
+            let mut profiles = Vec::new();
+            let mut stmt = conn.prepare(
+                "SELECT uuid, name, avatar, is_kids, updated_at FROM profiles
+                 WHERE updated_at > ?1 ORDER BY updated_at ASC, id ASC",
+            )?;
+            for row in stmt.query_map(params![since_ts], |r| {
+                Ok(SyncProfile {
+                    uuid: r.get(0)?,
+                    name: r.get(1)?,
+                    avatar: r.get(2)?,
+                    is_kids: r.get::<_, i64>(3)? != 0,
+                    updated_at: r.get(4)?,
+                })
+            })? {
+                profiles.push(row?);
+            }
+
             let mut favorites = Vec::new();
             let mut stmt = conn.prepare(
-                "SELECT stable_hash, item_kind, created_at FROM favorites
-                 WHERE profile_id = 1 AND created_at > ?1 ORDER BY created_at ASC, stable_hash ASC",
+                "SELECT f.stable_hash, f.item_kind, f.created_at, CASE WHEN f.profile_id = 1 THEN NULL ELSE p.uuid END
+                 FROM favorites f LEFT JOIN profiles p ON p.id = f.profile_id
+                 WHERE f.created_at > ?1 AND (f.profile_id = 1 OR p.id IS NOT NULL)
+                 ORDER BY f.created_at ASC, f.profile_id ASC, f.stable_hash ASC",
             )?;
             for row in stmt.query_map(params![since_ts], |r| {
                 Ok(SyncFavorite {
                     stable_hash: r.get(0)?,
                     item_kind: r.get(1)?,
                     created_at: r.get(2)?,
+                    profile_uuid: r.get(3)?,
                 })
             })? {
                 favorites.push(row?);
@@ -132,9 +189,11 @@ impl DatabaseManager {
 
             let mut watch_history = Vec::new();
             let mut stmt = conn.prepare(
-                "SELECT stable_hash, position_ms, duration_ms, completed, last_watched_at
-                 FROM watch_history WHERE profile_id = 1 AND last_watched_at > ?1
-                 ORDER BY last_watched_at ASC, stable_hash ASC",
+                "SELECT w.stable_hash, w.position_ms, w.duration_ms, w.completed, w.last_watched_at,
+                        CASE WHEN w.profile_id = 1 THEN NULL ELSE p.uuid END
+                 FROM watch_history w LEFT JOIN profiles p ON p.id = w.profile_id
+                 WHERE w.last_watched_at > ?1 AND (w.profile_id = 1 OR p.id IS NOT NULL)
+                 ORDER BY w.last_watched_at ASC, w.profile_id ASC, w.stable_hash ASC",
             )?;
             for row in stmt.query_map(params![since_ts], |r| {
                 Ok(SyncWatchProgress {
@@ -143,6 +202,7 @@ impl DatabaseManager {
                     duration_ms: r.get(2)?,
                     completed: r.get::<_, i64>(3)? != 0,
                     last_watched_at: r.get(4)?,
+                    profile_uuid: r.get(5)?,
                 })
             })? {
                 watch_history.push(row?);
@@ -164,6 +224,7 @@ impl DatabaseManager {
             }
 
             Ok(SyncDelta {
+                profiles,
                 sources,
                 favorites,
                 watch_history,
@@ -182,10 +243,15 @@ impl DatabaseManager {
             for tomb in &delta.tombstones {
                 match tomb.kind.as_str() {
                     TOMBSTONE_FAVORITE => {
+                        let (profile_uuid, hash) = split_favorite_key(&tomb.key);
+                        let Some(profile_id) = profile_id_for(&tx, profile_uuid)? else {
+                            summary.skipped += 1;
+                            continue;
+                        };
                         let local: Option<i64> = tx
                             .query_row(
-                                "SELECT created_at FROM favorites WHERE profile_id = 1 AND stable_hash = ?1",
-                                params![tomb.key],
+                                "SELECT created_at FROM favorites WHERE profile_id = ?1 AND stable_hash = ?2",
+                                params![profile_id, hash],
                                 |r| r.get(0),
                             )
                             .optional()?;
@@ -194,12 +260,42 @@ impl DatabaseManager {
                             continue;
                         }
                         if local.is_some() {
-                            tx.execute("DELETE FROM favorites WHERE profile_id = 1 AND stable_hash = ?1", params![tomb.key])?;
+                            tx.execute(
+                                "DELETE FROM favorites WHERE profile_id = ?1 AND stable_hash = ?2",
+                                params![profile_id, hash],
+                            )?;
                             summary.deletions_applied += 1;
                         } else {
                             summary.skipped += 1;
                         }
                         upsert_tombstone(&tx, TOMBSTONE_FAVORITE, &tomb.key, tomb.deleted_at)?;
+                    }
+                    TOMBSTONE_PROFILE => {
+                        if tomb.key == MAIN_PROFILE_UUID {
+                            summary.skipped += 1; // the main profile is never removed
+                            continue;
+                        }
+                        let local: Option<(i64, i64)> = tx
+                            .query_row(
+                                "SELECT id, updated_at FROM profiles WHERE uuid = ?1",
+                                params![tomb.key],
+                                |r| Ok((r.get(0)?, r.get(1)?)),
+                            )
+                            .optional()?;
+                        if matches!(local, Some((_, updated)) if updated > tomb.deleted_at) {
+                            summary.skipped += 1;
+                            continue;
+                        }
+                        if let Some((id, _)) = local {
+                            for table in ["favorites", "watch_history", "hidden_groups", "hidden_items", "custom_order", "kids_allowed_groups"] {
+                                tx.execute(&format!("DELETE FROM {table} WHERE profile_id = ?1"), params![id])?;
+                            }
+                            tx.execute("DELETE FROM profiles WHERE id = ?1", params![id])?;
+                            summary.deletions_applied += 1;
+                        } else {
+                            summary.skipped += 1;
+                        }
+                        upsert_tombstone(&tx, TOMBSTONE_PROFILE, &tomb.key, tomb.deleted_at)?;
                     }
                     TOMBSTONE_SOURCE => {
                         let local: Option<i64> = tx
@@ -222,6 +318,46 @@ impl DatabaseManager {
                         upsert_tombstone(&tx, TOMBSTONE_SOURCE, &tomb.key, tomb.deleted_at)?;
                     }
                     _ => summary.skipped += 1,
+                }
+            }
+
+            for profile in &delta.profiles {
+                let tomb: Option<i64> = tx
+                    .query_row(
+                        "SELECT deleted_at FROM sync_tombstones WHERE kind = ?1 AND key = ?2",
+                        params![TOMBSTONE_PROFILE, profile.uuid],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if profile.uuid == MAIN_PROFILE_UUID {
+                    // Same identity everywhere: only its name and avatar can change.
+                } else if matches!(tomb, Some(deleted) if deleted >= profile.updated_at) {
+                    summary.skipped += 1;
+                    continue;
+                }
+                let local: Option<i64> = tx
+                    .query_row("SELECT updated_at FROM profiles WHERE uuid = ?1", params![profile.uuid], |r| r.get(0))
+                    .optional()?;
+                match local {
+                    None => {
+                        tx.execute(
+                            "INSERT INTO profiles (uuid, name, avatar, is_kids, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+                            params![profile.uuid, profile.name, profile.avatar, i64::from(profile.is_kids), profile.updated_at],
+                        )?;
+                        tx.execute(
+                            "DELETE FROM sync_tombstones WHERE kind = ?1 AND key = ?2",
+                            params![TOMBSTONE_PROFILE, profile.uuid],
+                        )?;
+                        summary.profiles_applied += 1;
+                    }
+                    Some(local_ts) if profile.updated_at > local_ts => {
+                        tx.execute(
+                            "UPDATE profiles SET name = ?2, avatar = ?3, is_kids = ?4, updated_at = ?5 WHERE uuid = ?1",
+                            params![profile.uuid, profile.name, profile.avatar, i64::from(profile.is_kids), profile.updated_at],
+                        )?;
+                        summary.profiles_applied += 1;
+                    }
+                    Some(_) => summary.skipped += 1,
                 }
             }
 
@@ -280,10 +416,16 @@ impl DatabaseManager {
             }
 
             for fav in &delta.favorites {
+                // A favorite of a profile this device does not know (yet) cannot be placed.
+                let Some(profile_id) = profile_id_for(&tx, fav.profile_uuid.as_deref())? else {
+                    summary.skipped += 1;
+                    continue;
+                };
+                let key = favorite_key(fav.profile_uuid.as_deref().filter(|u| *u != MAIN_PROFILE_UUID), &fav.stable_hash);
                 let tomb: Option<i64> = tx
                     .query_row(
                         "SELECT deleted_at FROM sync_tombstones WHERE kind = ?1 AND key = ?2",
-                        params![TOMBSTONE_FAVORITE, fav.stable_hash],
+                        params![TOMBSTONE_FAVORITE, key],
                         |r| r.get(0),
                     )
                     .optional()?;
@@ -293,27 +435,27 @@ impl DatabaseManager {
                 }
                 let local: Option<i64> = tx
                     .query_row(
-                        "SELECT created_at FROM favorites WHERE profile_id = 1 AND stable_hash = ?1",
-                        params![fav.stable_hash],
+                        "SELECT created_at FROM favorites WHERE profile_id = ?1 AND stable_hash = ?2",
+                        params![profile_id, fav.stable_hash],
                         |r| r.get(0),
                     )
                     .optional()?;
                 match local {
                     None => {
                         tx.execute(
-                            "INSERT INTO favorites (stable_hash, item_kind, created_at) VALUES (?1, ?2, ?3)",
-                            params![fav.stable_hash, fav.item_kind, fav.created_at],
+                            "INSERT INTO favorites (profile_id, stable_hash, item_kind, created_at) VALUES (?1, ?2, ?3, ?4)",
+                            params![profile_id, fav.stable_hash, fav.item_kind, fav.created_at],
                         )?;
                         tx.execute(
                             "DELETE FROM sync_tombstones WHERE kind = ?1 AND key = ?2",
-                            params![TOMBSTONE_FAVORITE, fav.stable_hash],
+                            params![TOMBSTONE_FAVORITE, key],
                         )?;
                         summary.favorites_applied += 1;
                     }
                     Some(local_ts) if fav.created_at > local_ts => {
                         tx.execute(
-                            "UPDATE favorites SET item_kind = ?2, created_at = ?3 WHERE profile_id = 1 AND stable_hash = ?1",
-                            params![fav.stable_hash, fav.item_kind, fav.created_at],
+                            "UPDATE favorites SET item_kind = ?3, created_at = ?4 WHERE profile_id = ?1 AND stable_hash = ?2",
+                            params![profile_id, fav.stable_hash, fav.item_kind, fav.created_at],
                         )?;
                         summary.favorites_applied += 1;
                     }
@@ -322,10 +464,14 @@ impl DatabaseManager {
             }
 
             for watch in &delta.watch_history {
+                let Some(profile_id) = profile_id_for(&tx, watch.profile_uuid.as_deref())? else {
+                    summary.skipped += 1;
+                    continue;
+                };
                 let local: Option<i64> = tx
                     .query_row(
-                        "SELECT last_watched_at FROM watch_history WHERE profile_id = 1 AND stable_hash = ?1",
-                        params![watch.stable_hash],
+                        "SELECT last_watched_at FROM watch_history WHERE profile_id = ?1 AND stable_hash = ?2",
+                        params![profile_id, watch.stable_hash],
                         |r| r.get(0),
                     )
                     .optional()?;
@@ -335,7 +481,7 @@ impl DatabaseManager {
                 }
                 tx.execute(
                     "INSERT INTO watch_history (profile_id, stable_hash, position_ms, duration_ms, completed, last_watched_at)
-                     VALUES (1, ?1, ?2, ?3, ?4, ?5)
+                     VALUES (?6, ?1, ?2, ?3, ?4, ?5)
                      ON CONFLICT(profile_id, stable_hash) DO UPDATE SET
                          position_ms = excluded.position_ms,
                          duration_ms = excluded.duration_ms,
@@ -343,15 +489,32 @@ impl DatabaseManager {
                          last_watched_at = excluded.last_watched_at",
                     params![
                         watch.stable_hash, watch.position_ms.max(0), watch.duration_ms.max(0),
-                        i64::from(watch.completed), watch.last_watched_at
+                        i64::from(watch.completed), watch.last_watched_at, profile_id
                     ],
                 )?;
                 summary.watch_applied += 1;
             }
 
+            // The active profile may just have become (or stopped being) a Kids profile.
+            tx.execute(
+                "UPDATE temp.catalog_flags SET kids_only =
+                    COALESCE((SELECT is_kids FROM profiles WHERE id = (SELECT id FROM temp.active_profile)), 0)",
+                [],
+            )?;
             tx.commit()?;
             Ok(summary)
         })
+    }
+}
+
+/// The local id of a profile from its sync identity (`None` = the main profile); `None` if unknown here.
+fn profile_id_for(tx: &rusqlite::Connection, profile_uuid: Option<&str>) -> Result<Option<i64>, DbError> {
+    match profile_uuid {
+        None => Ok(Some(1)),
+        Some(MAIN_PROFILE_UUID) => Ok(Some(1)),
+        Some(uuid) => Ok(tx
+            .query_row("SELECT id FROM profiles WHERE uuid = ?1", params![uuid], |r| r.get(0))
+            .optional()?),
     }
 }
 
@@ -392,6 +555,7 @@ mod tests {
             stable_hash: hash.to_string(),
             item_kind: "movie".to_string(),
             created_at,
+            profile_uuid: None,
         }
     }
 
@@ -402,6 +566,7 @@ mod tests {
             duration_ms: 100_000,
             completed: false,
             last_watched_at: at,
+            profile_uuid: None,
         }
     }
 
@@ -600,6 +765,7 @@ mod tests {
     fn only_changes_after_the_cursor_are_exported() {
         let db = db();
         db.import_sync_delta(&SyncDelta {
+            profiles: vec![],
             sources: vec![src("old", "Old", 100), src("new", "New", 300)],
             favorites: vec![fav("a", 100), fav("b", 300)],
             watch_history: vec![watch("a", 1, 100), watch("b", 2, 300)],
@@ -656,5 +822,189 @@ mod tests {
         let sources = db.list_sources().unwrap();
         assert_eq!(sources.len(), 2);
         assert_ne!(sources[0].uuid, sources[1].uuid);
+    }
+
+    // MARK: profiles
+
+    const KIDS_UUID: &str = "11111111-2222-3333-4444-555555555555";
+
+    fn profile(uuid: &str, name: &str, kids: bool, at: i64) -> SyncProfile {
+        SyncProfile { uuid: uuid.to_string(), name: name.to_string(), avatar: "star".to_string(), is_kids: kids, updated_at: at }
+    }
+
+    fn fav_for(uuid: &str, hash: &str, at: i64) -> SyncFavorite {
+        SyncFavorite { profile_uuid: Some(uuid.to_string()), ..fav(hash, at) }
+    }
+
+    fn profile_by_uuid(db: &DatabaseManager, uuid: &str) -> Option<(i64, String, bool)> {
+        db.list_profiles().unwrap().into_iter().find(|p| p.uuid == uuid).map(|p| (p.id, p.name, p.is_kids))
+    }
+
+    fn favorites_of(db: &DatabaseManager, profile_id: i64) -> Vec<String> {
+        db.with_conn(|c| {
+            let mut stmt = c.prepare("SELECT stable_hash FROM favorites WHERE profile_id = ?1 ORDER BY stable_hash")?;
+            let rows = stmt.query_map(params![profile_id], |r| r.get(0))?;
+            Ok(rows.collect::<Result<Vec<String>, _>>()?)
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn a_new_profile_and_its_favorites_reach_the_other_device() {
+        let a = db();
+        let kids = a.create_profile("Léa", "star", true).unwrap();
+        a.set_active_profile(kids.id).unwrap();
+        a.toggle_favorite("cartoon", "live").unwrap();
+        a.record_watch_progress("cartoon", 5_000, 60_000).unwrap();
+
+        let b = db();
+        let summary = b.import_sync_delta(&a.export_sync_delta(0).unwrap()).unwrap();
+        assert_eq!(summary.profiles_applied, 1);
+
+        let (id, name, is_kids) = profile_by_uuid(&b, &kids.uuid).expect("the profile exists on device B");
+        assert_eq!((name.as_str(), is_kids), ("Léa", true));
+        assert_ne!(id, 1);
+        assert_eq!(favorites_of(&b, id), vec!["cartoon"]);
+        assert!(favorites_of(&b, 1).is_empty(), "nothing leaks into the main profile");
+        let position: i64 = b
+            .with_conn(|c| Ok(c.query_row("SELECT position_ms FROM watch_history WHERE profile_id = ?1", params![id], |r| r.get(0))?))
+            .unwrap();
+        assert_eq!(position, 5_000);
+
+        // Importing the same delta again changes nothing.
+        assert_eq!(b.import_sync_delta(&a.export_sync_delta(0).unwrap()).unwrap().applied(), 0);
+    }
+
+    #[test]
+    fn main_profile_data_keeps_its_original_shape() {
+        let a = db();
+        a.toggle_favorite("m", "movie").unwrap();
+        let delta = a.export_sync_delta(0).unwrap();
+        assert_eq!(delta.favorites[0].profile_uuid, None, "no profile uuid for the main profile");
+        assert_eq!(delta.tombstones.len(), 0);
+
+        // A record from before profiles existed (no uuid) lands in the main profile.
+        let b = db();
+        b.import_sync_delta(&SyncDelta { favorites: vec![fav("old", 100)], ..Default::default() }).unwrap();
+        assert_eq!(favorites_of(&b, 1), vec!["old"]);
+        // So does one that names the main profile explicitly.
+        b.import_sync_delta(&SyncDelta { favorites: vec![fav_for(MAIN_PROFILE_UUID, "named", 100)], ..Default::default() }).unwrap();
+        assert_eq!(favorites_of(&b, 1), vec!["named", "old"]);
+    }
+
+    #[test]
+    fn a_favorite_of_an_unknown_profile_is_skipped_not_misplaced() {
+        let b = db();
+        let summary = b
+            .import_sync_delta(&SyncDelta { favorites: vec![fav_for(KIDS_UUID, "x", 100)], ..Default::default() })
+            .unwrap();
+        assert_eq!((summary.favorites_applied, summary.skipped), (0, 1));
+        assert!(favorites_of(&b, 1).is_empty());
+    }
+
+    #[test]
+    fn the_profile_and_its_favorites_can_arrive_in_the_same_delta() {
+        let b = db();
+        let summary = b
+            .import_sync_delta(&SyncDelta {
+                profiles: vec![profile(KIDS_UUID, "Léa", true, 100)],
+                favorites: vec![fav_for(KIDS_UUID, "x", 100)],
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!((summary.profiles_applied, summary.favorites_applied), (1, 1));
+        let (id, ..) = profile_by_uuid(&b, KIDS_UUID).unwrap();
+        assert_eq!(favorites_of(&b, id), vec!["x"]);
+    }
+
+    #[test]
+    fn the_latest_edit_of_a_profile_wins() {
+        let b = db();
+        b.import_sync_delta(&SyncDelta { profiles: vec![profile(KIDS_UUID, "Léa", true, 100)], ..Default::default() }).unwrap();
+        b.import_sync_delta(&SyncDelta { profiles: vec![profile(KIDS_UUID, "Léa (grande)", false, 200)], ..Default::default() }).unwrap();
+        assert_eq!(profile_by_uuid(&b, KIDS_UUID).map(|p| (p.1, p.2)), Some(("Léa (grande)".to_string(), false)));
+        let stale = b.import_sync_delta(&SyncDelta { profiles: vec![profile(KIDS_UUID, "Vieux nom", true, 50)], ..Default::default() }).unwrap();
+        assert_eq!(stale.profiles_applied, 0);
+        assert_eq!(profile_by_uuid(&b, KIDS_UUID).map(|p| p.1), Some("Léa (grande)".to_string()));
+    }
+
+    #[test]
+    fn deleting_a_profile_removes_it_and_its_data_elsewhere() {
+        let a = db();
+        let kids = a.create_profile("Léa", "star", true).unwrap();
+        a.set_active_profile(kids.id).unwrap();
+        a.toggle_favorite("cartoon", "live").unwrap();
+        let b = db();
+        b.import_sync_delta(&a.export_sync_delta(0).unwrap()).unwrap();
+        let (b_id, ..) = profile_by_uuid(&b, &kids.uuid).unwrap();
+        assert_eq!(favorites_of(&b, b_id), vec!["cartoon"]);
+
+        a.set_active_profile(1).unwrap();
+        assert!(a.delete_profile(kids.id).unwrap());
+        let delta = a.export_sync_delta(0).unwrap();
+        assert!(delta.tombstones.iter().any(|t| t.kind == TOMBSTONE_PROFILE && t.key == kids.uuid));
+
+        let summary = b.import_sync_delta(&delta).unwrap();
+        assert_eq!(summary.deletions_applied, 1);
+        assert!(profile_by_uuid(&b, &kids.uuid).is_none());
+        assert!(favorites_of(&b, b_id).is_empty(), "its favorites went with it");
+    }
+
+    #[test]
+    fn a_profile_recreated_after_a_deletion_is_not_blocked_but_an_older_copy_is() {
+        let b = db();
+        b.import_sync_delta(&SyncDelta {
+            tombstones: vec![SyncTombstone { kind: TOMBSTONE_PROFILE.into(), key: KIDS_UUID.into(), deleted_at: 500 }],
+            ..Default::default()
+        })
+        .unwrap();
+        let old = b.import_sync_delta(&SyncDelta { profiles: vec![profile(KIDS_UUID, "Léa", true, 400)], ..Default::default() }).unwrap();
+        assert_eq!(old.profiles_applied, 0, "edited before the deletion: stays deleted");
+        let newer = b.import_sync_delta(&SyncDelta { profiles: vec![profile(KIDS_UUID, "Léa", true, 600)], ..Default::default() }).unwrap();
+        assert_eq!(newer.profiles_applied, 1, "created again after the deletion");
+    }
+
+    #[test]
+    fn the_main_profile_cannot_be_deleted_by_a_remote_tombstone() {
+        let b = db();
+        let summary = b
+            .import_sync_delta(&SyncDelta {
+                tombstones: vec![SyncTombstone { kind: TOMBSTONE_PROFILE.into(), key: MAIN_PROFILE_UUID.into(), deleted_at: 9_999_999_999 }],
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(summary.skipped, 1);
+        assert!(profile_by_uuid(&b, MAIN_PROFILE_UUID).is_some());
+        assert_eq!(b.list_profiles().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn removing_a_favorite_in_one_profile_does_not_touch_the_same_channel_in_another() {
+        let b = db();
+        b.import_sync_delta(&SyncDelta {
+            profiles: vec![profile(KIDS_UUID, "Léa", true, 100)],
+            favorites: vec![fav("same", 100), fav_for(KIDS_UUID, "same", 100)],
+            ..Default::default()
+        })
+        .unwrap();
+        let (kids_id, ..) = profile_by_uuid(&b, KIDS_UUID).unwrap();
+
+        b.import_sync_delta(&SyncDelta {
+            tombstones: vec![SyncTombstone { kind: TOMBSTONE_FAVORITE.into(), key: favorite_key(Some(KIDS_UUID), "same"), deleted_at: 200 }],
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(favorites_of(&b, kids_id).is_empty());
+        assert_eq!(favorites_of(&b, 1), vec!["same"], "the main profile keeps it");
+    }
+
+    #[test]
+    fn favorite_keys_round_trip() {
+        assert_eq!(favorite_key(None, "movie_1"), "movie_1");
+        assert_eq!(split_favorite_key("movie_1"), (None, "movie_1"));
+        let key = favorite_key(Some(KIDS_UUID), "movie_1");
+        assert_eq!(split_favorite_key(&key), (Some(KIDS_UUID), "movie_1"));
+        // A hash that happens to contain a bar is not mistaken for a profile prefix.
+        assert_eq!(split_favorite_key("a|b"), (None, "a|b"));
     }
 }
