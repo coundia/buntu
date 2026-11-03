@@ -173,6 +173,25 @@ impl DatabaseManager {
         })
     }
 
+    /// The source of an item and its subscription's connection limit, when the provider reported one.
+    pub(crate) fn source_limit_for_item(&self, item_id: i64) -> Option<(i64, Option<u32>)> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT s.id, s.max_connections FROM iptv_items i
+                 JOIN iptv_sources s ON s.id = i.source_id WHERE i.id = ?1",
+            )?;
+            let mut rows = stmt.query(params![item_id])?;
+            if let Some(r) = rows.next()? {
+                let id: i64 = r.get(0)?;
+                let max: Option<i64> = r.get(1)?;
+                return Ok(Some((id, max.map(|m| m.max(0) as u32))));
+            }
+            Ok(None)
+        })
+        .ok()
+        .flatten()
+    }
+
     pub fn set_active_profile(&self, id: i64) -> std::result::Result<(), DbError> {
         self.with_conn(|conn| {
             conn.execute("UPDATE temp.active_profile SET id = ?1", params![id])?;
