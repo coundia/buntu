@@ -16,7 +16,6 @@ struct SettingsView: View {
     @AppStorage("autoFailoverEnabled") private var autoFailoverEnabled = true
     @AppStorage("healthChecksEnabled") private var healthChecksEnabled = true
     @AppStorage("timeshiftDuration") private var timeshiftDurationRaw: String = TimeshiftDuration.oneHour.rawValue
-    @AppStorage("openSubtitlesApiKey") private var openSubtitlesApiKey: String = ""
     @AppStorage("openSubtitlesLanguages") private var openSubtitlesLanguages: String = "fr,en"
     @State private var showingProfilesManagement = false
 
@@ -105,7 +104,7 @@ struct SettingsView: View {
 
     private var subtitlesSection: some View {
         Section("Sous-titres en ligne (OpenSubtitles)") {
-            SecureField("Clé API OpenSubtitles", text: $openSubtitlesApiKey)
+            SecureField("Clé API OpenSubtitles", text: $model.openSubtitlesKey)
             TextField("Langues préférées", text: $openSubtitlesLanguages)
             Text("Utilisé pour rechercher et télécharger les sous-titres manquants via api.opensubtitles.com.")
                 .font(.caption)

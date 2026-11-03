@@ -723,7 +723,8 @@ public final class CndPlayerController {
     }
 
     public func loadExternalSubtitle(fileUrl: URL, engine: CndEngine? = nil) {
-        _ = backend?.addExternalSubtitle(fileUrl: fileUrl)
+        // mpv draws the subtitle itself; the overlay is only for AVPlayer (a second layer would double it).
+        if backend?.addExternalSubtitle(fileUrl: fileUrl) == true { return }
         if let content = try? String(contentsOf: fileUrl, encoding: .utf8) {
             let cues: [SubtitleCue]
             if let engine {

@@ -23,6 +23,8 @@ final class SettingsModel {
     var referer: String { didSet { scheduleSave() } }
     var showNetworkConsole: Bool { didSet { scheduleSave(after: .zero) } }
     var omdbKey: String { didSet { scheduleSave() } }
+    /// OpenSubtitles API key; kept in the Keychain like the OMDb one.
+    var openSubtitlesKey: String { didSet { scheduleSave() } }
 
     /// Whether Xtream passwords live in iCloud Keychain (opt-in, see `setPasswordSync`).
     private(set) var syncsPasswords: Bool
@@ -56,6 +58,8 @@ final class SettingsModel {
         showNetworkConsole = settings.showNetworkConsole
         omdbKey = (try? keychain.readSecret(forKey: KeychainStore.omdbApiKeyRef)) ?? ""
         syncsPasswords = keychain.passwordScope == .iCloud
+        OpenSubtitlesCredentials.migrateLegacyKey(keychain: keychain)
+        openSubtitlesKey = (try? keychain.readSecret(forKey: OpenSubtitlesCredentials.keychainKey)) ?? ""
     }
 
     /// Turns the iCloud Keychain option on or off and moves the existing source passwords with it.
@@ -110,11 +114,18 @@ final class SettingsModel {
         settings.showNetworkConsole = showNetworkConsole
         settings.omdbApiKeyRef = trimmedKey.isEmpty ? nil : KeychainStore.omdbApiKeyRef
 
+        let trimmedSubtitleKey = openSubtitlesKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
         do {
             if trimmedKey.isEmpty {
                 try keychain.deleteSecret(forKey: KeychainStore.omdbApiKeyRef)
             } else {
                 try keychain.saveSecret(trimmedKey, forKey: KeychainStore.omdbApiKeyRef)
+            }
+            if trimmedSubtitleKey.isEmpty {
+                try keychain.deleteSecret(forKey: OpenSubtitlesCredentials.keychainKey)
+            } else {
+                try keychain.saveSecret(trimmedSubtitleKey, forKey: OpenSubtitlesCredentials.keychainKey)
             }
             try engine.updateSettings(settings: settings)
             let consoleChanged = base.showNetworkConsole != settings.showNetworkConsole
