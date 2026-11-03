@@ -40,6 +40,11 @@ tasks:
     cmds:
       - ./scripts/run-iphone.sh {{if .DEVICE}}--device "{{.DEVICE}}"{{end}}
 
+  install:iphone:
+    desc: Build and install the app on a connected iPhone without launching it (DEVICE="name or UDID" to pick one)
+    cmds:
+      - ./scripts/run-iphone.sh --no-launch {{if .DEVICE}}--device "{{.DEVICE}}"{{end}}
+
   run:iphone:release:
     desc: Same as run:iphone with an optimized build
     cmds:
