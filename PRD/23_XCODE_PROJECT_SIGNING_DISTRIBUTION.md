@@ -68,3 +68,18 @@ L'app est aujourd'hui un **exécutable Swift Package**, empaqueté à la main pa
 2. L'app macOS sandboxée : choix d'un dossier de téléchargement, téléchargement, lecture mpv, journaux.
 3. Avec une équipe Apple : la synchronisation iCloud fonctionne entre un Mac et un iPhone (essai manuel documenté), les téléchargements iOS apparaissent dans Fichiers, un flux `.ts` se lit sur iPhone via mpv.
 4. `task check` au vert.
+
+---
+
+## Statut d'Implémentation & Validation (audit)
+
+**Partiel.**
+
+Réalisé : projet Xcode généré par XcodeGen (`apple/project.yml`, `task xcode:generate`, ignoré par git), cibles macOS, iOS, tvOS, visionOS et l'extension Live Activity, `Info.plist` par plateforme (identité, catégorie, ATS, réseau local, fichiers sur iOS, audio en arrière-plan, Bonjour), entitlements macOS (App Sandbox, fichiers, signets), Hardened Runtime sur macOS, option Trousseau iCloud pour les mots de passe (PRD 26 lot 26.1, désactivée par défaut), signature automatique avec `DEVELOPMENT_TEAM`, icône (`task icon`), lancement sur iPhone (`task run:iphone`).
+
+Non réalisé :
+- **Découpage en bibliothèque `CndIptvKit`** : `Package.swift` ne contient toujours que l'exécutable `CndIptvApp`.
+- **`libmpv` embarqué** : aucune bibliothèque n'est copiée dans `Frameworks/`, ni sur macOS (le `.app` publié s'appuie sur `brew install mpv`) ni sur iOS/tvOS (pas de lecture MKV/AVI/FLV).
+- **Entitlements iCloud sur iOS** : retirés (compte développeur personnel) ; l'app iPhone fonctionne en local, sans synchronisation iCloud ni groupe de Trousseau partagé.
+- **Tâches d'archive** `task app:macos`, `task app:ios`, `task app:testflight` : absentes.
+- Essais manuels demandés (iCloud entre un Mac et un iPhone, dossier Fichiers) : non faits.

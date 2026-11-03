@@ -806,7 +806,8 @@ private struct LoadedShellView: View {
             onCollapse: collapseAction,
             closesOnDisappear: false,
             pip: pip,
-            isFullscreen: expandedShowsFullscreen
+            isFullscreen: expandedShowsFullscreen,
+            onZap: { zap($0) }
         )
         .background(Color.black)
     }

@@ -53,3 +53,11 @@ L'IPTV se regarde surtout sur la télévision du salon. Le moteur Rust et la log
 1. `xcodebuild … -destination 'generic/platform=tvOS Simulator' build` réussit, et la suite existante (`task check`) reste verte.
 2. Tests Swift des modèles partagés exécutés aussi pour tvOS (`xcodebuild test` sur un simulateur Apple TV).
 3. Parcours manuel au Simulateur Apple TV : zapping, guide, film, réglages, sans souris.
+
+---
+
+## Statut d'Implémentation & Validation (audit)
+
+**Partiel.** Réalisé : le moteur Rust compile pour `aarch64-apple-tvos` et `-sim`, l'`XCFramework` contient les tranches tvOS, `Package.swift` déclare `.tvOS(.v17)`, la cible `CndIPTV-tvOS` compile (`xcodebuild -scheme CndIPTV-tvOS -destination "generic/platform=tvOS Simulator"`). La clé iCloud de l'`Info.plist` a été retirée (elle faisait planter l'app sans entitlement). Le lecteur gère la télécommande : lecture/pause, retour, ±10 s, et **haut/bas = chaîne précédente/suivante** (ajouté lors de l'audit).
+
+**Non réalisé** : `libmpv` pour tvOS (sans lui, seuls les flux HLS se lisent ; les chaînes Xtream passent par leur adresse `.m3u8`, les MKV ne se lisent pas) ; interface « 10-foot » dédiée (le `TabView` de l'iPhone est réutilisé, pas de `Platforms/tvOS/`, pas de bandeau d'infos ni de liste des chaînes en surimpression, guide EPG non adapté au focus) ; aucun essai sur le simulateur Apple TV ni sur un appareil.
