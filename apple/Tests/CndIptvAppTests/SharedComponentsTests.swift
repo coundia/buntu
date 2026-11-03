@@ -1,7 +1,7 @@
 import XCTest
 import CoreGraphics
 import CndCoreBridge
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 final class ImageThumbnailCacheTests: XCTestCase {
     private var directory: URL!

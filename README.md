@@ -90,7 +90,7 @@ flowchart LR
 
 - **Cœur Rust** (`crates/cnd-core`) : base SQLite (WAL, index couvrants, FTS5), ingestion M3U en flux, client Xtream, moteur XMLTV, requêtes catalogue / favoris / historique, enrichissement OMDb, moteur de téléchargement multi-segments, télémétrie, synchronisation (delta Last-Write-Wins).
 - **Pont** (`apple/Packages/CndCoreBridge`) : Swift Package local contenant l'`XCFramework` universel (macOS arm64 + x86_64, iOS Simulator, iOS appareil) et les bindings UniFFI.
-- **Application** (`apple/Sources/CndIptvApp`) : SwiftUI. Sur macOS, une `NavigationSplitView` avec un panneau latéral (lecteur + détails) ; sur iOS, une `TabView` avec mini-lecteur persistant.
+- **Application** (`apple/Sources/CndIptvKit` pour tout le code, `apple/Sources/CndIptvApp` pour le seul point d'entrée) : SwiftUI. Sur macOS, une `NavigationSplitView` avec un panneau latéral (lecteur + détails) ; sur iOS, une `TabView` avec mini-lecteur persistant.
 
 ### Structure du dépôt
 
@@ -104,7 +104,8 @@ cnd-iptv-native/
 ├── apple/
 │   ├── Package.swift
 │   ├── Packages/CndCoreBridge/       # XCFramework + bindings Swift
-│   ├── Sources/CndIptvApp/
+│   ├── Sources/CndIptvApp/           # point d'entrée @main seulement
+│   ├── Sources/CndIptvKit/           # bibliothèque : tout le reste (les tests la ciblent)
 │   │   ├── App/                      # navigation adaptative, commandes de menu
 │   │   ├── Features/                 # Sources, LiveTV, EPG, Movies, Series, VOD, Downloads, Settings, Console
 │   │   ├── Player/                   # AVPlayer, libmpv, PiP, AirPlay, Now Playing, gestes

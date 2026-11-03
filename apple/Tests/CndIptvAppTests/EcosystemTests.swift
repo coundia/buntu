@@ -3,7 +3,7 @@ import AVFoundation
 import CoreMedia
 import MediaPlayer
 import CndCoreBridge
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 @MainActor
 private func makeTestController() -> CndPlayerController {

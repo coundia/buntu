@@ -1,5 +1,5 @@
 import XCTest
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 /// PRD 15: a replay behaves like a film in the player but never becomes watch history.
 @MainActor

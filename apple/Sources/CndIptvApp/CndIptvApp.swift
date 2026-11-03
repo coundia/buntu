@@ -1,4 +1,8 @@
 import SwiftUI
+// SwiftPM builds the Kit as its own module; the Xcode targets compile both folders into one.
+#if canImport(CndIptvKit)
+import CndIptvKit
+#endif
 
 @main
 struct CndIptvApp: App {

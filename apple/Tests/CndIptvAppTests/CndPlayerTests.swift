@@ -1,6 +1,6 @@
 import XCTest
 import QuartzCore
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 // MARK: - Test doubles
 
