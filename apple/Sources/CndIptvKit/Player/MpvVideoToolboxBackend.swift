@@ -391,6 +391,9 @@ public final class MpvVideoToolboxBackend: VideoBackend {
         option("input-default-bindings", "no")
         option("ytdl", "no")
         option("vo", "libmpv")
+        // AVFoundation output follows the system's output device when it changes (headphones, AirPods, HDMI);
+        // CoreAudio stays as the fallback if this libmpv build lacks it.
+        option("ao", "avfoundation,coreaudio")
         // The software render target cannot import zero-copy `videotoolbox` frames, so mpv falls
         // through to `videotoolbox-copy` (still GPU/media-engine decoding, one copy to RAM).
         option("hwdec", "videotoolbox,videotoolbox-copy")
