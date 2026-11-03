@@ -328,7 +328,8 @@ public final class MpvVideoToolboxBackend: VideoBackend {
         if fps <= 0 { fps = Double(property("estimated-vf-fps") ?? "") ?? 0 }
         guard fps > 0 else { return nil }
         return VideoFormatReading(
-            fps: fps, gamma: property("video-params/gamma"), primaries: property("video-params/primaries")
+            fps: fps, gamma: property("video-params/gamma"), primaries: property("video-params/primaries"),
+            width: property("video-params/w").flatMap(Int.init), height: property("video-params/h").flatMap(Int.init)
         )
     }
 
