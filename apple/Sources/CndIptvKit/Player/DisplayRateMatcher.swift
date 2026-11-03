@@ -82,8 +82,12 @@ public struct DisplayFormatInfo: Equatable, Sendable {
     public let rawFps: Double
     public let matchedRate: StandardFrameRate?
     public let dynamicRange: VideoDynamicRange
+    public let width: Int?
+    public let height: Int?
 
-    public init(rawFps: Double, dynamicRange: VideoDynamicRange = .sdr) {
+    public init(rawFps: Double, dynamicRange: VideoDynamicRange = .sdr, width: Int? = nil, height: Int? = nil) {
+        self.width = (width ?? 0) > 0 ? width : nil
+        self.height = (height ?? 0) > 0 ? height : nil
         self.rawFps = rawFps
         self.matchedRate = StandardFrameRate.snap(rawFps: rawFps)
         self.dynamicRange = dynamicRange
@@ -91,7 +95,9 @@ public struct DisplayFormatInfo: Equatable, Sendable {
 
     public var summary: String {
         let fpsText = matchedRate?.displayDescription ?? String(format: "%.2f i/s", rawFps)
-        return "\(fpsText) · \(dynamicRange.rawValue)"
+        let base = "\(fpsText) · \(dynamicRange.rawValue)"
+        guard let width, let height else { return base }
+        return "\(width)×\(height) · \(base)"
     }
 }
 
@@ -138,10 +144,10 @@ public final class DisplayRateMatcher {
 
     /// Proposes a new detected frame rate and dynamic range.
     /// Debounces application for 2 seconds to ensure stability.
-    public func update(rawFps: Double, gamma: String? = nil, primaries: String? = nil) {
+    public func update(rawFps: Double, gamma: String? = nil, primaries: String? = nil, width: Int? = nil, height: Int? = nil) {
         guard rawFps > 0 else { return }
         let dr = VideoDynamicRange.detect(gamma: gamma, primaries: primaries)
-        let info = DisplayFormatInfo(rawFps: rawFps, dynamicRange: dr)
+        let info = DisplayFormatInfo(rawFps: rawFps, dynamicRange: dr, width: width, height: height)
 
         guard info != currentFormat else { return }
         self.currentFormat = info
