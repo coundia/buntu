@@ -23,8 +23,6 @@
     </dict>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Requis pour communiquer avec les serveurs IA locaux et découvrir les flux IPTV locaux.</string>
-    <key>CndCloudKitContainerIdentifier</key>
-    <string>iCloud.com.cnd.iptv</string>
     <key>UIBackgroundModes</key>
     <array>
         <string>audio</string>

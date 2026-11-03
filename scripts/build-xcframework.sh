@@ -24,6 +24,9 @@ TARGET_IOS="aarch64-apple-ios"
 TARGET_TVOS_SIM="aarch64-apple-tvos-sim"
 TARGET_TVOS="aarch64-apple-tvos"
 
+TARGET_VISIONOS_SIM="aarch64-apple-visionos-sim"
+TARGET_VISIONOS="aarch64-apple-visionos"
+
 echo "--> Compiling Rust for macOS (arm64 & x86_64)..."
 MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --package cnd-core --release --target "${TARGET_MAC_ARM}"
 MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --package cnd-core --release --target "${TARGET_MAC_X86}"
@@ -40,6 +43,12 @@ TVOS_DEPLOYMENT_TARGET=17.0 cargo build --package cnd-core --release --target "$
 
 echo "--> Compiling Rust for tvOS Device (arm64)..."
 TVOS_DEPLOYMENT_TARGET=17.0 cargo build --package cnd-core --release --target "${TARGET_TVOS}"
+
+echo "--> Compiling Rust for visionOS Simulator (arm64)..."
+XROS_DEPLOYMENT_TARGET=1.0 cargo build --package cnd-core --release --target "${TARGET_VISIONOS_SIM}"
+
+echo "--> Compiling Rust for visionOS Device (arm64)..."
+XROS_DEPLOYMENT_TARGET=1.0 cargo build --package cnd-core --release --target "${TARGET_VISIONOS}"
 
 # 2. Universal Fat Binaries with lipo
 UNIVERSAL_DIR="${CARGO_TARGET_DIR}/universal"
@@ -92,6 +101,10 @@ xcodebuild -create-xcframework \
     -library "${CARGO_TARGET_DIR}/${TARGET_TVOS_SIM}/release/libcnd_core.a" \
     -headers "${HEADERS_DIR}" \
     -library "${CARGO_TARGET_DIR}/${TARGET_TVOS}/release/libcnd_core.a" \
+    -headers "${HEADERS_DIR}" \
+    -library "${CARGO_TARGET_DIR}/${TARGET_VISIONOS_SIM}/release/libcnd_core.a" \
+    -headers "${HEADERS_DIR}" \
+    -library "${CARGO_TARGET_DIR}/${TARGET_VISIONOS}/release/libcnd_core.a" \
     -headers "${HEADERS_DIR}" \
     -output "${XCFRAMEWORK_OUT}"
 

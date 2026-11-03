@@ -71,6 +71,25 @@ targets:
         ARCHS: arm64
         ONLY_ACTIVE_ARCH: YES
 
+  # Apple Vision Pro: the iPad interface in windows (PRD 22, lot 22.2).
+  CndIPTV-visionOS:
+    type: application
+    platform: visionOS
+    deploymentTarget: "1.0"
+    sources:
+      - path: Sources/CndIptvApp
+    dependencies:
+      - package: CndCoreBridge
+        product: CndCoreBridge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.papacoundia.cndiptv.vision
+        INFOPLIST_FILE: Resources/Info-visionOS.plist
+        TARGETED_DEVICE_FAMILY: "7"
+        SUPPORTED_PLATFORMS: "xros xrsimulator"
+        ARCHS: arm64
+        ONLY_ACTIVE_ARCH: YES
+
   # Lock screen and Dynamic Island for recordings and "now playing" (PRD 22, lot 22.1).
   CndIPTV-LiveActivity:
     type: app-extension
