@@ -162,6 +162,7 @@ impl DatabaseManager {
         let alter_stmts = [
             "ALTER TABLE iptv_sources ADD COLUMN exp_date INTEGER",
             "ALTER TABLE iptv_sources ADD COLUMN max_connections INTEGER",
+            "ALTER TABLE iptv_sources ADD COLUMN server_utc_offset_secs INTEGER",
             "ALTER TABLE iptv_sources ADD COLUMN active_cons INTEGER",
             "ALTER TABLE iptv_sources ADD COLUMN account_status TEXT",
             "ALTER TABLE series_catalog ADD COLUMN stable_hash TEXT NOT NULL DEFAULT ''",

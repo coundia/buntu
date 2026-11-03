@@ -623,6 +623,22 @@ impl CndEngine {
             return Ok(None);
         };
         let now_ts = db::chrono_now_ts();
+        // Xtream writes replay start times on the server's clock; known from the last sync.
+        let server_offset = self
+            .db
+            .with_conn(|conn| {
+                let offset: Option<i64> = conn
+                    .query_row(
+                        "SELECT server_utc_offset_secs FROM iptv_sources WHERE id = ?1",
+                        rusqlite::params![item.source_id],
+                        |r| r.get(0),
+                    )
+                    .unwrap_or(None);
+                Ok(offset)
+            })
+            .ok()
+            .flatten()
+            .unwrap_or(0);
         match iptv::catchup::build_catchup_url(
             &item.stream_url,
             item.catchup_type.as_deref(),
@@ -631,6 +647,7 @@ impl CndEngine {
             start_ts,
             end_ts,
             now_ts,
+            server_offset,
         ) {
             Ok(url) => Ok(Some(url)),
             Err(e) => {
@@ -676,6 +693,8 @@ impl CndEngine {
             start_ts,
             end_ts,
             now_ts,
+            // No item here, so no source clock: prefer `build_catchup_url`, which knows it.
+            0,
         ) {
             Ok(url) => Ok(Some(url)),
             Err(e) => {
@@ -1603,6 +1622,22 @@ http://iptv.local:8080/series/u/p/401.mkv
 
         assert!(replay_url.starts_with("http://iptv.server.io:8080/timeshift/user1/pass1/60/"));
         assert!(replay_url.ends_with("/999.ts"));
+
+        // The start time is written on the server's clock: a server two hours ahead of UTC moves it.
+        let hour_of = |url: &str| -> i64 {
+            let stamp = url.split('/').nth(7).expect("start stamp");
+            stamp[11..13].parse().expect("hour")
+        };
+        let utc_hour = hour_of(&replay_url);
+        engine
+            .db
+            .with_conn(|conn| {
+                conn.execute("UPDATE iptv_sources SET server_utc_offset_secs = 7200 WHERE id = ?1", rusqlite::params![src_id])?;
+                Ok(())
+            })
+            .expect("set offset");
+        let shifted = engine.build_catchup_url(item_id, past_start, past_end).expect("build").expect("url");
+        assert_eq!(hour_of(&shifted), (utc_hour + 2) % 24, "{replay_url} -> {shifted}");
 
         // 3. Resolve Catchup URL standalone
         let resolved = engine

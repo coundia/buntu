@@ -22,6 +22,9 @@ pub struct XtreamAccountInfo {
     pub active_connections: u32,
     pub max_connections: u32,
     pub server_timezone: Option<String>,
+    /// Seconds the server's clock is ahead of UTC (from `time_now` / `timestamp_now`); Xtream replay URLs
+    /// are written on that clock.
+    pub server_utc_offset_secs: Option<i64>,
 }
 
 #[derive(Debug)]
@@ -57,6 +60,10 @@ struct RawUserInfo {
 struct RawServerInfo {
     #[serde(default, deserialize_with = "de_opt_string")]
     timezone: Option<String>,
+    #[serde(default, deserialize_with = "de_opt_string")]
+    time_now: Option<String>,
+    #[serde(default, deserialize_with = "de_opt_i64")]
+    timestamp_now: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -254,7 +261,16 @@ pub fn parse_auth_probe_bytes(bytes: &[u8]) -> XtreamAuthProbe {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "Active".to_string());
 
-    let server_timezone = envelope.server_info.and_then(|s| s.timezone);
+    let (server_timezone, server_utc_offset_secs) = match envelope.server_info {
+        Some(info) => {
+            let offset = match (info.time_now.as_deref(), info.timestamp_now) {
+                (Some(local), Some(utc)) => crate::iptv::catchup::server_utc_offset(local, utc),
+                _ => None,
+            };
+            (info.timezone, offset)
+        }
+        None => (None, None),
+    };
 
     XtreamAuthProbe::Authenticated(XtreamAccountInfo {
         status,
@@ -263,6 +279,7 @@ pub fn parse_auth_probe_bytes(bytes: &[u8]) -> XtreamAuthProbe {
         active_connections: user_info.active_cons,
         max_connections: user_info.max_connections,
         server_timezone,
+        server_utc_offset_secs,
     })
 }
 
@@ -673,6 +690,7 @@ fn write_xtream_catalog_to_db(
                  max_connections = ?4,
                  active_cons = ?5,
                  account_status = ?6,
+                 server_utc_offset_secs = COALESCE(?9, server_utc_offset_secs),
                  epg_url = CASE
                      WHEN epg_url IS NULL OR TRIM(epg_url) = '' THEN ?7
                      ELSE epg_url
@@ -686,7 +704,8 @@ fn write_xtream_catalog_to_db(
                 account_info.active_connections,
                 account_info.status,
                 default_epg_url,
-                source_id
+                source_id,
+                account_info.server_utc_offset_secs
             ],
         )?;
         Ok(())
@@ -1131,7 +1150,9 @@ mod tests {
                 "max_connections": 4
             },
             "server_info": {
-                "timezone": "Europe/Paris"
+                "timezone": "Europe/Paris",
+                "time_now": "2026-11-02 17:30:05",
+                "timestamp_now": "1793637000"
             }
         }"#;
         match parse_auth_probe_bytes(auth_json) {
@@ -1142,6 +1163,8 @@ mod tests {
                 assert_eq!(info.active_connections, 1);
                 assert_eq!(info.max_connections, 4);
                 assert_eq!(info.server_timezone.as_deref(), Some("Europe/Paris"));
+                // 17:30:05 on the server's clock against 16:30:00 UTC: one hour ahead.
+                assert_eq!(info.server_utc_offset_secs, Some(3_600));
             }
             other => panic!("Expected Authenticated, got {other:?}"),
         }

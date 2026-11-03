@@ -378,6 +378,12 @@ private struct LoadedShellView: View {
     }
 
     /// Next / previous episode when a queue is playing, otherwise next / previous channel.
+    /// From a replay back to the channel's live stream.
+    private func returnToLive() {
+        guard let itemId = player.media?.itemId, let channel = try? engine.getItemById(itemId: itemId) else { return }
+        play(channel)
+    }
+
     /// Online subtitles for what is playing; the downloaded file is added to the current player.
     private func makeSubtitleSearch() -> SubtitleSearchModel {
         let model = SubtitleSearchModel(backend: engine, mediaTitle: player.media?.title ?? "")
@@ -574,6 +580,7 @@ private struct LoadedShellView: View {
                     onOpenAssistant: state.aiSettings.isAssistantEnabled ? { openAssistant() } : nil,
                     onAddToMultiView: addToMultiView,
                     onOpenMultiView: openMultiView,
+                    onStartOver: { channel, program in startOver(channel: channel, program: program) },
                     searchRequest: $liveSearchRequest
                 )
             case .guide:
@@ -644,6 +651,15 @@ private struct LoadedShellView: View {
         player.open(media)
     }
 
+    /// "Revoir depuis le début": the programme on air, played from its start through the provider's archive.
+    private func startOver(channel: IptvItemRecord, program: EpgProgramRecord) {
+        guard let url = (try? engine.buildCatchupUrl(itemId: channel.id, startTs: program.startTs, endTs: program.endTs)) ?? nil else {
+            toasts.show("Le replay n'est pas disponible pour ce programme.")
+            return
+        }
+        playCatchup(channel: channel, program: program, replayUrlString: url)
+    }
+
     private func playCatchup(channel: IptvItemRecord, program: EpgProgramRecord, replayUrlString: String) {
         currentlyPlayingItem = channel
         guard let url = URL(string: replayUrlString),
@@ -651,7 +667,7 @@ private struct LoadedShellView: View {
                 item: channel,
                 overrideUrl: url,
                 customTitle: "\(channel.name) — \(program.title) [Replay]",
-                kind: .movie
+                kind: .replay
               ) else {
             state.errorMessage = "L'URL de replay pour « \(program.title) » est invalide."
             return
@@ -801,7 +817,8 @@ private struct LoadedShellView: View {
             onClose: closePlayer,
             closesOnDisappear: false,
             pip: pip,
-            subtitleSearch: { makeSubtitleSearch() }
+            subtitleSearch: { makeSubtitleSearch() },
+            onReturnToLive: { returnToLive() }
         )
         .aspectRatio(16 / 9, contentMode: .fit)
     }
@@ -847,7 +864,8 @@ private struct LoadedShellView: View {
             pip: pip,
             isFullscreen: expandedShowsFullscreen,
             onZap: { zap($0) },
-            subtitleSearch: { makeSubtitleSearch() }
+            subtitleSearch: { makeSubtitleSearch() },
+            onReturnToLive: { returnToLive() }
         )
         .background(Color.black)
     }

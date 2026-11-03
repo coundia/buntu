@@ -99,6 +99,8 @@ public struct CndVideoPlayerView: View {
     var onZap: ((Int) -> Void)?
     /// Builds the online subtitle search for the current media; the menu entry shows only when provided.
     var subtitleSearch: (() -> SubtitleSearchModel)?
+    /// Goes back to the channel's live stream from a replay; the button shows only when provided.
+    var onReturnToLive: (() -> Void)?
     @State private var subtitleSearchModel: SubtitleSearchModel?
 
     @State private var hudVisible = true
@@ -117,7 +119,8 @@ public struct CndVideoPlayerView: View {
         pip: PiPManager? = nil,
         isFullscreen: Bool = false,
         onZap: ((Int) -> Void)? = nil,
-        subtitleSearch: (() -> SubtitleSearchModel)? = nil
+        subtitleSearch: (() -> SubtitleSearchModel)? = nil,
+        onReturnToLive: (() -> Void)? = nil
     ) {
         self.controller = controller
         self.isFullscreen = isFullscreen
@@ -132,6 +135,7 @@ public struct CndVideoPlayerView: View {
         self.onCollapse = onCollapse
         self.onZap = onZap
         self.subtitleSearch = subtitleSearch
+        self.onReturnToLive = onReturnToLive
     }
 
     public var body: some View {
@@ -277,6 +281,19 @@ public struct CndVideoPlayerView: View {
                 Text(controller.media?.title ?? "")
                     .font(.headline)
                     .lineLimit(1)
+                if controller.media?.kind == .replay {
+                    Text("REPLAY")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.orange, in: Capsule())
+                        .foregroundStyle(.black)
+                    if let onReturnToLive {
+                        Button("Retour au direct", systemImage: "dot.radiowaves.left.and.right", action: onReturnToLive)
+                            .font(.caption.bold())
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                }
                 if controller.media != nil {
                     favoriteButton
                     brokenButton

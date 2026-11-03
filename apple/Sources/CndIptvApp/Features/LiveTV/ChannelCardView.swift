@@ -40,6 +40,8 @@ struct ChannelActions {
     var toggleBroken: ((IptvItemRecord) -> Void)? = nil
     var addToMultiView: ((IptvItemRecord) -> Void)? = nil
     var showMirrors: ((IptvItemRecord) -> Void)? = nil
+    /// Plays the programme on air from its beginning (provider catch-up); shown only when the channel has an archive.
+    var startOver: ((IptvItemRecord, EpgProgramRecord) -> Void)? = nil
     var showGuide: (IptvItemRecord) -> Void
 }
 
@@ -211,6 +213,9 @@ struct ChannelCardView: View {
                 toggleBroken(item)
             }
         }
+        if let startOver = actions.startOver, let now = nowNext?.now, Self.hasArchive(item) {
+            Button("Revoir depuis le début", systemImage: "backward.end.fill") { startOver(item, now) }
+        }
         if let addToMultiView = actions.addToMultiView {
             Button("Ajouter à la mosaïque Multi-View", systemImage: "square.grid.2x2") {
                 addToMultiView(item)
@@ -234,6 +239,11 @@ struct ChannelCardView: View {
         if let media = PlayableMedia(item: item) {
             Button("Copier l'URL du flux", systemImage: "link") { ExternalPlayerLauncher.copyStreamUrl(media) }
         }
+    }
+
+    /// The provider keeps an archive for this channel (days of catch-up, or a catch-up address template).
+    static func hasArchive(_ item: IptvItemRecord) -> Bool {
+        (item.catchupDays ?? 0) > 0 || (item.catchupSource?.isEmpty == false)
     }
 
     private var accessibilityText: String {

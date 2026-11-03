@@ -37,6 +37,36 @@ pub fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (year, m, d)
 }
 
+/// Days since 1970-01-01 of a civil date (inverse of `civil_from_days`).
+pub fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (month as i64 + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// Offset in seconds between a Xtream server's local clock and UTC, from `server_info`:
+/// `time_now` ("YYYY-MM-DD HH:MM:SS", server local time) and `timestamp_now` (Unix time).
+/// Rounded to 15 minutes (the two values are read a moment apart) and bounded to a real zone.
+pub fn server_utc_offset(time_now: &str, timestamp_now: i64) -> Option<i64> {
+    let text = time_now.trim();
+    let (date, clock) = text.split_once(' ')?;
+    let mut d = date.split('-');
+    let (year, month, day): (i64, u32, u32) = (d.next()?.parse().ok()?, d.next()?.parse().ok()?, d.next()?.parse().ok()?);
+    let mut c = clock.split(':');
+    let (hour, minute, second): (i64, i64, i64) = (c.next()?.parse().ok()?, c.next()?.parse().ok()?, c.next().unwrap_or("0").parse().ok()?);
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+    let local_as_utc = days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second;
+    let diff = local_as_utc - timestamp_now;
+    let rounded = ((diff + 450).div_euclid(900)) * 900;
+    (-14 * 3_600..=14 * 3_600).contains(&rounded).then_some(rounded)
+}
+
 /// Converts a Unix timestamp in seconds to UTC date/time components:
 /// `(year, month, day, hour, minute, second)`
 pub fn timestamp_to_utc_parts(ts: i64) -> (i64, u32, u32, u32, u32, u32) {
@@ -91,6 +121,9 @@ pub fn is_catchup_available(
 }
 
 /// Resolves a catchup replay URL for an IPTV item and program time range.
+// The channel (url, type, source, days) and the time window (start, end, now, server clock) travel as
+// separate values because every caller already has them that way.
+#[allow(clippy::too_many_arguments)]
 pub fn build_catchup_url(
     stream_url: &str,
     catchup_type: Option<&str>,
@@ -99,6 +132,7 @@ pub fn build_catchup_url(
     start_ts: i64,
     end_ts: i64,
     now_ts: i64,
+    server_offset_secs: i64,
 ) -> Result<String, CatchupError> {
     if !is_catchup_supported(catchup_type, catchup_source) {
         return Err(CatchupError::NotSupported);
@@ -128,7 +162,7 @@ pub fn build_catchup_url(
     let c_type = catchup_type.unwrap_or("default").trim().to_lowercase();
 
     // 1. Try Xtream Codes Timeshift format if stream_url matches Xtream live format
-    if let Some(xtream_url) = try_build_xtream_timeshift_url(trimmed_stream, start_ts, end_ts) {
+    if let Some(xtream_url) = try_build_xtream_timeshift_url(trimmed_stream, start_ts, end_ts, server_offset_secs) {
         return Ok(xtream_url);
     }
 
@@ -221,6 +255,7 @@ fn try_build_xtream_timeshift_url(
     stream_url: &str,
     start_ts: i64,
     end_ts: i64,
+    server_offset_secs: i64,
 ) -> Option<String> {
     let Ok(url) = url::Url::parse(stream_url) else {
         return None;
@@ -242,7 +277,8 @@ fn try_build_xtream_timeshift_url(
         _ => return None,
     };
 
-    let (year, month, day, hour, minute, _) = timestamp_to_utc_parts(start_ts);
+    // Xtream reads the start time on the server's own clock, not in UTC.
+    let (year, month, day, hour, minute, _) = timestamp_to_utc_parts(start_ts + server_offset_secs);
     let time_str = format!("{year:04}-{month:02}-{day:02}:{hour:02}-{minute:02}");
 
     let duration_secs = (end_ts - start_ts).max(60);
@@ -336,6 +372,7 @@ mod tests {
             start_ts,
             end_ts,
             now_ts,
+            0,
         ).unwrap();
 
         assert_eq!(
@@ -360,6 +397,7 @@ mod tests {
             start_ts,
             end_ts,
             now_ts,
+            0,
         ).unwrap();
 
         assert_eq!(
@@ -383,6 +421,7 @@ mod tests {
             start_ts,
             end_ts,
             now_ts,
+            0,
         ).unwrap();
 
         assert_eq!(
@@ -406,11 +445,61 @@ mod tests {
             start_ts,
             end_ts,
             now_ts,
+            0,
         ).unwrap();
 
         assert_eq!(
             catchup_url,
             "http://stream.net/live/ch.ts?timeshift=1000"
         );
+    }
+
+    #[test]
+    fn xtream_timeshift_uses_the_server_clock() {
+        let live_url = "http://iptv.provider.com:8080/live/u/p/42.ts";
+        let start_ts = parse_xmltv_timestamp(b"20261102160000").expect("valid start"); // 16:00 UTC
+        let end_ts = start_ts + 1800;
+        let now_ts = end_ts + 600;
+        let url = |offset| build_catchup_url(live_url, Some("xc"), None, Some(3), start_ts, end_ts, now_ts, offset).unwrap();
+
+        assert!(url(0).contains("/30/2026-11-02:16-00/"));
+        assert!(url(3_600).contains("/30/2026-11-02:17-00/"), "a server one hour ahead of UTC");
+        assert!(url(-18_000).contains("/30/2026-11-02:11-00/"), "a server five hours behind");
+        assert!(url(19_800).contains("2026-11-02:21-30"), "half-hour zones too");
+        assert!(url(28_800).contains("2026-11-03:00-00"), "the date rolls over");
+    }
+
+    #[test]
+    fn civil_dates_round_trip() {
+        for ts in [0i64, 86_399, 951_782_400, 1_793_000_000, 4_102_444_800] {
+            let (y, m, d, ..) = timestamp_to_utc_parts(ts);
+            assert_eq!(days_from_civil(y, m, d), ts.div_euclid(86_400), "{ts}");
+        }
+    }
+
+    #[test]
+    fn server_offset_from_server_info() {
+        // Paris in winter: UTC+1.
+        let utc = 1_793_000_000; // 2026-10-26 07:33:20 UTC
+        let (y, mo, d, h, mi, s) = timestamp_to_utc_parts(utc + 3_600);
+        let local = format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}");
+        assert_eq!(server_utc_offset(&local, utc), Some(3_600));
+        // The two clocks are read a few seconds apart: still the same zone.
+        assert_eq!(server_utc_offset(&local, utc + 7), Some(3_600));
+        assert_eq!(server_utc_offset(&local, utc - 5), Some(3_600));
+        // India: UTC+5:30.
+        let (y, mo, d, h, mi, s) = timestamp_to_utc_parts(utc + 19_800);
+        assert_eq!(server_utc_offset(&format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}"), utc), Some(19_800));
+        // New York in winter: UTC-5.
+        let (y, mo, d, h, mi, s) = timestamp_to_utc_parts(utc - 18_000);
+        assert_eq!(server_utc_offset(&format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}"), utc), Some(-18_000));
+    }
+
+    #[test]
+    fn nonsense_server_time_gives_no_offset() {
+        assert_eq!(server_utc_offset("", 0), None);
+        assert_eq!(server_utc_offset("not a date", 0), None);
+        assert_eq!(server_utc_offset("2026-13-40 99:99:99", 0), None);
+        assert_eq!(server_utc_offset("2026-11-02 12:00:00", 0), None, "a server clock years off is not a time zone");
     }
 }
