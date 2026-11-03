@@ -147,9 +147,9 @@ impl DatabaseManager {
             "CREATE TEMP TABLE IF NOT EXISTS active_profile (id INTEGER NOT NULL);
              DELETE FROM temp.active_profile;
              INSERT INTO temp.active_profile (id) VALUES (1);
-             CREATE TEMP TABLE IF NOT EXISTS catalog_flags (show_adult INTEGER NOT NULL);
+             CREATE TEMP TABLE IF NOT EXISTS catalog_flags (show_adult INTEGER NOT NULL, kids_only INTEGER NOT NULL DEFAULT 0);
              DELETE FROM temp.catalog_flags;
-             INSERT INTO temp.catalog_flags (show_adult) VALUES (0);",
+             INSERT INTO temp.catalog_flags (show_adult, kids_only) VALUES (0, 0);",
         )?;
         // The same word-boundary keyword rule as `is_adult_category`, callable from the catalog SQL.
         conn.create_scalar_function(
@@ -200,6 +200,23 @@ impl DatabaseManager {
         self.with_conn(|conn| {
             conn.execute("UPDATE temp.active_profile SET id = ?1", params![id])?;
             Ok(())
+        })?;
+        self.refresh_kids_flag()
+    }
+
+    /// A Kids profile only sees the categories it was explicitly given, and never adult ones. The flag is
+    /// derived from the active profile, so it follows a profile switch or an edit of the profile.
+    pub(crate) fn refresh_kids_flag(&self) -> std::result::Result<(), DbError> {
+        self.with_conn(|conn| {
+            let kids: i64 = conn
+                .query_row(
+                    "SELECT COALESCE((SELECT is_kids FROM profiles WHERE id = (SELECT id FROM temp.active_profile)), 0)",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            conn.execute("UPDATE temp.catalog_flags SET kids_only = ?1", params![kids])?;
+            Ok(())
         })
     }
 
@@ -235,6 +252,12 @@ impl DatabaseManager {
                 created_at INTEGER NOT NULL
             )",
             "INSERT OR IGNORE INTO profiles(id, uuid, name, avatar, is_kids, created_at) VALUES (1, '00000000-0000-0000-0000-000000000001', 'Principal', 'person.crop.circle', 0, 1700000000)",
+            "CREATE TABLE IF NOT EXISTS kids_allowed_groups (
+                profile_id INTEGER NOT NULL,
+                kind TEXT NOT NULL,
+                group_key TEXT NOT NULL,
+                PRIMARY KEY(profile_id, kind, group_key)
+            )",
             "CREATE TABLE IF NOT EXISTS hidden_groups (
                 profile_id INTEGER NOT NULL DEFAULT 1,
                 kind TEXT NOT NULL,

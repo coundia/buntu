@@ -13,6 +13,7 @@ public struct ProfilesManagementView: View {
     @State private var targetProfileToSwitch: ProfileRecord?
     @State private var pinErrorMessage: String?
     @State private var showingBouquetEditor = false
+    @State private var allowListModel: KidsAllowListModel?
 
     public init(engine: CndEngine) {
         self.engine = engine
@@ -55,6 +56,14 @@ public struct ProfilesManagementView: View {
                             }
 
                             Spacer()
+
+                            if profile.isKids {
+                                Button("Catégories autorisées") {
+                                    allowListModel = KidsAllowListModel(engine: engine, profile: profile)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
 
                             if profile.id != model.activeProfileId {
                                 Button("Basculer") {
@@ -170,6 +179,9 @@ public struct ProfilesManagementView: View {
                 pinInput = ""
                 targetProfileToSwitch = nil
             }
+        }
+        .sheet(isPresented: Binding(get: { allowListModel != nil }, set: { if !$0 { allowListModel = nil } })) {
+            if let allowListModel { KidsAllowListView(model: allowListModel) { self.allowListModel = nil } }
         }
         .task {
             profilesModel = sharedProfiles ?? ProfilesModel(engine: engine)

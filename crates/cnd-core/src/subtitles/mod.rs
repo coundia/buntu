@@ -28,6 +28,8 @@ pub struct SubtitleSearchResult {
 pub struct SubtitleSearchQuery {
     pub query: Option<String>,
     pub imdb_id: Option<String>,
+    /// IMDb id of the series, for an episode (with `season_number` and `episode_number`).
+    pub parent_imdb_id: Option<String>,
     pub moviehash: Option<String>,
     pub season_number: Option<u32>,
     pub episode_number: Option<u32>,
@@ -140,6 +142,13 @@ impl SubtitleService {
             let clean = imdb.trim().trim_start_matches("tt");
             if !clean.is_empty() {
                 req = req.query(&[("imdb_id", clean)]);
+            }
+        }
+
+        if let Some(ref parent) = query.parent_imdb_id {
+            let clean = parent.trim().trim_start_matches("tt");
+            if !clean.is_empty() {
+                req = req.query(&[("parent_imdb_id", clean)]);
             }
         }
 
@@ -384,5 +393,36 @@ mod tests {
         assert_eq!(cues[0].text, "Hello world!");
 
         let _ = std::fs::remove_dir_all(&cache_dir);
+    }
+
+    #[tokio::test]
+    async fn an_episode_search_sends_the_series_imdb_id_with_season_and_episode() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let n = socket.read(&mut buf).await.unwrap();
+            let _ = tx.send(String::from_utf8_lossy(&buf[..n]).lines().next().unwrap_or("").to_string());
+            let body = r#"{"data": []}"#;
+            let resp = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+            let _ = socket.write_all(resp.as_bytes()).await;
+        });
+
+        let service = SubtitleService::new(format!("http://127.0.0.1:{port}"));
+        let query = SubtitleSearchQuery {
+            parent_imdb_id: Some("tt0944947".to_string()),
+            season_number: Some(2),
+            episode_number: Some(7),
+            languages: Some("fr".to_string()),
+            ..Default::default()
+        };
+        service.search(&query, Some("k")).await.unwrap();
+        let line = rx.await.unwrap();
+        assert!(line.contains("parent_imdb_id=0944947"), "{line}");
+        assert!(line.contains("season_number=2") && line.contains("episode_number=7"), "{line}");
+        assert!(!line.contains("&imdb_id=") && !line.contains("?imdb_id="), "the episode's own id is not mixed in: {line}");
     }
 }

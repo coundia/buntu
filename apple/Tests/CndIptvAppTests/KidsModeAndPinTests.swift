@@ -173,3 +173,70 @@ final class AdultSessionTests: XCTestCase {
         XCTAssertFalse(engine.isAdultCategory(group: "Sport"))
     }
 }
+
+@MainActor
+final class KidsAllowListTests: XCTestCase {
+    private var directory: URL!
+
+    override func setUp() async throws {
+        directory = try TestFixtures.makeTempDirectory()
+    }
+
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    private func engineWithChannels() async throws -> CndEngine {
+        let engine = try CndEngine.inMemory()
+        var lines = ["#EXTM3U"]
+        for (group, count) in [("Sport", 3), ("Dessins animés", 2), ("Adult Movies", 2)] {
+            for i in 0..<count {
+                lines.append("#EXTINF:-1 group-title=\"\(group)\",\(group) \(i)")
+                lines.append("http://example.com/live/u/p/\(group.hashValue & 0xffff)\(i).ts")
+            }
+        }
+        let file = directory.appendingPathComponent("list.m3u")
+        try lines.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
+        _ = try await engine.importLocalM3u(name: "Test", filePath: file.path)
+        return engine
+    }
+
+    func testTheEditorOffersEveryCategoryExceptAdultOnes() async throws {
+        let engine = try await engineWithChannels()
+        let kids = try engine.createProfile(name: "Léa", avatar: "star", isKids: true)
+        let model = KidsAllowListModel(engine: engine, profile: kids)
+        XCTAssertEqual(Set(model.groups.map(\.value)), ["Sport", "Dessins animés"])
+        XCTAssertTrue(model.allowed.isEmpty, "a new Kids profile starts with nothing allowed")
+    }
+
+    func testChoicesAreSavedAndShapeWhatTheProfileSees() async throws {
+        let engine = try await engineWithChannels()
+        let kids = try engine.createProfile(name: "Léa", avatar: "star", isKids: true)
+        let model = KidsAllowListModel(engine: engine, profile: kids)
+        let cartoons = try XCTUnwrap(model.groups.first { $0.value == "Dessins animés" })
+        model.setAllowed(cartoons, true)
+        XCTAssertTrue(model.isAllowed(cartoons))
+        XCTAssertEqual(try engine.listAllowedGroups(profileId: kids.id, kind: "live"), ["dessins animés"])
+
+        engine.setActiveProfileId(id: kids.id)
+        XCTAssertEqual(try engine.getGroups(kind: "live", sourceId: nil).map(\.value), ["Dessins animés"])
+
+        engine.setActiveProfileId(id: 1)
+        XCTAssertEqual(try engine.getGroups(kind: "live", sourceId: nil).count, 2, "the main profile still sees its regular categories")
+    }
+
+    func testAllowAllAndNone() async throws {
+        let engine = try await engineWithChannels()
+        let kids = try engine.createProfile(name: "Léa", avatar: "star", isKids: true)
+        let model = KidsAllowListModel(engine: engine, profile: kids)
+        model.allowAll()
+        XCTAssertEqual(model.allowed, ["sport", "dessins animés"])
+        model.allowNone()
+        XCTAssertTrue(model.allowed.isEmpty)
+        XCTAssertTrue(try engine.listAllowedGroups(profileId: kids.id, kind: "live").isEmpty)
+    }
+
+    func testTheKeyMatchesTheEngineRule() {
+        XCTAssertEqual(KidsAllowListModel.key("  Dessins Animés "), "dessins animés")
+    }
+}

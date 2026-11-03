@@ -582,6 +582,11 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
      */
     func aiTestProvider(config: AiProviderConfig) async throws  -> AiProviderStatus
     
+    /**
+     * Categories a Kids profile may see (everything else is hidden from it).
+     */
+    func allowGroup(profileId: Int64, kind: String, group: String) throws 
+    
     func buildCatchupUrl(itemId: Int64, startTs: Int64, endTs: Int64) throws  -> String?
     
     func cancelRecording(id: Int64) throws  -> Bool
@@ -609,6 +614,8 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     func deleteRecording(id: Int64, deleteFile: Bool) throws  -> Bool
     
     func deleteSource(sourceId: Int64) throws 
+    
+    func disallowGroup(profileId: Int64, kind: String, group: String) throws  -> Bool
     
     func downloadSubtitle(fileId: Int64, targetDir: String, apiKey: String?) async throws  -> String
     
@@ -688,6 +695,8 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     func isCatchupAvailable(itemId: Int64, startTs: Int64) throws  -> Bool
     
     func isHealthCheckRunning()  -> Bool
+    
+    func listAllowedGroups(profileId: Int64, kind: String) throws  -> [String]
     
     func listBrokenItems(kind: String) throws  -> [IptvItemRecord]
     
@@ -952,6 +961,18 @@ open func aiTestProvider(config: AiProviderConfig)async throws  -> AiProviderSta
         )
 }
     
+    /**
+     * Categories a Kids profile may see (everything else is hidden from it).
+     */
+open func allowGroup(profileId: Int64, kind: String, group: String)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_allow_group(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(profileId),
+        FfiConverterString.lower(kind),
+        FfiConverterString.lower(group),$0
+    )
+}
+}
+    
 open func buildCatchupUrl(itemId: Int64, startTs: Int64, endTs: Int64)throws  -> String?  {
     return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_build_catchup_url(self.uniffiClonePointer(),
@@ -1057,6 +1078,16 @@ open func deleteSource(sourceId: Int64)throws   {try rustCallWithError(FfiConver
         FfiConverterInt64.lower(sourceId),$0
     )
 }
+}
+    
+open func disallowGroup(profileId: Int64, kind: String, group: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_disallow_group(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(profileId),
+        FfiConverterString.lower(kind),
+        FfiConverterString.lower(group),$0
+    )
+})
 }
     
 open func downloadSubtitle(fileId: Int64, targetDir: String, apiKey: String?)async throws  -> String  {
@@ -1398,6 +1429,15 @@ open func isCatchupAvailable(itemId: Int64, startTs: Int64)throws  -> Bool  {
 open func isHealthCheckRunning() -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
     uniffi_cnd_core_fn_method_cndengine_is_health_check_running(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+open func listAllowedGroups(profileId: Int64, kind: String)throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_list_allowed_groups(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(profileId),
+        FfiConverterString.lower(kind),$0
     )
 })
 }
@@ -6255,6 +6295,10 @@ public func FfiConverterTypeSubtitleCue_lower(_ value: SubtitleCue) -> RustBuffe
 public struct SubtitleSearchQuery {
     public var query: String?
     public var imdbId: String?
+    /**
+     * IMDb id of the series, for an episode (with `season_number` and `episode_number`).
+     */
+    public var parentImdbId: String?
     public var moviehash: String?
     public var seasonNumber: UInt32?
     public var episodeNumber: UInt32?
@@ -6262,9 +6306,13 @@ public struct SubtitleSearchQuery {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(query: String?, imdbId: String?, moviehash: String?, seasonNumber: UInt32?, episodeNumber: UInt32?, languages: String?) {
+    public init(query: String?, imdbId: String?, 
+        /**
+         * IMDb id of the series, for an episode (with `season_number` and `episode_number`).
+         */parentImdbId: String?, moviehash: String?, seasonNumber: UInt32?, episodeNumber: UInt32?, languages: String?) {
         self.query = query
         self.imdbId = imdbId
+        self.parentImdbId = parentImdbId
         self.moviehash = moviehash
         self.seasonNumber = seasonNumber
         self.episodeNumber = episodeNumber
@@ -6285,6 +6333,9 @@ extension SubtitleSearchQuery: Equatable, Hashable {
         if lhs.imdbId != rhs.imdbId {
             return false
         }
+        if lhs.parentImdbId != rhs.parentImdbId {
+            return false
+        }
         if lhs.moviehash != rhs.moviehash {
             return false
         }
@@ -6303,6 +6354,7 @@ extension SubtitleSearchQuery: Equatable, Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(query)
         hasher.combine(imdbId)
+        hasher.combine(parentImdbId)
         hasher.combine(moviehash)
         hasher.combine(seasonNumber)
         hasher.combine(episodeNumber)
@@ -6321,6 +6373,7 @@ public struct FfiConverterTypeSubtitleSearchQuery: FfiConverterRustBuffer {
             try SubtitleSearchQuery(
                 query: FfiConverterOptionString.read(from: &buf), 
                 imdbId: FfiConverterOptionString.read(from: &buf), 
+                parentImdbId: FfiConverterOptionString.read(from: &buf), 
                 moviehash: FfiConverterOptionString.read(from: &buf), 
                 seasonNumber: FfiConverterOptionUInt32.read(from: &buf), 
                 episodeNumber: FfiConverterOptionUInt32.read(from: &buf), 
@@ -6331,6 +6384,7 @@ public struct FfiConverterTypeSubtitleSearchQuery: FfiConverterRustBuffer {
     public static func write(_ value: SubtitleSearchQuery, into buf: inout [UInt8]) {
         FfiConverterOptionString.write(value.query, into: &buf)
         FfiConverterOptionString.write(value.imdbId, into: &buf)
+        FfiConverterOptionString.write(value.parentImdbId, into: &buf)
         FfiConverterOptionString.write(value.moviehash, into: &buf)
         FfiConverterOptionUInt32.write(value.seasonNumber, into: &buf)
         FfiConverterOptionUInt32.write(value.episodeNumber, into: &buf)
@@ -8966,6 +9020,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_ai_test_provider() != 28292) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_allow_group() != 35901) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_build_catchup_url() != 61603) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -8997,6 +9054,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_delete_source() != 58086) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_disallow_group() != 7247) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_download_subtitle() != 31801) {
@@ -9096,6 +9156,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_is_health_check_running() != 14603) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_list_allowed_groups() != 22923) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_list_broken_items() != 34102) {
