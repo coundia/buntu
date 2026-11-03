@@ -46,6 +46,7 @@ targets:
     dependencies:
       - package: CndCoreBridge
         product: CndCoreBridge
+      - target: CndIPTV-LiveActivity
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.papacoundia.cndiptv
@@ -69,3 +70,20 @@ targets:
         CODE_SIGN_IDENTITY: "-"
         ARCHS: arm64
         ONLY_ACTIVE_ARCH: YES
+
+  # Lock screen and Dynamic Island for recordings and "now playing" (PRD 22, lot 22.1).
+  CndIPTV-LiveActivity:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: LiveActivityExtension
+      - path: Sources/CndIptvApp/Features/LiveActivities/LiveActivityAttributes.swift
+      - path: Sources/CndIptvApp/Features/LiveActivities/LiveActivityIntents.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.papacoundia.cndiptv.liveactivity
+        INFOPLIST_FILE: LiveActivityExtension/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+        PRODUCT_NAME: CndLiveActivity

@@ -10,12 +10,15 @@ public struct RecordingActivityAttributes: ActivityAttributes, Sendable {
         public var elapsedSeconds: Int
         public var remainingSeconds: Int
         public var fileSizeBytes: Int64
+        /// When the recording ends: the widget counts down to it on its own, with no update per second.
+        public var endsAt: Date
 
-        public init(progress: Double, elapsedSeconds: Int, remainingSeconds: Int, fileSizeBytes: Int64 = 0) {
+        public init(progress: Double, elapsedSeconds: Int, remainingSeconds: Int, fileSizeBytes: Int64 = 0, endsAt: Date = Date()) {
             self.progress = progress
             self.elapsedSeconds = elapsedSeconds
             self.remainingSeconds = remainingSeconds
             self.fileSizeBytes = fileSizeBytes
+            self.endsAt = endsAt
         }
     }
 

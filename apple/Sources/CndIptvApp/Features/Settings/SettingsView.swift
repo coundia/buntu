@@ -24,6 +24,9 @@ struct SettingsView: View {
         Form {
             playbackAndHealthSection
             profilesAndBouquetsSection
+            #if os(iOS)
+            liveActivitiesSection
+            #endif
             subtitlesSection
             downloadsSection
             networkSection
@@ -51,6 +54,20 @@ struct SettingsView: View {
             }
         }
     }
+
+    #if os(iOS)
+    private var liveActivitiesSection: some View {
+        @Bindable var activities = LiveActivityManager.shared
+        return Section {
+            Toggle("Enregistrement en cours", isOn: $activities.isRecordingActivityEnabled)
+            Toggle("Programme en cours de lecture", isOn: $activities.isPlaybackActivityEnabled)
+        } header: {
+            Text("Écran verrouillé & Dynamic Island")
+        } footer: {
+            Text("Affiche le temps restant d'un enregistrement et le programme lu. Mis à jour au plus une fois par minute, sans adresse de flux ni identifiants.")
+        }
+    }
+    #endif
 
     private var profilesAndBouquetsSection: some View {
         Section("Profils & Bouquets") {

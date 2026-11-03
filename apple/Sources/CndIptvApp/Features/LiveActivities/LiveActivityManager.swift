@@ -1,4 +1,5 @@
 import Foundation
+import CndCoreBridge
 #if canImport(ActivityKit) && !os(macOS) && !os(tvOS)
 import ActivityKit
 #endif
@@ -46,104 +47,121 @@ public final class LiveActivityManager {
 
     // MARK: - Recording Activities
 
-    public func startRecordingActivity(id: Int64, channelName: String, programTitle: String, totalSeconds: Int) {
+    /// Called with the list of recordings (polled by `RecordingsModel`): starts the activity of a
+    /// recording that began, refreshes running ones at most once a minute, ends the finished ones.
+    public func sync(recordings: [RecordingRecord], now: Date = Date()) {
         #if canImport(ActivityKit) && !os(macOS) && !os(tvOS)
-        guard isRecordingActivityEnabled, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-
-        let attributes = RecordingActivityAttributes(
-            recordingId: id,
-            channelName: channelName,
-            programTitle: programTitle
-        )
-        let state = RecordingActivityAttributes.ContentState(
-            progress: 0.0,
-            elapsedSeconds: 0,
-            remainingSeconds: totalSeconds
-        )
-
-        do {
-            let activity = try Activity.request(
-                attributes: attributes,
-                content: .init(state: state, staleDate: nil)
-            )
-            activeRecordingActivities[id] = activity
-            lastRecordingUpdate[id] = Date()
-        } catch {
-            // ActivityKit may be disabled or restricted by user settings
-        }
-        #endif
-    }
-
-    public func updateRecordingActivity(id: Int64, elapsedSeconds: Int, totalSeconds: Int, fileSizeBytes: Int64 = 0) {
-        #if canImport(ActivityKit) && !os(macOS) && !os(tvOS)
-        guard isRecordingActivityEnabled else { return }
-        guard let activity = activeRecordingActivities[id] else { return }
-
-        // Throttle updates to at most once per 60 seconds (PRD-22 SLA)
-        if let last = lastRecordingUpdate[id], Date().timeIntervalSince(last) < minUpdateInterval {
+        guard isRecordingActivityEnabled else {
+            for id in Array(activeRecordingActivities.keys) { endRecordingActivity(id: id) }
             return
         }
-
-        let progress = totalSeconds > 0 ? min(Double(elapsedSeconds) / Double(totalSeconds), 1.0) : 0.0
-        let remaining = max(totalSeconds - elapsedSeconds, 0)
-        let state = RecordingActivityAttributes.ContentState(
-            progress: progress,
-            elapsedSeconds: elapsedSeconds,
-            remainingSeconds: remaining,
-            fileSizeBytes: fileSizeBytes
+        let plan = RecordingActivityPlanner.plan(
+            recordings: recordings, active: Set(activeRecordingActivities.keys), lastUpdate: lastRecordingUpdate, now: now
         )
-
-        Task {
-            await activity.update(ActivityContent<RecordingActivityAttributes.ContentState>(state: state, staleDate: nil))
+        let byId = Dictionary(uniqueKeysWithValues: recordings.map { ($0.id, $0) })
+        for id in plan.start {
+            guard let recording = byId[id] else { continue }
+            startRecordingActivity(recording, now: now)
         }
-        lastRecordingUpdate[id] = Date()
+        for id in plan.update {
+            guard let recording = byId[id] else { continue }
+            updateRecordingActivity(recording, now: now)
+        }
+        for id in plan.end { endRecordingActivity(id: id) }
         #endif
     }
+
+    #if canImport(ActivityKit) && !os(macOS) && !os(tvOS)
+    private func startRecordingActivity(_ recording: RecordingRecord, now: Date) {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let progress = RecordingActivityPlanner.progress(of: recording, now: now)
+        // Names and times only: never the stream address or credentials.
+        let attributes = RecordingActivityAttributes(
+            recordingId: recording.id, channelName: recording.channelName, programTitle: recording.title
+        )
+        let state = RecordingActivityAttributes.ContentState(
+            progress: progress.progress, elapsedSeconds: progress.elapsedSeconds,
+            remainingSeconds: progress.remainingSeconds, fileSizeBytes: Int64(recording.bytesWritten), endsAt: progress.endsAt
+        )
+        do {
+            let activity = try Activity.request(attributes: attributes, content: .init(state: state, staleDate: progress.endsAt))
+            activeRecordingActivities[recording.id] = activity
+            lastRecordingUpdate[recording.id] = now
+        } catch {
+            AppLog.shared.warn("ACTIVITY", "Activité d'enregistrement refusée : \(error.localizedDescription)")
+        }
+    }
+
+    private func updateRecordingActivity(_ recording: RecordingRecord, now: Date) {
+        guard let activity = activeRecordingActivities[recording.id] else { return }
+        let progress = RecordingActivityPlanner.progress(of: recording, now: now)
+        let state = RecordingActivityAttributes.ContentState(
+            progress: progress.progress, elapsedSeconds: progress.elapsedSeconds,
+            remainingSeconds: progress.remainingSeconds, fileSizeBytes: Int64(recording.bytesWritten), endsAt: progress.endsAt
+        )
+        lastRecordingUpdate[recording.id] = now
+        Task { await activity.update(ActivityContent(state: state, staleDate: progress.endsAt)) }
+    }
+    #endif
 
     public func endRecordingActivity(id: Int64) {
         #if canImport(ActivityKit) && !os(macOS) && !os(tvOS)
         guard let activity = activeRecordingActivities.removeValue(forKey: id) else { return }
         lastRecordingUpdate.removeValue(forKey: id)
-
-        Task {
-            await activity.end(nil, dismissalPolicy: .immediate)
-        }
+        Task { await activity.end(nil, dismissalPolicy: .immediate) }
         #endif
     }
 
     // MARK: - Playback Activities
 
-    public func startPlaybackActivity(channelName: String, programTitle: String, durationSeconds: Int) {
+    #if canImport(ActivityKit) && !os(macOS) && !os(tvOS)
+    @ObservationIgnored private var playbackRefreshTask: Task<Void, Never>?
+    #endif
+
+    /// Starts the "now playing" activity. `progress` (position and duration in seconds) is read once a
+    /// minute to refresh it while the app runs.
+    public func startPlaybackActivity(
+        channelName: String,
+        programTitle: String,
+        durationSeconds: Int,
+        progress: (@MainActor () -> (position: Int, duration: Int)?)? = nil
+    ) {
         #if canImport(ActivityKit) && !os(macOS) && !os(tvOS)
         guard isPlaybackActivityEnabled, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         endPlaybackActivity()
 
         let attributes = PlaybackActivityAttributes(channelName: channelName)
         let state = PlaybackActivityAttributes.ContentState(
-            programTitle: programTitle,
-            positionSeconds: 0,
-            durationSeconds: durationSeconds
+            programTitle: programTitle, positionSeconds: 0, durationSeconds: durationSeconds
         )
-
         do {
-            let activity = try Activity.request(
-                attributes: attributes,
-                content: .init(state: state, staleDate: nil)
-            )
+            let activity = try Activity.request(attributes: attributes, content: .init(state: state, staleDate: nil))
             activePlaybackActivity = activity
         } catch {
-            // Activity request could be rejected or disabled
+            AppLog.shared.warn("ACTIVITY", "Activité de lecture refusée : \(error.localizedDescription)")
+            return
+        }
+        guard let progress else { return }
+        playbackRefreshTask = Task { @MainActor [weak self, interval = minUpdateInterval] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                guard !Task.isCancelled, let activity = self?.activePlaybackActivity, let current = progress() else { continue }
+                let updated = PlaybackActivityAttributes.ContentState(
+                    programTitle: programTitle, positionSeconds: current.position, durationSeconds: current.duration
+                )
+                await activity.update(ActivityContent(state: updated, staleDate: nil))
+            }
         }
         #endif
     }
 
     public func endPlaybackActivity() {
         #if canImport(ActivityKit) && !os(macOS) && !os(tvOS)
+        playbackRefreshTask?.cancel()
+        playbackRefreshTask = nil
         guard let activity = activePlaybackActivity else { return }
         activePlaybackActivity = nil
-        Task {
-            await activity.end(nil, dismissalPolicy: .immediate)
-        }
+        Task { await activity.end(nil, dismissalPolicy: .immediate) }
         #endif
     }
 }
