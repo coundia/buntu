@@ -27,6 +27,9 @@ struct SettingsView: View {
             #if os(iOS)
             liveActivitiesSection
             #endif
+            #if os(tvOS)
+            displaySection
+            #endif
             subtitlesSection
             downloadsSection
             networkSection
@@ -54,6 +57,17 @@ struct SettingsView: View {
             }
         }
     }
+
+    #if os(tvOS)
+    private var displaySection: some View {
+        @Bindable var matcher = DisplayRateMatcher.shared
+        return Section {
+            Toggle("Adapter la fréquence de l'écran au contenu", isOn: $matcher.isEnabled)
+        } footer: {
+            Text("Demande à l'Apple TV la fréquence (24, 25, 50 i/s…) et la plage dynamique (HDR10, HLG) de la vidéo. Réglage système requis : Vidéo et audio > Faire correspondre le contenu.")
+        }
+    }
+    #endif
 
     #if os(iOS)
     private var liveActivitiesSection: some View {

@@ -44,6 +44,9 @@ final class MockBackend: VideoBackend {
         }
     }
 
+    var videoFormat: VideoFormatReading?
+    func currentVideoFormat() -> VideoFormatReading? { videoFormat }
+
     func play() { state = .playing }
     func pause() { state = .paused }
     func seek(toMs positionMs: Int64) { self.positionMs = positionMs }

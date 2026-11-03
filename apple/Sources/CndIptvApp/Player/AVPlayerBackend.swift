@@ -13,6 +13,31 @@ public final class AVPlayerBackend: VideoBackend {
     public var onStateChange: ((PlaybackState) -> Void)?
     public var onTracksChange: (() -> Void)?
 
+    /// The video track's nominal frame rate (files and HLS variants) and, from its format description,
+    /// the transfer function: PQ and HLG are what make a stream HDR.
+    public func currentVideoFormat() -> VideoFormatReading? {
+        guard let item = player.currentItem else { return nil }
+        for itemTrack in item.tracks {
+            guard let asset = itemTrack.assetTrack, asset.mediaType == .video else { continue }
+            let fps = Double(asset.nominalFrameRate)
+            guard fps > 0 else { continue }
+            var gamma: String?
+            var primaries: String?
+            for description in asset.formatDescriptions as? [CMFormatDescription] ?? [] {
+                if let transfer = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_TransferFunction) as? String {
+                    if transfer == (kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ as String) { gamma = "pq" }
+                    else if transfer == (kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG as String) { gamma = "hlg" }
+                }
+                if let colors = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_ColorPrimaries) as? String,
+                   colors == (kCMFormatDescriptionColorPrimaries_ITU_R_2020 as String) {
+                    primaries = "bt.2020"
+                }
+            }
+            return VideoFormatReading(fps: fps, gamma: gamma, primaries: primaries)
+        }
+        return nil
+    }
+
     private let player = AVPlayer()
     private let playerLayer: AVPlayerLayer
     private var itemObservation: NSKeyValueObservation?

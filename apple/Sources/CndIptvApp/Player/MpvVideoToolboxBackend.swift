@@ -310,6 +310,17 @@ public final class MpvVideoToolboxBackend: VideoBackend {
         _ = library.setProperty(handle, name, value)
     }
 
+    /// `container-fps`, then `estimated-vf-fps` (measured: the reliable one for MPEG-TS), with the transfer
+    /// function and primaries that tell SDR from HDR10 / HLG.
+    public func currentVideoFormat() -> VideoFormatReading? {
+        var fps = Double(property("container-fps") ?? "") ?? 0
+        if fps <= 0 { fps = Double(property("estimated-vf-fps") ?? "") ?? 0 }
+        guard fps > 0 else { return nil }
+        return VideoFormatReading(
+            fps: fps, gamma: property("video-params/gamma"), primaries: property("video-params/primaries")
+        )
+    }
+
     private func property(_ name: String) -> String? {
         guard let library, let handle, let raw = library.getProperty(handle, name) else { return nil }
         defer { library.free(raw) }

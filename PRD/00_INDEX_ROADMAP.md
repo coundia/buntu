@@ -102,7 +102,7 @@ flowchart TD
 | **22** | [`22_LIVE_ACTIVITIES_VISIONOS.md`](./22_LIVE_ACTIVITIES_VISIONOS.md) | Live Activities & Dynamic Island (PVR & lecture, throttle 1/min), app visionOS & mode Cinéma spatial. | `[x]` (lot 22.1 ; 22.2 : fenêtres visionOS compilées, mode Cinéma non réalisé) |
 | **23** | [`23_XCODE_PROJECT_SIGNING_DISTRIBUTION.md`](./23_XCODE_PROJECT_SIGNING_DISTRIBUTION.md) | Projet Xcode signé (XcodeGen), bibliothèque `CndIptvKit`, Info.plist & entitlements (iCloud, sandbox, Fichiers), libmpv embarqué, icône, archives. | `[x]` (partiel : voir le statut du PRD) |
 | **24** | [`24_LOCAL_TIMESHIFT_PAUSE_LIVE.md`](./24_LOCAL_TIMESHIFT_PAUSE_LIVE.md) | Pause du direct et retour arrière sans replay fournisseur : tampon mpv borné, puis anneau Rust + HLS local (facultatif). | `[x]` |
-| **25** | [`25_AUTO_FRAMERATE_MATCHING.md`](./25_AUTO_FRAMERATE_MATCHING.md) | Fréquence d'écran alignée sur la vidéo (tvOS `AVDisplayCriteria`, détection 23.976 à 60 i/s, SDR/HDR10/HLG, debounce 2s). | `[x]` |
+| **25** | [`25_AUTO_FRAMERATE_MATCHING.md`](./25_AUTO_FRAMERATE_MATCHING.md) | Fréquence d'écran alignée sur la vidéo (tvOS `AVDisplayCriteria`, détection 23.976 à 60 i/s, SDR/HDR10/HLG, debounce 2s). | `[x]` (tvOS ; macOS non réalisé) |
 | **26** | [`26_SOURCE_SHARING_DEVICES_FRIENDS.md`](./26_SOURCE_SHARING_DEVICES_FRIENDS.md) | Partage des sources : mots de passe via Trousseau iCloud (opt-in), enveloppe chiffrée AES-GCM 256, transfert direct à proximité Bonjour, partage vivant `CKShare`. | `[x]` (lots 26.1 à 26.3 ; 26.4 `CKShare` non réalisé) |
 
 ---

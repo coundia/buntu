@@ -180,13 +180,27 @@ public final class DisplayRateMatcher {
               let window = windowScene.windows.first else { return }
 
         let refreshRate = Float(rate.rawValue)
+        // The display criteria carry the dynamic range through the format description's color keys.
+        var extensions: [CFString: Any] = [:]
+        switch dynamicRange {
+        case .hdr10, .dolbyVision:
+            extensions[kCMFormatDescriptionExtension_ColorPrimaries] = kCMFormatDescriptionColorPrimaries_ITU_R_2020
+            extensions[kCMFormatDescriptionExtension_TransferFunction] = kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ
+            extensions[kCMFormatDescriptionExtension_YCbCrMatrix] = kCMFormatDescriptionYCbCrMatrix_ITU_R_2020
+        case .hlg:
+            extensions[kCMFormatDescriptionExtension_ColorPrimaries] = kCMFormatDescriptionColorPrimaries_ITU_R_2020
+            extensions[kCMFormatDescriptionExtension_TransferFunction] = kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG
+            extensions[kCMFormatDescriptionExtension_YCbCrMatrix] = kCMFormatDescriptionYCbCrMatrix_ITU_R_2020
+        case .sdr:
+            break
+        }
         var formatDesc: CMFormatDescription?
         let status = CMVideoFormatDescriptionCreate(
             allocator: kCFAllocatorDefault,
-            codecType: kCMVideoCodecType_H264,
+            codecType: dynamicRange == .sdr ? kCMVideoCodecType_H264 : kCMVideoCodecType_HEVC,
             width: 1920,
             height: 1080,
-            extensions: nil,
+            extensions: extensions.isEmpty ? nil : extensions as CFDictionary,
             formatDescriptionOut: &formatDesc
         )
         if status == noErr, let formatDesc {
@@ -195,8 +209,9 @@ public final class DisplayRateMatcher {
             isRateMatched = true
         }
         #else
-        // macOS / iOS: ProMotion manages variable refresh automatically
-        isRateMatched = true
+        // Only Apple TV can ask the display for a mode: on macOS the detected format is shown in the
+        // player, and iOS/iPadOS manage variable refresh rates themselves (ProMotion).
+        _ = (rate, dynamicRange)
         #endif
     }
 }
