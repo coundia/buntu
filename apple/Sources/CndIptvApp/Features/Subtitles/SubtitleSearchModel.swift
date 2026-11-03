@@ -6,6 +6,8 @@ import CndCoreBridge
 protocol SubtitleBackend: AnyObject, Sendable {
     func searchSubtitles(query: SubtitleSearchQuery, apiKey: String?) async throws -> [SubtitleSearchResult]
     func downloadSubtitle(fileId: Int64, targetDir: String, apiKey: String?) async throws -> String
+    /// OpenSubtitles hash of the item's stream; `nil` when skipped (see the engine: only with a spare connection).
+    func computeStreamMoviehash(itemId: Int64) async throws -> String?
 }
 
 extension CndEngine: SubtitleBackend {}
@@ -46,15 +48,34 @@ final class SubtitleSearchModel {
         var id: Int64 { fileId }
     }
 
+    /// How the results were found, best first: the exact file, the IMDb title, or the plain title.
+    enum Match: Equatable {
+        case file
+        case imdb
+        case title
+
+        var description: String {
+            switch self {
+            case .file: return "Correspondance exacte avec ce fichier"
+            case .imdb: return "Trouvés par identifiant IMDb"
+            case .title: return "Trouvés par titre : la synchronisation peut demander un réglage"
+            }
+        }
+    }
+
     enum State: Equatable {
         case idle
         case searching
-        case results([Row])
+        case results([Row], Match)
         case failed(String)
     }
 
     let backend: SubtitleBackend
     let mediaTitle: String
+    private let itemId: Int64?
+    private let imdbId: String?
+    private let seasonNumber: UInt32?
+    private let episodeNumber: UInt32?
     private let keychain: KeychainStore
     private let defaults: UserDefaults
     private let cacheDirectory: URL
@@ -67,12 +88,20 @@ final class SubtitleSearchModel {
     init(
         backend: SubtitleBackend,
         mediaTitle: String,
+        itemId: Int64? = nil,
+        imdbId: String? = nil,
+        seasonNumber: UInt32? = nil,
+        episodeNumber: UInt32? = nil,
         keychain: KeychainStore = .shared,
         defaults: UserDefaults = .standard,
         cacheDirectory: URL? = nil
     ) {
         self.backend = backend
         self.mediaTitle = mediaTitle
+        self.itemId = itemId
+        self.imdbId = imdbId
+        self.seasonNumber = seasonNumber
+        self.episodeNumber = episodeNumber
         self.keychain = keychain
         self.defaults = defaults
         self.cacheDirectory = cacheDirectory ?? FileManager.default
@@ -107,18 +136,45 @@ final class SubtitleSearchModel {
             return
         }
         state = .searching
-        let query = SubtitleSearchQuery(
-            query: cleanedTitle, imdbId: nil, moviehash: nil, seasonNumber: nil, episodeNumber: nil, languages: languages
-        )
-        do {
-            let found = try await backend.searchSubtitles(query: query, apiKey: apiKey)
-            let rows = found.map {
-                Row(fileId: $0.fileId, language: $0.language, release: $0.release.isEmpty ? $0.fileName : $0.release,
-                    downloads: $0.downloadCount, rating: $0.rating)
+        let isEpisode = seasonNumber != nil && episodeNumber != nil
+        let languages = self.languages
+        let title = cleanedTitle
+        // Best match first: the exact file (hash), then the IMDb title, then the plain title.
+        var attempts: [(Match, SubtitleSearchQuery)] = []
+        if let itemId, let hash = try? await backend.computeStreamMoviehash(itemId: itemId), !hash.isEmpty {
+            attempts.append((.file, SubtitleSearchQuery(
+                query: nil, imdbId: nil, moviehash: hash, seasonNumber: nil, episodeNumber: nil, languages: languages
+            )))
+        }
+        if let imdb = imdbId?.trimmingCharacters(in: .whitespaces), !imdb.isEmpty, !isEpisode {
+            attempts.append((.imdb, SubtitleSearchQuery(
+                query: nil, imdbId: imdb, moviehash: nil, seasonNumber: nil, episodeNumber: nil, languages: languages
+            )))
+        }
+        attempts.append((.title, SubtitleSearchQuery(
+            query: title, imdbId: nil, moviehash: nil, seasonNumber: seasonNumber, episodeNumber: episodeNumber, languages: languages
+        )))
+
+        var lastError: Error?
+        for (match, query) in attempts {
+            do {
+                let found = try await backend.searchSubtitles(query: query, apiKey: apiKey)
+                let rows = found.map {
+                    Row(fileId: $0.fileId, language: $0.language, release: $0.release.isEmpty ? $0.fileName : $0.release,
+                        downloads: $0.downloadCount, rating: $0.rating)
+                }
+                if !rows.isEmpty {
+                    state = .results(rows, match)
+                    return
+                }
+            } catch {
+                lastError = error
             }
-            state = rows.isEmpty ? .failed("Aucun sous-titre trouvé pour « \(cleanedTitle) ».") : .results(rows)
-        } catch {
-            state = .failed(userMessage(for: error))
+        }
+        if let lastError {
+            state = .failed(userMessage(for: lastError))
+        } else {
+            state = .failed("Aucun sous-titre trouvé pour « \(title) ».")
         }
     }
 

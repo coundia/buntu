@@ -1,7 +1,7 @@
 pub mod hash;
 pub mod srt;
 
-pub use hash::{compute_file_moviehash, compute_moviehash_from_chunks, HashError};
+pub use hash::{compute_file_moviehash, compute_moviehash_from_chunks, compute_remote_moviehash, HashError};
 pub use srt::{find_active_cue, parse_srt, parse_timestamp, strip_tags, SubtitleCue};
 
 use crate::CndError;

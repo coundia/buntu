@@ -322,6 +322,11 @@ void uniffi_cnd_core_fn_method_cndengine_clear_logs(void*_Nonnull ptr, RustCallS
 RustBuffer uniffi_cnd_core_fn_method_cndengine_compute_file_moviehash(void*_Nonnull ptr, RustBuffer file_path, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_COMPUTE_STREAM_MOVIEHASH
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_COMPUTE_STREAM_MOVIEHASH
+uint64_t uniffi_cnd_core_fn_method_cndengine_compute_stream_moviehash(void*_Nonnull ptr, int64_t item_id
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_CREATE_FAVORITE_FOLDER
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_CREATE_FAVORITE_FOLDER
 int64_t uniffi_cnd_core_fn_method_cndengine_create_favorite_folder(void*_Nonnull ptr, int64_t profile_id, RustBuffer name, int32_t position, RustCallStatus *_Nonnull out_status
@@ -1141,6 +1146,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_clear_logs(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_COMPUTE_FILE_MOVIEHASH
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_COMPUTE_FILE_MOVIEHASH
 uint16_t uniffi_cnd_core_checksum_method_cndengine_compute_file_moviehash(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_COMPUTE_STREAM_MOVIEHASH
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_COMPUTE_STREAM_MOVIEHASH
+uint16_t uniffi_cnd_core_checksum_method_cndengine_compute_stream_moviehash(void
     
 );
 #endif

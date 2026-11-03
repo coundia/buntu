@@ -51,7 +51,7 @@ pub async fn probe_stream(
     }
 }
 
-fn build_headers(
+pub(crate) fn build_headers(
     headers_json: Option<&str>,
     user_agent: Option<&str>,
     referer: Option<&str>,

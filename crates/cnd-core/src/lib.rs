@@ -1044,6 +1044,31 @@ impl CndEngine {
         subtitles::parse_srt(&srt_content)
     }
 
+    /// `moviehash` of a catalog item's stream, for an exact subtitle match. It costs two short requests to
+    /// the provider, which count as an extra connection next to the stream being watched: nothing is sent
+    /// unless the subscription is known to allow at least two connections, so playback is never at risk.
+    /// `None` when skipped or when the server cannot answer range requests.
+    pub async fn compute_stream_moviehash(&self, item_id: i64) -> Result<Option<String>, CndError> {
+        let Some(item) = self.db.get_item_by_id(item_id)? else {
+            return Ok(None);
+        };
+        if !matches!(self.db.source_limit_for_item(item_id), Some((_, Some(max))) if max >= 2) {
+            return Ok(None);
+        }
+        let headers = health::probe::build_headers(
+            item.headers_json.as_deref(),
+            item.user_agent.as_deref(),
+            item.referer.as_deref(),
+        );
+        match subtitles::compute_remote_moviehash(&item.stream_url, headers).await {
+            Ok(hash) => Ok(Some(hash)),
+            Err(e) => {
+                tracing::debug!("No moviehash for item {item_id}: {e}");
+                Ok(None)
+            }
+        }
+    }
+
     pub fn compute_file_moviehash(&self, file_path: String) -> Result<String, CndError> {
         subtitles::compute_file_moviehash(&file_path).map_err(|e| CndError::Parse {
             message: e.to_string(),
@@ -1194,6 +1219,43 @@ mod tests {
     use std::task::{Context, Poll};
     use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, ReadBuf};
     use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn stream_moviehash_is_only_computed_when_the_subscription_has_a_spare_connection() {
+        use crate::subtitles::hash::tests::{sample, serve};
+        let engine = CndEngine::in_memory().expect("engine");
+        let data = sample(300_000);
+        let (url, hits) = serve(data.clone(), true).await;
+        let item_for = |max: Option<i64>, name: &str| {
+            let src = engine
+                .add_source(name.to_string(), "xtream".to_string(), None, Some("http://srv".to_string()), Some("u".to_string()), None)
+                .expect("source");
+            engine
+                .db
+                .with_conn(|conn| {
+                    conn.execute("UPDATE iptv_sources SET max_connections = ?1 WHERE id = ?2", rusqlite::params![max, src])?;
+                    conn.execute(
+                        "INSERT INTO iptv_items (source_id, stable_hash, kind, name, name_clean, host, stream_url, created_at, updated_at)
+                         VALUES (?1, ?2, 'movie', 'Film', 'film', 'h', ?3, 0, 0)",
+                        rusqlite::params![src, format!("hash-{name}"), url],
+                    )?;
+                    Ok(conn.last_insert_rowid())
+                })
+                .expect("item")
+        };
+
+        for (max, name) in [(None, "unknown"), (Some(0), "zero"), (Some(1), "one")] {
+            let item = item_for(max, name);
+            assert_eq!(engine.compute_stream_moviehash(item).await.expect("call"), None, "{name}");
+        }
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0, "the provider was never contacted");
+
+        let item = item_for(Some(2), "two");
+        let hash = engine.compute_stream_moviehash(item).await.expect("call").expect("a hash");
+        assert_eq!(hash.len(), 16);
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(engine.compute_stream_moviehash(99_999).await.expect("unknown item"), None);
+    }
 
     #[test]
     fn test_engine_init() {
