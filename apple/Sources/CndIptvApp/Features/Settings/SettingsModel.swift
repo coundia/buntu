@@ -24,6 +24,10 @@ final class SettingsModel {
     var showNetworkConsole: Bool { didSet { scheduleSave(after: .zero) } }
     var omdbKey: String { didSet { scheduleSave() } }
 
+    /// Whether Xtream passwords live in iCloud Keychain (opt-in, see `setPasswordSync`).
+    private(set) var syncsPasswords: Bool
+    private(set) var passwordSyncError: String?
+
     private(set) var errorMessage: String?
     private(set) var saveCount = 0
     private(set) var cacheClearedAt: Date?
@@ -51,6 +55,24 @@ final class SettingsModel {
         referer = settings.defaultReferer ?? ""
         showNetworkConsole = settings.showNetworkConsole
         omdbKey = (try? keychain.readSecret(forKey: KeychainStore.omdbApiKeyRef)) ?? ""
+        syncsPasswords = keychain.passwordScope == .iCloud
+    }
+
+    /// Turns the iCloud Keychain option on or off and moves the existing source passwords with it.
+    /// The choice is only recorded once every password has moved; on failure nothing changes.
+    func setPasswordSync(_ enabled: Bool) {
+        passwordSyncError = nil
+        let sources = (try? engine.listSources()) ?? []
+        let keys = sources.filter { $0.sourceType == "xtream" }
+            .map { $0.passwordRef ?? KeychainStore.xtreamKey(forSourceUuid: $0.uuid) }
+        do {
+            try keychain.move(keys: keys, to: enabled ? .iCloud : .local)
+            keychain.passwordScope = enabled ? .iCloud : .local
+            syncsPasswords = enabled
+        } catch {
+            passwordSyncError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            syncsPasswords = keychain.passwordScope == .iCloud
+        }
     }
 
     private func scheduleSave(after delay: Duration? = nil) {

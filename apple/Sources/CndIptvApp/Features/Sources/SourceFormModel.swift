@@ -171,7 +171,7 @@ final class SourceFormModel {
                 uuid = created.uuid
             }
             let key = editing?.passwordRef ?? KeychainStore.xtreamKey(forSourceUuid: uuid)
-            try keychain.saveSecret(password, forKey: key)
+            try keychain.savePassword(password, forKey: key)
             try engine.updateXtreamSource(
                 sourceId: id, name: cleanName, server: cleanServer, username: cleanUser,
                 passwordRef: key, epgUrl: epg
