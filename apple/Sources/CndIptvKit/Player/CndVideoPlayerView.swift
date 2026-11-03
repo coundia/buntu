@@ -101,6 +101,9 @@ public struct CndVideoPlayerView: View {
     var subtitleSearch: (() -> SubtitleSearchModel)?
     /// Goes back to the channel's live stream from a replay; the button shows only when provided.
     var onReturnToLive: (() -> Void)?
+    /// macOS "Mode Cinéma": toggles full screen on a black stage with the cursor hidden along with the controls.
+    var onToggleCinema: (() -> Void)?
+    var isCinema: Bool
     @State private var subtitleSearchModel: SubtitleSearchModel?
 
     @State private var hudVisible = true
@@ -120,8 +123,12 @@ public struct CndVideoPlayerView: View {
         isFullscreen: Bool = false,
         onZap: ((Int) -> Void)? = nil,
         subtitleSearch: (() -> SubtitleSearchModel)? = nil,
-        onReturnToLive: (() -> Void)? = nil
+        onReturnToLive: (() -> Void)? = nil,
+        onToggleCinema: (() -> Void)? = nil,
+        isCinema: Bool = false
     ) {
+        self.onToggleCinema = onToggleCinema
+        self.isCinema = isCinema
         self.controller = controller
         self.isFullscreen = isFullscreen
         self.closesOnDisappear = closesOnDisappear
@@ -198,6 +205,7 @@ public struct CndVideoPlayerView: View {
         .contentShape(Rectangle())
         #if os(macOS)
         .onContinuousHover { _ in showHUD() }
+        .background(CinemaCursorHider(hidden: isCinema && !hudVisible))
         #endif
         #if os(macOS)
         // Double-click toggles full screen (declared first so it wins over the single click, which
@@ -297,6 +305,12 @@ public struct CndVideoPlayerView: View {
                 if controller.media != nil {
                     favoriteButton
                     brokenButton
+                    if let onToggleCinema {
+                        hudButton("theatermasks", isCinema ? "Quitter le mode Cinéma" : "Mode Cinéma") { onToggleCinema() }
+                    }
+                    hudButton("stop.fill", "Arrêter la lecture et couper la connexion au serveur") {
+                        controller.close()
+                    }
                 }
                 Spacer()
                 if let format = DisplayRateMatcher.shared.currentFormat {
@@ -690,3 +704,27 @@ public struct CndVideoPlayerView: View {
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
     }
 }
+
+
+#if os(macOS)
+/// Hides the pointer while the cinema stage has no controls on screen; always restores it.
+private struct CinemaCursorHider: NSViewRepresentable {
+    let hidden: Bool
+
+    final class Coordinator { var isHidden = false }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let c = context.coordinator
+        guard c.isHidden != hidden else { return }
+        c.isHidden = hidden
+        if hidden { NSCursor.hide() } else { NSCursor.unhide() }
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        if coordinator.isHidden { NSCursor.unhide(); coordinator.isHidden = false }
+    }
+}
+#endif
