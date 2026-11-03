@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 @Suite("Auto-Framerate Matching (AFR) & Dynamic Range Tests (PRD-25)")
 struct DisplayRateMatcherTests {

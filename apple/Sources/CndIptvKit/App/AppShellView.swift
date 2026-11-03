@@ -41,11 +41,16 @@ enum AppTab: String, CaseIterable, Identifiable {
 }
 
 /// Root view: waits for the engine, then shows the adaptive navigation.
-struct AppShellView: View {
+public struct AppShellView: View {
     @Bindable var state: AppState
-    var commands: AppCommandCenter = AppCommandCenter()
+    var commands: AppCommandCenter
 
-    var body: some View {
+    public init(state: AppState, commands: AppCommandCenter) {
+        self.state = state
+        self.commands = commands
+    }
+
+    public var body: some View {
         if let engine = state.engine {
             LoadedShellView(state: state, engine: engine, commands: commands)
         } else if let error = state.errorMessage {

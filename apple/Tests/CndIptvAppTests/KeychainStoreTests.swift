@@ -1,5 +1,5 @@
 import XCTest
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 final class KeychainStoreTests: XCTestCase {
     func testSaveReadUpdateAndDeleteSecret() throws {

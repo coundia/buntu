@@ -70,5 +70,5 @@ Trois lots livrés et validés **dans l'ordre**, chacun utilisable seul.
 
 **Non réalisé**
 - **Favoris des catégories adultes** : ils restent visibles dans les favoris du profil qui les a choisis.
-- **Indicateur `is_adult` des catégories Xtream** : non stocké, seule la détection par nom est utilisée.
+- **Indicateur `is_adult` des catégories Xtream** : non stocké, seule la détection par nom est utilisée. Vérifié sur le fournisseur de développement : ses flux n'envoient aucun champ `is_adult`, l'implémenter n'y changerait rien.
 - Synchronisation iCloud des profils (`uuid`). Un test borne à 1,5 s une page de catalogue et les facettes sur 100 000 chaînes avec la règle adulte (mesure fine non faite).

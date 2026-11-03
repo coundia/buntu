@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 @Suite("Live Activities & visionOS Tests (PRD-22)")
 struct LiveActivitiesTests {

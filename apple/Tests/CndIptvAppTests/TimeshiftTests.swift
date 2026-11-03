@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import QuartzCore
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 @MainActor
 final class MockTimeshiftBackend: VideoBackend {
