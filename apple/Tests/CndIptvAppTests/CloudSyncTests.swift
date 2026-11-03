@@ -10,14 +10,15 @@ final class SyncRecordMapperTests: XCTestCase {
 
     private var sample: SyncDelta {
         SyncDelta(
+            profiles: [SyncProfile(uuid: "11111111-2222-3333-4444-555555555555", name: "Léa", avatar: "star", isKids: true, updatedAt: 1_700_000_050)],
             sources: [
                 SyncSource(uuid: "u1", name: "Premium", sourceType: "xtream", url: nil, server: "http://srv:80",
                            username: "bob", passwordRef: "cnd.xtream.u1", epgUrl: nil, updatedAt: 1_700_000_100),
                 SyncSource(uuid: "u2", name: "Freebox", sourceType: "m3u", url: "http://x/l.m3u", server: nil,
                            username: nil, passwordRef: nil, epgUrl: "http://x/epg.xml", updatedAt: 1_700_000_200),
             ],
-            favorites: [SyncFavorite(stableHash: "movie_1", itemKind: "movie", createdAt: 1_700_000_300)],
-            watchHistory: [SyncWatchProgress(stableHash: "movie_1", positionMs: 42_000, durationMs: 100_000, completed: false, lastWatchedAt: 1_700_000_400)],
+            favorites: [SyncFavorite(stableHash: "movie_1", itemKind: "movie", createdAt: 1_700_000_300, profileUuid: nil), SyncFavorite(stableHash: "cartoon_1", itemKind: "live", createdAt: 1_700_000_310, profileUuid: "11111111-2222-3333-4444-555555555555")],
+            watchHistory: [SyncWatchProgress(stableHash: "movie_1", positionMs: 42_000, durationMs: 100_000, completed: false, lastWatchedAt: 1_700_000_400, profileUuid: nil)],
             tombstones: [
                 SyncTombstone(kind: "favorite", key: "movie_9", deletedAt: 1_700_000_500),
                 SyncTombstone(kind: "source", key: "u9", deletedAt: 1_700_000_600),
@@ -25,9 +26,9 @@ final class SyncRecordMapperTests: XCTestCase {
         )
     }
 
-    func testOnlyTheThreeUserDataRecordTypesExist() {
+    func testOnlyTheFourUserDataRecordTypesExist() {
         let types = Set(mapper.records(from: sample).map(\.recordType))
-        XCTAssertEqual(types, ["CndSource", "CndFavorite", "CndWatchProgress"])
+        XCTAssertEqual(types, ["CndProfile", "CndSource", "CndFavorite", "CndWatchProgress"])
         for forbidden in ["iptv_items", "epg_programs", "CndItem", "CndEpg"] {
             XCTAssertFalse(types.contains(forbidden))
         }
@@ -35,8 +36,9 @@ final class SyncRecordMapperTests: XCTestCase {
 
     func testRecordsRoundTripBackToTheSameDelta() {
         let records = mapper.records(from: sample)
-        XCTAssertEqual(records.count, 4)
+        XCTAssertEqual(records.count, 6)
         let back = mapper.delta(fromSaved: records, deleted: [], now: 0)
+        XCTAssertEqual(back.profiles, sample.profiles)
         XCTAssertEqual(back.sources, sample.sources)
         XCTAssertEqual(back.favorites, sample.favorites)
         XCTAssertEqual(back.watchHistory, sample.watchHistory)
@@ -45,7 +47,7 @@ final class SyncRecordMapperTests: XCTestCase {
 
     func testRecordsLiveInTheCustomZoneWithStableNames() {
         let names = Set(mapper.records(from: sample).map(\.recordID.recordName))
-        XCTAssertEqual(names, ["src:u1", "src:u2", "fav:movie_1", "watch:movie_1"])
+        XCTAssertEqual(names, ["profile:11111111-2222-3333-4444-555555555555", "src:u1", "src:u2", "fav:movie_1", "fav:11111111-2222-3333-4444-555555555555|cartoon_1", "watch:movie_1"])
         XCTAssertTrue(mapper.records(from: sample).allSatisfy { $0.recordID.zoneID == mapper.zoneID })
     }
 
@@ -286,7 +288,7 @@ final class CloudKitSyncManagerTests: XCTestCase {
         let manager = CloudKitSyncManager(engine: engine, availability: .available(containerID: "c"), defaults: defaultsA, makeTransport: { _ in LoopbackTransport() })
         var called = false
         manager.onRemoteChange = { _ in called = true }
-        await manager.receive(SyncDelta(sources: [], favorites: [], watchHistory: [], tombstones: []))
+        await manager.receive(SyncDelta(profiles: [], sources: [], favorites: [], watchHistory: [], tombstones: []))
         XCTAssertFalse(called)
     }
 }

@@ -73,7 +73,7 @@ impl DatabaseManager {
 
         self.with_conn(|conn| {
             conn.execute(
-                "INSERT INTO profiles(uuid, name, avatar, is_kids, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO profiles(uuid, name, avatar, is_kids, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
                 params![uuid, name, avatar, is_kids_val, now],
             )?;
             let id = conn.last_insert_rowid();
@@ -134,8 +134,8 @@ impl DatabaseManager {
         let is_kids_val = if is_kids { 1 } else { 0 };
         self.with_conn(|conn| {
             conn.execute(
-                "UPDATE profiles SET name = ?1, avatar = ?2, is_kids = ?3 WHERE id = ?4",
-                params![name, avatar, is_kids_val, id],
+                "UPDATE profiles SET name = ?1, avatar = ?2, is_kids = ?3, updated_at = ?5 WHERE id = ?4",
+                params![name, avatar, is_kids_val, id, now_epoch_secs()],
             )?;
             Ok(())
         })?;
@@ -185,8 +185,15 @@ impl DatabaseManager {
             return Err(DbError::Query("Cannot delete default profile 1".to_string()));
         }
         self.with_conn(|conn| {
+            let uuid: Option<String> = conn.query_row("SELECT uuid FROM profiles WHERE id = ?1", params![id], |r| r.get(0)).ok();
             let deleted = conn.execute("DELETE FROM profiles WHERE id = ?1", params![id])?;
             if deleted > 0 {
+                if let Some(uuid) = &uuid {
+                    // Other devices learn about it through the tombstone.
+                    super::sync_repo::upsert_tombstone(conn, super::sync_repo::TOMBSTONE_PROFILE, uuid, now_epoch_secs())?;
+                }
+                let _ = conn.execute("DELETE FROM favorites WHERE profile_id = ?1", params![id]);
+                let _ = conn.execute("DELETE FROM watch_history WHERE profile_id = ?1", params![id]);
                 let _ = conn.execute("DELETE FROM hidden_groups WHERE profile_id = ?1", params![id]);
                 let _ = conn.execute("DELETE FROM kids_allowed_groups WHERE profile_id = ?1", params![id]);
                 let _ = conn.execute("DELETE FROM hidden_items WHERE profile_id = ?1", params![id]);

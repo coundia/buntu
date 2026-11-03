@@ -2,9 +2,14 @@ import CloudKit
 import Foundation
 import CndCoreBridge
 
-/// Converts between the engine's sync delta and CloudKit records. Only three record types exist;
+/// Converts between the engine's sync delta and CloudKit records. Only four record types exist;
 /// the catalog (`iptv_items`) and the guide (`epg_programs`) have no representation here.
+///
+/// Favorites and watch progress of the main profile keep their original record names (`fav:<hash>`,
+/// `watch:<hash>`); those of another profile carry its uuid (`fav:<uuid>|<hash>`).
 struct SyncRecordMapper {
+    static let profileType = "CndProfile"
+    static let profilePrefix = "profile:"
     static let sourceType = "CndSource"
     static let favoriteType = "CndFavorite"
     static let watchType = "CndWatchProgress"
@@ -25,8 +30,22 @@ struct SyncRecordMapper {
 
     // MARK: Delta -> CloudKit
 
+    /// `<hash>` for the main profile, `<uuid>|<hash>` for another one.
+    private func key(profileUuid: String?, hash: String) -> String {
+        profileUuid.map { "\($0)|\(hash)" } ?? hash
+    }
+
     func records(from delta: SyncDelta) -> [CKRecord] {
         var records: [CKRecord] = []
+        for profile in delta.profiles {
+            let record = CKRecord(recordType: Self.profileType, recordID: id(Self.profilePrefix, profile.uuid))
+            record["uuid"] = profile.uuid as CKRecordValue
+            record["name"] = profile.name as CKRecordValue
+            record["avatar"] = profile.avatar as CKRecordValue
+            record["isKids"] = NSNumber(value: profile.isKids ? 1 : 0)
+            record["updatedAt"] = NSNumber(value: profile.updatedAt)
+            records.append(record)
+        }
         for source in delta.sources {
             let record = CKRecord(recordType: Self.sourceType, recordID: id(Self.sourcePrefix, source.uuid))
             record["uuid"] = source.uuid as CKRecordValue
@@ -41,15 +60,23 @@ struct SyncRecordMapper {
             records.append(record)
         }
         for favorite in delta.favorites {
-            let record = CKRecord(recordType: Self.favoriteType, recordID: id(Self.favoritePrefix, favorite.stableHash))
+            let record = CKRecord(
+                recordType: Self.favoriteType,
+                recordID: id(Self.favoritePrefix, key(profileUuid: favorite.profileUuid, hash: favorite.stableHash))
+            )
             record["stableHash"] = favorite.stableHash as CKRecordValue
+            record["profileUuid"] = favorite.profileUuid as CKRecordValue?
             record["itemKind"] = favorite.itemKind as CKRecordValue
             record["createdAt"] = NSNumber(value: favorite.createdAt)
             records.append(record)
         }
         for watch in delta.watchHistory {
-            let record = CKRecord(recordType: Self.watchType, recordID: id(Self.watchPrefix, watch.stableHash))
+            let record = CKRecord(
+                recordType: Self.watchType,
+                recordID: id(Self.watchPrefix, key(profileUuid: watch.profileUuid, hash: watch.stableHash))
+            )
             record["stableHash"] = watch.stableHash as CKRecordValue
+            record["profileUuid"] = watch.profileUuid as CKRecordValue?
             record["positionMs"] = NSNumber(value: watch.positionMs)
             record["durationMs"] = NSNumber(value: watch.durationMs)
             record["completed"] = NSNumber(value: watch.completed ? 1 : 0)
@@ -65,6 +92,7 @@ struct SyncRecordMapper {
             switch tombstone.kind {
             case "source": return id(Self.sourcePrefix, tombstone.key)
             case "favorite": return id(Self.favoritePrefix, tombstone.key)
+            case "profile": return id(Self.profilePrefix, tombstone.key)
             default: return nil
             }
         }
@@ -74,9 +102,17 @@ struct SyncRecordMapper {
 
     /// CloudKit does not report when a record was deleted, so deletions are stamped with `now`.
     func delta(fromSaved records: [CKRecord], deleted ids: [CKRecord.ID], now: Int64) -> SyncDelta {
-        var delta = SyncDelta(sources: [], favorites: [], watchHistory: [], tombstones: [])
+        var delta = SyncDelta(profiles: [], sources: [], favorites: [], watchHistory: [], tombstones: [])
         for record in records {
             switch record.recordType {
+            case Self.profileType:
+                guard let uuid = record["uuid"] as? String, let name = record["name"] as? String,
+                      let avatar = record["avatar"] as? String,
+                      let updatedAt = (record["updatedAt"] as? NSNumber)?.int64Value else { continue }
+                delta.profiles.append(SyncProfile(
+                    uuid: uuid, name: name, avatar: avatar,
+                    isKids: (record["isKids"] as? NSNumber)?.intValue == 1, updatedAt: updatedAt
+                ))
             case Self.sourceType:
                 guard let uuid = record["uuid"] as? String, let name = record["name"] as? String,
                       let type = record["sourceType"] as? String,
@@ -90,7 +126,9 @@ struct SyncRecordMapper {
             case Self.favoriteType:
                 guard let hash = record["stableHash"] as? String, let kind = record["itemKind"] as? String,
                       let createdAt = (record["createdAt"] as? NSNumber)?.int64Value else { continue }
-                delta.favorites.append(SyncFavorite(stableHash: hash, itemKind: kind, createdAt: createdAt))
+                delta.favorites.append(SyncFavorite(
+                    stableHash: hash, itemKind: kind, createdAt: createdAt, profileUuid: record["profileUuid"] as? String
+                ))
             case Self.watchType:
                 guard let hash = record["stableHash"] as? String,
                       let position = (record["positionMs"] as? NSNumber)?.int64Value,
@@ -98,7 +136,8 @@ struct SyncRecordMapper {
                       let last = (record["lastWatchedAt"] as? NSNumber)?.int64Value else { continue }
                 delta.watchHistory.append(SyncWatchProgress(
                     stableHash: hash, positionMs: position, durationMs: duration,
-                    completed: (record["completed"] as? NSNumber)?.intValue == 1, lastWatchedAt: last
+                    completed: (record["completed"] as? NSNumber)?.intValue == 1, lastWatchedAt: last,
+                    profileUuid: record["profileUuid"] as? String
                 ))
             default:
                 continue
@@ -110,6 +149,8 @@ struct SyncRecordMapper {
                 delta.tombstones.append(SyncTombstone(kind: "source", key: String(name.dropFirst(Self.sourcePrefix.count)), deletedAt: now))
             } else if name.hasPrefix(Self.favoritePrefix) {
                 delta.tombstones.append(SyncTombstone(kind: "favorite", key: String(name.dropFirst(Self.favoritePrefix.count)), deletedAt: now))
+            } else if name.hasPrefix(Self.profilePrefix) {
+                delta.tombstones.append(SyncTombstone(kind: "profile", key: String(name.dropFirst(Self.profilePrefix.count)), deletedAt: now))
             }
         }
         return delta

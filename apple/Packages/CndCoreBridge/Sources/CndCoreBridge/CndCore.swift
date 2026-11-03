@@ -6640,6 +6640,7 @@ public func FfiConverterTypeSubtitleSearchResult_lower(_ value: SubtitleSearchRe
 
 
 public struct SyncDelta {
+    public var profiles: [SyncProfile]
     public var sources: [SyncSource]
     public var favorites: [SyncFavorite]
     public var watchHistory: [SyncWatchProgress]
@@ -6647,7 +6648,8 @@ public struct SyncDelta {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(sources: [SyncSource], favorites: [SyncFavorite], watchHistory: [SyncWatchProgress], tombstones: [SyncTombstone]) {
+    public init(profiles: [SyncProfile], sources: [SyncSource], favorites: [SyncFavorite], watchHistory: [SyncWatchProgress], tombstones: [SyncTombstone]) {
+        self.profiles = profiles
         self.sources = sources
         self.favorites = favorites
         self.watchHistory = watchHistory
@@ -6662,6 +6664,9 @@ extension SyncDelta: Sendable {}
 
 extension SyncDelta: Equatable, Hashable {
     public static func ==(lhs: SyncDelta, rhs: SyncDelta) -> Bool {
+        if lhs.profiles != rhs.profiles {
+            return false
+        }
         if lhs.sources != rhs.sources {
             return false
         }
@@ -6678,6 +6683,7 @@ extension SyncDelta: Equatable, Hashable {
     }
 
     public func hash(into hasher: inout Hasher) {
+        hasher.combine(profiles)
         hasher.combine(sources)
         hasher.combine(favorites)
         hasher.combine(watchHistory)
@@ -6694,6 +6700,7 @@ public struct FfiConverterTypeSyncDelta: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncDelta {
         return
             try SyncDelta(
+                profiles: FfiConverterSequenceTypeSyncProfile.read(from: &buf), 
                 sources: FfiConverterSequenceTypeSyncSource.read(from: &buf), 
                 favorites: FfiConverterSequenceTypeSyncFavorite.read(from: &buf), 
                 watchHistory: FfiConverterSequenceTypeSyncWatchProgress.read(from: &buf), 
@@ -6702,6 +6709,7 @@ public struct FfiConverterTypeSyncDelta: FfiConverterRustBuffer {
     }
 
     public static func write(_ value: SyncDelta, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeSyncProfile.write(value.profiles, into: &buf)
         FfiConverterSequenceTypeSyncSource.write(value.sources, into: &buf)
         FfiConverterSequenceTypeSyncFavorite.write(value.favorites, into: &buf)
         FfiConverterSequenceTypeSyncWatchProgress.write(value.watchHistory, into: &buf)
@@ -6729,13 +6737,21 @@ public struct SyncFavorite {
     public var stableHash: String
     public var itemKind: String
     public var createdAt: Int64
+    /**
+     * `None` for the main profile.
+     */
+    public var profileUuid: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(stableHash: String, itemKind: String, createdAt: Int64) {
+    public init(stableHash: String, itemKind: String, createdAt: Int64, 
+        /**
+         * `None` for the main profile.
+         */profileUuid: String?) {
         self.stableHash = stableHash
         self.itemKind = itemKind
         self.createdAt = createdAt
+        self.profileUuid = profileUuid
     }
 }
 
@@ -6755,6 +6771,9 @@ extension SyncFavorite: Equatable, Hashable {
         if lhs.createdAt != rhs.createdAt {
             return false
         }
+        if lhs.profileUuid != rhs.profileUuid {
+            return false
+        }
         return true
     }
 
@@ -6762,6 +6781,7 @@ extension SyncFavorite: Equatable, Hashable {
         hasher.combine(stableHash)
         hasher.combine(itemKind)
         hasher.combine(createdAt)
+        hasher.combine(profileUuid)
     }
 }
 
@@ -6776,7 +6796,8 @@ public struct FfiConverterTypeSyncFavorite: FfiConverterRustBuffer {
             try SyncFavorite(
                 stableHash: FfiConverterString.read(from: &buf), 
                 itemKind: FfiConverterString.read(from: &buf), 
-                createdAt: FfiConverterInt64.read(from: &buf)
+                createdAt: FfiConverterInt64.read(from: &buf), 
+                profileUuid: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -6784,6 +6805,7 @@ public struct FfiConverterTypeSyncFavorite: FfiConverterRustBuffer {
         FfiConverterString.write(value.stableHash, into: &buf)
         FfiConverterString.write(value.itemKind, into: &buf)
         FfiConverterInt64.write(value.createdAt, into: &buf)
+        FfiConverterOptionString.write(value.profileUuid, into: &buf)
     }
 }
 
@@ -6804,6 +6826,7 @@ public func FfiConverterTypeSyncFavorite_lower(_ value: SyncFavorite) -> RustBuf
 
 
 public struct SyncImportSummary {
+    public var profilesApplied: UInt32
     public var sourcesApplied: UInt32
     public var favoritesApplied: UInt32
     public var watchApplied: UInt32
@@ -6816,10 +6839,11 @@ public struct SyncImportSummary {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(sourcesApplied: UInt32, favoritesApplied: UInt32, watchApplied: UInt32, deletionsApplied: UInt32, skipped: UInt32, 
+    public init(profilesApplied: UInt32, sourcesApplied: UInt32, favoritesApplied: UInt32, watchApplied: UInt32, deletionsApplied: UInt32, skipped: UInt32, 
         /**
          * Local ids of sources created by this import; they have no catalog yet and need a refresh.
          */insertedSourceIds: [Int64]) {
+        self.profilesApplied = profilesApplied
         self.sourcesApplied = sourcesApplied
         self.favoritesApplied = favoritesApplied
         self.watchApplied = watchApplied
@@ -6836,6 +6860,9 @@ extension SyncImportSummary: Sendable {}
 
 extension SyncImportSummary: Equatable, Hashable {
     public static func ==(lhs: SyncImportSummary, rhs: SyncImportSummary) -> Bool {
+        if lhs.profilesApplied != rhs.profilesApplied {
+            return false
+        }
         if lhs.sourcesApplied != rhs.sourcesApplied {
             return false
         }
@@ -6858,6 +6885,7 @@ extension SyncImportSummary: Equatable, Hashable {
     }
 
     public func hash(into hasher: inout Hasher) {
+        hasher.combine(profilesApplied)
         hasher.combine(sourcesApplied)
         hasher.combine(favoritesApplied)
         hasher.combine(watchApplied)
@@ -6876,6 +6904,7 @@ public struct FfiConverterTypeSyncImportSummary: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncImportSummary {
         return
             try SyncImportSummary(
+                profilesApplied: FfiConverterUInt32.read(from: &buf), 
                 sourcesApplied: FfiConverterUInt32.read(from: &buf), 
                 favoritesApplied: FfiConverterUInt32.read(from: &buf), 
                 watchApplied: FfiConverterUInt32.read(from: &buf), 
@@ -6886,6 +6915,7 @@ public struct FfiConverterTypeSyncImportSummary: FfiConverterRustBuffer {
     }
 
     public static func write(_ value: SyncImportSummary, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.profilesApplied, into: &buf)
         FfiConverterUInt32.write(value.sourcesApplied, into: &buf)
         FfiConverterUInt32.write(value.favoritesApplied, into: &buf)
         FfiConverterUInt32.write(value.watchApplied, into: &buf)
@@ -6908,6 +6938,100 @@ public func FfiConverterTypeSyncImportSummary_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeSyncImportSummary_lower(_ value: SyncImportSummary) -> RustBuffer {
     return FfiConverterTypeSyncImportSummary.lower(value)
+}
+
+
+public struct SyncProfile {
+    public var uuid: String
+    public var name: String
+    public var avatar: String
+    public var isKids: Bool
+    public var updatedAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(uuid: String, name: String, avatar: String, isKids: Bool, updatedAt: Int64) {
+        self.uuid = uuid
+        self.name = name
+        self.avatar = avatar
+        self.isKids = isKids
+        self.updatedAt = updatedAt
+    }
+}
+
+#if compiler(>=6)
+extension SyncProfile: Sendable {}
+#endif
+
+
+extension SyncProfile: Equatable, Hashable {
+    public static func ==(lhs: SyncProfile, rhs: SyncProfile) -> Bool {
+        if lhs.uuid != rhs.uuid {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.avatar != rhs.avatar {
+            return false
+        }
+        if lhs.isKids != rhs.isKids {
+            return false
+        }
+        if lhs.updatedAt != rhs.updatedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(uuid)
+        hasher.combine(name)
+        hasher.combine(avatar)
+        hasher.combine(isKids)
+        hasher.combine(updatedAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncProfile: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncProfile {
+        return
+            try SyncProfile(
+                uuid: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                avatar: FfiConverterString.read(from: &buf), 
+                isKids: FfiConverterBool.read(from: &buf), 
+                updatedAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncProfile, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.uuid, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.avatar, into: &buf)
+        FfiConverterBool.write(value.isKids, into: &buf)
+        FfiConverterInt64.write(value.updatedAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncProfile_lift(_ buf: RustBuffer) throws -> SyncProfile {
+    return try FfiConverterTypeSyncProfile.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncProfile_lower(_ value: SyncProfile) -> RustBuffer {
+    return FfiConverterTypeSyncProfile.lower(value)
 }
 
 
@@ -7240,15 +7364,23 @@ public struct SyncWatchProgress {
     public var durationMs: Int64
     public var completed: Bool
     public var lastWatchedAt: Int64
+    /**
+     * `None` for the main profile.
+     */
+    public var profileUuid: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(stableHash: String, positionMs: Int64, durationMs: Int64, completed: Bool, lastWatchedAt: Int64) {
+    public init(stableHash: String, positionMs: Int64, durationMs: Int64, completed: Bool, lastWatchedAt: Int64, 
+        /**
+         * `None` for the main profile.
+         */profileUuid: String?) {
         self.stableHash = stableHash
         self.positionMs = positionMs
         self.durationMs = durationMs
         self.completed = completed
         self.lastWatchedAt = lastWatchedAt
+        self.profileUuid = profileUuid
     }
 }
 
@@ -7274,6 +7406,9 @@ extension SyncWatchProgress: Equatable, Hashable {
         if lhs.lastWatchedAt != rhs.lastWatchedAt {
             return false
         }
+        if lhs.profileUuid != rhs.profileUuid {
+            return false
+        }
         return true
     }
 
@@ -7283,6 +7418,7 @@ extension SyncWatchProgress: Equatable, Hashable {
         hasher.combine(durationMs)
         hasher.combine(completed)
         hasher.combine(lastWatchedAt)
+        hasher.combine(profileUuid)
     }
 }
 
@@ -7299,7 +7435,8 @@ public struct FfiConverterTypeSyncWatchProgress: FfiConverterRustBuffer {
                 positionMs: FfiConverterInt64.read(from: &buf), 
                 durationMs: FfiConverterInt64.read(from: &buf), 
                 completed: FfiConverterBool.read(from: &buf), 
-                lastWatchedAt: FfiConverterInt64.read(from: &buf)
+                lastWatchedAt: FfiConverterInt64.read(from: &buf), 
+                profileUuid: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -7309,6 +7446,7 @@ public struct FfiConverterTypeSyncWatchProgress: FfiConverterRustBuffer {
         FfiConverterInt64.write(value.durationMs, into: &buf)
         FfiConverterBool.write(value.completed, into: &buf)
         FfiConverterInt64.write(value.lastWatchedAt, into: &buf)
+        FfiConverterOptionString.write(value.profileUuid, into: &buf)
     }
 }
 
@@ -8973,6 +9111,31 @@ fileprivate struct FfiConverterSequenceTypeSyncFavorite: FfiConverterRustBuffer 
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeSyncFavorite.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSyncProfile: FfiConverterRustBuffer {
+    typealias SwiftType = [SyncProfile]
+
+    public static func write(_ value: [SyncProfile], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSyncProfile.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SyncProfile] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SyncProfile]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSyncProfile.read(from: &buf))
         }
         return seq
     }
