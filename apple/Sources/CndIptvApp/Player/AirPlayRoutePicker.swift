@@ -12,6 +12,11 @@ struct AirPlayRoutePicker: NSViewRepresentable {
 
     func updateNSView(_ view: AVRoutePickerView, context: Context) {}
 }
+#elseif os(visionOS)
+/// Vision Pro has no AirPlay route button: the system picks the output.
+struct AirPlayRoutePicker: View {
+    var body: some View { EmptyView() }
+}
 #else
 struct AirPlayRoutePicker: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
