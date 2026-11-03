@@ -82,3 +82,20 @@ Non réalisé :
 - **Entitlements iCloud sur iOS** : retirés (compte développeur personnel) ; l'app iPhone fonctionne en local, sans synchronisation iCloud ni groupe de Trousseau partagé.
 - **`task app:testflight`** (export App Store Connect) : absent, il exige un compte développeur payant.
 - Essais manuels demandés (iCloud entre un Mac et un iPhone, dossier Fichiers) : non faits.
+
+### Évaluation de `libmpv` pour iOS, tvOS, visionOS et le `.app` macOS (non intégré)
+
+Piste étudiée : **MPVKit** (`github.com/mpvkit/MPVKit`, paquet SwiftPM). Constats :
+- Produit LGPL-3.0 (`MPVKit`) et variante GPL-3.0 (`MPVKit-GPL`, ajoute samba) ; mpv 0.41 et FFmpeg 9. Seule la variante **LGPL** est compatible avec ce projet (liaison dynamique, App Store).
+- Plateformes annoncées : iOS, macOS, tvOS, visionOS (simulateurs compris).
+- Le README précise que le dépôt est **« seulement adapté à l'apprentissage de libmpv »** et peu maintenu ; le rendu Metal n'est qu'un correctif non officiel. La taille des binaires n'est pas indiquée (plusieurs dizaines de Mo par plateforme à prévoir).
+
+Pourquoi ce n'est pas fait ici : le lecteur actuel charge `libmpv` par `dlopen` et affiche par l'API de rendu OpenGL (macOS). Sur iOS il faudrait (1) lier la bibliothèque statiquement et remplacer le chargeur par des appels directs, (2) écrire un rendu Metal ou OpenGL ES propre à iOS/tvOS/visionOS, (3) gérer la mémoire et l'arrière-plan. Aucune de ces étapes ne peut être vérifiée sans voir la vidéo à l'écran d'un appareil ; écrire ce rendu à l'aveugle donnerait du code qui compile sans qu'on sache s'il affiche une image.
+
+Marche à suivre proposée (à faire avec un appareil sous les yeux) :
+1. Prototype isolé : une vue qui lit un flux `.ts` avec MPVKit (variante LGPL) sur l'iPhone ; valider l'image, le son, la pause et l'arrêt sans fuite.
+2. Si le prototype tient, remplacer `MpvLibrary` (dlopen) par la liaison directe sur iOS/tvOS/visionOS et brancher `MpvVideoToolboxBackend` sur ce rendu ; garder `dlopen` sur macOS ou embarquer la bibliothèque dans `Frameworks/`.
+3. Vérifier la licence (aucun composant GPL), la taille de l'app et la signature des frameworks.
+
+Tant que ce n'est pas fait, l'app iPhone/iPad/Apple TV lit les chaînes par leur adresse HLS et signale les formats que seul `libmpv` sait lire (MKV, AVI, FLV).
+
