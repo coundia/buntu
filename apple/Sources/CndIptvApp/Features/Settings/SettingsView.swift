@@ -18,11 +18,14 @@ struct SettingsView: View {
     @AppStorage("timeshiftDuration") private var timeshiftDurationRaw: String = TimeshiftDuration.oneHour.rawValue
     @AppStorage("openSubtitlesLanguages") private var openSubtitlesLanguages: String = "fr,en"
     @State private var showingProfilesManagement = false
+    @State private var showingAdultUnlock = false
+    @State private var parental = ParentalControlManager.shared
 
     var body: some View {
         Form {
             playbackAndHealthSection
             profilesAndBouquetsSection
+            parentalSection
             #if os(iOS)
             liveActivitiesSection
             #endif
@@ -54,6 +57,30 @@ struct SettingsView: View {
                     Text(item.title).tag(item.rawValue)
                 }
             }
+        }
+    }
+
+    private var parentalSection: some View {
+        Section {
+            LabeledContent("Catégories adultes") {
+                if let until = parental.adultUnlockedUntil, parental.isAdultUnlocked {
+                    Text("Visibles jusqu'à \(until.formatted(date: .omitted, time: .shortened))")
+                } else {
+                    Text("Masquées")
+                }
+            }
+            if parental.isAdultUnlocked {
+                Button("Reverrouiller maintenant") { parental.lockAdultSession() }
+            } else {
+                Button("Déverrouiller 15 minutes…") { showingAdultUnlock = true }
+            }
+        } header: {
+            Text("Contrôle parental")
+        } footer: {
+            Text("Les catégories dont le nom évoque un contenu adulte (adulte, xxx, +18…) sont masquées partout, recherche comprise, et ne sont jamais montrées au profil Enfants. Le code PIN se règle dans Profils.")
+        }
+        .sheet(isPresented: $showingAdultUnlock) {
+            AdultUnlockSheet(parental: parental) { showingAdultUnlock = false }
         }
     }
 

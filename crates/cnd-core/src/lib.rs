@@ -1172,6 +1172,11 @@ impl CndEngine {
         Ok(self.db.list_favorite_folder_items(folder_id)?)
     }
 
+    /// Shows or hides the categories recognised as adult (hidden by default).
+    pub fn set_adult_content_visible(&self, visible: bool) -> Result<(), CndError> {
+        Ok(self.db.set_adult_content_visible(visible)?)
+    }
+
     pub fn is_adult_category(&self, group: String) -> bool {
         db::profile_repo::is_adult_category(&group)
     }

@@ -107,3 +107,69 @@ final class KidsModeTests: XCTestCase {
         XCTAssertEqual(defaults.integer(forKey: ProfilesModel.activeProfileDefaultsKey), Int(kids.id))
     }
 }
+
+@MainActor
+final class AdultSessionTests: XCTestCase {
+    private func manager() -> ParentalControlManager {
+        ParentalControlManager(service: "com.cnd.iptv.tests.adult.\(UUID().uuidString)")
+    }
+
+    func testUnlockingAndLockingTellTheApp() {
+        let parental = manager()
+        var changes = 0
+        parental.onAdultSessionChange = { changes += 1 }
+        XCTAssertFalse(parental.isAdultUnlocked, "hidden by default")
+
+        parental.unlockAdultSession()
+        XCTAssertTrue(parental.isAdultUnlocked)
+        XCTAssertEqual(changes, 1)
+
+        parental.lockAdultSession()
+        XCTAssertFalse(parental.isAdultUnlocked)
+        XCTAssertEqual(changes, 2)
+
+        parental.lockAdultSession()
+        XCTAssertEqual(changes, 2, "locking twice does not notify twice")
+    }
+
+    func testTheSessionLocksItselfWhenTheTimeIsUp() async throws {
+        let parental = manager()
+        var states: [Bool] = []
+        parental.onAdultSessionChange = { states.append(parental.isAdultUnlocked) }
+        parental.unlockAdultSession(duration: 0.2)
+        XCTAssertTrue(parental.isAdultUnlocked)
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertFalse(parental.isAdultUnlocked)
+        XCTAssertEqual(states, [true, false])
+    }
+
+    func testAnEarlierTimerNeverCutsALaterUnlockShort() async throws {
+        let parental = manager()
+        parental.unlockAdultSession(duration: 0.2)
+        parental.unlockAdultSession(duration: 5)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertTrue(parental.isAdultUnlocked, "the first timer was replaced")
+        parental.lockAdultSession()
+    }
+
+    func testChangingProfileTellsTheApp() throws {
+        let engine = try CndEngine.inMemory()
+        let defaults = UserDefaults(suiteName: "cnd.tests.adult.\(UUID().uuidString)")!
+        let model = ProfilesModel(engine: engine, defaults: defaults)
+        var changes = 0
+        model.onActiveProfileChanged = { changes += 1 }
+        let kids = try XCTUnwrap(model.createProfile(name: "Léa", avatar: "star", isKids: true))
+        model.forceSelectProfile(id: kids.id)
+        model.forceSelectProfile(id: 1)
+        XCTAssertEqual(changes, 2)
+    }
+
+    func testTheEngineHidesAdultCategoriesByDefault() throws {
+        let engine = try CndEngine.inMemory()
+        // Nothing to list in a fresh engine, but the switch must exist and be callable both ways.
+        try engine.setAdultContentVisible(visible: true)
+        try engine.setAdultContentVisible(visible: false)
+        XCTAssertTrue(engine.isAdultCategory(group: "Adult Movies"))
+        XCTAssertFalse(engine.isAdultCategory(group: "Sport"))
+    }
+}

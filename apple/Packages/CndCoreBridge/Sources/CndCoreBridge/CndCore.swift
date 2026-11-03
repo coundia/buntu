@@ -758,6 +758,11 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func setActiveProfileId(id: Int64) 
     
+    /**
+     * Shows or hides the categories recognised as adult (hidden by default).
+     */
+    func setAdultContentVisible(visible: Bool) throws 
+    
     func setBroken(stableHash: String, itemKind: String, broken: Bool) throws  -> Bool
     
     func setCustomOrder(profileId: Int64, scope: String, key: String, position: Int32) throws 
@@ -1760,6 +1765,16 @@ open func searchSubtitles(query: SubtitleSearchQuery, apiKey: String?)async thro
 open func setActiveProfileId(id: Int64)  {try! rustCall() {
     uniffi_cnd_core_fn_method_cndengine_set_active_profile_id(self.uniffiClonePointer(),
         FfiConverterInt64.lower(id),$0
+    )
+}
+}
+    
+    /**
+     * Shows or hides the categories recognised as adult (hidden by default).
+     */
+open func setAdultContentVisible(visible: Bool)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_set_adult_content_visible(self.uniffiClonePointer(),
+        FfiConverterBool.lower(visible),$0
     )
 }
 }
@@ -9158,6 +9173,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_set_active_profile_id() != 13927) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_set_adult_content_visible() != 50992) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_set_broken() != 22734) {

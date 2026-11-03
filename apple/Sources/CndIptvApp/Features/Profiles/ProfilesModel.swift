@@ -10,6 +10,8 @@ public final class ProfilesModel {
     public private(set) var profiles: [ProfileRecord] = []
     public private(set) var activeProfileId: Int64 = 1
     public var errorMessage: String?
+    /// Called after the active profile changed (hidden lists and adult visibility depend on it).
+    @ObservationIgnored public var onActiveProfileChanged: (() -> Void)?
 
     public var activeProfile: ProfileRecord? {
         profiles.first(where: { $0.id == activeProfileId })
@@ -60,6 +62,7 @@ public final class ProfilesModel {
         engine.setActiveProfileId(id: profile.id)
         activeProfileId = profile.id
         defaults.set(Int(profile.id), forKey: Self.activeProfileDefaultsKey)
+        onActiveProfileChanged?()
         return true
     }
 
@@ -67,6 +70,7 @@ public final class ProfilesModel {
         engine.setActiveProfileId(id: id)
         activeProfileId = id
         defaults.set(Int(id), forKey: Self.activeProfileDefaultsKey)
+        onActiveProfileChanged?()
     }
 
     public func createProfile(name: String, avatar: String, isKids: Bool) -> ProfileRecord? {

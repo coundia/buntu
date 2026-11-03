@@ -100,12 +100,32 @@ public final class ParentalControlManager {
 
     // MARK: - Adult Session Unlock
 
+    /// Called whenever the adult-content session starts or ends (the app then shows or hides the categories).
+    @ObservationIgnored public var onAdultSessionChange: (() -> Void)?
+    @ObservationIgnored private var relockTask: Task<Void, Never>?
+
     public func unlockAdultSession(durationMinutes: Int = 15) {
-        adultUnlockedUntil = Date().addingTimeInterval(TimeInterval(durationMinutes * 60))
+        unlockAdultSession(duration: TimeInterval(durationMinutes * 60))
+    }
+
+    /// Adult categories stay visible for `duration`, then lock again by themselves.
+    func unlockAdultSession(duration: TimeInterval) {
+        adultUnlockedUntil = Date().addingTimeInterval(duration)
+        relockTask?.cancel()
+        relockTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.lockAdultSession()
+        }
+        onAdultSessionChange?()
     }
 
     public func lockAdultSession() {
+        relockTask?.cancel()
+        relockTask = nil
+        let wasUnlocked = adultUnlockedUntil != nil
         adultUnlockedUntil = nil
+        if wasUnlocked { onAdultSessionChange?() }
     }
 
     // MARK: - PIN Management (Keychain)

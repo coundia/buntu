@@ -79,6 +79,8 @@ private struct LoadedShellView: View {
     @State private var assistant: AssistantModel
     @State private var showingAssistant = false
     @State private var showingKidsExit = false
+    @State private var showingProfilePicker = false
+    @State private var offeredProfilePicker = false
     @State private var liveSearchRequest: String?
     @State private var epgFocus: IptvItemRecord?
     @State private var isPlayerExpanded = false
@@ -193,6 +195,15 @@ private struct LoadedShellView: View {
                 pip.attach(layer: player.surfaceLayer, controller: player)
             }
             .onAppear { connectPlayerIntegrations() }
+            .sheet(isPresented: $showingProfilePicker) {
+                if let profiles = state.profiles { ProfilePickerSheet(profiles: profiles) { showingProfilePicker = false } }
+            }
+            .task(id: state.profiles?.profiles.count) {
+                // Once per launch, when there is a choice to make.
+                guard !offeredProfilePicker, (state.profiles?.profiles.count ?? 0) > 1 else { return }
+                offeredProfilePicker = true
+                showingProfilePicker = true
+            }
             .sheet(isPresented: $showingKidsExit) {
                 if let profiles = state.profiles { KidsExitSheet(profiles: profiles) { showingKidsExit = false } }
             }
