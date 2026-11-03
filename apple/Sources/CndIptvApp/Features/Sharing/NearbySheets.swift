@@ -103,7 +103,7 @@ struct ReceiveFromDeviceSheet: View {
                         .font(.callout).foregroundStyle(.secondary)
                     Text(model.pairingCode)
                         .font(.system(size: 44, weight: .semibold, design: .monospaced))
-                        .textSelection(.enabled)
+                        .selectableText()
                     Text(model.status == .connected
                          ? "Réception en cours…"
                          : "Sur l'autre appareil : Sources > « Envoyer vers un autre appareil… », choisissez celui-ci puis saisissez ce code. Cet écran écoute 5 minutes.")
@@ -130,5 +130,17 @@ struct ReceiveFromDeviceSheet: View {
         #endif
         .onAppear { model.start() }
         .onDisappear { model.stop() }
+    }
+}
+
+private extension View {
+    /// Text selection does not exist on tvOS.
+    @ViewBuilder
+    func selectableText() -> some View {
+        #if os(tvOS)
+        self
+        #else
+        self.textSelection(.enabled)
+        #endif
     }
 }
