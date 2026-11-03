@@ -1296,18 +1296,22 @@ mod profile_isolation_tests {
     }
 
     #[test]
-    fn only_the_main_profile_feeds_icloud_sync() {
+    fn a_favorite_removed_in_one_profile_syncs_only_that_profile() {
         let db = db_with_groups(&["Sport", "Info"]);
-        db.toggle_favorite("h0", "live").unwrap();
-        db.set_active_profile(2).unwrap();
+        db.toggle_favorite("h0", "live").unwrap(); // main profile
+        let kids = db.create_profile("Léa", "star", true).unwrap();
+        db.set_active_profile(kids.id).unwrap();
         db.toggle_favorite("h1", "live").unwrap();
         db.toggle_favorite("h0", "live").unwrap(); // profile 2 adds then...
         db.toggle_favorite("h0", "live").unwrap(); // ...removes h0
 
         let delta = db.export_sync_delta(0).unwrap();
-        let hashes: Vec<&str> = delta.favorites.iter().map(|f| f.stable_hash.as_str()).collect();
-        assert_eq!(hashes, vec!["h0"], "profile 2's favorite is not synced");
-        assert!(delta.tombstones.is_empty(), "profile 2 removing a channel must not delete it elsewhere");
+        let mut favs: Vec<(Option<&str>, &str)> =
+            delta.favorites.iter().map(|f| (f.profile_uuid.as_deref(), f.stable_hash.as_str())).collect();
+        favs.sort();
+        assert_eq!(favs, vec![(None, "h0"), (Some(kids.uuid.as_str()), "h1")], "each favorite names its profile");
+        let tombs: Vec<&str> = delta.tombstones.iter().map(|t| t.key.as_str()).collect();
+        assert_eq!(tombs, vec![format!("{}|h0", kids.uuid)], "the removal is scoped to profile 2, not the main profile");
     }
 
     #[test]
