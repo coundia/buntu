@@ -1,7 +1,7 @@
 import XCTest
 import CloudKit
 import CndCoreBridge
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 // MARK: - Mapper
 

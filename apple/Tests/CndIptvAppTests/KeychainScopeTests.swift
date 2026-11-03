@@ -1,6 +1,6 @@
 import XCTest
 import CndCoreBridge
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 /// Lot 26.1: Xtream passwords in iCloud Keychain, opt-in. The tests run unsigned, where iCloud
 /// Keychain is unavailable, so they check the queries, the choice, and that nothing is ever lost.

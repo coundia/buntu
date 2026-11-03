@@ -1,7 +1,7 @@
 import XCTest
 import CryptoKit
 import CndCoreBridge
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 final class PinHasherTests: XCTestCase {
     func testOnlyFourToSixDigitsAreAccepted() {

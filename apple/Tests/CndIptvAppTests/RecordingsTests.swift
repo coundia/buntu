@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import CndIptvApp
+@testable import CndIptvKit
 import CndCoreBridge
 
 final class MockRecordingsBackend: RecordingsBackend, @unchecked Sendable {

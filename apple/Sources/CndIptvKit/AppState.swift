@@ -41,6 +41,11 @@ public final class AppState {
     private(set) var profiles: ProfilesModel?
     @ObservationIgnored private let recorder = DeferredProgressRecorder()
 
+    /// The app's state: opens the engine on the default database.
+    public convenience init() {
+        self.init(engine: nil, downloadDirectory: nil)
+    }
+
     init(engine: CndEngine? = nil, downloadDirectory: DownloadDirectoryManager? = nil) {
         player = CndPlayerController(recorder: recorder)
         player.streamDiagnoser = { media in await StreamDiagnosis.probe(url: media.url, headers: media.headers) }

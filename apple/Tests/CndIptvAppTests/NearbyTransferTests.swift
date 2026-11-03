@@ -1,7 +1,7 @@
 import XCTest
 import Network
 import CndCoreBridge
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 @MainActor
 final class NearbyTransferTests: XCTestCase {

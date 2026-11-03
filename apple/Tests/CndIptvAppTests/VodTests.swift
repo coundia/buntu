@@ -1,6 +1,6 @@
 import XCTest
 import CndCoreBridge
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 // MARK: - Pure helpers
 

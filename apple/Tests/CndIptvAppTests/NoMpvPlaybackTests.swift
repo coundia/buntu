@@ -1,5 +1,5 @@
 import XCTest
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 /// iPhone and iPad ship without libmpv: raw TS channels must go through their HLS address.
 final class NoMpvPlaybackTests: XCTestCase {

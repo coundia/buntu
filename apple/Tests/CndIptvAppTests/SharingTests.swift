@@ -1,6 +1,6 @@
 import XCTest
 import CndCoreBridge
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 final class ShareEnvelopeTests: XCTestCase {
     private let document = Data(#"{"format":"cnd-source-share","sources":[{"name":"Salon","password":"s3cret-pass"}]}"#.utf8)

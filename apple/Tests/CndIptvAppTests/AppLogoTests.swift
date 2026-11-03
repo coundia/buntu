@@ -1,6 +1,6 @@
 import XCTest
 import SwiftUI
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 #if os(macOS)
 import AppKit

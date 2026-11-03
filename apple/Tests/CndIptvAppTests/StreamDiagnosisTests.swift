@@ -1,5 +1,5 @@
 import XCTest
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 private final class StubProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var handler: ((URLRequest) throws -> (Int, [String: String]))?

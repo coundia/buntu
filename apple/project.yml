@@ -26,6 +26,7 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: Sources/CndIptvApp
+      - path: Sources/CndIptvKit
     dependencies:
       - package: CndCoreBridge
         product: CndCoreBridge
@@ -43,6 +44,7 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Sources/CndIptvApp
+      - path: Sources/CndIptvKit
     dependencies:
       - package: CndCoreBridge
         product: CndCoreBridge
@@ -59,6 +61,7 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Sources/CndIptvApp
+      - path: Sources/CndIptvKit
     dependencies:
       - package: CndCoreBridge
         product: CndCoreBridge
@@ -78,6 +81,7 @@ targets:
     deploymentTarget: "1.0"
     sources:
       - path: Sources/CndIptvApp
+      - path: Sources/CndIptvKit
     dependencies:
       - package: CndCoreBridge
         product: CndCoreBridge
@@ -97,8 +101,8 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: LiveActivityExtension
-      - path: Sources/CndIptvApp/Features/LiveActivities/LiveActivityAttributes.swift
-      - path: Sources/CndIptvApp/Features/LiveActivities/LiveActivityIntents.swift
+      - path: Sources/CndIptvKit/Features/LiveActivities/LiveActivityAttributes.swift
+      - path: Sources/CndIptvKit/Features/LiveActivities/LiveActivityIntents.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.papacoundia.cndiptv.liveactivity

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import CndIptvApp
+@testable import CndIptvKit
 import CndCoreBridge
 
 @Suite("Profiles, Bouquets & Parental Control Tests (PRD-20)", .serialized)

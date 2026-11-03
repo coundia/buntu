@@ -3,7 +3,7 @@ import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 import CndCoreBridge
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 /// Thread-safe counter for `@Sendable` loader closures.
 final class CallCounter: @unchecked Sendable {

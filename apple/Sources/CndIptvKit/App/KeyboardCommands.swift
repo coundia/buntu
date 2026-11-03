@@ -4,7 +4,7 @@ import Observation
 /// Bridge between the macOS menu bar and the shell: the menu calls these closures, the shell fills them in.
 @Observable
 @MainActor
-final class AppCommandCenter {
+public final class AppCommandCenter {
     @ObservationIgnored var addSource: () -> Void = {}
     @ObservationIgnored var importPlaylist: () -> Void = {}
     @ObservationIgnored var importShare: () -> Void = {}
@@ -20,15 +20,21 @@ final class AppCommandCenter {
     /// Enables the player menu items; set by the shell while something is playing.
     var hasMedia = false
     var isFavorite = false
+
+    public init() {}
 }
 
 #if !os(tvOS)
 /// macOS menu bar. Plain-letter shortcuts (Space, M, F, arrows) are handled by the player view
 /// itself while it has focus: as menu key equivalents they would swallow typing in search fields.
-struct KeyboardCommands: Commands {
+public struct KeyboardCommands: Commands {
     let center: AppCommandCenter
 
-    var body: some Commands {
+    public init(center: AppCommandCenter) {
+        self.center = center
+    }
+
+    public var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("Ajouter une source…") { center.addSource() }
                 .keyboardShortcut("n", modifiers: .command)

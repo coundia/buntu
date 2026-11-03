@@ -1,6 +1,6 @@
 import XCTest
 import CndCoreBridge
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 final class LiveActivityPlannerTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_000_000)

@@ -1,5 +1,5 @@
 import XCTest
-@testable import CndIptvApp
+@testable import CndIptvKit
 
 /// PRD 25: the player reads the video's frame rate and dynamic range and hands them to the display matcher.
 @MainActor
