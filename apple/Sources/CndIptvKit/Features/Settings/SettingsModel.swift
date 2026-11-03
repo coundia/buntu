@@ -25,6 +25,9 @@ final class SettingsModel {
     var omdbKey: String { didSet { scheduleSave() } }
     /// OpenSubtitles API key; kept in the Keychain like the OMDb one.
     var openSubtitlesKey: String { didSet { scheduleSave() } }
+    /// Optional OpenSubtitles account (lifts the daily quota); the password lives in the Keychain too.
+    var openSubtitlesUser: String { didSet { scheduleSave() } }
+    var openSubtitlesPassword: String { didSet { scheduleSave() } }
 
     /// Whether Xtream passwords live in iCloud Keychain (opt-in, see `setPasswordSync`).
     private(set) var syncsPasswords: Bool
@@ -60,6 +63,8 @@ final class SettingsModel {
         syncsPasswords = keychain.passwordScope == .iCloud
         OpenSubtitlesCredentials.migrateLegacyKey(keychain: keychain)
         openSubtitlesKey = (try? keychain.readSecret(forKey: OpenSubtitlesCredentials.keychainKey)) ?? ""
+        openSubtitlesUser = (try? keychain.readSecret(forKey: OpenSubtitlesCredentials.userKey)) ?? ""
+        openSubtitlesPassword = (try? keychain.readSecret(forKey: OpenSubtitlesCredentials.passwordKey)) ?? ""
     }
 
     /// Turns the iCloud Keychain option on or off and moves the existing source passwords with it.
@@ -126,6 +131,15 @@ final class SettingsModel {
                 try keychain.deleteSecret(forKey: OpenSubtitlesCredentials.keychainKey)
             } else {
                 try keychain.saveSecret(trimmedSubtitleKey, forKey: OpenSubtitlesCredentials.keychainKey)
+            }
+            let user = openSubtitlesUser.trimmingCharacters(in: .whitespacesAndNewlines)
+            if user.isEmpty || openSubtitlesPassword.isEmpty {
+                // Both parts or nothing: a half-filled account is not kept.
+                try keychain.deleteSecret(forKey: OpenSubtitlesCredentials.userKey)
+                try keychain.deleteSecret(forKey: OpenSubtitlesCredentials.passwordKey)
+            } else {
+                try keychain.saveSecret(user, forKey: OpenSubtitlesCredentials.userKey)
+                try keychain.saveSecret(openSubtitlesPassword, forKey: OpenSubtitlesCredentials.passwordKey)
             }
             try engine.updateSettings(settings: settings)
             let consoleChanged = base.showNetworkConsole != settings.showNetworkConsole

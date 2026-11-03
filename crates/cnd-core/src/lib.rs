@@ -1040,6 +1040,24 @@ impl CndEngine {
         Ok(path.to_string_lossy().to_string())
     }
 
+    /// Signs in to OpenSubtitles (lifts the anonymous download quota). The session lives in memory.
+    pub async fn subtitles_sign_in(
+        &self,
+        username: String,
+        password: String,
+        api_key: Option<String>,
+    ) -> Result<subtitles::SubtitleAccount, CndError> {
+        self.subtitle_service.sign_in(&username, &password, api_key.as_deref()).await
+    }
+
+    pub fn subtitles_sign_out(&self) {
+        self.subtitle_service.sign_out();
+    }
+
+    pub fn subtitles_signed_in(&self) -> bool {
+        self.subtitle_service.is_signed_in()
+    }
+
     pub fn parse_srt(&self, srt_content: String) -> Vec<subtitles::SubtitleCue> {
         subtitles::parse_srt(&srt_content)
     }
