@@ -138,6 +138,45 @@ impl DatabaseManager {
                 params![name, avatar, is_kids_val, id],
             )?;
             Ok(())
+        })?;
+        self.refresh_kids_flag()
+    }
+
+    // MARK: - Kids allow-list
+
+    pub fn allow_group(&self, profile_id: i64, kind: &str, group: &str) -> Result<(), DbError> {
+        let key = normalize_group_key(group);
+        self.with_conn(|conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO kids_allowed_groups(profile_id, kind, group_key) VALUES (?1, ?2, ?3)",
+                params![profile_id, kind, key],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn disallow_group(&self, profile_id: i64, kind: &str, group: &str) -> Result<bool, DbError> {
+        let key = normalize_group_key(group);
+        self.with_conn(|conn| {
+            let count = conn.execute(
+                "DELETE FROM kids_allowed_groups WHERE profile_id = ?1 AND kind = ?2 AND group_key = ?3",
+                params![profile_id, kind, key],
+            )?;
+            Ok(count > 0)
+        })
+    }
+
+    pub fn list_allowed_groups(&self, profile_id: i64, kind: &str) -> Result<Vec<String>, DbError> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT group_key FROM kids_allowed_groups WHERE profile_id = ?1 AND kind = ?2 ORDER BY group_key ASC",
+            )?;
+            let rows = stmt.query_map(params![profile_id, kind], |row| row.get(0))?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
         })
     }
 
@@ -149,6 +188,7 @@ impl DatabaseManager {
             let deleted = conn.execute("DELETE FROM profiles WHERE id = ?1", params![id])?;
             if deleted > 0 {
                 let _ = conn.execute("DELETE FROM hidden_groups WHERE profile_id = ?1", params![id]);
+                let _ = conn.execute("DELETE FROM kids_allowed_groups WHERE profile_id = ?1", params![id]);
                 let _ = conn.execute("DELETE FROM hidden_items WHERE profile_id = ?1", params![id]);
                 let _ = conn.execute("DELETE FROM custom_order WHERE profile_id = ?1", params![id]);
                 let _ = conn.execute("DELETE FROM favorite_folders WHERE profile_id = ?1", params![id]);

@@ -66,8 +66,9 @@ Trois lots livrés et validés **dans l'ordre**, chacun utilisable seul.
 
 - **Favoris et historique par profil (lot 20.2)** : `favorites` et `watch_history` ont maintenant la clé primaire `(profile_id, stable_hash)` (migration idempotente qui reconstruit les tables sans perdre une ligne ; essayée sur une copie d'une vraie base), toutes les requêtes (étoiles du catalogue, listes de favoris, « Récents », reprise de lecture, compteurs, classement des miroirs, assistant) suivent le profil actif. La synchronisation iCloud ne transporte que le profil principal, et un autre profil qui retire une chaîne ne supprime plus le favori du profil principal sur les autres appareils. 5 tests Rust.
 
+- **Profil Enfants en liste blanche (lot 20.3)** : un profil Enfants ne voit que les catégories qu'on lui a explicitement données (table `kids_allowed_groups`), pour les chaînes, les films, les séries, le guide et la recherche ; les catégories adultes ne peuvent jamais lui être autorisées. Un nouveau profil Enfants **ne voit rien** tant que les catégories ne sont pas cochées : Réglages > Profils > « Catégories autorisées ». Rendre le profil non-Enfants lève la restriction. 3 tests Rust, 4 tests Swift.
+
 **Non réalisé**
 - **Favoris des catégories adultes** : ils restent visibles dans les favoris du profil qui les a choisis.
 - **Indicateur `is_adult` des catégories Xtream** : non stocké, seule la détection par nom est utilisée.
-- **Profil Enfants en liste blanche** (« seules les catégories autorisées explicitement ») : le masquage fonctionne par liste noire.
 - Synchronisation iCloud des profils (`uuid`). Un test borne à 1,5 s une page de catalogue et les facettes sur 100 000 chaînes avec la règle adulte (mesure fine non faite).

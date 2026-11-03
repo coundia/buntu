@@ -17,7 +17,7 @@ private final class FakeSubtitleBackend: SubtitleBackend, @unchecked Sendable {
         queries.append((query, apiKey))
         if let searchError { throw searchError }
         if let resultsByKind {
-            let kind = query.moviehash != nil ? "hash" : (query.imdbId != nil ? "imdb" : "title")
+            let kind = query.moviehash != nil ? "hash" : (query.imdbId != nil ? "imdb" : (query.parentImdbId != nil ? "series" : "title"))
             return resultsByKind[kind] ?? []
         }
         return results
@@ -102,9 +102,9 @@ final class SubtitleSearchTests: XCTestCase {
         XCTAssertEqual(model(FakeSubtitleBackend()).languages, "fr,en")
     }
 
-    private func movieModel(_ backend: FakeSubtitleBackend, imdb: String? = "tt1234567", season: UInt32? = nil, episode: UInt32? = nil) -> SubtitleSearchModel {
+    private func movieModel(_ backend: FakeSubtitleBackend, imdb: String? = "tt1234567", seriesImdb: String? = nil, season: UInt32? = nil, episode: UInt32? = nil) -> SubtitleSearchModel {
         SubtitleSearchModel(
-            backend: backend, mediaTitle: "FR - Matrix (1999) [1080p]", itemId: 42, imdbId: imdb,
+            backend: backend, mediaTitle: "FR - Matrix (1999) [1080p]", itemId: 42, imdbId: imdb, seriesImdbId: seriesImdb,
             seasonNumber: season, episodeNumber: episode,
             keychain: keychain, defaults: defaults, cacheDirectory: directory
         )
@@ -155,6 +155,29 @@ final class SubtitleSearchTests: XCTestCase {
         XCTAssertEqual(query.seasonNumber, 2)
         XCTAssertEqual(query.episodeNumber, 7)
         XCTAssertNil(query.imdbId, "an episode's own id is not sent as the series id")
+    }
+
+    func testAnEpisodeIsMatchedThroughItsSeriesBeforeTheTitle() async throws {
+        try keychain.saveSecret("k", forKey: OpenSubtitlesCredentials.keychainKey)
+        let backend = FakeSubtitleBackend()
+        backend.resultsByKind = ["series": [result(8)], "title": [result(9)]]
+        var search = movieModel(backend, imdb: nil, seriesImdb: "tt0944947", season: 2, episode: 7)
+        await search.search()
+        guard case .results(let rows, let match) = search.state else { return XCTFail("\(search.state)") }
+        XCTAssertEqual(rows.map(\.fileId), [8])
+        XCTAssertEqual(match, .series)
+        let query = try XCTUnwrap(backend.queries.first?.0)
+        XCTAssertEqual(query.parentImdbId, "tt0944947")
+        XCTAssertEqual(query.seasonNumber, 2)
+        XCTAssertEqual(query.episodeNumber, 7)
+        XCTAssertNil(query.imdbId)
+
+        // Without a known series id (not enriched yet) it falls back to the title.
+        backend.resultsByKind = ["title": [result(9)]]
+        search = movieModel(backend, imdb: nil, seriesImdb: nil, season: 2, episode: 7)
+        await search.search()
+        guard case .results(_, let fallback) = search.state else { return XCTFail() }
+        XCTAssertEqual(fallback, .title)
     }
 
     func testNoResultAndErrorsAreExplained() async throws {
