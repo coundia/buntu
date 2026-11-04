@@ -41,6 +41,11 @@ public final class AppState {
     /// Profiles (Principal, Enfants…) shared by the shell and the profile screens.
     private(set) var profiles: ProfilesModel?
     @ObservationIgnored private let recorder = DeferredProgressRecorder()
+    /// Keeps downloads and playback inside the subscription's connection limit (PRD: one connection by default).
+    @ObservationIgnored private(set) lazy var downloadCoordinator = DownloadConnectionCoordinator(
+        backendProvider: { [weak self] in self?.engine },
+        sourcesProvider: { [weak self] in self?.sources ?? [] }
+    )
 
     /// The app's state: opens the engine on the default database.
     public convenience init() {
@@ -74,6 +79,8 @@ public final class AppState {
         }
         player.onMediaChanged = { [weak self] media in
             self?.upNext.onMediaChanged(media)
+            guard let coordinator = self?.downloadCoordinator else { return }
+            Task { await coordinator.playbackChanged(media: media) }
         }
         player.onProgressUpdate = { [weak self] pos, dur in
             self?.upNext.onPlaybackProgress(positionMs: pos, durationMs: dur)
@@ -92,6 +99,7 @@ public final class AppState {
     private func attach(_ engine: CndEngine) {
         recorder.attach(engine)
         self.engine = engine
+        ConnectionBudget.enforce(on: engine)
         player.autoFailoverEnabled = UserDefaults.standard.object(forKey: "autoFailoverEnabled") as? Bool ?? true
         if let raw = UserDefaults.standard.string(forKey: "timeshiftDuration"),
            let duration = TimeshiftDuration(rawValue: raw) {

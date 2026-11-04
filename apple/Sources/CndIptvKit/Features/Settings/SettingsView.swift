@@ -238,20 +238,29 @@ struct SettingsView: View {
     private var downloadsSection: some View {
         Section("Téléchargements") {
             #if os(tvOS)
+            LabeledContent("Connexions de mon abonnement", value: "\(model.connectionLimit)")
             LabeledContent("Segments par fichier", value: "\(model.segmentsPerFile)")
             LabeledContent("Taille d'une partie", value: "\(model.partSizeMB) Mo")
             LabeledContent("Fichiers simultanés", value: "\(model.maxActiveFiles)")
             #else
-            Stepper(value: $model.segmentsPerFile, in: SettingsModel.segmentRange) {
+            Stepper(value: $model.connectionLimit, in: ConnectionBudget.range) {
+                LabeledContent("Connexions de mon abonnement", value: "\(model.connectionLimit)")
+            }
+            Stepper(value: $model.segmentsPerFile, in: 1...model.budget.downloadConnections) {
                 LabeledContent("Segments par fichier", value: "\(model.segmentsPerFile)")
             }
             Stepper(value: $model.partSizeMB, in: SettingsModel.partSizeRangeMB) {
                 LabeledContent("Taille d'une partie", value: "\(model.partSizeMB) Mo")
             }
-            Stepper(value: $model.maxActiveFiles, in: SettingsModel.activeFilesRange) {
+            Stepper(value: $model.maxActiveFiles, in: 1...model.budget.downloadConnections) {
                 LabeledContent("Fichiers simultanés", value: "\(model.maxActiveFiles)")
             }
             #endif
+            Text(model.budget.pausesDuringPlayback
+                 ? "Avec une seule connexion, un téléchargement ne peut pas tourner pendant une lecture : il est mis en pause puis repris à la fin. Si votre abonnement en autorise plusieurs, indiquez-le ci-dessus."
+                 : "Une connexion reste libre pour regarder : les téléchargements en utilisent au plus \(model.budget.downloadConnections) ensemble.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 6) {
                 LabeledContent("Dossier") {
                     #if os(tvOS)

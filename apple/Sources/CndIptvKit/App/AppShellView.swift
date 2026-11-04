@@ -130,7 +130,8 @@ private struct LoadedShellView: View {
             playMedia: { [weak state] media in state?.player.open(media) },
             playQueue: { [weak state] medias, index in state?.player.openQueue(medias, startIndex: index) },
             openDownloads: { UserDefaults.standard.set(AppTab.downloads.rawValue, forKey: "shell.selectedTab") },
-            onFavoriteChanged: { [weak state] in state?.reloadSnapshot(notifyScreens: false) }
+            onFavoriteChanged: { [weak state] in state?.reloadSnapshot(notifyScreens: false) },
+            connections: state.downloadCoordinator
         ))
         _downloadsModel = State(initialValue: DownloadsModel(backend: engine))
         _recordingsModel = State(initialValue: RecordingsModel(backend: engine))
