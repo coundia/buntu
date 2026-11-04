@@ -83,3 +83,4 @@ public enum FolderAccess {
         return exists && isDir.boolValue
     }
 }
+
