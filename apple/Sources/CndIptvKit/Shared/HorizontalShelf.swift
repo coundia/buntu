@@ -22,12 +22,10 @@ struct HorizontalShelf<Item, Card: View>: View {
                 }
                 #endif
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: alignment, spacing: spacing) {
-                        ForEach(items.indices, id: \.self) { position in
-                            card(items[position]).id(position)
-                        }
-                    }
+                    row
+                        .padding(.vertical, 2)
                 }
+                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
                 #if os(macOS)
                 arrow("chevron.right", "Suivants") {
                     index = min(max(0, items.count - 1), index + Self.step)
@@ -35,6 +33,27 @@ struct HorizontalShelf<Item, Card: View>: View {
                 }
                 #endif
             }
+        }
+    }
+
+    /// A shelf holds a few dozen cards: an eager row keeps every one of them alive. A lazy row inside
+    /// two nested scroll views stops realising cards on a narrow screen, so some favourites vanish
+    /// until they are scrolled to; only a very long shelf is left lazy.
+    static var eagerLimit: Int { 120 }
+
+    @ViewBuilder
+    private var row: some View {
+        if items.count <= Self.eagerLimit {
+            HStack(alignment: alignment, spacing: spacing) { cards }
+        } else {
+            LazyHStack(alignment: alignment, spacing: spacing) { cards }
+        }
+    }
+
+    @ViewBuilder
+    private var cards: some View {
+        ForEach(items.indices, id: \.self) { position in
+            card(items[position]).id(position)
         }
     }
 
