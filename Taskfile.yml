@@ -13,6 +13,22 @@ tasks:
     cmds:
       - task --list
 
+  # ---------------------------------------------------------------- keys
+  keys:
+    desc: Regenerate the default API keys from .env / the environment (PRD 28); needed once before swift build or test
+    cmds:
+      - ./scripts/gen-default-keys.sh
+
+  keys:test:
+    desc: Tests of the default API keys generator
+    cmds:
+      - ./scripts/test-gen-default-keys.sh
+
+  secrets:check:
+    desc: Fails if .env is tracked or a known API key shape is in a versioned file
+    cmds:
+      - ./scripts/check-secrets.sh
+
   # ---------------------------------------------------------------- run
   run:
     desc: Build (debug) and launch the app on macOS
@@ -125,6 +141,7 @@ tasks:
   swift:test:
     desc: App unit tests
     dir: "{{.APPLE_DIR}}"
+    deps: [keys]
     cmds:
       - swift test
 
@@ -137,6 +154,7 @@ tasks:
   xcode:generate:
     desc: Regenerate the Xcode project from apple/project.yml using XcodeGen
     dir: "{{.APPLE_DIR}}"
+    deps: [keys]
     cmds:
       - xcodegen generate
 
@@ -218,6 +236,8 @@ tasks:
   check:
     desc: Full release-readiness validation (what the last PRD requires)
     cmds:
+      - task: secrets:check
+      - task: keys:test
       - task: core:lint
       - task: core:test:release
       - task: xcframework

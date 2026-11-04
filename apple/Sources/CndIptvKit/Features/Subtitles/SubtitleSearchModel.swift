@@ -23,10 +23,9 @@ enum OpenSubtitlesCredentials {
     static let legacyDefaultsKey = "openSubtitlesApiKey"
     static let languagesDefaultsKey = "openSubtitlesLanguages"
 
+    /// The user's own key, else the default one of this build (`ApiKeyResolver`).
     static func apiKey(keychain: KeychainStore = .shared) -> String? {
-        guard let key = try? keychain.readSecret(forKey: keychainKey) else { return nil }
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        ApiKeyResolver(keychain: keychain).keyForCall(.openSubtitles)
     }
 
     /// The optional account (lifts the daily download quota). Both parts or nothing.

@@ -47,6 +47,8 @@ if [[ "${REBUILD_CORE}" -eq 1 || ! -d "${XCFRAMEWORK}" ]]; then
   "${SCRIPT_DIR}/build-xcframework.sh"
 fi
 
+"${SCRIPT_DIR}/gen-default-keys.sh" --config "${CONFIG}"
+
 echo "==> Building ${PRODUCT} (${CONFIG})"
 (cd "${APPLE_DIR}" && swift build -c "${CONFIG}" --product "${PRODUCT}" --scratch-path "${SCRATCH_DIR}")
 BIN_DIR="$(cd "${APPLE_DIR}" && swift build -c "${CONFIG}" --scratch-path "${SCRATCH_DIR}" --show-bin-path)"
