@@ -99,7 +99,7 @@ if [[ ! -d "${SOURCE_BUNDLE}" ]]; then
 fi
 
 # 3. Fermer l'application si elle est en cours d'exécution
-BUNDLE_ID="com.cnd.iptv.native"
+BUNDLE_ID="com.pcoundia.buntu.macos"
 if pgrep -f "${TARGET_APP}/Contents/MacOS" >/dev/null 2>&1 || pgrep -f "CndIptvApp" >/dev/null 2>&1; then
   echo "==> Fermeture de l'instance en cours..."
   osascript -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 || true

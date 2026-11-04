@@ -36,12 +36,12 @@
     <key>NSLocalNetworkUsageDescription</key>
     <string>Requis pour communiquer avec les serveurs IA locaux et découvrir les flux IPTV locaux.</string>
     <key>CndCloudKitContainerIdentifier</key>
-    <string>iCloud.com.cnd.iptv</string>
+    <string>iCloud.com.pcoundia.buntu</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
             <key>CFBundleURLName</key>
-            <string>com.cnd.iptv.share</string>
+            <string>com.pcoundia.buntu.share</string>
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>cndiptv</string>

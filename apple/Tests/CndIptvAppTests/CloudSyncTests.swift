@@ -78,7 +78,7 @@ final class SyncRecordMapperTests: XCTestCase {
 // MARK: - Availability (graceful degradation)
 
 final class CloudKitAvailabilityTests: XCTestCase {
-    private func checker(container: String? = "iCloud.com.cnd.iptv", entitlement: Bool = true, account: Bool = true) -> CloudKitAvailabilityChecker {
+    private func checker(container: String? = "iCloud.com.pcoundia.buntu", entitlement: Bool = true, account: Bool = true) -> CloudKitAvailabilityChecker {
         CloudKitAvailabilityChecker(
             infoValue: { $0 == CloudKitAvailabilityChecker.containerInfoKey ? container : nil },
             hasCloudKitEntitlement: { entitlement },
@@ -91,7 +91,7 @@ final class CloudKitAvailabilityTests: XCTestCase {
             guard case .localOnly(let reason) = sut.current() else { return XCTFail("expected local only") }
             XCTAssertFalse(reason.isEmpty)
         }
-        XCTAssertEqual(checker().current(), .available(containerID: "iCloud.com.cnd.iptv"))
+        XCTAssertEqual(checker().current(), .available(containerID: "iCloud.com.pcoundia.buntu"))
     }
 
     func testEntitlementIsNotEvenConsultedWithoutAContainer() {
