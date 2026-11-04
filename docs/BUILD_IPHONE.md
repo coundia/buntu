@@ -66,7 +66,7 @@ Les fichiers de build vont dans `build/DerivedData-device/` (ignoré par git).
   DEVELOPMENT_TEAM=ABCDE12345 task run:iphone
   ```
 
-- L'identifiant de l'app iOS est `com.papacoundia.cndiptv` (voir `apple/project.yml`). Il doit être unique pour votre équipe : changez-le si Xcode répond « Bundle identifier is not available ».
+- L'identifiant de l'app iOS est `com.pcoundia.buntu` (voir `apple/project.yml`). Il doit être unique pour votre équipe : changez-le si Xcode répond « Bundle identifier is not available ».
 - Un compte gratuit signe pour 7 jours : passé ce délai, relancez `task run:iphone` pour réinstaller.
 - L'option `-allowProvisioningUpdates` laisse Xcode créer ou renouveler le profil de provisionnement tout seul.
 
@@ -113,7 +113,7 @@ xcrun devicectl device copy from --device "$UDID" --domain-type systemCrashLogs 
 ### Lancer en suivant la console
 
 ```bash
-xcrun devicectl device process launch --device "$UDID" --terminate-existing --console com.papacoundia.cndiptv
+xcrun devicectl device process launch --device "$UDID" --terminate-existing --console com.pcoundia.buntu
 ```
 
 ## 7. Commandes manuelles (sans le script)
@@ -126,7 +126,7 @@ xcodebuild -project CndIPTV.xcodeproj -scheme CndIPTV-iOS -configuration Debug \
   -allowProvisioningUpdates DEVELOPMENT_TEAM=<TEAM> build
 xcrun devicectl device install app --device <UDID> \
   ../build/DerivedData-device/Build/Products/Debug-iphoneos/CndIPTV.app
-xcrun devicectl device process launch --device <UDID> --terminate-existing com.papacoundia.cndiptv
+xcrun devicectl device process launch --device <UDID> --terminate-existing com.pcoundia.buntu
 ```
 
 ## 8. Simulateur iOS
