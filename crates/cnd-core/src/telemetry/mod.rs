@@ -278,6 +278,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_redact_url_hides_service_api_keys() {
+        // OMDb (`apikey`), Gemini (`key`) and the other spellings a default key may travel under (PRD 28).
+        for (raw, secret) in [
+            ("https://www.omdbapi.com/?apikey=SECRETKEY99&t=Alien", "SECRETKEY99"),
+            ("https://generativelanguage.googleapis.com/v1beta/models/m:generateContent?key=AIzaSECRET", "AIzaSECRET"),
+            ("https://api.example.com/v1?api_key=SECRETKEY99", "SECRETKEY99"),
+            ("https://api.example.com/v1?api-key=SECRETKEY99", "SECRETKEY99"),
+            ("https://api.themoviedb.org/3/movie/1?api_key=SECRETKEY99&language=fr", "SECRETKEY99"),
+        ] {
+            let redacted = redact_url(raw);
+            assert!(!redacted.contains(secret), "{redacted}");
+            assert!(redacted.contains("***"), "{redacted}");
+        }
+        let text = redact_text("GET https://www.omdbapi.com/?apikey=SECRETKEY99&t=Alien failed");
+        assert!(!text.contains("SECRETKEY99"), "{text}");
+    }
+
+    #[test]
     fn test_redact_url_query_params() {
         let raw = "http://srv:8080/get.php?username=bob&password=secret123&apikey=abcd";
         let redacted = redact_url(raw);

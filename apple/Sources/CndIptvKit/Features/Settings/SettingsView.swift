@@ -194,6 +194,7 @@ struct SettingsView: View {
             Text("Utilisé pour rechercher et télécharger les sous-titres manquants via api.opensubtitles.com. Un compte lève la limite de téléchargements par jour. La recherche automatique ne concerne ni le direct ni les flux sans clé API.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            bundledKeyNotice(.openSubtitles, userKey: model.openSubtitlesKey)
         }
     }
 
@@ -284,7 +285,10 @@ struct SettingsView: View {
         } header: {
             Text("Métadonnées OMDb")
         } footer: {
-            Text("Stockée dans le Trousseau, jamais dans la base de données. Utilisée pour enrichir les fiches films et séries.")
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Stockée dans le Trousseau, jamais dans la base de données. Utilisée pour enrichir les fiches films et séries.")
+                bundledKeyNotice(.omdb, userKey: model.omdbKey)
+            }
         }
     }
 
@@ -343,6 +347,10 @@ struct SettingsView: View {
                         .font(.callout)
                         .foregroundStyle(status.ok ? .green : .red)
                     }
+                }
+                if ai.usesBundledKey {
+                    Label("Clé intégrée à l'application utilisée (\(BundledAiQuota.dailyLimit) requêtes par jour). Saisissez la vôtre pour ne plus partager ce quota.", systemImage: "key.fill")
+                        .font(.callout).foregroundStyle(.secondary)
                 }
                 if let blocker = ai.blocker {
                     Label("\(blocker) En attendant, la résolution reste locale.", systemImage: "info.circle")
@@ -437,6 +445,18 @@ struct SettingsView: View {
         }
     }
 
+    /// "Clé intégrée utilisée" under a key field that is empty while the build carries a default key.
+    @ViewBuilder
+    private func bundledKeyNotice(_ service: ApiService, userKey: String) -> some View {
+        let resolver = ApiKeyResolver.shared
+        if resolver.hasBundledKey(service),
+           userKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Label("Clé intégrée à l'application utilisée. Saisissez la vôtre pour ne plus partager le quota.", systemImage: "key.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private var aboutSection: some View {
         Section("À propos") {
             HStack(spacing: 12) {
@@ -448,6 +468,11 @@ struct SettingsView: View {
             }
             LabeledContent("Application", value: SettingsModel.appVersion)
             LabeledContent("Moteur Rust", value: model.engineVersion)
+            LabeledContent("Clés intégrées à ce build") {
+                let services = ApiService.allCases.filter { ApiKeyResolver.shared.hasBundledKey($0) }
+                Text(services.isEmpty ? "aucune" : services.map(\.displayName).joined(separator: ", "))
+                    .multilineTextAlignment(.trailing)
+            }
             if let stats {
                 LabeledContent("Base de données", value: ByteCountFormatter.string(fromByteCount: Int64(stats.dbSizeBytes), countStyle: .file))
                 LabeledContent("Chaînes / Films / Séries", value: "\(stats.totalLiveChannels) / \(stats.totalMovies) / \(stats.totalSeries)")

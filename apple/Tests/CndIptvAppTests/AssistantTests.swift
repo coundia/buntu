@@ -66,7 +66,7 @@ final class AiProviderSettingsTests: XCTestCase {
         for choice in AiChoice.allCases { if let key = choice.keychainKey { try? keychain.deleteSecret(forKey: key) } }
     }
 
-    private func make() -> AiProviderSettings { AiProviderSettings(defaults: defaults, keychain: keychain) }
+    private func make() -> AiProviderSettings { AiProviderSettings(defaults: defaults, keychain: keychain, bundledKeys: DefaultApiKeys()) }
 
     func testDefaultsToLocalResolutionWithTheAssistantEnabled() {
         let settings = make()
@@ -202,7 +202,7 @@ final class AssistantModelTests: XCTestCase {
         suite = "cnd.assistant.tests.\(UUID())"
         defaults = UserDefaults(suiteName: suite)
         backend = FakeAssistantBackend()
-        settings = AiProviderSettings(defaults: defaults, keychain: KeychainStore(service: "com.cnd.iptv.tests.assistant.\(UUID().uuidString)"))
+        settings = AiProviderSettings(defaults: defaults, keychain: KeychainStore(service: "com.cnd.iptv.tests.assistant.\(UUID().uuidString)"), bundledKeys: DefaultApiKeys())
         model = AssistantModel(backend: backend, settings: settings, defaults: defaults, suggestionDelay: .milliseconds(20))
         played = []; guides = []; searches = []; zaps = []; dismissals = 0
         model.actions = AssistantActions(
@@ -432,7 +432,7 @@ final class AssistantWithEngineTests: XCTestCase {
     }
 
     private func make() -> (AssistantModel, Recorder) {
-        let settings = AiProviderSettings(defaults: defaults, keychain: KeychainStore(service: "com.cnd.iptv.tests.assistant.\(UUID().uuidString)"))
+        let settings = AiProviderSettings(defaults: defaults, keychain: KeychainStore(service: "com.cnd.iptv.tests.assistant.\(UUID().uuidString)"), bundledKeys: DefaultApiKeys())
         let model = AssistantModel(backend: engine, settings: settings, defaults: defaults, suggestionDelay: .milliseconds(20))
         let recorder = Recorder()
         model.actions = AssistantActions(

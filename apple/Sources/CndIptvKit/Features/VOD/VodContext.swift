@@ -13,6 +13,7 @@ final class VodContext {
     let downloadBase: () -> URL
     let openDownloads: () -> Void
     let onFavoriteChanged: () -> Void
+    let aiConfigProvider: (() -> AiProviderConfig)?
     /// The movie or series shown in the side panel (macOS), under the player. Never a separate page there.
     var selection: VodRoute?
     private let playMedia: (PlayableMedia) -> Void
@@ -26,7 +27,8 @@ final class VodContext {
         playMedia: @escaping (PlayableMedia) -> Void,
         playQueue: @escaping ([PlayableMedia], Int) -> Void,
         openDownloads: @escaping () -> Void = {},
-        onFavoriteChanged: @escaping () -> Void = {}
+        onFavoriteChanged: @escaping () -> Void = {},
+        aiConfigProvider: (() -> AiProviderConfig)? = nil
     ) {
         self.engine = engine
         self.keychain = keychain
@@ -36,13 +38,13 @@ final class VodContext {
         self.playQueue = playQueue
         self.openDownloads = openDownloads
         self.onFavoriteChanged = onFavoriteChanged
+        self.aiConfigProvider = aiConfigProvider
     }
 
     /// Reads the key on demand (never cached): changing it in Settings takes effect immediately.
+    /// The user's own key, else the default one of this build (`ApiKeyResolver`).
     func omdbKey() -> String? {
-        guard let key = try? keychain.readSecret(forKey: KeychainStore.omdbApiKeyRef),
-              !key.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
-        return key
+        ApiKeyResolver(keychain: keychain).keyForCall(.omdb)
     }
 
     // MARK: Playback

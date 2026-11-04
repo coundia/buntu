@@ -51,6 +51,19 @@ La première compilation du cœur Rust est longue ; les suivantes sont incrémen
 - [go-task](https://taskfile.dev) (`brew install go-task`)
 - `libmpv` (optionnel) : sans elle, seuls les formats lus par `AVPlayer` fonctionnent.
 
+### Clés d'API par défaut (`.env`)
+
+Pour que les affiches OMDb, les sous-titres et l'assistant IA marchent dès le premier lancement, renseignez des clés par défaut dans un `.env` à la racine (ignoré par git) :
+
+```bash
+cp .env.example .env        # puis remplissez les clés que vous avez
+task keys                   # génère les clés masquées intégrées au build (fait aussi par task run)
+```
+
+La clé saisie par l'utilisateur dans Réglages est toujours prioritaire. Les clés IA ne sont intégrées qu'aux builds Debug, sauf `CND_EMBED_AI_KEYS_IN_RELEASE=1` ; toute clé intégrée à une app distribuée peut être extraite, n'y mettez que des clés gratuites et révocables (ou une clé IA plafonnée). Détails : [`PRD/28_DEFAULT_API_KEYS_DOTENV.md`](PRD/28_DEFAULT_API_KEYS_DOTENV.md).
+
+> Après un `git clone`, lancez `task keys` une fois : `swift build` et `swift test` ont besoin du fichier généré, même vide.
+
 ## Tâches (`task`)
 
 `task` seul liste toutes les tâches. Les principales :
@@ -68,7 +81,8 @@ La première compilation du cœur Rust est longue ; les suivantes sont incrémen
 | `task lint` | Clippy (`-D warnings`) |
 | `task xcframework` | Régénère l'XCFramework et les bindings Swift (**après toute modification de l'API `cnd-core`**) |
 | `task xcode:macos` / `task xcode:ios` | `xcodebuild` (`CONFIG=Release` pour la release) |
-| `task check` | Validation complète : clippy, tests release, XCFramework, tests Swift, builds Release macOS et iOS |
+| `task keys` | Régénère les clés d'API par défaut depuis `.env` (`task keys:test`, `task secrets:check`) |
+| `task check` | Validation complète : contrôle des secrets, clippy, tests release, XCFramework, tests Swift, builds Release macOS et iOS |
 | `task icon` | Régénère `assets/AppIcon.icns` depuis le logo SwiftUI |
 | `task cli -- download <url>` | CLI Rust de diagnostic |
 | `task clean` / `task clean:core` | Supprime `build/` / `target/` (avec confirmation) |

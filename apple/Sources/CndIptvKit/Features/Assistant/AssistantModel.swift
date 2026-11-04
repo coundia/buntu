@@ -135,7 +135,7 @@ final class AssistantModel {
             perform(resolved)
         } catch {
             guard gen == generation else { return }
-            errorMessage = userMessage(for: error)
+            errorMessage = settings.explaining(userMessage(for: error))
         }
         if gen == generation { isResolving = false }
     }
@@ -190,7 +190,7 @@ final class AssistantModel {
         do {
             return try await backend.aiTestProvider(config: settings.testConfig())
         } catch {
-            return AiProviderStatus(ok: false, latencyMs: 0, model: "", message: userMessage(for: error))
+            return AiProviderStatus(ok: false, latencyMs: 0, model: "", message: settings.explaining(userMessage(for: error)))
         }
     }
 

@@ -39,6 +39,26 @@ enum AiChoice: String, CaseIterable, Identifiable {
         isRemote ? "cnd.ai.\(rawValue).apikey" : nil
     }
 
+    /// The service whose key (user's or bundled) this provider uses.
+    var apiService: ApiService? {
+        switch self {
+        case .gemini: return .gemini
+        case .openAiCompatible: return .openAI
+        case .anthropic: return .anthropic
+        case .disabled, .localOnly: return nil
+        }
+    }
+
+    /// `.env`'s `CND_DEFAULT_AI_PROVIDER`.
+    init?(defaultProvider name: String?) {
+        switch name?.lowercased() {
+        case "gemini": self = .gemini
+        case "openai": self = .openAiCompatible
+        case "anthropic": self = .anthropic
+        default: return nil
+        }
+    }
+
     var baseURLPlaceholder: String {
         switch self {
         case .openAiCompatible: return "https://api.openai.com/v1 ou http://localhost:11434/v1"
@@ -60,6 +80,9 @@ final class AiProviderSettings {
 
     private let defaults: UserDefaults
     private let keychain: KeychainStore
+    private let resolver: ApiKeyResolver
+    private let bundled: DefaultApiKeys
+    private let quota: BundledAiQuota
 
     var choice: AiChoice {
         didSet {
@@ -76,10 +99,21 @@ final class AiProviderSettings {
 
     @ObservationIgnored private var isLoading = false
 
-    init(defaults: UserDefaults = .standard, keychain: KeychainStore = .shared) {
+    init(
+        defaults: UserDefaults = .standard,
+        keychain: KeychainStore = .shared,
+        bundledKeys: DefaultApiKeys = .bundled
+    ) {
         self.defaults = defaults
         self.keychain = keychain
-        choice = defaults.string(forKey: Self.choiceKey).flatMap(AiChoice.init(rawValue:)) ?? .localOnly
+        self.bundled = bundledKeys
+        self.resolver = ApiKeyResolver(keychain: keychain, defaults: bundledKeys)
+        self.quota = BundledAiQuota(defaults: defaults)
+        // The provider `.env` proposes is only a starting point: the user's choice always wins, and a
+        // remote provider still waits for the consent below.
+        choice = defaults.string(forKey: Self.choiceKey).flatMap(AiChoice.init(rawValue:))
+            ?? AiChoice(defaultProvider: bundledKeys.defaultAiProvider)
+            ?? .localOnly
         loadFields()
     }
 
@@ -88,11 +122,12 @@ final class AiProviderSettings {
     private func loadFields() {
         isLoading = true
         defer { isLoading = false }
-        model = defaults.string(forKey: key("model")) ?? ""
-        baseURL = defaults.string(forKey: key("baseURL")) ?? ""
+        model = defaults.string(forKey: key("model")) ?? (choice == .openAiCompatible ? bundled.openAIModel : nil) ?? ""
+        baseURL = defaults.string(forKey: key("baseURL")) ?? (choice == .openAiCompatible ? bundled.openAIBaseURL : nil) ?? ""
         consent = defaults.bool(forKey: key("consent"))
-        if let keychainKey = choice.keychainKey {
-            apiKey = (try? keychain.readSecret(forKey: keychainKey)) ?? ""
+        if let service = choice.apiService {
+            // Only the user's own key is ever shown here; the bundled one never reaches the field.
+            apiKey = resolver.userKey(service) ?? ""
         } else {
             apiKey = ""
         }
@@ -121,17 +156,47 @@ final class AiProviderSettings {
         return host == "localhost" || host == "127.0.0.1" || host == "::1" || host.hasSuffix(".local")
     }
 
-    var hasKey: Bool { !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var hasUserKey: Bool { !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// A key is available: the user's own, or the one baked into this build.
+    var hasKey: Bool { hasUserKey || usesBundledKey }
+
+    /// The provider runs on the default key of this build (the user has not entered one).
+    var usesBundledKey: Bool {
+        guard !hasUserKey, let service = choice.apiService else { return false }
+        return bundled.has(service)
+    }
+
+    /// The day's budget of the bundled key is spent; the user's own key has none.
+    var bundledQuotaExhausted: Bool { usesBundledKey && quota.isExhausted }
+
+    /// What the call is going to use: the typed key, else the bundled one.
+    private func effectiveKey() -> String? {
+        if hasUserKey { return apiKey.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard let service = choice.apiService else { return nil }
+        return resolver.keyForCall(service)
+    }
 
     /// Why a remote provider would not be used right now, or `nil` when it is ready.
     var blocker: String? {
         guard choice.isRemote else { return nil }
         if choice.requiresKey && !hasKey { return "Saisissez une clé API." }
+        if bundledQuotaExhausted {
+            return "La limite quotidienne de la clé intégrée (\(BundledAiQuota.dailyLimit) requêtes) est atteinte. Saisissez votre propre clé."
+        }
         if choice == .openAiCompatible && baseURL.trimmingCharacters(in: .whitespaces).isEmpty && !hasKey {
             return "Saisissez l'adresse du serveur (ou une clé pour l'API officielle)."
         }
         if !consent && !endpointIsLocal { return "Cochez le consentement pour envoyer vos commandes à ce fournisseur." }
         return nil
+    }
+
+    /// With the bundled key, a refused key or an exhausted quota points the user to their own key.
+    func explaining(_ message: String) -> String {
+        guard usesBundledKey else { return message }
+        let lower = message.lowercased()
+        guard lower.contains("clé refusée") || lower.contains("quota") || lower.contains("limite") else { return message }
+        return "\(message). Saisissez votre propre clé dans Réglages > Assistant IA."
     }
 
     var isRemoteReady: Bool { choice.isRemote && blocker == nil }
@@ -142,12 +207,17 @@ final class AiProviderSettings {
         guard isRemoteReady else {
             return AiProviderConfig(kind: .localOnly, model: "", baseUrl: nil, apiKey: nil, timeoutMs: Self.timeoutMs)
         }
+        // The default key has a daily budget; a request past it degrades to the local resolution.
+        if usesBundledKey, !quota.consume() {
+            AppLog.shared.warn("KEYS", "Limite quotidienne de la clé par défaut atteinte (\(BundledAiQuota.dailyLimit))")
+            return AiProviderConfig(kind: .localOnly, model: "", baseUrl: nil, apiKey: nil, timeoutMs: Self.timeoutMs)
+        }
         let trimmedURL = baseURL.trimmingCharacters(in: .whitespaces)
         return AiProviderConfig(
             kind: choice.kind,
             model: model.trimmingCharacters(in: .whitespaces),
             baseUrl: trimmedURL.isEmpty ? nil : trimmedURL,
-            apiKey: hasKey ? apiKey.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
+            apiKey: effectiveKey(),
             timeoutMs: Self.timeoutMs
         )
     }
@@ -161,7 +231,7 @@ final class AiProviderSettings {
             kind: choice.kind,
             model: model.trimmingCharacters(in: .whitespaces),
             baseUrl: trimmedURL.isEmpty ? nil : trimmedURL,
-            apiKey: hasKey ? apiKey.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
+            apiKey: effectiveKey(),
             timeoutMs: Self.timeoutMs
         )
     }
