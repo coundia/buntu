@@ -8,3 +8,9 @@ DerivedData/
 
 /build/
 .swiftpm/
+
+# Default API keys (PRD 28): never versioned. Only .env.example is.
+.env
+.env.*
+!.env.example
+apple/Sources/CndIptvKit/Generated/

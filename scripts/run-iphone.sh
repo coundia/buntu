@@ -83,6 +83,8 @@ if [[ "${REBUILD_CORE}" -eq 1 ]]; then
   "${ROOT_DIR}/scripts/build-xcframework.sh"
 fi
 
+"${SCRIPT_DIR}/gen-default-keys.sh" --config "${CONFIG}"
+
 # The Xcode project is generated from apple/project.yml and not tracked: refresh it so new files are seen.
 if command -v xcodegen >/dev/null 2>&1; then
   echo "==> Generating the Xcode project"
