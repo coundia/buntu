@@ -620,11 +620,29 @@ impl DownloadManager {
 
         let segment_token = token.child_token();
         let mut set: JoinSet<Result<(), worker::SegmentError>> = JoinSet::new();
+        // The parts of a resumed download keep the layout it was created with (4 segments, say), but never
+        // more of them than the current setting run at once: a provider that allows one connection answers
+        // 502 to the others, which failed the whole download.
+        let gate = Arc::new(Semaphore::new(segments as usize));
+        let pending = parts
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !(size_known && counters[*i].load(Ordering::Acquire) >= lens[*i]))
+            .count();
+        if pending > segments as usize {
+            self.log(
+                task_id,
+                "info",
+                format!("{pending} parts to finish, {segments} at a time"),
+            );
+        }
         for (i, part) in parts.iter().enumerate() {
             if size_known && counters[i].load(Ordering::Acquire) >= lens[i] {
                 continue;
             }
-            set.spawn(run_segment(SegmentSpec {
+            let gate = Arc::clone(&gate);
+            let gate_token = segment_token.clone();
+            let spec = SegmentSpec {
                 http_pool: Arc::clone(&self.http_pool),
                 url: probe.final_url.clone(),
                 user_agent: row.user_agent.clone(),
@@ -636,7 +654,18 @@ impl DownloadManager {
                 ranged,
                 progress: Arc::clone(&counters[i]),
                 token: segment_token.clone(),
-            }));
+            };
+            set.spawn(async move {
+                let _permit = tokio::select! {
+                    biased;
+                    _ = gate_token.cancelled() => return Ok(()),
+                    permit = gate.acquire_owned() => match permit {
+                        Ok(permit) => permit,
+                        Err(_) => return Ok(()),
+                    },
+                };
+                run_segment(spec).await
+            });
         }
 
         let sum = |c: &[Arc<AtomicU64>]| c.iter().map(|a| a.load(Ordering::Acquire)).sum::<u64>();
@@ -952,6 +981,58 @@ mod tests {
                 "missing resume request {expected}; saw {seen:?}"
             );
         }
+
+        let written = std::fs::read(&done.save_path).expect("read result");
+        assert_eq!(blake3::hash(&written), blake3::hash(&payload));
+
+        server.shutdown();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn test_resumed_download_never_opens_more_connections_than_the_setting() {
+        let payload = Arc::new(random_payload(24 * 1024 * 1024, 11));
+        let server = spawn_test_server(
+            Arc::clone(&payload),
+            ServerConfig {
+                chunk_size: 32 * 1024,
+                chunk_delay_ms: 8,
+                ..ServerConfig::default()
+            },
+        )
+        .await;
+        let dir = scratch_dir("resume-one-connection");
+        let db_path = dir.join("cnd.sqlite").to_string_lossy().into_owned();
+        let save_dir = dir.join("out");
+
+        // Created with 4 segments (what an install made before the connection limit saved)...
+        let engine = CndEngine::new(db_path.clone()).expect("engine");
+        set_segments(&engine, 4);
+        let mut request = req(server.url("/vod/film.mkv"), &save_dir, None);
+        request.auto_start = true;
+        let id = engine.enqueue_download(request).await.expect("enqueue");
+        let third = payload.len() as u64 / 3;
+        for _ in 0..2_000 {
+            let t = engine.list_downloads(None).expect("list");
+            if t[0].downloaded_bytes >= third {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        engine.pause_download(id).await.expect("pause");
+        drop(engine);
+
+        // ...resumed with one: the four parts finish one after another.
+        let engine = CndEngine::new(db_path).expect("reopen engine");
+        set_segments(&engine, 1);
+        // Let the transfers of the first engine end before counting.
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        server.reset_peak();
+        server.clear_requests();
+        engine.start_download(id).await.expect("resume");
+        let done = wait_for_state(&engine, id, "completed").await;
+        assert_eq!(done.downloaded_bytes, payload.len() as u64);
+        assert_eq!(server.peak_concurrent_gets(), 1, "one connection at a time");
 
         let written = std::fs::read(&done.save_path).expect("read result");
         assert_eq!(blake3::hash(&written), blake3::hash(&payload));
