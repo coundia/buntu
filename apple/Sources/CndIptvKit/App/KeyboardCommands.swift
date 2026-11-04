@@ -45,6 +45,24 @@ public struct KeyboardCommands: Commands {
             Button("Actualiser toutes les sources") { center.refreshAllSources() }
                 .keyboardShortcut("r", modifiers: .command)
         }
+        #if os(macOS)
+        CommandGroup(before: .windowArrangement) {
+            let level = WindowLevelController.shared
+            Toggle("Toujours au premier plan", isOn: Binding(get: { level.isFloating }, set: { _ in level.toggle() }))
+                .keyboardShortcut("t", modifiers: [.command, .option])
+            Menu("Mode du premier plan") {
+                Picker("Mode", selection: Binding(get: { level.mode }, set: { level.mode = $0 })) {
+                    ForEach(AlwaysOnTopMode.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.inline)
+            }
+            Toggle("Afficher sur tous les bureaux", isOn: Binding(get: { level.showsOnAllSpaces }, set: { level.showsOnAllSpaces = $0 }))
+            Toggle("Lecteur compact", isOn: Binding(get: { level.isCompact }, set: { _ in level.toggleCompact() }))
+                .keyboardShortcut("o", modifiers: [.command, .option])
+                .disabled(!center.hasMedia && !level.isCompact)
+            Divider()
+        }
+        #endif
         CommandGroup(after: .toolbar) {
             Button("Console réseau") { center.toggleNetworkConsole() }
                 .keyboardShortcut("c", modifiers: [.command, .shift])

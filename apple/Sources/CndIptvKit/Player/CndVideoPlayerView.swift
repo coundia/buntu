@@ -233,7 +233,9 @@ public struct CndVideoPlayerView: View {
         #if os(macOS)
         // Double-click toggles full screen (declared first so it wins over the single click, which
         // shows or hides the controls).
-        .onTapGesture(count: 2) { onToggleFullscreen?() }
+        .onTapGesture(count: 2) {
+            if compactWindow { WindowLevelController.shared.exitCompact() } else { onToggleFullscreen?() }
+        }
         .onTapGesture { hudVisible ? scheduleHide() : showHUD() }
         #endif
         .sheet(isPresented: Binding(get: { subtitleSearchModel != nil }, set: { if !$0 { subtitleSearchModel = nil } })) {
@@ -309,8 +311,47 @@ public struct CndVideoPlayerView: View {
 
     // MARK: HUD pieces
 
+    /// The compact player (PRD 29): a 16:9 window with only the essentials.
+    private var compactWindow: Bool {
+        #if os(macOS)
+        WindowLevelController.shared.isCompact
+        #else
+        false
+        #endif
+    }
+
+    #if os(macOS)
+    private var compactBar: some View {
+        HStack(spacing: 8) {
+            hudButton("arrow.down.right.and.arrow.up.left", "Quitter le lecteur compact") {
+                WindowLevelController.shared.exitCompact()
+            }
+            Text(controller.media?.title ?? "")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+            Spacer()
+            pinButton
+        }
+    }
+    #else
+    private var compactBar: some View { EmptyView() }
+    #endif
+
+    #if os(macOS)
+    /// Keeps the window above the other apps' windows (PRD 29).
+    private var pinButton: some View {
+        let floating = WindowLevelController.shared.isFloating
+        return hudButton(
+            floating ? "pin.fill" : "pin",
+            floating ? "Ne plus garder au premier plan" : "Garder au premier plan"
+        ) { WindowLevelController.shared.toggle() }
+        .help(floating ? "Ne plus garder au premier plan (⌥⌘T)" : "Garder au premier plan (⌥⌘T)")
+    }
+    #endif
+
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if compactWindow { compactBar } else {
             HStack(spacing: 8) {
                 if let onClose {
                     Button(action: onClose) { Image(systemName: "xmark") }
@@ -359,6 +400,9 @@ public struct CndVideoPlayerView: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(.white.opacity(0.15), in: Capsule())
                 }
+                #if os(macOS)
+                pinButton
+                #endif
                 // Top-right, never clipped: the bottom row is too crowded for the narrow docked player.
                 if let onToggleFullscreen {
                     hudButton(
@@ -367,6 +411,7 @@ public struct CndVideoPlayerView: View {
                     ) { onToggleFullscreen() }
                     .font(.title3)
                 }
+            }
             }
             if let banner = controller.reconnectBanner {
                 Label(banner, systemImage: "wifi.exclamationmark")
