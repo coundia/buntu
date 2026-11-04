@@ -56,14 +56,14 @@ pub async fn resolve_saga_with_llm(
         counter += 1;
     }
 
-    let system_prompt = "You are an expert film franchise chronologist. Return ONLY strict JSON matching the schema.";
+    let system_prompt = "You are an expert film franchise chronologist. Return ONLY strict JSON matching the schema, with no markdown fences.";
     let user_prompt = format!(
-        "Identify if the following film belongs to a saga or larger universe (e.g. Marvel Cinematic Universe, Star Wars, Harry Potter, James Bond, Fast & Furious). \
-         Order the candidate IDs in both chronological story order and release order. \
-         List up to 20 missing franchise titles absent from candidates. \
+        "Identify if the target film belongs to a franchise, saga, or shared cinematic universe (e.g. Marvel Cinematic Universe, Star Wars, Harry Potter, James Bond, Fast & Furious, DC, Mission Impossible, etc.). \
+         Select and order ONLY the candidate IDs that belong to this franchise into story_order (chronological timeline within the story) and release_order (theatrical release date). Exclude unrelated candidate IDs. Both orders MUST include c1 (the target film). \
+         List up to 20 notable missing franchise titles that are absent from the candidates. \
          Target film: id=c1, title='{}', year={:?}. \
          Candidates:\n{}\n\
-         Respond with JSON: {{\"universe\": string|null, \"saga\": string|null, \"story_order\": [ids], \"release_order\": [ids], \"missing_titles\": [titles], \"confidence\": 0.0-1.0}}",
+         Respond with strict JSON: {{\"universe\": string|null, \"saga\": string|null, \"story_order\": [ids], \"release_order\": [ids], \"missing_titles\": [string], \"confidence\": 0.0-1.0}}",
         current_movie.name_clean,
         current_movie.year,
         candidate_lines.join("\n")
