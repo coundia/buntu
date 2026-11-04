@@ -140,3 +140,16 @@ final class DesignTokensTests: XCTestCase {
         XCTAssertEqual(UIScaleStore(defaults: defaults).setting, .standard)
     }
 }
+
+/// The arrows of a shelf (buttons and the ← → keys) never leave it.
+final class HorizontalShelfTests: XCTestCase {
+    func testStepsStayInsideTheShelf() {
+        typealias Shelf = HorizontalShelf<Int, EmptyView>
+        XCTAssertEqual(Shelf.clampedIndex(-3, count: 10), 0)
+        XCTAssertEqual(Shelf.clampedIndex(0, count: 10), 0)
+        XCTAssertEqual(Shelf.clampedIndex(5, count: 10), 5)
+        XCTAssertEqual(Shelf.clampedIndex(99, count: 10), 9)
+        XCTAssertEqual(Shelf.clampedIndex(3, count: 0), 0)
+        XCTAssertEqual(Shelf.clampedIndex(3, count: 1), 0)
+    }
+}

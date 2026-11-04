@@ -16,10 +16,7 @@ struct HorizontalShelf<Item, Card: View>: View {
         ScrollViewReader { proxy in
             HStack(spacing: 4) {
                 #if os(macOS)
-                arrow("chevron.left", "Précédents") {
-                    index = max(0, index - Self.step)
-                    withAnimation { proxy.scrollTo(index, anchor: .leading) }
-                }
+                arrow("chevron.left", "Précédents") { move(-Self.step, proxy) }
                 #endif
                 ScrollView(.horizontal, showsIndicators: false) {
                     row
@@ -27,13 +24,29 @@ struct HorizontalShelf<Item, Card: View>: View {
                 }
                 .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
                 #if os(macOS)
-                arrow("chevron.right", "Suivants") {
-                    index = min(max(0, items.count - 1), index + Self.step)
-                    withAnimation { proxy.scrollTo(index, anchor: .leading) }
-                }
+                arrow("chevron.right", "Suivants") { move(Self.step, proxy) }
                 #endif
             }
+            // ← and → scroll the shelf from the keyboard (Mac, iPad with a keyboard), whether the focus is
+            // on the shelf itself or on one of its cards.
+            #if !os(tvOS)
+            // (Not on Apple TV: the Siri Remote moves the focus card by card and an extra focus stop would get in the way.)
+            .focusable()
+            .focusEffectDisabled()
+            .onKeyPress(.leftArrow) { move(-Self.step, proxy); return .handled }
+            .onKeyPress(.rightArrow) { move(Self.step, proxy); return .handled }
+            #endif
         }
+    }
+
+    private func move(_ delta: Int, _ proxy: ScrollViewProxy) {
+        index = Self.clampedIndex(index + delta, count: items.count)
+        withAnimation { proxy.scrollTo(index, anchor: .leading) }
+    }
+
+    /// The card a step lands on, kept inside the shelf.
+    static func clampedIndex(_ value: Int, count: Int) -> Int {
+        min(max(0, value), max(0, count - 1))
     }
 
     /// A shelf holds a few dozen cards: an eager row keeps every one of them alive. A lazy row inside
