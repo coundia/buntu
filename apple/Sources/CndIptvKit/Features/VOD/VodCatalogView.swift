@@ -23,8 +23,8 @@ struct VodCardLink<Content: View>: View {
                     RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 3)
                 }
             }
-            .contentShape(Rectangle())
-            .onTapGesture { vod.selection = route }
+            .accessibleTap("Voir la fiche") { vod.selection = route }
+            .accessibilityAddTraits(vod.selection == route ? .isSelected : [])
         #else
         NavigationLink(value: route, label: content).buttonStyle(.plain)
         #endif
@@ -41,6 +41,7 @@ struct VodSectionTitles {
 /// Poster grid / list with categories, "resume" and "favorites" sections and infinite scroll,
 /// shared by the Movies and Series tabs. The card is supplied by the caller.
 struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
+    @Environment(\.uiMetrics) private var ui
     let title: String
     let model: VodCatalogModel<Entry>
     let totalCount: Int
@@ -154,7 +155,7 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
     }
 
     private var grid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 155, maximum: 210), spacing: 16)], spacing: 20) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: ui.posterGridMinWidth, maximum: ui.posterGridMaxWidth), spacing: ui.spacingL)], spacing: ui.value(20)) {
             ForEach(model.entries, id: \.entryId) { paged($0, style: .poster) }
         }
     }
@@ -174,7 +175,7 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label(title, systemImage: icon).font(.title3.bold())
                 HorizontalShelf(items: entries, spacing: 16, alignment: .top) { entry in
-                    card(entry, .poster).frame(width: 150)
+                    card(entry, .poster).frame(width: ui.shelfPosterWidth)
                 }
             }
         }

@@ -61,6 +61,7 @@ struct SeriesCatalogView: View {
 }
 
 struct SeriesCard: View {
+    @Environment(\.uiMetrics) private var ui
     let series: SeriesRecord
     let style: VodCardStyle
     var onToggleFavorite: () -> Void
@@ -107,7 +108,7 @@ struct SeriesCard: View {
     private var row: some View {
         HStack(spacing: 12) {
             ThumbnailImageView(urlString: series.posterUrl, size: .poster, placeholderSystemImage: "play.tv", fills: true)
-                .frame(width: 44, height: 66)
+                .frame(width: ui.posterThumbWidth, height: ui.posterHeight(forWidth: ui.posterThumbWidth))
                 .background(.quaternary)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 3) {
@@ -125,6 +126,7 @@ struct SeriesCard: View {
                     .foregroundStyle(series.isFavorite ? Color.yellow : Color.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(series.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())

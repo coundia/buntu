@@ -84,6 +84,7 @@ struct PlayerSurface: UIViewRepresentable {
 // MARK: - Player view + HUD
 
 public struct CndVideoPlayerView: View {
+    @Environment(\.uiMetrics) private var ui
     @Bindable var controller: CndPlayerController
     var upNext: UpNextModel?
     var onToggleFullscreen: (() -> Void)?
@@ -233,10 +234,10 @@ public struct CndVideoPlayerView: View {
         #if os(macOS)
         // Double-click toggles full screen (declared first so it wins over the single click, which
         // shows or hides the controls).
-        .onTapGesture(count: 2) {
+        .onTapGesture(count: 2) { // lint:ui-ignore the same actions are buttons in the player bar
             if compactWindow { WindowLevelController.shared.exitCompact() } else { onToggleFullscreen?() }
         }
-        .onTapGesture { hudVisible ? scheduleHide() : showHUD() }
+        .onTapGesture { hudVisible ? scheduleHide() : showHUD() } // lint:ui-ignore the HUD stays up with a screen reader
         #endif
         .sheet(isPresented: Binding(get: { subtitleSearchModel != nil }, set: { if !$0 { subtitleSearchModel = nil } })) {
             if let subtitleSearchModel {
@@ -425,6 +426,7 @@ public struct CndVideoPlayerView: View {
                     .background(.blue.opacity(0.85), in: Capsule())
             }
         }
+        .font(ui.font(.body))
         .foregroundStyle(.white)
         .padding(12)
         .background(LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom))
@@ -565,7 +567,7 @@ public struct CndVideoPlayerView: View {
             if !controller.audioTracks.isEmpty {
                 Section("Pistes audio") {
                     ForEach(controller.audioTracks) { track in
-                        Button(track.isSelected ? "✓ \(track.title)" : track.title) {
+                        Button(track.isSelected ? "✓ \(track.displayTitle)" : track.displayTitle) {
                             controller.selectAudioTrack(id: track.id)
                         }
                     }
@@ -603,7 +605,7 @@ public struct CndVideoPlayerView: View {
             if !controller.subtitleTracks.isEmpty {
                 Section("Pistes intégrées") {
                     ForEach(controller.subtitleTracks) { track in
-                        Button(track.isSelected ? "✓ \(track.title)" : track.title) {
+                        Button(track.isSelected ? "✓ \(track.displayTitle)" : track.displayTitle) {
                             controller.selectSubtitleTrack(id: track.id)
                         }
                     }
@@ -684,6 +686,7 @@ public struct CndVideoPlayerView: View {
                         set: { scrubValue = $0 }
                     ),
                     in: 0...Double(max(controller.durationMs, 1)),
+                    step: 10_000,
                     onEditingChanged: { editing in
                         if editing {
                             isScrubbing = true
@@ -697,6 +700,8 @@ public struct CndVideoPlayerView: View {
                     }
                 )
                 .disabled(controller.durationMs == 0)
+                .accessibilityLabel("Position de lecture")
+                .accessibilityValue(A11yText.position(milliseconds: controller.positionMs, durationMs: controller.durationMs))
                 #endif
                 Text(Self.format(controller.durationMs)).monospacedDigit()
             }
@@ -706,10 +711,12 @@ public struct CndVideoPlayerView: View {
 
     @ViewBuilder
     private var volumeControls: some View {
-        hudButton(controller.isMuted ? "speaker.slash.fill" : "speaker.fill", "Muet") { controller.isMuted.toggle() }
+        hudButton(controller.isMuted ? "speaker.slash.fill" : "speaker.fill", controller.isMuted ? "Rétablir le son" : "Couper le son") { controller.isMuted.toggle() }
         #if os(macOS)
-        Slider(value: Binding(get: { Double(controller.volume) }, set: { controller.volume = Float($0) }), in: 0...1)
+        Slider(value: Binding(get: { Double(controller.volume) }, set: { controller.volume = Float($0) }), in: 0...1, step: 0.1)
             .frame(width: 80)
+            .accessibilityLabel("Volume")
+            .accessibilityValue(A11yText.percent(Double(controller.volume)))
         #endif
     }
 
@@ -727,6 +734,8 @@ public struct CndVideoPlayerView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .accessibilityLabel("Vitesse de lecture")
+        .accessibilityValue(A11yText.speed(controller.rate))
     }
 
     private func hudButton(_ symbol: String, _ label: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
@@ -804,7 +813,8 @@ public struct CndVideoPlayerView: View {
 
     private func scheduleHide() {
         hideTask?.cancel()
-        guard !isScrubbing else { return }
+        // With a screen reader the controls stay: they must not vanish under the user's focus (PRD 31).
+        guard !isScrubbing, !ScreenReader.isRunning else { return }
         hideTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             if !Task.isCancelled, controller.state == .playing { hudVisible = false }

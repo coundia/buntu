@@ -511,7 +511,9 @@ public final class MpvVideoToolboxBackend: VideoBackend {
                 id: id,
                 title: title,
                 language: language,
-                isSelected: property("track-list/\(index)/selected") == "yes"
+                isSelected: property("track-list/\(index)/selected") == "yes",
+                isHearingImpaired: property("track-list/\(index)/hearing-impaired") == "yes",
+                isAudioDescription: property("track-list/\(index)/visual-impaired") == "yes"
             ))
         }
         return result

@@ -107,6 +107,8 @@ flowchart TD
 | **27** | [`27_RECOMMENDATIONS_UP_NEXT.md`](./27_RECOMMENDATIONS_UP_NEXT.md) | Rangée « À suivre » sous le lecteur (comme YouTube), carte « Film suivant » en fin de lecture (Apple TV d'abord), chronologie des sagas (Avengers…) par moteur local et fournisseur IA de l'utilisateur. | `[x]` |
 | **28** | [`28_DEFAULT_API_KEYS_DOTENV.md`](./28_DEFAULT_API_KEYS_DOTENV.md) | Clés d'API par défaut (OMDb, TMDB, OpenSubtitles, IA) lues dans un `.env` au build, masquées dans le binaire, clé de l'utilisateur prioritaire, clés IA exclues des builds Release par défaut. | `[x]` (non essayé avec de vraies clés ; voir le statut du PRD) |
 | **29** | [`29_ALWAYS_ON_TOP_WINDOW.md`](./29_ALWAYS_ON_TOP_WINDOW.md) | Option « Toujours au premier plan » sur macOS (Jamais / Toujours / Pendant la lecture), tous les bureaux, lecteur compact 16:9 flottant. | `[x]` (lots 29.1 et 29.2 ; 29.3 et « au-dessus des apps en plein écran » non faits ; non essayé à l'écran) |
+| **30** | [`30_RESPONSIVE_UI_SCALING.md`](./30_RESPONSIVE_UI_SCALING.md) | Interface responsive : jetons de design (icônes, cartes, affiches, colonnes), réglage « Taille de l'interface » et Dynamic Type, seuils adaptatifs, accessibilité, Apple TV, contrôle `lint:ui`. | `[x]` (lot 30.1 ; 30.2 et 30.3 en partie ; 30.4 non fait ; non essayé à l'écran) |
+| **31** | [`31_ACCESSIBILITY.md`](./31_ACCESSIBILITY.md) | Accessibilité : VoiceOver (libellés, actions, rotors, annonces), clavier complet, Contrôle vocal, sous-titres SDH et audiodescription, réglages visuels du système, audits automatiques. | `[x]` (partiel : voir le statut du PRD ; aucun essai avec VoiceOver) |
 
 ---
 

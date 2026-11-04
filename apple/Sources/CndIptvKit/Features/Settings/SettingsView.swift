@@ -29,6 +29,7 @@ struct SettingsView: View {
             if let upNext { recommendationsSection(upNext) }
             profilesAndBouquetsSection
             parentalSection
+            appearanceSection
             #if os(macOS)
             windowSection
             #endif
@@ -165,6 +166,23 @@ struct SettingsView: View {
         }
     }
     #endif
+
+    private var appearanceSection: some View {
+        @Bindable var scale = UIScaleStore.shared
+        return Section {
+            Picker("Taille de l'interface", selection: $scale.setting) {
+                ForEach(UIScaleSetting.allCases) { Text($0.title).tag($0) }
+            }
+        } header: {
+            Text("Apparence")
+        } footer: {
+            #if os(macOS)
+            Text("Agrandit ou réduit les icônes, les cartes, les affiches et le texte de l'app. ⌘+ et ⌘- changent la taille, ⌘0 revient à « Standard ».")
+            #else
+            Text("S'ajoute à la taille de texte du système : l'interface ne devient jamais plus petite que ce que vous avez choisi dans Réglages > Accessibilité.")
+            #endif
+        }
+    }
 
     #if os(macOS)
     private var windowSection: some View {

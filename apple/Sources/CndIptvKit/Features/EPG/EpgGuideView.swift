@@ -108,6 +108,7 @@ struct EpgGuideView: View {
 // MARK: - Grid
 
 private struct EpgGridView: View {
+    @Environment(\.uiMetrics) private var ui
     @Bindable var model: EpgGuideModel
     let revision: Int
     let playingURL: String?
@@ -264,7 +265,7 @@ private struct EpgGridView: View {
     private func channelLabel(_ channel: IptvItemRecord) -> some View {
         HStack(spacing: 8) {
             ThumbnailImageView(urlString: channel.logoUrl, size: .tvLogo)
-                .frame(width: 32, height: 32)
+                .frame(width: ui.value(32), height: ui.value(32))
             Text(channel.name).font(.caption.weight(.semibold)).lineLimit(2)
             Spacer(minLength: 0)
         }
@@ -272,8 +273,8 @@ private struct EpgGridView: View {
         .frame(width: Self.labelWidth, height: Self.rowHeight, alignment: .leading)
         .background(.thinMaterial)
         .overlay(alignment: .trailing) { Divider() }
-        .contentShape(Rectangle())
-        .onTapGesture { onPlay(channel) }
+        .accessibleTap("\(channel.name), lire la chaîne") { onPlay(channel) }
+        .accessibilityAction(named: "Voir le programme TV complet") { onShowSchedule(channel) }
         .contextMenu {
             Button("Lire", systemImage: "play.fill") { onPlay(channel) }
             Button("Voir le programme TV complet", systemImage: "calendar") { onShowSchedule(channel) }
@@ -296,7 +297,9 @@ private struct EpgGridView: View {
                     )
                     .frame(width: max(block.width - 2, 1), height: Self.rowHeight - 8)
                     .offset(x: block.x)
-                    .onTapGesture { model.selection = EpgSelection(channel: channel, program: program) }
+                    .accessibleTap(A11yText.program(program, isLive: isLive(program))) {
+                        model.selection = EpgSelection(channel: channel, program: program)
+                    }
                 }
             }
         }
@@ -322,6 +325,7 @@ private struct StickyLabel<Content: View>: View {
 }
 
 private struct ProgramBlockView: View {
+    @Environment(\.uiMetrics) private var ui
     let program: EpgProgramRecord
     let isLive: Bool
     var hasCatchup: Bool = false
@@ -332,7 +336,7 @@ private struct ProgramBlockView: View {
                 Text(program.title).font(.caption.weight(.semibold)).lineLimit(1)
                 if hasCatchup && !isLive {
                     Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(ui.font(.caption2, weight: .bold))
                         .foregroundStyle(.tint)
                 }
             }
@@ -350,6 +354,7 @@ private struct ProgramBlockView: View {
 // MARK: - Single channel schedule
 
 private struct ChannelScheduleView: View {
+    @Environment(\.uiMetrics) private var ui
     let model: EpgGuideModel
     let channel: IptvItemRecord
     let onPlay: (IptvItemRecord) -> Void
@@ -362,7 +367,7 @@ private struct ChannelScheduleView: View {
         List {
             Section {
                 HStack(spacing: 12) {
-                    ThumbnailImageView(urlString: channel.logoUrl, size: .tvLogo).frame(width: 48, height: 48)
+                    ThumbnailImageView(urlString: channel.logoUrl, size: .tvLogo).frame(width: ui.value(48), height: ui.value(48))
                     VStack(alignment: .leading) {
                         Text(channel.name).font(.headline)
                         if let group = channel.groupTitle { Text(group).font(.caption).foregroundStyle(.secondary) }
@@ -401,7 +406,7 @@ private struct ChannelScheduleView: View {
             Text(Date(timeIntervalSince1970: TimeInterval(program.startTs)).formatted(date: .omitted, time: .shortened))
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(live ? Color.accentColor : .secondary)
-                .frame(width: 56, alignment: .leading)
+                .frame(width: ui.value(56), alignment: .leading)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(program.title).font(.body.weight(live ? .bold : .regular))
@@ -438,7 +443,7 @@ private struct ChannelScheduleView: View {
                 .help("Revoir cette émission (Replay)")
             }
         }
-        .contentShape(Rectangle())
+        .accessibleTap(A11yText.program(program, isLive: live)) { model.selection = EpgSelection(channel: channel, program: program) }
         .contextMenu {
             if !isPast {
                 Button {
@@ -453,7 +458,6 @@ private struct ChannelScheduleView: View {
                 }
             }
         }
-        .onTapGesture { model.selection = EpgSelection(channel: channel, program: program) }
     }
 }
 

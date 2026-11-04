@@ -8,6 +8,7 @@ struct HorizontalShelf<Item, Card: View>: View {
     var alignment: VerticalAlignment = .center
     @ViewBuilder var card: (Item) -> Card
 
+    @Environment(\.uiMetrics) private var ui
     @State private var index = 0
     private static var step: Int { 3 }
 
@@ -39,7 +40,11 @@ struct HorizontalShelf<Item, Card: View>: View {
 
     #if os(macOS)
     private func arrow(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol).frame(width: 24, height: 40) }
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(ui.font(.body, weight: .semibold))
+                .frame(width: ui.value(24), height: max(ui.value(40), ui.minHitTarget))
+        }
             .buttonStyle(.plain)
             .accessibilityLabel(label)
             .help(label)

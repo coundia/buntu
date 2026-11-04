@@ -49,6 +49,7 @@ struct MovieActionsMenu: View {
 /// Poster tile (or list row). Tapping opens the details; play and download live in the menu and
 /// on the details screen.
 struct MoviePosterCard: View {
+    @Environment(\.uiMetrics) private var ui
     let item: IptvItemRecord
     let style: VodCardStyle
     let vod: VodContext
@@ -104,7 +105,7 @@ struct MoviePosterCard: View {
     private var row: some View {
         HStack(spacing: 12) {
             ThumbnailImageView(urlString: item.logoUrl, size: .poster, placeholderSystemImage: "film", fills: true)
-                .frame(width: 44, height: 66)
+                .frame(width: ui.posterThumbWidth, height: ui.posterHeight(forWidth: ui.posterThumbWidth))
                 .background(.quaternary)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 3) {
@@ -130,6 +131,7 @@ struct MoviePosterCard: View {
                     .foregroundStyle(item.isFavorite ? Color.yellow : Color.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())

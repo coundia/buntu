@@ -199,7 +199,10 @@ public final class AVPlayerBackend: VideoBackend {
                 id: String(index),
                 title: option.displayName,
                 language: option.locale?.identifier,
-                isSelected: option == selected
+                isSelected: option == selected,
+                isHearingImpaired: option.hasMediaCharacteristic(.transcribesSpokenDialogForAccessibility)
+                    || option.hasMediaCharacteristic(.describesMusicAndSoundForAccessibility),
+                isAudioDescription: option.hasMediaCharacteristic(.describesVideoForAccessibility)
             )
         }
     }

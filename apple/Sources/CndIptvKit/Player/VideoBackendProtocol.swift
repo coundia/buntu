@@ -16,12 +16,30 @@ public struct MediaTrack: Identifiable, Equatable, Sendable {
     public let title: String
     public let language: String?
     public let isSelected: Bool
+    /// Subtitles for the deaf and hard of hearing (they also describe music and sounds).
+    public let isHearingImpaired: Bool
+    /// Audio that describes what is on screen (audio description).
+    public let isAudioDescription: Bool
 
-    public init(id: String, title: String, language: String?, isSelected: Bool) {
+    public init(
+        id: String, title: String, language: String?, isSelected: Bool,
+        isHearingImpaired: Bool = false, isAudioDescription: Bool = false
+    ) {
         self.id = id
         self.title = title
         self.language = language
         self.isSelected = isSelected
+        self.isHearingImpaired = isHearingImpaired
+        self.isAudioDescription = isAudioDescription
+    }
+
+    /// The menu title, with « (SDH) » / « (audiodescription) » when the track says so and the name does not.
+    public var displayTitle: String {
+        var text = title
+        let lower = title.lowercased()
+        if isHearingImpaired, !lower.contains("sdh"), !lower.contains("malentendant"), !lower.contains("hearing") { text += " (SDH)" }
+        if isAudioDescription, !lower.contains("audiodescription"), !lower.contains("description") { text += " (audiodescription)" }
+        return text
     }
 }
 

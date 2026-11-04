@@ -199,6 +199,7 @@ public final class CndPlayerController {
     @ObservationIgnored private var lastSavedAt = Date()
     @ObservationIgnored private var stallReferenceMs: Int64 = 0
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var accessibleTracksAppliedGeneration = -1
 
     public init(
         recorder: WatchProgressRecording? = nil,
@@ -502,6 +503,21 @@ public final class CndPlayerController {
     public func selectAudioTrack(id: String) { backend?.selectAudioTrack(id: id) }
     public func selectSubtitleTrack(id: String?) { backend?.selectSubtitleTrack(id: id) }
 
+    /// mpv does not read the system's caption and audio-description settings: turn on the matching
+    /// accessible track once per media, never overriding a choice the user already made.
+    private func applyAccessibleTrackPreferences() {
+        guard activeEngine == .mpv, accessibleTracksAppliedGeneration != generation else { return }
+        accessibleTracksAppliedGeneration = generation
+        let prefs = AccessibleTrackPreferences.current()
+        if let id = AccessibleTrackPolicy.subtitle(in: subtitleTracks, preferences: prefs),
+           !subtitleTracks.contains(where: \.isSelected) {
+            backend?.selectSubtitleTrack(id: id)
+        }
+        if let id = AccessibleTrackPolicy.audio(in: audioTracks, preferences: prefs) {
+            backend?.selectAudioTrack(id: id)
+        }
+    }
+
     private func refreshTracks() {
         audioTracks = backend?.audioTracks() ?? []
         subtitleTracks = backend?.subtitleTracks() ?? []
@@ -524,6 +540,7 @@ public final class CndPlayerController {
         case .playing where previous != .playing:
             if previous == .loading { AppLog.shared.info("PLAYER", "Lecture démarrée") }
             refreshTracks()
+            applyAccessibleTrackPreferences()
             scheduleFormatDetection()
         default:
             break
