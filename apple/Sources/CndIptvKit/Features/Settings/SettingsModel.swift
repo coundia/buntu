@@ -16,6 +16,25 @@ final class SettingsModel {
     let directory: DownloadDirectoryManager
     @ObservationIgnored var onConsoleVisibilityChanged: (Bool) -> Void = { _ in }
 
+    /// Simultaneous connections of the user's subscription (default 1). Downloads stay under it.
+    var connectionLimit: Int {
+        didSet {
+            guard connectionLimit != oldValue else { return }
+            defaults.set(connectionLimit, forKey: ConnectionBudget.defaultsKey)
+            applyConnectionBudget()
+        }
+    }
+    @ObservationIgnored private let defaults: UserDefaults
+
+    var budget: ConnectionBudget { ConnectionBudget(limit: connectionLimit) }
+
+    /// Segments and parallel files are brought under what the subscription allows.
+    private func applyConnectionBudget() {
+        let clamped = budget.clamp(segments: segmentsPerFile, files: maxActiveFiles)
+        if segmentsPerFile != clamped.segments { segmentsPerFile = clamped.segments }
+        if maxActiveFiles != clamped.files { maxActiveFiles = clamped.files }
+    }
+
     var segmentsPerFile: Int { didSet { scheduleSave() } }
     var partSizeMB: Int { didSet { scheduleSave() } }
     var maxActiveFiles: Int { didSet { scheduleSave() } }
@@ -45,8 +64,11 @@ final class SettingsModel {
         engine: CndEngine,
         keychain: KeychainStore = .shared,
         directory: DownloadDirectoryManager,
-        saveDelay: Duration = .milliseconds(400)
+        saveDelay: Duration = .milliseconds(400),
+        defaults: UserDefaults = .standard
     ) {
+        self.defaults = defaults
+        connectionLimit = ConnectionBudget.current(defaults: defaults).limit
         self.engine = engine
         self.keychain = keychain
         self.directory = directory
@@ -65,6 +87,7 @@ final class SettingsModel {
         openSubtitlesKey = (try? keychain.readSecret(forKey: OpenSubtitlesCredentials.keychainKey)) ?? ""
         openSubtitlesUser = (try? keychain.readSecret(forKey: OpenSubtitlesCredentials.userKey)) ?? ""
         openSubtitlesPassword = (try? keychain.readSecret(forKey: OpenSubtitlesCredentials.passwordKey)) ?? ""
+        applyConnectionBudget()
     }
 
     /// Turns the iCloud Keychain option on or off and moves the existing source passwords with it.
@@ -113,6 +136,10 @@ final class SettingsModel {
         settings.segmentsPerFile = UInt32(segmentsPerFile.clamped(to: Self.segmentRange))
         settings.partSizeBytes = UInt64(partSizeMB.clamped(to: Self.partSizeRangeMB)) * 1024 * 1024
         settings.maxActiveFiles = UInt32(maxActiveFiles.clamped(to: Self.activeFilesRange))
+        // Never more connections than the subscription allows, whatever the steppers say.
+        let allowed = budget.clamp(segments: Int(settings.segmentsPerFile), files: Int(settings.maxActiveFiles))
+        settings.segmentsPerFile = UInt32(allowed.segments)
+        settings.maxActiveFiles = UInt32(allowed.files)
         settings.defaultUserAgent = trimmedAgent.isEmpty ? base.defaultUserAgent : trimmedAgent
         settings.defaultReferer = trimmedReferer.isEmpty ? nil : trimmedReferer
         settings.downloadDir = directory.isCustom ? directory.directory.path : nil
