@@ -59,6 +59,7 @@ private struct BouquetKindListView: View {
                                         .foregroundColor(cat.isHidden ? .secondary : .accentColor)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel(cat.isHidden ? "Afficher la catégorie \(cat.name)" : "Masquer la catégorie \(cat.name)")
 
                                 Text(cat.name)
                                     .strikethrough(cat.isHidden)
@@ -111,6 +112,7 @@ private struct BouquetKindListView: View {
                                         .foregroundColor(.red)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Supprimer le dossier \(folder.name)")
                             }
                         }
 

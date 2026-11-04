@@ -64,7 +64,7 @@ public struct MultiViewScreen: View {
                         .background(.red.opacity(0.85), in: Capsule())
                         .shadow(radius: 4)
                         .transition(.move(edge: .top).combined(with: .opacity))
-                        .onTapGesture { controller.errorMessage = nil }
+                        .accessibleTap("\(err). Appuyer pour fermer") { controller.errorMessage = nil }
                 }
                 Spacer()
             }
@@ -187,6 +187,7 @@ public struct MultiViewScreen: View {
                             .background(.black.opacity(0.5), in: Circle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Passer cette chaîne en plein lecteur")
 
                     // Close Button
                     Button {
@@ -202,6 +203,7 @@ public struct MultiViewScreen: View {
                             .background(.black.opacity(0.5), in: Circle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Retirer cette chaîne de la mosaïque")
                 }
                 .padding(8)
                 .background(
@@ -219,10 +221,10 @@ public struct MultiViewScreen: View {
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(isActive ? Color.accentColor : Color.white.opacity(0.2), lineWidth: isActive ? 3 : 1)
         )
-        .contentShape(Rectangle())
-        .onTapGesture {
+        .accessibleTap("Rendre le son de cette chaîne actif") {
             controller.setActiveIndex(index)
         }
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     // MARK: - Empty State

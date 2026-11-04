@@ -53,13 +53,13 @@ struct PlayerGestureLayer: View {
         GeometryReader { geo in
             Color.clear
                 .contentShape(Rectangle())
-                .onTapGesture(count: 2, coordinateSpace: .local) { point in
+                .onTapGesture(count: 2, coordinateSpace: .local) { point in // lint:ui-ignore seek buttons exist in the player bar
                     let side = PlayerGestureMath.side(forX: point.x, width: geo.size.width)
                     guard !controller.isLive else { return }
                     onSkip(PlayerGestureMath.skipSeconds(for: side))
                     Haptics.light()
                 }
-                .onTapGesture { onSingleTap() }
+                .onTapGesture { onSingleTap() } // lint:ui-ignore the HUD stays up with a screen reader
                 .gesture(
                     DragGesture(minimumDistance: 12)
                         .onChanged { drag in

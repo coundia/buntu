@@ -17,6 +17,7 @@ public final class AppCommandCenter {
     @ObservationIgnored var toggleMultiView: () -> Void = {}
     @ObservationIgnored var openAssistant: () -> Void = {}
     @ObservationIgnored var toggleFavorite: () -> Void = {}
+    @ObservationIgnored var showKeyboardShortcuts: () -> Void = {}
     /// Enables the player menu items; set by the shell while something is playing.
     var hasMedia = false
     var isFavorite = false
@@ -35,6 +36,11 @@ public struct KeyboardCommands: Commands {
     }
 
     public var body: some Commands {
+        #if os(macOS)
+        CommandGroup(after: .help) {
+            Button("Raccourcis clavier") { center.showKeyboardShortcuts() }
+        }
+        #endif
         CommandGroup(replacing: .newItem) {
             Button("Ajouter une source…") { center.addSource() }
                 .keyboardShortcut("n", modifiers: .command)
@@ -61,6 +67,20 @@ public struct KeyboardCommands: Commands {
                 .keyboardShortcut("o", modifiers: [.command, .option])
                 .disabled(!center.hasMedia && !level.isCompact)
             Divider()
+        }
+        #endif
+        #if os(macOS)
+        CommandGroup(after: .toolbar) {
+            let scale = UIScaleStore.shared
+            Button("Agrandir l'interface") { scale.increase() }
+                .keyboardShortcut("+", modifiers: .command)
+                .disabled(scale.setting.larger == nil)
+            Button("Réduire l'interface") { scale.decrease() }
+                .keyboardShortcut("-", modifiers: .command)
+                .disabled(scale.setting.smaller == nil)
+            Button("Taille standard de l'interface") { scale.reset() }
+                .keyboardShortcut("0", modifiers: .command)
+                .disabled(scale.setting == .standard)
         }
         #endif
         CommandGroup(after: .toolbar) {

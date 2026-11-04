@@ -24,6 +24,7 @@ final class ToastCenter {
     func show(_ text: String, isError: Bool = false, actionTitle: String? = nil, action: (() -> Void)? = nil) {
         let toast = Toast(text: text, isError: isError, actionTitle: actionTitle, action: action)
         current = toast
+        AccessibilityAnnouncer.shared.announce(text, priority: isError ? .high : .normal)
         let delay = duration
         Task { [weak self] in
             try? await Task.sleep(for: delay)

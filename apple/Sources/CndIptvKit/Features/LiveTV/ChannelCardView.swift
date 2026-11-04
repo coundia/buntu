@@ -55,6 +55,7 @@ struct ChannelCardView: View {
     var isPlaying = false
     var style: Style = .card
     let actions: ChannelActions
+    @Environment(\.uiMetrics) private var ui
 
     var body: some View {
         content
@@ -62,6 +63,8 @@ struct ChannelCardView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel(accessibilityText)
+        .accessibilityHint("Lance la chaîne")
+        .channelAccessibilityActions(item: item, nowNext: nowNext, actions: actions)
     }
 
     @ViewBuilder
@@ -73,8 +76,7 @@ struct ChannelCardView: View {
             .buttonStyle(.card)
         #else
         layout
-            .contentShape(Rectangle())
-            .onTapGesture { actions.play(item) }
+            .accessibleTap { actions.play(item) }
         #endif
     }
 
@@ -100,7 +102,7 @@ struct ChannelCardView: View {
             programBlock
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: ui.channelCardMinHeight, alignment: .topLeading)
         .background(.quaternary.opacity(isPlaying ? 0.9 : 0.4), in: RoundedRectangle(cornerRadius: 12))
         .overlay {
             if isPlaying {
@@ -127,7 +129,7 @@ struct ChannelCardView: View {
 
     private var logo: some View {
         ThumbnailImageView(urlString: item.logoUrl, size: .tvLogo)
-            .frame(width: 44, height: 44)
+            .frame(width: ui.channelLogo, height: ui.channelLogo)
             .padding(2)
             .background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
     }
@@ -137,8 +139,8 @@ struct ChannelCardView: View {
             HStack(spacing: 6) {
                 healthIndicator
                 if isPlaying { Image(systemName: "speaker.wave.2.fill").font(.caption).foregroundStyle(.tint) }
-                if let number = item.chno { Text("\(number)").font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
-                Text(item.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                if let number = item.chno { Text("\(number)").font(ui.font(.caption).monospacedDigit()).foregroundStyle(.secondary) }
+                Text(item.name).font(ui.font(.subheadline, weight: .semibold)).lineLimit(1)
                 if let quality = ChannelQuality.detect(in: item.name) {
                     Text(quality.rawValue)
                         .font(.caption2.weight(.bold))
@@ -155,7 +157,7 @@ struct ChannelCardView: View {
                 }
             }
             if let group = item.groupTitle, !group.isEmpty {
-                Text(group).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(group).font(ui.font(.caption)).foregroundStyle(.secondary).lineLimit(1)
             }
         }
     }
@@ -164,7 +166,7 @@ struct ChannelCardView: View {
     private var programBlock: some View {
         if let now = nowNext?.now {
             VStack(alignment: .leading, spacing: 3) {
-                Text(now.title).font(.caption).lineLimit(1)
+                Text(now.title).font(ui.font(.caption)).lineLimit(1)
                 TimelineView(.periodic(from: .now, by: 30)) { context in
                     ProgressView(value: EpgProgress.ratio(start: now.startTs, end: now.endTs, now: context.date))
                         .progressViewStyle(.linear)
@@ -186,7 +188,10 @@ struct ChannelCardView: View {
         #else
         Button { actions.toggleFavorite(item) } label: {
             Image(systemName: item.isFavorite ? "star.fill" : "star")
+                .font(ui.font(.body))
                 .foregroundStyle(item.isFavorite ? Color.yellow : Color.secondary)
+                .frame(minWidth: ui.minHitTarget - 8, minHeight: ui.minHitTarget - 8)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
@@ -196,29 +201,17 @@ struct ChannelCardView: View {
     @ViewBuilder
     private var healthIndicator: some View {
         if item.isBroken {
-            Circle()
-                .fill(Color.red)
-                .frame(width: 8, height: 8)
-                .help("Signalée en panne")
+            StatusDot(kind: .broken, description: "Signalée en panne")
         } else if let health {
             if health.status == "ok" {
                 let isRecent = Date().timeIntervalSince1970 - Double(health.checkedAt) < 3600
                 if isRecent && (health.latencyMs ?? 0) < 500 {
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 8, height: 8)
-                        .help("Opérationnelle (\(health.latencyMs ?? 0) ms)")
+                    StatusDot(kind: .ok, description: "Opérationnelle (\(health.latencyMs ?? 0) ms)")
                 } else {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 8, height: 8)
-                        .help("Flux lent (\(health.latencyMs ?? 0) ms)")
+                    StatusDot(kind: .slow, description: "Flux lent (\(health.latencyMs ?? 0) ms)")
                 }
             } else if health.consecutiveFailures > 0 {
-                Circle()
-                    .fill(Color.orange)
-                    .frame(width: 8, height: 8)
-                    .help("\(health.consecutiveFailures) échec(s)")
+                StatusDot(kind: .failing, description: "\(health.consecutiveFailures) échec(s)")
             }
         }
     }
@@ -268,8 +261,43 @@ struct ChannelCardView: View {
     }
 
     private var accessibilityText: String {
-        var text = item.name
-        if let now = nowNext?.now { text += ", en ce moment : \(now.title)" }
-        return text
+        A11yText.channel(
+            name: item.name, number: item.chno, isPlaying: isPlaying, isFavorite: item.isFavorite, isBroken: item.isBroken,
+            nowTitle: nowNext?.now?.title, timeRange: nowNext?.now.map(EpgProgress.timeRange)
+        )
+    }
+}
+
+private extension View {
+    /// The context menu's entries as VoiceOver actions (swipe up or down): a long press is hard to do blind.
+    func channelAccessibilityActions(item: IptvItemRecord, nowNext: ChannelNowNext?, actions: ChannelActions) -> some View {
+        self
+            .accessibilityAction(named: item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris") { actions.toggleFavorite(item) }
+            .accessibilityAction(named: "Voir le programme TV complet") { actions.showGuide(item) }
+            .modifier(OptionalChannelActions(item: item, nowNext: nowNext, actions: actions))
+    }
+}
+
+private struct OptionalChannelActions: ViewModifier {
+    let item: IptvItemRecord
+    let nowNext: ChannelNowNext?
+    let actions: ChannelActions
+
+    func body(content: Content) -> some View {
+        content
+            .accessibilityActions {
+                if let toggleBroken = actions.toggleBroken {
+                    Button(item.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel") { toggleBroken(item) }
+                }
+                if let startOver = actions.startOver, let now = nowNext?.now, ChannelCardView.hasArchive(item) {
+                    Button("Revoir depuis le début") { startOver(item, now) }
+                }
+                if let addToMultiView = actions.addToMultiView {
+                    Button("Ajouter à la mosaïque") { addToMultiView(item) }
+                }
+                if let showMirrors = actions.showMirrors {
+                    Button("Alternatives, miroirs") { showMirrors(item) }
+                }
+            }
     }
 }

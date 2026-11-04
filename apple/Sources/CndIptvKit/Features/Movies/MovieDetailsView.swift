@@ -84,6 +84,7 @@ final class MovieDetailsModel {
 }
 
 struct MovieDetailsView: View {
+    @Environment(\.uiMetrics) private var ui
     @State private var model: MovieDetailsModel
     @State private var showsDebug = false
     /// Narrow layout for the side panel (under the player) instead of a full page.
@@ -147,7 +148,7 @@ struct MovieDetailsView: View {
     private var compactHeader: some View {
         HStack(alignment: .top, spacing: 12) {
             ThumbnailImageView(urlString: item.logoUrl, size: .poster, placeholderSystemImage: "film", fills: true)
-                .frame(width: 96, height: 144)
+                .frame(width: ui.posterCompactWidth, height: ui.posterHeight(forWidth: ui.posterCompactWidth))
                 .background(.quaternary)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 6) {
@@ -182,7 +183,7 @@ struct MovieDetailsView: View {
                 .overlay(LinearGradient(colors: [.clear, Color.black.opacity(0.65)], startPoint: .top, endPoint: .bottom))
             HStack(alignment: .bottom, spacing: 20) {
                 ThumbnailImageView(urlString: item.logoUrl, size: .poster, placeholderSystemImage: "film", fills: true)
-                    .frame(width: 150, height: 225)
+                    .frame(width: ui.posterDetailWidth, height: ui.posterHeight(forWidth: ui.posterDetailWidth))
                     .background(.quaternary)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .shadow(radius: 10)
@@ -316,7 +317,7 @@ struct MovieDetailsView: View {
                 } label: {
                     HStack(spacing: 10) {
                         ThumbnailImageView(urlString: rec.item.logoUrl, size: .poster, placeholderSystemImage: "film", fills: true)
-                            .frame(width: 44, height: 66)
+                            .frame(width: ui.posterThumbWidth, height: ui.posterHeight(forWidth: ui.posterThumbWidth))
                             .background(.quaternary)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
 

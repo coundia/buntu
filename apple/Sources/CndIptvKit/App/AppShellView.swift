@@ -51,14 +51,18 @@ public struct AppShellView: View {
     }
 
     public var body: some View {
-        if let engine = state.engine {
-            LoadedShellView(state: state, engine: engine, commands: commands)
-        } else if let error = state.errorMessage {
-            ContentUnavailableView("Démarrage impossible", systemImage: "exclamationmark.triangle", description: Text(error))
-        } else {
-            ProgressView("Initialisation du moteur…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Group {
+            if let engine = state.engine {
+                LoadedShellView(state: state, engine: engine, commands: commands)
+            } else if let error = state.errorMessage {
+                ContentUnavailableView("Démarrage impossible", systemImage: "exclamationmark.triangle", description: Text(error))
+            } else {
+                ProgressView("Initialisation du moteur…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
+        .uiScaleRoot()
+        .systemAccessibilityPreferences()
     }
 }
 
@@ -66,6 +70,7 @@ public struct AppShellView: View {
 /// docked player). iOS: `TabView` with a persistent mini-player above the tab bar. One navigation
 /// container per platform, so there is a single title bar and a single toolbar.
 private struct LoadedShellView: View {
+    @Environment(\.uiMetrics) private var ui
     @Bindable var state: AppState
     let engine: CndEngine
     let commands: AppCommandCenter
@@ -83,6 +88,7 @@ private struct LoadedShellView: View {
     @State private var zapper = LiveZapper()
     @State private var assistant: AssistantModel
     @State private var showingAssistant = false
+    @State private var showingShortcuts = false
     @State private var showingKidsExit = false
     @State private var autoSubtitleTask: Task<Void, Never>?
     @State private var showingProfilePicker = false
@@ -204,9 +210,16 @@ private struct LoadedShellView: View {
                 #endif
                 nowPlaying.refresh()
             }
-            .onChange(of: player.state) { _, _ in
+            .onChange(of: player.state) { old, new in
                 nowPlaying.refresh()
                 pip.syncState(from: player)
+                announcePlayback(from: old, to: new)
+            }
+            .onChange(of: player.reconnectBanner) { _, banner in
+                if let banner { AccessibilityAnnouncer.shared.announce(banner) }
+            }
+            .onChange(of: player.failoverBanner) { _, banner in
+                if let banner { AccessibilityAnnouncer.shared.announce(banner) }
             }
             .onChange(of: player.media) { _, _ in
                 nowPlaying.refresh()
@@ -234,6 +247,9 @@ private struct LoadedShellView: View {
             }
             .sheet(isPresented: $showingKidsExit) {
                 if let profiles = state.profiles { KidsExitSheet(profiles: profiles) { showingKidsExit = false } }
+            }
+            .sheet(isPresented: $showingShortcuts) {
+                KeyboardShortcutsSheet { showingShortcuts = false }
             }
             .sheet(isPresented: $showingAssistant) {
                 CommandPaletteView(model: assistant)
@@ -317,6 +333,21 @@ private struct LoadedShellView: View {
         #endif
     }
 
+    /// Tells a screen-reader user what the player is doing: playback started, failed (PRD 31 § 3.4).
+    private func announcePlayback(from old: PlaybackState, to new: PlaybackState) {
+        guard let media = player.media else { return }
+        switch (old, new) {
+        case (.loading, .playing), (.idle, .playing):
+            AccessibilityAnnouncer.shared.announce(media.kind == .live ? "\(media.title), en direct" : "\(media.title), lecture")
+        case (_, .failed(let message)):
+            AccessibilityAnnouncer.shared.announce("Erreur de lecture. \(message)", priority: .high)
+        case (.playing, .buffering):
+            AccessibilityAnnouncer.shared.announce("Chargement…", priority: .low)
+        default:
+            break
+        }
+    }
+
     /// Opens the command palette, or says how to enable it.
     private func openAssistant() {
         guard KidsModePolicy.canUseAssistant(isKids: isKidsMode) else {
@@ -388,6 +419,7 @@ private struct LoadedShellView: View {
             }
         )
         commands.openAssistant = { openAssistant() }
+        commands.showKeyboardShortcuts = { showingShortcuts = true }
 
         commands.addSource = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.addSource) }
         commands.importPlaylist = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.importPlaylist) }
@@ -494,8 +526,8 @@ private struct LoadedShellView: View {
 
     private var sidebarBrand: some View {
         HStack(spacing: 10) {
-            AppLogoView(size: 30)
-            Text("CND IPTV").font(.headline)
+            AppLogoView(size: ui.value(30))
+            Text("CND IPTV").font(ui.font(.headline))
             Spacer(minLength: 0)
             if isKidsMode { kidsExitButton }
         }
@@ -506,7 +538,8 @@ private struct LoadedShellView: View {
     private var logsButton: some View {
         Button { toggleLogs() } label: {
             Label("Journaux", systemImage: "terminal")
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .font(ui.font(.body))
+                .frame(maxWidth: .infinity, minHeight: ui.minHitTarget - 12, alignment: .leading)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 14)
@@ -552,11 +585,12 @@ private struct LoadedShellView: View {
                 set: { if let tab = $0 { selectedTabRaw = tab.rawValue } }
             )) { tab in
                 Label(tab.title, systemImage: tab.systemImage)
+                    .font(ui.font(.body))
                     .badge(badge(for: tab))
                     .tag(tab)
             }
             .navigationTitle("CND IPTV")
-            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
+            .navigationSplitViewColumnWidth(min: ui.sidebarMinWidth, ideal: ui.sidebarIdealWidth, max: ui.sidebarMaxWidth)
             .safeAreaInset(edge: .top, spacing: 0) { sidebarBrand }
             .safeAreaInset(edge: .bottom, spacing: 0) { logsButton }
         } detail: {
@@ -875,7 +909,7 @@ private struct LoadedShellView: View {
                     }
                     .onEnded { _ in sidePanelDragStart = nil }
             )
-            .onTapGesture(count: 2) { sidePanelWidthStored = 0 }
+            .onTapGesture(count: 2) { sidePanelWidthStored = 0 } // lint:ui-ignore decorative resize handle, the width has a Settings-free default
             .help("Glisser pour agrandir le lecteur, double-clic pour rétablir")
     }
 
@@ -1032,8 +1066,7 @@ private struct LoadedShellView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(.thinMaterial)
-            .contentShape(Rectangle())
-            .onTapGesture { setExpanded(true) }
+            .accessibleTap("Agrandir le lecteur") { setExpanded(true) }
         }
     }
 

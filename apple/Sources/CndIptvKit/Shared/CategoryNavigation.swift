@@ -10,6 +10,7 @@ struct CategoryNavigation<Content: View>: View {
     @Binding var selection: String?
     @ViewBuilder var content: () -> Content
 
+    @Environment(\.uiMetrics) private var ui
     @State private var isWide = false
     @AppStorage("categories.collapsed") private var collapsed = false
     @State private var showingSheet = false
@@ -18,6 +19,7 @@ struct CategoryNavigation<Content: View>: View {
 
     /// On a Mac the vertical list stays up in small windows (a mouse wheel cannot scroll the chips
     /// sideways); the column is narrower there.
+    /// Default (scale 1) threshold; the view uses `ui.breakpoints.categoryColumn`.
     static var wideLayoutThreshold: CGFloat {
         #if os(macOS)
         520
@@ -29,7 +31,7 @@ struct CategoryNavigation<Content: View>: View {
 
     var body: some View {
         GeometryReader { geo in
-            let wide = geo.size.width >= Self.wideLayoutThreshold
+            let wide = geo.size.width >= ui.breakpoints.categoryColumn
             HStack(spacing: 0) {
                 if wide && !collapsed {
                     VStack(spacing: 0) {
@@ -39,7 +41,10 @@ struct CategoryNavigation<Content: View>: View {
                         }
                         list
                     }
-                    .frame(width: geo.size.width >= 900 ? 250 : 190)
+                    .frame(width: geo.size.width >= ui.breakpoints.categoryColumnWide ? ui.categoryColumnWide : ui.categoryColumnNarrow)
+                    #if os(tvOS)
+                    .focusSection()
+                    #endif
                     Divider()
                 }
                 VStack(spacing: 0) {
@@ -83,6 +88,9 @@ struct CategoryNavigation<Content: View>: View {
     private var homeButton: some View {
         Button(action: goHome) {
             Image(systemName: "house.fill")
+                .font(ui.font(.body))
+                .frame(minWidth: ui.minHitTarget - 8, minHeight: ui.minHitTarget - 8)
+                .contentShape(Rectangle())
         }
         .padding(.leading, 8)
         .accessibilityLabel("Accueil : toutes les catégories")
@@ -193,7 +201,11 @@ struct CategoryNavigation<Content: View>: View {
 
     #if os(macOS)
     private func chipArrow(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol).frame(width: 22, height: 28) }
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(ui.font(.body, weight: .semibold))
+                .frame(width: ui.value(22), height: ui.minHitTarget)
+        }
             .buttonStyle(.plain)
             .accessibilityLabel(label)
             .help(label)
@@ -203,10 +215,10 @@ struct CategoryNavigation<Content: View>: View {
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.subheadline)
+                .font(ui.font(.subheadline))
                 .lineLimit(1)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, ui.spacingM)
+                .padding(.vertical, ui.value(6))
                 .background(selected ? Color.accentColor : Color.secondary.opacity(0.18), in: Capsule())
                 .foregroundStyle(selected ? Color.white : Color.primary)
         }
