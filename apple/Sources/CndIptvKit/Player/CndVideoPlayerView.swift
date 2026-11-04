@@ -686,7 +686,7 @@ public struct CndVideoPlayerView: View {
                         set: { scrubValue = $0 }
                     ),
                     in: 0...Double(max(controller.durationMs, 1)),
-                    step: 10_000,
+                    step: Self.progressStep(durationMs: controller.durationMs),
                     onEditingChanged: { editing in
                         if editing {
                             isScrubbing = true
@@ -819,6 +819,12 @@ public struct CndVideoPlayerView: View {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             if !Task.isCancelled, controller.state == .playing { hudVisible = false }
         }
+    }
+
+    /// Steps of 10 s for VoiceOver, but never larger than the range: SwiftUI traps on a stride longer
+    /// than the slider (a duration of 0 or a very short clip).
+    static func progressStep(durationMs: Int64) -> Double {
+        durationMs >= 20_000 ? 10_000 : 1
     }
 
     static func speedLabel(_ speed: Float) -> String {
