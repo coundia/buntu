@@ -103,6 +103,8 @@ public struct CndVideoPlayerView: View {
     var subtitleSearch: (() -> SubtitleSearchModel)?
     /// Goes back to the channel's live stream from a replay; the button shows only when provided.
     var onReturnToLive: (() -> Void)?
+    /// Downloads the film or episode being played; the button shows only when provided and the media can be downloaded.
+    var onDownload: (() -> Void)?
     /// macOS "Mode Cinéma": toggles full screen on a black stage with the cursor hidden along with the controls.
     var onToggleCinema: (() -> Void)?
     var isCinema: Bool
@@ -128,11 +130,13 @@ public struct CndVideoPlayerView: View {
         onZap: ((Int) -> Void)? = nil,
         subtitleSearch: (() -> SubtitleSearchModel)? = nil,
         onReturnToLive: (() -> Void)? = nil,
+        onDownload: (() -> Void)? = nil,
         onToggleCinema: (() -> Void)? = nil,
         isCinema: Bool = false
     ) {
         self.upNext = upNext
         self.onToggleCinema = onToggleCinema
+        self.onDownload = onDownload
         self.isCinema = isCinema
         self.controller = controller
         self.isFullscreen = isFullscreen
@@ -547,6 +551,10 @@ public struct CndVideoPlayerView: View {
                         showShelf.toggle()
                     }
                 }
+            }
+            if let onDownload, controller.media?.isDownloadable == true {
+                hudButton("arrow.down.circle", "Télécharger", action: onDownload)
+                    .help("Télécharger ce film ou cet épisode")
             }
             volumeControls
             speedMenu
