@@ -29,6 +29,9 @@ struct SettingsView: View {
             if let upNext { recommendationsSection(upNext) }
             profilesAndBouquetsSection
             parentalSection
+            #if os(macOS)
+            windowSection
+            #endif
             #if os(iOS)
             liveActivitiesSection
             #endif
@@ -159,6 +162,22 @@ struct SettingsView: View {
             Text("Écran verrouillé & Dynamic Island")
         } footer: {
             Text("Affiche le temps restant d'un enregistrement et le programme lu. Mis à jour au plus une fois par minute, sans adresse de flux ni identifiants.")
+        }
+    }
+    #endif
+
+    #if os(macOS)
+    private var windowSection: some View {
+        @Bindable var level = WindowLevelController.shared
+        return Section {
+            Picker("Rester au premier plan", selection: $level.mode) {
+                ForEach(AlwaysOnTopMode.allCases) { Text($0.title).tag($0) }
+            }
+            Toggle("Afficher sur tous les bureaux", isOn: $level.showsOnAllSpaces)
+        } header: {
+            Text("Fenêtre")
+        } footer: {
+            Text("Garde la fenêtre au-dessus des autres applications pour regarder en travaillant. « Pendant la lecture » ne la garde devant que tant qu'une lecture est ouverte. Sans effet en plein écran. ⌥⌘T bascule l'option.")
         }
     }
     #endif

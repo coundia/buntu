@@ -94,6 +94,10 @@ private struct LoadedShellView: View {
     /// True while the window is full screen because the player asked for it (not because the user chose it).
     @State private var fullscreenIsOurs = false
     #if os(macOS)
+    /// Whether the player was already large before the compact mode, to restore the layout.
+    @State private var wasExpandedBeforeCompact = false
+    #endif
+    #if os(macOS)
     @AppStorage("sidePanel.width") private var sidePanelWidthStored: Double = 0
     @State private var sidePanelDragStart: Double?
     #endif
@@ -182,9 +186,22 @@ private struct LoadedShellView: View {
                 Text(state.errorMessage ?? "")
             }
             .onChange(of: selectedTabRaw) { _, _ in vodContext.selection = nil }
+            #if os(macOS)
+            .onChange(of: WindowLevelController.shared.isCompact) { _, compact in
+                if compact {
+                    wasExpandedBeforeCompact = isPlayerExpanded
+                    setExpanded(true, windowFullscreen: false)
+                } else if !wasExpandedBeforeCompact {
+                    setExpanded(false)
+                }
+            }
+            #endif
             .onChange(of: hasMedia) { _, present in
                 if !present { setExpanded(false) }
                 commands.hasMedia = present
+                #if os(macOS)
+                WindowLevelController.shared.hasMedia = present
+                #endif
                 nowPlaying.refresh()
             }
             .onChange(of: player.state) { _, _ in
