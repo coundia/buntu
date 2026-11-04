@@ -9,6 +9,7 @@ struct SettingsView: View {
     var ai: AiProviderSettings?
     var assistant: AssistantModel?
     var upNext: UpNextModel?
+    var library: LibraryModel?
 
     @State private var showsOmdbKey = false
     @State private var showsAiKey = false
@@ -41,6 +42,9 @@ struct SettingsView: View {
             #endif
             subtitlesSection
             downloadsSection
+            #if !os(tvOS)
+            if let library { librarySection(library) }
+            #endif
             networkSection
             omdbSection
             if let ai, let assistant { assistantSection(ai, assistant) }
@@ -295,6 +299,18 @@ struct SettingsView: View {
             }
         }
     }
+
+    #if !os(tvOS)
+    private func librarySection(_ lib: LibraryModel) -> some View {
+        Section("Mes fichiers") {
+            NavigationLink {
+                LibrarySettingsView(model: lib)
+            } label: {
+                Label("Gestion des dossiers locaux", systemImage: "folder.badge.gear")
+            }
+        }
+    }
+    #endif
 
     private var networkSection: some View {
         Section("Réseau et en-têtes HTTP") {
