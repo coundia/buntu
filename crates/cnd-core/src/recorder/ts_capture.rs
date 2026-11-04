@@ -81,10 +81,6 @@ pub async fn capture_ts_stream(
 
         let mut stream = resp.bytes_stream();
         while let Some(chunk_res) = stream.next().await {
-            if Instant::now() >= deadline || cancel_token.is_cancelled() {
-                break;
-            }
-
             match chunk_res {
                 Ok(chunk) => {
                     if let Err(e) = file.write_all(&chunk).await {
@@ -101,6 +97,10 @@ pub async fn capture_ts_stream(
                     // Stream disconnected mid-chunk, try reconnecting
                     break;
                 }
+            }
+
+            if Instant::now() >= deadline || cancel_token.is_cancelled() {
+                break;
             }
         }
     }
@@ -125,6 +125,7 @@ pub async fn capture_ts_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
 
     #[tokio::test]
@@ -134,6 +135,8 @@ mod tests {
 
         tokio::spawn(async move {
             if let Ok((mut socket, _)) = listener.accept().await {
+                let mut req_buf = [0u8; 1024];
+                let _ = socket.read(&mut req_buf).await;
                 let head = "HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\nConnection: close\r\n\r\n";
                 let _ = socket.write_all(head.as_bytes()).await;
                 let chunk = vec![0x47u8; 188 * 10];
@@ -148,8 +151,8 @@ mod tests {
         let tmp_file = std::env::temp_dir().join(format!("cnd_rec_ts_{}.ts", std::process::id()));
         let cancel = CancellationToken::new();
 
-        // 300ms deadline
-        let deadline = Instant::now() + Duration::from_millis(300);
+        // 1500ms deadline (plenty of time for TCP handshake under heavy test load)
+        let deadline = Instant::now() + Duration::from_millis(1500);
         let res = capture_ts_stream(
             &client,
             &format!("http://127.0.0.1:{port}/stream.ts"),

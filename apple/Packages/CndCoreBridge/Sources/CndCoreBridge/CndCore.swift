@@ -558,6 +558,24 @@ fileprivate struct FfiConverterString: FfiConverter {
     }
 }
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterData: FfiConverterRustBuffer {
+    typealias SwiftType = Data
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Data {
+        let len: Int32 = try readInt(&buf)
+        return Data(try readBytes(&buf, count: Int(len)))
+    }
+
+    public static func write(_ value: Data, into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        writeBytes(&buf, value)
+    }
+}
+
 
 
 
@@ -697,6 +715,46 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     func isCatchupAvailable(itemId: Int64, startTs: Int64) throws  -> Bool
     
     func isHealthCheckRunning()  -> Bool
+    
+    func libraryAddFolder(displayName: String, path: String, bookmark: Data?, includeSubfolders: Bool, kinds: String) throws  -> LibraryFolderRecord
+    
+    func libraryAlbums(limit: UInt32, offset: UInt32) throws  -> [LibraryAlbumRecord]
+    
+    func libraryArtists(limit: UInt32, offset: UInt32) throws  -> [LibraryArtistRecord]
+    
+    func libraryBrowse(folderId: Int64, relDir: String) throws  -> [LibraryBrowseEntry]
+    
+    func libraryCancelScan(folderId: Int64) 
+    
+    func libraryGenres() throws  -> [LibraryGenreRecord]
+    
+    func libraryGetFolder(id: Int64) throws  -> LibraryFolderRecord?
+    
+    func libraryGetItem(id: Int64) throws  -> LibraryItemRecord?
+    
+    func libraryGetProgress(fingerprint: String) throws  -> LibraryProgressRecord?
+    
+    func libraryListFolders() throws  -> [LibraryFolderRecord]
+    
+    func libraryListItems(kind: String?, folderId: Int64?, sortBy: String?, sortAsc: Bool, offset: UInt32, limit: UInt32) throws  -> [LibraryItemRecord]
+    
+    func libraryPendingMetadata(limit: UInt32) throws  -> [LibraryItemRecord]
+    
+    func libraryRecent(kind: String?, limit: UInt32) throws  -> [LibraryItemRecord]
+    
+    func libraryRecentlyAdded(kind: String?, limit: UInt32) throws  -> [LibraryItemRecord]
+    
+    func libraryRecordProgress(fingerprint: String, positionMs: Int64, durationMs: Int64) throws 
+    
+    func libraryRemoveFolder(id: Int64) throws 
+    
+    func libraryScan(folderId: Int64, rootPath: String) throws  -> LibraryScanReport
+    
+    func librarySearch(query: String, kind: String?, limit: UInt32) throws  -> [LibraryItemRecord]
+    
+    func libraryStoreMetadata(itemId: Int64, metadata: LibraryItemMetadataInput) throws 
+    
+    func libraryUpdateFolderState(id: Int64, state: String) throws 
     
     func listAllowedGroups(profileId: Int64, kind: String) throws  -> [String]
     
@@ -1459,6 +1517,180 @@ open func isHealthCheckRunning() -> Bool  {
     uniffi_cnd_core_fn_method_cndengine_is_health_check_running(self.uniffiClonePointer(),$0
     )
 })
+}
+    
+open func libraryAddFolder(displayName: String, path: String, bookmark: Data?, includeSubfolders: Bool, kinds: String)throws  -> LibraryFolderRecord  {
+    return try  FfiConverterTypeLibraryFolderRecord_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_add_folder(self.uniffiClonePointer(),
+        FfiConverterString.lower(displayName),
+        FfiConverterString.lower(path),
+        FfiConverterOptionData.lower(bookmark),
+        FfiConverterBool.lower(includeSubfolders),
+        FfiConverterString.lower(kinds),$0
+    )
+})
+}
+    
+open func libraryAlbums(limit: UInt32, offset: UInt32)throws  -> [LibraryAlbumRecord]  {
+    return try  FfiConverterSequenceTypeLibraryAlbumRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_albums(self.uniffiClonePointer(),
+        FfiConverterUInt32.lower(limit),
+        FfiConverterUInt32.lower(offset),$0
+    )
+})
+}
+    
+open func libraryArtists(limit: UInt32, offset: UInt32)throws  -> [LibraryArtistRecord]  {
+    return try  FfiConverterSequenceTypeLibraryArtistRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_artists(self.uniffiClonePointer(),
+        FfiConverterUInt32.lower(limit),
+        FfiConverterUInt32.lower(offset),$0
+    )
+})
+}
+    
+open func libraryBrowse(folderId: Int64, relDir: String)throws  -> [LibraryBrowseEntry]  {
+    return try  FfiConverterSequenceTypeLibraryBrowseEntry.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_browse(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(folderId),
+        FfiConverterString.lower(relDir),$0
+    )
+})
+}
+    
+open func libraryCancelScan(folderId: Int64)  {try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_library_cancel_scan(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(folderId),$0
+    )
+}
+}
+    
+open func libraryGenres()throws  -> [LibraryGenreRecord]  {
+    return try  FfiConverterSequenceTypeLibraryGenreRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_genres(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+open func libraryGetFolder(id: Int64)throws  -> LibraryFolderRecord?  {
+    return try  FfiConverterOptionTypeLibraryFolderRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_get_folder(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(id),$0
+    )
+})
+}
+    
+open func libraryGetItem(id: Int64)throws  -> LibraryItemRecord?  {
+    return try  FfiConverterOptionTypeLibraryItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_get_item(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(id),$0
+    )
+})
+}
+    
+open func libraryGetProgress(fingerprint: String)throws  -> LibraryProgressRecord?  {
+    return try  FfiConverterOptionTypeLibraryProgressRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_get_progress(self.uniffiClonePointer(),
+        FfiConverterString.lower(fingerprint),$0
+    )
+})
+}
+    
+open func libraryListFolders()throws  -> [LibraryFolderRecord]  {
+    return try  FfiConverterSequenceTypeLibraryFolderRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_list_folders(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+open func libraryListItems(kind: String?, folderId: Int64?, sortBy: String?, sortAsc: Bool, offset: UInt32, limit: UInt32)throws  -> [LibraryItemRecord]  {
+    return try  FfiConverterSequenceTypeLibraryItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_list_items(self.uniffiClonePointer(),
+        FfiConverterOptionString.lower(kind),
+        FfiConverterOptionInt64.lower(folderId),
+        FfiConverterOptionString.lower(sortBy),
+        FfiConverterBool.lower(sortAsc),
+        FfiConverterUInt32.lower(offset),
+        FfiConverterUInt32.lower(limit),$0
+    )
+})
+}
+    
+open func libraryPendingMetadata(limit: UInt32)throws  -> [LibraryItemRecord]  {
+    return try  FfiConverterSequenceTypeLibraryItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_pending_metadata(self.uniffiClonePointer(),
+        FfiConverterUInt32.lower(limit),$0
+    )
+})
+}
+    
+open func libraryRecent(kind: String?, limit: UInt32)throws  -> [LibraryItemRecord]  {
+    return try  FfiConverterSequenceTypeLibraryItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_recent(self.uniffiClonePointer(),
+        FfiConverterOptionString.lower(kind),
+        FfiConverterUInt32.lower(limit),$0
+    )
+})
+}
+    
+open func libraryRecentlyAdded(kind: String?, limit: UInt32)throws  -> [LibraryItemRecord]  {
+    return try  FfiConverterSequenceTypeLibraryItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_recently_added(self.uniffiClonePointer(),
+        FfiConverterOptionString.lower(kind),
+        FfiConverterUInt32.lower(limit),$0
+    )
+})
+}
+    
+open func libraryRecordProgress(fingerprint: String, positionMs: Int64, durationMs: Int64)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_record_progress(self.uniffiClonePointer(),
+        FfiConverterString.lower(fingerprint),
+        FfiConverterInt64.lower(positionMs),
+        FfiConverterInt64.lower(durationMs),$0
+    )
+}
+}
+    
+open func libraryRemoveFolder(id: Int64)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_remove_folder(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(id),$0
+    )
+}
+}
+    
+open func libraryScan(folderId: Int64, rootPath: String)throws  -> LibraryScanReport  {
+    return try  FfiConverterTypeLibraryScanReport_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_scan(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(folderId),
+        FfiConverterString.lower(rootPath),$0
+    )
+})
+}
+    
+open func librarySearch(query: String, kind: String?, limit: UInt32)throws  -> [LibraryItemRecord]  {
+    return try  FfiConverterSequenceTypeLibraryItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_search(self.uniffiClonePointer(),
+        FfiConverterString.lower(query),
+        FfiConverterOptionString.lower(kind),
+        FfiConverterUInt32.lower(limit),$0
+    )
+})
+}
+    
+open func libraryStoreMetadata(itemId: Int64, metadata: LibraryItemMetadataInput)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_store_metadata(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(itemId),
+        FfiConverterTypeLibraryItemMetadataInput_lower(metadata),$0
+    )
+}
+}
+    
+open func libraryUpdateFolderState(id: Int64, state: String)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_library_update_folder_state(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(id),
+        FfiConverterString.lower(state),$0
+    )
+}
 }
     
 open func listAllowedGroups(profileId: Int64, kind: String)throws  -> [String]  {
@@ -4059,6 +4291,1108 @@ public func FfiConverterTypeIptvSourceRecord_lift(_ buf: RustBuffer) throws -> I
 #endif
 public func FfiConverterTypeIptvSourceRecord_lower(_ value: IptvSourceRecord) -> RustBuffer {
     return FfiConverterTypeIptvSourceRecord.lower(value)
+}
+
+
+public struct LibraryAlbumRecord {
+    public var name: String
+    public var artist: String?
+    public var year: UInt32?
+    public var trackCount: UInt32
+    public var thumbnailPath: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, artist: String?, year: UInt32?, trackCount: UInt32, thumbnailPath: String?) {
+        self.name = name
+        self.artist = artist
+        self.year = year
+        self.trackCount = trackCount
+        self.thumbnailPath = thumbnailPath
+    }
+}
+
+#if compiler(>=6)
+extension LibraryAlbumRecord: Sendable {}
+#endif
+
+
+extension LibraryAlbumRecord: Equatable, Hashable {
+    public static func ==(lhs: LibraryAlbumRecord, rhs: LibraryAlbumRecord) -> Bool {
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.artist != rhs.artist {
+            return false
+        }
+        if lhs.year != rhs.year {
+            return false
+        }
+        if lhs.trackCount != rhs.trackCount {
+            return false
+        }
+        if lhs.thumbnailPath != rhs.thumbnailPath {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(artist)
+        hasher.combine(year)
+        hasher.combine(trackCount)
+        hasher.combine(thumbnailPath)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryAlbumRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryAlbumRecord {
+        return
+            try LibraryAlbumRecord(
+                name: FfiConverterString.read(from: &buf), 
+                artist: FfiConverterOptionString.read(from: &buf), 
+                year: FfiConverterOptionUInt32.read(from: &buf), 
+                trackCount: FfiConverterUInt32.read(from: &buf), 
+                thumbnailPath: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryAlbumRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterOptionString.write(value.artist, into: &buf)
+        FfiConverterOptionUInt32.write(value.year, into: &buf)
+        FfiConverterUInt32.write(value.trackCount, into: &buf)
+        FfiConverterOptionString.write(value.thumbnailPath, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryAlbumRecord_lift(_ buf: RustBuffer) throws -> LibraryAlbumRecord {
+    return try FfiConverterTypeLibraryAlbumRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryAlbumRecord_lower(_ value: LibraryAlbumRecord) -> RustBuffer {
+    return FfiConverterTypeLibraryAlbumRecord.lower(value)
+}
+
+
+public struct LibraryArtistRecord {
+    public var name: String
+    public var albumCount: UInt32
+    public var trackCount: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, albumCount: UInt32, trackCount: UInt32) {
+        self.name = name
+        self.albumCount = albumCount
+        self.trackCount = trackCount
+    }
+}
+
+#if compiler(>=6)
+extension LibraryArtistRecord: Sendable {}
+#endif
+
+
+extension LibraryArtistRecord: Equatable, Hashable {
+    public static func ==(lhs: LibraryArtistRecord, rhs: LibraryArtistRecord) -> Bool {
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.albumCount != rhs.albumCount {
+            return false
+        }
+        if lhs.trackCount != rhs.trackCount {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(albumCount)
+        hasher.combine(trackCount)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryArtistRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryArtistRecord {
+        return
+            try LibraryArtistRecord(
+                name: FfiConverterString.read(from: &buf), 
+                albumCount: FfiConverterUInt32.read(from: &buf), 
+                trackCount: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryArtistRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterUInt32.write(value.albumCount, into: &buf)
+        FfiConverterUInt32.write(value.trackCount, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryArtistRecord_lift(_ buf: RustBuffer) throws -> LibraryArtistRecord {
+    return try FfiConverterTypeLibraryArtistRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryArtistRecord_lower(_ value: LibraryArtistRecord) -> RustBuffer {
+    return FfiConverterTypeLibraryArtistRecord.lower(value)
+}
+
+
+public struct LibraryBrowseEntry {
+    public var name: String
+    public var relPath: String
+    public var isDirectory: Bool
+    public var kind: String?
+    public var itemId: Int64?
+    public var size: UInt64?
+    public var durationMs: UInt32?
+    public var thumbnailPath: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, relPath: String, isDirectory: Bool, kind: String?, itemId: Int64?, size: UInt64?, durationMs: UInt32?, thumbnailPath: String?) {
+        self.name = name
+        self.relPath = relPath
+        self.isDirectory = isDirectory
+        self.kind = kind
+        self.itemId = itemId
+        self.size = size
+        self.durationMs = durationMs
+        self.thumbnailPath = thumbnailPath
+    }
+}
+
+#if compiler(>=6)
+extension LibraryBrowseEntry: Sendable {}
+#endif
+
+
+extension LibraryBrowseEntry: Equatable, Hashable {
+    public static func ==(lhs: LibraryBrowseEntry, rhs: LibraryBrowseEntry) -> Bool {
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.relPath != rhs.relPath {
+            return false
+        }
+        if lhs.isDirectory != rhs.isDirectory {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.itemId != rhs.itemId {
+            return false
+        }
+        if lhs.size != rhs.size {
+            return false
+        }
+        if lhs.durationMs != rhs.durationMs {
+            return false
+        }
+        if lhs.thumbnailPath != rhs.thumbnailPath {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(relPath)
+        hasher.combine(isDirectory)
+        hasher.combine(kind)
+        hasher.combine(itemId)
+        hasher.combine(size)
+        hasher.combine(durationMs)
+        hasher.combine(thumbnailPath)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryBrowseEntry: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryBrowseEntry {
+        return
+            try LibraryBrowseEntry(
+                name: FfiConverterString.read(from: &buf), 
+                relPath: FfiConverterString.read(from: &buf), 
+                isDirectory: FfiConverterBool.read(from: &buf), 
+                kind: FfiConverterOptionString.read(from: &buf), 
+                itemId: FfiConverterOptionInt64.read(from: &buf), 
+                size: FfiConverterOptionUInt64.read(from: &buf), 
+                durationMs: FfiConverterOptionUInt32.read(from: &buf), 
+                thumbnailPath: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryBrowseEntry, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.relPath, into: &buf)
+        FfiConverterBool.write(value.isDirectory, into: &buf)
+        FfiConverterOptionString.write(value.kind, into: &buf)
+        FfiConverterOptionInt64.write(value.itemId, into: &buf)
+        FfiConverterOptionUInt64.write(value.size, into: &buf)
+        FfiConverterOptionUInt32.write(value.durationMs, into: &buf)
+        FfiConverterOptionString.write(value.thumbnailPath, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryBrowseEntry_lift(_ buf: RustBuffer) throws -> LibraryBrowseEntry {
+    return try FfiConverterTypeLibraryBrowseEntry.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryBrowseEntry_lower(_ value: LibraryBrowseEntry) -> RustBuffer {
+    return FfiConverterTypeLibraryBrowseEntry.lower(value)
+}
+
+
+public struct LibraryFolderRecord {
+    public var id: Int64
+    public var displayName: String
+    public var path: String
+    public var bookmark: Data?
+    public var includeSubfolders: Bool
+    public var kinds: String
+    public var state: String
+    public var itemCount: UInt32
+    public var lastScanAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, displayName: String, path: String, bookmark: Data?, includeSubfolders: Bool, kinds: String, state: String, itemCount: UInt32, lastScanAt: Int64) {
+        self.id = id
+        self.displayName = displayName
+        self.path = path
+        self.bookmark = bookmark
+        self.includeSubfolders = includeSubfolders
+        self.kinds = kinds
+        self.state = state
+        self.itemCount = itemCount
+        self.lastScanAt = lastScanAt
+    }
+}
+
+#if compiler(>=6)
+extension LibraryFolderRecord: Sendable {}
+#endif
+
+
+extension LibraryFolderRecord: Equatable, Hashable {
+    public static func ==(lhs: LibraryFolderRecord, rhs: LibraryFolderRecord) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.displayName != rhs.displayName {
+            return false
+        }
+        if lhs.path != rhs.path {
+            return false
+        }
+        if lhs.bookmark != rhs.bookmark {
+            return false
+        }
+        if lhs.includeSubfolders != rhs.includeSubfolders {
+            return false
+        }
+        if lhs.kinds != rhs.kinds {
+            return false
+        }
+        if lhs.state != rhs.state {
+            return false
+        }
+        if lhs.itemCount != rhs.itemCount {
+            return false
+        }
+        if lhs.lastScanAt != rhs.lastScanAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(displayName)
+        hasher.combine(path)
+        hasher.combine(bookmark)
+        hasher.combine(includeSubfolders)
+        hasher.combine(kinds)
+        hasher.combine(state)
+        hasher.combine(itemCount)
+        hasher.combine(lastScanAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryFolderRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryFolderRecord {
+        return
+            try LibraryFolderRecord(
+                id: FfiConverterInt64.read(from: &buf), 
+                displayName: FfiConverterString.read(from: &buf), 
+                path: FfiConverterString.read(from: &buf), 
+                bookmark: FfiConverterOptionData.read(from: &buf), 
+                includeSubfolders: FfiConverterBool.read(from: &buf), 
+                kinds: FfiConverterString.read(from: &buf), 
+                state: FfiConverterString.read(from: &buf), 
+                itemCount: FfiConverterUInt32.read(from: &buf), 
+                lastScanAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryFolderRecord, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterString.write(value.displayName, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterOptionData.write(value.bookmark, into: &buf)
+        FfiConverterBool.write(value.includeSubfolders, into: &buf)
+        FfiConverterString.write(value.kinds, into: &buf)
+        FfiConverterString.write(value.state, into: &buf)
+        FfiConverterUInt32.write(value.itemCount, into: &buf)
+        FfiConverterInt64.write(value.lastScanAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryFolderRecord_lift(_ buf: RustBuffer) throws -> LibraryFolderRecord {
+    return try FfiConverterTypeLibraryFolderRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryFolderRecord_lower(_ value: LibraryFolderRecord) -> RustBuffer {
+    return FfiConverterTypeLibraryFolderRecord.lower(value)
+}
+
+
+public struct LibraryGenreRecord {
+    public var name: String
+    public var trackCount: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, trackCount: UInt32) {
+        self.name = name
+        self.trackCount = trackCount
+    }
+}
+
+#if compiler(>=6)
+extension LibraryGenreRecord: Sendable {}
+#endif
+
+
+extension LibraryGenreRecord: Equatable, Hashable {
+    public static func ==(lhs: LibraryGenreRecord, rhs: LibraryGenreRecord) -> Bool {
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.trackCount != rhs.trackCount {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(trackCount)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryGenreRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryGenreRecord {
+        return
+            try LibraryGenreRecord(
+                name: FfiConverterString.read(from: &buf), 
+                trackCount: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryGenreRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterUInt32.write(value.trackCount, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryGenreRecord_lift(_ buf: RustBuffer) throws -> LibraryGenreRecord {
+    return try FfiConverterTypeLibraryGenreRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryGenreRecord_lower(_ value: LibraryGenreRecord) -> RustBuffer {
+    return FfiConverterTypeLibraryGenreRecord.lower(value)
+}
+
+
+public struct LibraryItemMetadataInput {
+    public var title: String?
+    public var durationMs: UInt32?
+    public var width: UInt32?
+    public var height: UInt32?
+    public var codec: String?
+    public var artist: String?
+    public var album: String?
+    public var albumArtist: String?
+    public var trackNo: UInt32?
+    public var discNo: UInt32?
+    public var genre: String?
+    public var year: UInt32?
+    public var takenAt: Int64?
+    public var thumbnailPath: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String?, durationMs: UInt32?, width: UInt32?, height: UInt32?, codec: String?, artist: String?, album: String?, albumArtist: String?, trackNo: UInt32?, discNo: UInt32?, genre: String?, year: UInt32?, takenAt: Int64?, thumbnailPath: String?) {
+        self.title = title
+        self.durationMs = durationMs
+        self.width = width
+        self.height = height
+        self.codec = codec
+        self.artist = artist
+        self.album = album
+        self.albumArtist = albumArtist
+        self.trackNo = trackNo
+        self.discNo = discNo
+        self.genre = genre
+        self.year = year
+        self.takenAt = takenAt
+        self.thumbnailPath = thumbnailPath
+    }
+}
+
+#if compiler(>=6)
+extension LibraryItemMetadataInput: Sendable {}
+#endif
+
+
+extension LibraryItemMetadataInput: Equatable, Hashable {
+    public static func ==(lhs: LibraryItemMetadataInput, rhs: LibraryItemMetadataInput) -> Bool {
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.durationMs != rhs.durationMs {
+            return false
+        }
+        if lhs.width != rhs.width {
+            return false
+        }
+        if lhs.height != rhs.height {
+            return false
+        }
+        if lhs.codec != rhs.codec {
+            return false
+        }
+        if lhs.artist != rhs.artist {
+            return false
+        }
+        if lhs.album != rhs.album {
+            return false
+        }
+        if lhs.albumArtist != rhs.albumArtist {
+            return false
+        }
+        if lhs.trackNo != rhs.trackNo {
+            return false
+        }
+        if lhs.discNo != rhs.discNo {
+            return false
+        }
+        if lhs.genre != rhs.genre {
+            return false
+        }
+        if lhs.year != rhs.year {
+            return false
+        }
+        if lhs.takenAt != rhs.takenAt {
+            return false
+        }
+        if lhs.thumbnailPath != rhs.thumbnailPath {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(title)
+        hasher.combine(durationMs)
+        hasher.combine(width)
+        hasher.combine(height)
+        hasher.combine(codec)
+        hasher.combine(artist)
+        hasher.combine(album)
+        hasher.combine(albumArtist)
+        hasher.combine(trackNo)
+        hasher.combine(discNo)
+        hasher.combine(genre)
+        hasher.combine(year)
+        hasher.combine(takenAt)
+        hasher.combine(thumbnailPath)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryItemMetadataInput: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryItemMetadataInput {
+        return
+            try LibraryItemMetadataInput(
+                title: FfiConverterOptionString.read(from: &buf), 
+                durationMs: FfiConverterOptionUInt32.read(from: &buf), 
+                width: FfiConverterOptionUInt32.read(from: &buf), 
+                height: FfiConverterOptionUInt32.read(from: &buf), 
+                codec: FfiConverterOptionString.read(from: &buf), 
+                artist: FfiConverterOptionString.read(from: &buf), 
+                album: FfiConverterOptionString.read(from: &buf), 
+                albumArtist: FfiConverterOptionString.read(from: &buf), 
+                trackNo: FfiConverterOptionUInt32.read(from: &buf), 
+                discNo: FfiConverterOptionUInt32.read(from: &buf), 
+                genre: FfiConverterOptionString.read(from: &buf), 
+                year: FfiConverterOptionUInt32.read(from: &buf), 
+                takenAt: FfiConverterOptionInt64.read(from: &buf), 
+                thumbnailPath: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryItemMetadataInput, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionUInt32.write(value.durationMs, into: &buf)
+        FfiConverterOptionUInt32.write(value.width, into: &buf)
+        FfiConverterOptionUInt32.write(value.height, into: &buf)
+        FfiConverterOptionString.write(value.codec, into: &buf)
+        FfiConverterOptionString.write(value.artist, into: &buf)
+        FfiConverterOptionString.write(value.album, into: &buf)
+        FfiConverterOptionString.write(value.albumArtist, into: &buf)
+        FfiConverterOptionUInt32.write(value.trackNo, into: &buf)
+        FfiConverterOptionUInt32.write(value.discNo, into: &buf)
+        FfiConverterOptionString.write(value.genre, into: &buf)
+        FfiConverterOptionUInt32.write(value.year, into: &buf)
+        FfiConverterOptionInt64.write(value.takenAt, into: &buf)
+        FfiConverterOptionString.write(value.thumbnailPath, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryItemMetadataInput_lift(_ buf: RustBuffer) throws -> LibraryItemMetadataInput {
+    return try FfiConverterTypeLibraryItemMetadataInput.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryItemMetadataInput_lower(_ value: LibraryItemMetadataInput) -> RustBuffer {
+    return FfiConverterTypeLibraryItemMetadataInput.lower(value)
+}
+
+
+public struct LibraryItemRecord {
+    public var id: Int64
+    public var folderId: Int64
+    public var relPath: String
+    public var fullPath: String
+    public var kind: String
+    public var size: UInt64
+    public var mtime: Int64
+    public var fingerprint: String
+    public var title: String?
+    public var durationMs: UInt32?
+    public var width: UInt32?
+    public var height: UInt32?
+    public var codec: String?
+    public var artist: String?
+    public var album: String?
+    public var albumArtist: String?
+    public var trackNo: UInt32?
+    public var discNo: UInt32?
+    public var genre: String?
+    public var year: UInt32?
+    public var takenAt: Int64?
+    public var thumbnailPath: String?
+    public var subtitles: [String]
+    public var metadataState: String
+    public var addedAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, folderId: Int64, relPath: String, fullPath: String, kind: String, size: UInt64, mtime: Int64, fingerprint: String, title: String?, durationMs: UInt32?, width: UInt32?, height: UInt32?, codec: String?, artist: String?, album: String?, albumArtist: String?, trackNo: UInt32?, discNo: UInt32?, genre: String?, year: UInt32?, takenAt: Int64?, thumbnailPath: String?, subtitles: [String], metadataState: String, addedAt: Int64) {
+        self.id = id
+        self.folderId = folderId
+        self.relPath = relPath
+        self.fullPath = fullPath
+        self.kind = kind
+        self.size = size
+        self.mtime = mtime
+        self.fingerprint = fingerprint
+        self.title = title
+        self.durationMs = durationMs
+        self.width = width
+        self.height = height
+        self.codec = codec
+        self.artist = artist
+        self.album = album
+        self.albumArtist = albumArtist
+        self.trackNo = trackNo
+        self.discNo = discNo
+        self.genre = genre
+        self.year = year
+        self.takenAt = takenAt
+        self.thumbnailPath = thumbnailPath
+        self.subtitles = subtitles
+        self.metadataState = metadataState
+        self.addedAt = addedAt
+    }
+}
+
+#if compiler(>=6)
+extension LibraryItemRecord: Sendable {}
+#endif
+
+
+extension LibraryItemRecord: Equatable, Hashable {
+    public static func ==(lhs: LibraryItemRecord, rhs: LibraryItemRecord) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.folderId != rhs.folderId {
+            return false
+        }
+        if lhs.relPath != rhs.relPath {
+            return false
+        }
+        if lhs.fullPath != rhs.fullPath {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.size != rhs.size {
+            return false
+        }
+        if lhs.mtime != rhs.mtime {
+            return false
+        }
+        if lhs.fingerprint != rhs.fingerprint {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.durationMs != rhs.durationMs {
+            return false
+        }
+        if lhs.width != rhs.width {
+            return false
+        }
+        if lhs.height != rhs.height {
+            return false
+        }
+        if lhs.codec != rhs.codec {
+            return false
+        }
+        if lhs.artist != rhs.artist {
+            return false
+        }
+        if lhs.album != rhs.album {
+            return false
+        }
+        if lhs.albumArtist != rhs.albumArtist {
+            return false
+        }
+        if lhs.trackNo != rhs.trackNo {
+            return false
+        }
+        if lhs.discNo != rhs.discNo {
+            return false
+        }
+        if lhs.genre != rhs.genre {
+            return false
+        }
+        if lhs.year != rhs.year {
+            return false
+        }
+        if lhs.takenAt != rhs.takenAt {
+            return false
+        }
+        if lhs.thumbnailPath != rhs.thumbnailPath {
+            return false
+        }
+        if lhs.subtitles != rhs.subtitles {
+            return false
+        }
+        if lhs.metadataState != rhs.metadataState {
+            return false
+        }
+        if lhs.addedAt != rhs.addedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(folderId)
+        hasher.combine(relPath)
+        hasher.combine(fullPath)
+        hasher.combine(kind)
+        hasher.combine(size)
+        hasher.combine(mtime)
+        hasher.combine(fingerprint)
+        hasher.combine(title)
+        hasher.combine(durationMs)
+        hasher.combine(width)
+        hasher.combine(height)
+        hasher.combine(codec)
+        hasher.combine(artist)
+        hasher.combine(album)
+        hasher.combine(albumArtist)
+        hasher.combine(trackNo)
+        hasher.combine(discNo)
+        hasher.combine(genre)
+        hasher.combine(year)
+        hasher.combine(takenAt)
+        hasher.combine(thumbnailPath)
+        hasher.combine(subtitles)
+        hasher.combine(metadataState)
+        hasher.combine(addedAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryItemRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryItemRecord {
+        return
+            try LibraryItemRecord(
+                id: FfiConverterInt64.read(from: &buf), 
+                folderId: FfiConverterInt64.read(from: &buf), 
+                relPath: FfiConverterString.read(from: &buf), 
+                fullPath: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterString.read(from: &buf), 
+                size: FfiConverterUInt64.read(from: &buf), 
+                mtime: FfiConverterInt64.read(from: &buf), 
+                fingerprint: FfiConverterString.read(from: &buf), 
+                title: FfiConverterOptionString.read(from: &buf), 
+                durationMs: FfiConverterOptionUInt32.read(from: &buf), 
+                width: FfiConverterOptionUInt32.read(from: &buf), 
+                height: FfiConverterOptionUInt32.read(from: &buf), 
+                codec: FfiConverterOptionString.read(from: &buf), 
+                artist: FfiConverterOptionString.read(from: &buf), 
+                album: FfiConverterOptionString.read(from: &buf), 
+                albumArtist: FfiConverterOptionString.read(from: &buf), 
+                trackNo: FfiConverterOptionUInt32.read(from: &buf), 
+                discNo: FfiConverterOptionUInt32.read(from: &buf), 
+                genre: FfiConverterOptionString.read(from: &buf), 
+                year: FfiConverterOptionUInt32.read(from: &buf), 
+                takenAt: FfiConverterOptionInt64.read(from: &buf), 
+                thumbnailPath: FfiConverterOptionString.read(from: &buf), 
+                subtitles: FfiConverterSequenceString.read(from: &buf), 
+                metadataState: FfiConverterString.read(from: &buf), 
+                addedAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryItemRecord, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterInt64.write(value.folderId, into: &buf)
+        FfiConverterString.write(value.relPath, into: &buf)
+        FfiConverterString.write(value.fullPath, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterUInt64.write(value.size, into: &buf)
+        FfiConverterInt64.write(value.mtime, into: &buf)
+        FfiConverterString.write(value.fingerprint, into: &buf)
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionUInt32.write(value.durationMs, into: &buf)
+        FfiConverterOptionUInt32.write(value.width, into: &buf)
+        FfiConverterOptionUInt32.write(value.height, into: &buf)
+        FfiConverterOptionString.write(value.codec, into: &buf)
+        FfiConverterOptionString.write(value.artist, into: &buf)
+        FfiConverterOptionString.write(value.album, into: &buf)
+        FfiConverterOptionString.write(value.albumArtist, into: &buf)
+        FfiConverterOptionUInt32.write(value.trackNo, into: &buf)
+        FfiConverterOptionUInt32.write(value.discNo, into: &buf)
+        FfiConverterOptionString.write(value.genre, into: &buf)
+        FfiConverterOptionUInt32.write(value.year, into: &buf)
+        FfiConverterOptionInt64.write(value.takenAt, into: &buf)
+        FfiConverterOptionString.write(value.thumbnailPath, into: &buf)
+        FfiConverterSequenceString.write(value.subtitles, into: &buf)
+        FfiConverterString.write(value.metadataState, into: &buf)
+        FfiConverterInt64.write(value.addedAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryItemRecord_lift(_ buf: RustBuffer) throws -> LibraryItemRecord {
+    return try FfiConverterTypeLibraryItemRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryItemRecord_lower(_ value: LibraryItemRecord) -> RustBuffer {
+    return FfiConverterTypeLibraryItemRecord.lower(value)
+}
+
+
+public struct LibraryProgressRecord {
+    public var fingerprint: String
+    public var positionMs: Int64
+    public var durationMs: Int64
+    public var completed: Bool
+    public var lastPlayedAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(fingerprint: String, positionMs: Int64, durationMs: Int64, completed: Bool, lastPlayedAt: Int64) {
+        self.fingerprint = fingerprint
+        self.positionMs = positionMs
+        self.durationMs = durationMs
+        self.completed = completed
+        self.lastPlayedAt = lastPlayedAt
+    }
+}
+
+#if compiler(>=6)
+extension LibraryProgressRecord: Sendable {}
+#endif
+
+
+extension LibraryProgressRecord: Equatable, Hashable {
+    public static func ==(lhs: LibraryProgressRecord, rhs: LibraryProgressRecord) -> Bool {
+        if lhs.fingerprint != rhs.fingerprint {
+            return false
+        }
+        if lhs.positionMs != rhs.positionMs {
+            return false
+        }
+        if lhs.durationMs != rhs.durationMs {
+            return false
+        }
+        if lhs.completed != rhs.completed {
+            return false
+        }
+        if lhs.lastPlayedAt != rhs.lastPlayedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(fingerprint)
+        hasher.combine(positionMs)
+        hasher.combine(durationMs)
+        hasher.combine(completed)
+        hasher.combine(lastPlayedAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryProgressRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryProgressRecord {
+        return
+            try LibraryProgressRecord(
+                fingerprint: FfiConverterString.read(from: &buf), 
+                positionMs: FfiConverterInt64.read(from: &buf), 
+                durationMs: FfiConverterInt64.read(from: &buf), 
+                completed: FfiConverterBool.read(from: &buf), 
+                lastPlayedAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryProgressRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.fingerprint, into: &buf)
+        FfiConverterInt64.write(value.positionMs, into: &buf)
+        FfiConverterInt64.write(value.durationMs, into: &buf)
+        FfiConverterBool.write(value.completed, into: &buf)
+        FfiConverterInt64.write(value.lastPlayedAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryProgressRecord_lift(_ buf: RustBuffer) throws -> LibraryProgressRecord {
+    return try FfiConverterTypeLibraryProgressRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryProgressRecord_lower(_ value: LibraryProgressRecord) -> RustBuffer {
+    return FfiConverterTypeLibraryProgressRecord.lower(value)
+}
+
+
+public struct LibraryScanReport {
+    public var added: UInt32
+    public var updated: UInt32
+    public var removed: UInt32
+    public var unchanged: UInt32
+    public var ignored: UInt32
+    public var durationMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(added: UInt32, updated: UInt32, removed: UInt32, unchanged: UInt32, ignored: UInt32, durationMs: UInt64) {
+        self.added = added
+        self.updated = updated
+        self.removed = removed
+        self.unchanged = unchanged
+        self.ignored = ignored
+        self.durationMs = durationMs
+    }
+}
+
+#if compiler(>=6)
+extension LibraryScanReport: Sendable {}
+#endif
+
+
+extension LibraryScanReport: Equatable, Hashable {
+    public static func ==(lhs: LibraryScanReport, rhs: LibraryScanReport) -> Bool {
+        if lhs.added != rhs.added {
+            return false
+        }
+        if lhs.updated != rhs.updated {
+            return false
+        }
+        if lhs.removed != rhs.removed {
+            return false
+        }
+        if lhs.unchanged != rhs.unchanged {
+            return false
+        }
+        if lhs.ignored != rhs.ignored {
+            return false
+        }
+        if lhs.durationMs != rhs.durationMs {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(added)
+        hasher.combine(updated)
+        hasher.combine(removed)
+        hasher.combine(unchanged)
+        hasher.combine(ignored)
+        hasher.combine(durationMs)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibraryScanReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryScanReport {
+        return
+            try LibraryScanReport(
+                added: FfiConverterUInt32.read(from: &buf), 
+                updated: FfiConverterUInt32.read(from: &buf), 
+                removed: FfiConverterUInt32.read(from: &buf), 
+                unchanged: FfiConverterUInt32.read(from: &buf), 
+                ignored: FfiConverterUInt32.read(from: &buf), 
+                durationMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryScanReport, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.added, into: &buf)
+        FfiConverterUInt32.write(value.updated, into: &buf)
+        FfiConverterUInt32.write(value.removed, into: &buf)
+        FfiConverterUInt32.write(value.unchanged, into: &buf)
+        FfiConverterUInt32.write(value.ignored, into: &buf)
+        FfiConverterUInt64.write(value.durationMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryScanReport_lift(_ buf: RustBuffer) throws -> LibraryScanReport {
+    return try FfiConverterTypeLibraryScanReport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibraryScanReport_lower(_ value: LibraryScanReport) -> RustBuffer {
+    return FfiConverterTypeLibraryScanReport.lower(value)
 }
 
 
@@ -8139,6 +9473,10 @@ public enum CndError: Swift.Error {
     )
     case Internal(message: String
     )
+    case Validation(message: String
+    )
+    case NotFound(message: String
+    )
 }
 
 
@@ -8168,6 +9506,12 @@ public struct FfiConverterTypeCndError: FfiConverterRustBuffer {
             message: try FfiConverterString.read(from: &buf)
             )
         case 5: return .Internal(
+            message: try FfiConverterString.read(from: &buf)
+            )
+        case 6: return .Validation(
+            message: try FfiConverterString.read(from: &buf)
+            )
+        case 7: return .NotFound(
             message: try FfiConverterString.read(from: &buf)
             )
 
@@ -8204,6 +9548,16 @@ public struct FfiConverterTypeCndError: FfiConverterRustBuffer {
         
         case let .Internal(message):
             writeInt(&buf, Int32(5))
+            FfiConverterString.write(message, into: &buf)
+            
+        
+        case let .Validation(message):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(message, into: &buf)
+            
+        
+        case let .NotFound(message):
+            writeInt(&buf, Int32(7))
             FfiConverterString.write(message, into: &buf)
             
         }
@@ -8918,6 +10272,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
+    typealias SwiftType = Data?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterData.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterData.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeEpgProgramRecord: FfiConverterRustBuffer {
     typealias SwiftType = EpgProgramRecord?
 
@@ -8958,6 +10336,78 @@ fileprivate struct FfiConverterOptionTypeIptvItemRecord: FfiConverterRustBuffer 
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeIptvItemRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeLibraryFolderRecord: FfiConverterRustBuffer {
+    typealias SwiftType = LibraryFolderRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeLibraryFolderRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeLibraryFolderRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeLibraryItemRecord: FfiConverterRustBuffer {
+    typealias SwiftType = LibraryItemRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeLibraryItemRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeLibraryItemRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeLibraryProgressRecord: FfiConverterRustBuffer {
+    typealias SwiftType = LibraryProgressRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeLibraryProgressRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeLibraryProgressRecord.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -9401,6 +10851,156 @@ fileprivate struct FfiConverterSequenceTypeIptvSourceRecord: FfiConverterRustBuf
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeIptvSourceRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeLibraryAlbumRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [LibraryAlbumRecord]
+
+    public static func write(_ value: [LibraryAlbumRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibraryAlbumRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibraryAlbumRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibraryAlbumRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibraryAlbumRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeLibraryArtistRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [LibraryArtistRecord]
+
+    public static func write(_ value: [LibraryArtistRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibraryArtistRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibraryArtistRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibraryArtistRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibraryArtistRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeLibraryBrowseEntry: FfiConverterRustBuffer {
+    typealias SwiftType = [LibraryBrowseEntry]
+
+    public static func write(_ value: [LibraryBrowseEntry], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibraryBrowseEntry.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibraryBrowseEntry] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibraryBrowseEntry]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibraryBrowseEntry.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeLibraryFolderRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [LibraryFolderRecord]
+
+    public static func write(_ value: [LibraryFolderRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibraryFolderRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibraryFolderRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibraryFolderRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibraryFolderRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeLibraryGenreRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [LibraryGenreRecord]
+
+    public static func write(_ value: [LibraryGenreRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibraryGenreRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibraryGenreRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibraryGenreRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibraryGenreRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeLibraryItemRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [LibraryItemRecord]
+
+    public static func write(_ value: [LibraryItemRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibraryItemRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibraryItemRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibraryItemRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibraryItemRecord.read(from: &buf))
         }
         return seq
     }
@@ -10133,6 +11733,66 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_is_health_check_running() != 14603) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_add_folder() != 39627) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_albums() != 48790) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_artists() != 7497) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_browse() != 53329) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_cancel_scan() != 64143) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_genres() != 37374) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_get_folder() != 1150) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_get_item() != 4548) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_get_progress() != 31431) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_list_folders() != 47279) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_list_items() != 38039) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_pending_metadata() != 37101) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_recent() != 43355) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_recently_added() != 54853) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_record_progress() != 23806) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_remove_folder() != 45787) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_scan() != 29082) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_search() != 23291) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_store_metadata() != 59405) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_library_update_folder_state() != 11755) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_list_allowed_groups() != 22923) {

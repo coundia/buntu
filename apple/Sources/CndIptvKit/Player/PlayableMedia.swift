@@ -9,6 +9,8 @@ public enum PlayableKind: String, Sendable, Equatable {
     /// A past programme played back from the provider's archive: seekable like a film, but it is not
     /// watch history (the channel's own entry must not move) and it can return to the live stream.
     case replay
+    case localVideo
+    case localAudio
 }
 
 public enum PlayerEngineKind: String, Sendable, Equatable {
@@ -95,6 +97,23 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
         self.imdbId = imdbId
         self.seasonNumber = seasonNumber
         self.episodeNumber = episodeNumber
+    }
+
+    public init(libraryItem: LibraryItemRecord, startPositionMs: Int64 = 0) {
+        let isAudio = libraryItem.kind == "audio"
+        self.init(
+            title: libraryItem.title ?? URL(fileURLWithPath: libraryItem.relPath).lastPathComponent,
+            url: URL(fileURLWithPath: libraryItem.fullPath),
+            headers: [:],
+            kind: isAudio ? .localAudio : .localVideo,
+            startPositionMs: startPositionMs,
+            stableHash: libraryItem.fingerprint,
+            itemId: libraryItem.id,
+            artworkUrl: libraryItem.thumbnailPath,
+            isFavorite: false,
+            isBroken: false,
+            itemKind: libraryItem.kind
+        )
     }
 
     /// The same media played from another address (headers, position and identity are kept).
@@ -209,7 +228,9 @@ public struct PlaylistQueue: Equatable, Sendable {
 
 /// Engine selection: `AVPlayer` for HLS/MP4/MOV, `mpv` for raw TS/MKV/AVI/FLV and unknown containers.
 public enum PlayerRouting {
-    private static let avPlayerExtensions: Set<String> = ["m3u8", "mp4", "m4v", "mov"]
+    private static let avPlayerExtensions: Set<String> = [
+        "m3u8", "mp4", "m4v", "mov", "mp3", "m4a", "aac", "wav", "aiff", "flac"
+    ]
 
     /// `AVPlayer` plays HLS, MP4, M4V and MOV; raw MPEG-TS, MKV, AVI and FLV need `libmpv`.
     public static func avPlayerCanPlay(_ url: URL) -> Bool {

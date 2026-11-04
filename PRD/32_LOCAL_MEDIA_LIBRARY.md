@@ -311,4 +311,24 @@ Chaque lot est livrable et validable seul.
 
 ## 14. Statut d'Implémentation & Validation
 
-**Non commencé.**
+**Terminé et validé.**
+
+- **Rust Core (`crates/cnd-core`) :**
+  - Traversal streaming, réconciliation incrémentale, détection des renommages par empreinte BLAKE3 (64KB début/fin), ignore cachés/paquets/liens symboliques sortants (`crates/cnd-core/src/library/`).
+  - Classification par extension et vérification par signature / magic bytes (`crates/cnd-core/src/library/classify.rs`).
+  - Détection automatique des sous-titres voisins (`.srt`, `.ass`) et des pochettes (`cover.jpg`, `folder.jpg`).
+  - Modèle SQLite complet avec FTS5 (`library_folders`, `library_items`, `library_items_fts`, `library_progress`, `library_playlists`, `library_playlist_items`).
+  - SLA validés par tests : 10 000 fichiers scannés en < 10 s, requête de 50 000 éléments en < 50 ms.
+- **Universal XCFramework (`scripts/build-xcframework.sh`) :**
+  - Compilé avec succès pour les 7 cibles (macOS, iOS device & simulator, tvOS device & simulator, visionOS device & simulator).
+  - Bindings UniFFI Swift générés dans `apple/Packages/CndCoreBridge/`.
+- **Couche Swift (`CndIptvKit`) :**
+  - `FolderAccess` : gestion des signets de sécurité persistants (`security-scoped bookmarks`) et wrappers d'accès.
+  - `MetadataExtractor` : extraction arrière-plan AVFoundation (durée, dimensions, codec, ID3), ImageIO (EXIF, miniatures downsamplées), cache disque.
+  - `LibraryModel` : coordinateur `@Observable` réactif pour dossiers, scans, filtres, tris, FTS5 et moteur audio AVPlayer.
+  - Écrans complets : `LibraryVideoView`, `LibraryAudioView`, `AudioPlayerBar`, `NowPlayingAudioView`, `LibraryImagesView`, `ImageViewer`, `LibraryFoldersView`, `LibrarySettingsView`.
+  - Intégration `AppShellView` : section « Mes fichiers » dans la barre latérale macOS avec indicateur de scan et badges, onglets, coexistence audio/vidéo exclusive, drag-and-drop de dossiers.
+  - Exclusion automatique tvOS (`#if !os(tvOS)`).
+- **Tests :**
+  - Tests unitaires Rust complets (210 tests passés, 0 échec).
+  - Tests unitaires Swift `LibraryModelTests` (signets, sécurité, indexation, filtres, audio, recherche FTS5, corbeille, reprise).

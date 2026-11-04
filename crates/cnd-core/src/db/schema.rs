@@ -372,5 +372,108 @@ CREATE TABLE IF NOT EXISTS recommendation_dismissals (
     dismissed_at INTEGER NOT NULL,
     PRIMARY KEY(profile_id, stable_hash)
 );
+
+-- Local Media Library (PRD-32)
+CREATE TABLE IF NOT EXISTS library_folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    display_name TEXT NOT NULL,
+    path TEXT NOT NULL,
+    bookmark BLOB,
+    include_subfolders INTEGER NOT NULL DEFAULT 1,
+    kinds TEXT NOT NULL DEFAULT 'video,audio,image',
+    state TEXT NOT NULL DEFAULT 'ok',
+    item_count INTEGER NOT NULL DEFAULT 0,
+    last_scan_at INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS library_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    folder_id INTEGER NOT NULL,
+    rel_path TEXT NOT NULL,
+    kind TEXT NOT NULL, -- 'video' | 'audio' | 'image'
+    size INTEGER NOT NULL,
+    mtime INTEGER NOT NULL,
+    fingerprint TEXT NOT NULL,
+    title TEXT,
+    duration_ms INTEGER,
+    width INTEGER,
+    height INTEGER,
+    codec TEXT,
+    artist TEXT,
+    album TEXT,
+    album_artist TEXT,
+    track_no INTEGER,
+    disc_no INTEGER,
+    genre TEXT,
+    year INTEGER,
+    taken_at INTEGER,
+    thumbnail_path TEXT,
+    subtitles_json TEXT,
+    metadata_state TEXT NOT NULL DEFAULT 'pending',
+    added_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(folder_id) REFERENCES library_folders(id) ON DELETE CASCADE,
+    UNIQUE(folder_id, rel_path)
+);
+CREATE INDEX IF NOT EXISTS idx_library_items_folder ON library_items(folder_id);
+CREATE INDEX IF NOT EXISTS idx_library_items_kind ON library_items(kind);
+CREATE INDEX IF NOT EXISTS idx_library_items_fingerprint ON library_items(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_library_items_meta_state ON library_items(metadata_state);
+CREATE INDEX IF NOT EXISTS idx_library_items_artist ON library_items(artist);
+CREATE INDEX IF NOT EXISTS idx_library_items_album ON library_items(album);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS library_items_fts USING fts5(
+    title,
+    artist,
+    album,
+    rel_path,
+    content='library_items',
+    content_rowid='id'
+);
+
+CREATE TRIGGER IF NOT EXISTS trg_library_items_ai AFTER INSERT ON library_items BEGIN
+    INSERT INTO library_items_fts(rowid, title, artist, album, rel_path)
+    VALUES (new.id, new.title, new.artist, new.album, new.rel_path);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_library_items_ad AFTER DELETE ON library_items BEGIN
+    INSERT INTO library_items_fts(library_items_fts, rowid, title, artist, album, rel_path)
+    VALUES ('delete', old.id, old.title, old.artist, old.album, old.rel_path);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_library_items_au AFTER UPDATE ON library_items BEGIN
+    INSERT INTO library_items_fts(library_items_fts, rowid, title, artist, album, rel_path)
+    VALUES ('delete', old.id, old.title, old.artist, old.album, old.rel_path);
+    INSERT INTO library_items_fts(rowid, title, artist, album, rel_path)
+    VALUES (new.id, new.title, new.artist, new.album, new.rel_path);
+END;
+
+CREATE TABLE IF NOT EXISTS library_progress (
+    profile_id INTEGER NOT NULL DEFAULT 1,
+    fingerprint TEXT NOT NULL,
+    position_ms INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    completed INTEGER NOT NULL DEFAULT 0,
+    last_played_at INTEGER NOT NULL,
+    PRIMARY KEY(profile_id, fingerprint)
+);
+
+CREATE TABLE IF NOT EXISTS library_playlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS library_playlist_items (
+    playlist_id INTEGER NOT NULL,
+    item_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY(playlist_id, item_id),
+    FOREIGN KEY(playlist_id) REFERENCES library_playlists(id) ON DELETE CASCADE,
+    FOREIGN KEY(item_id) REFERENCES library_items(id) ON DELETE CASCADE
+);
 "#;
 
