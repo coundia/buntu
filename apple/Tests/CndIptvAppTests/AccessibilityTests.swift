@@ -1,5 +1,6 @@
 import XCTest
 import CndCoreBridge
+import SwiftUI
 @testable import CndIptvKit
 
 /// PRD 31: spoken texts, announcements, and the choice of accessible tracks.
@@ -161,5 +162,27 @@ final class AccessibilityTests: XCTestCase {
         XCTAssertEqual(AccessibleTrackPolicy.languageCode("fr-FR"), "fr")
         XCTAssertEqual(AccessibleTrackPolicy.languageCode("EN_us"), "en")
         XCTAssertNil(AccessibleTrackPolicy.languageCode(nil))
+    }
+}
+
+/// The progress slider crashed the app when its step was longer than its range (duration 0).
+@MainActor
+final class ProgressSliderTests: XCTestCase {
+    func testStepNeverExceedsTheRange() {
+        for duration: Int64 in [0, 1, 500, 9_999, 10_000, 19_999, 20_000, 90_000, 6_480_000] {
+            let range = Double(max(duration, 1))
+            XCTAssertLessThanOrEqual(CndVideoPlayerView.progressStep(durationMs: duration), range, "duration \(duration)")
+        }
+    }
+
+    func testSliderIsBuiltForEveryDurationWithoutTrapping() {
+        var value = 0.0
+        for duration: Int64 in [0, 1, 500, 9_999, 20_000, 6_480_000] {
+            _ = Slider(
+                value: Binding(get: { value }, set: { value = $0 }),
+                in: 0...Double(max(duration, 1)),
+                step: CndVideoPlayerView.progressStep(durationMs: duration)
+            )
+        }
     }
 }
