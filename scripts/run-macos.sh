@@ -16,7 +16,7 @@ APPLE_DIR="${ROOT_DIR}/apple"
 SCRATCH_DIR="${ROOT_DIR}/build/swift"
 BUNDLE_DIR="${ROOT_DIR}/build/CndIPTV.app"
 PRODUCT="CndIptvApp"
-BUNDLE_ID="com.cnd.iptv.native"
+BUNDLE_ID="com.pcoundia.buntu.macos"
 
 CONFIG="debug"
 REBUILD_CORE=0

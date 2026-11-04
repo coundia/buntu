@@ -1,6 +1,6 @@
 name: CndIPTV
 options:
-  bundleIdPrefix: com.cnd.iptv
+  bundleIdPrefix: com.pcoundia.buntu
   deploymentTarget:
     macOS: "14.0"
     iOS: "17.0"
@@ -41,7 +41,7 @@ targets:
         product: MPVKit
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cnd.iptv.macos
+        PRODUCT_BUNDLE_IDENTIFIER: com.pcoundia.buntu.macos
         INFOPLIST_FILE: Resources/Info-macOS.plist
         CODE_SIGN_ENTITLEMENTS: Resources/CndIPTV-macOS.entitlements
         ENABLE_HARDENED_RUNTIME: YES
@@ -66,7 +66,7 @@ targets:
       - target: CndIPTV-LiveActivity
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.papacoundia.cndiptv
+        PRODUCT_BUNDLE_IDENTIFIER: com.pcoundia.buntu
         INFOPLIST_FILE: Resources/Info-iOS.plist
         TARGETED_DEVICE_FAMILY: "1,2"
 
@@ -88,7 +88,7 @@ targets:
         product: MPVKit
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cnd.iptv.tvos
+        PRODUCT_BUNDLE_IDENTIFIER: com.pcoundia.buntu.tvos
         INFOPLIST_FILE: Resources/Info-tvOS.plist
         CODE_SIGN_ENTITLEMENTS: Resources/CndIPTV-tvOS.entitlements
         CODE_SIGN_IDENTITY: "-"
@@ -114,7 +114,7 @@ targets:
         product: MPVKit
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.papacoundia.cndiptv.vision
+        PRODUCT_BUNDLE_IDENTIFIER: com.pcoundia.buntu.vision
         INFOPLIST_FILE: Resources/Info-visionOS.plist
         TARGETED_DEVICE_FAMILY: "7"
         SUPPORTED_PLATFORMS: "xros xrsimulator"
@@ -132,7 +132,7 @@ targets:
       - path: Sources/CndIptvKit/Features/LiveActivities/LiveActivityIntents.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.papacoundia.cndiptv.liveactivity
+        PRODUCT_BUNDLE_IDENTIFIER: com.pcoundia.buntu.liveactivity
         INFOPLIST_FILE: LiveActivityExtension/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES

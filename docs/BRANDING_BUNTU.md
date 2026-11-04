@@ -242,12 +242,13 @@ flowchart TD
 **Fait (novembre 2026) :**
 - **Nom affiché :** `AppBrand.name` (`Shared/Design/AppBrand.swift`) alimente la barre latérale, le titre de la fenêtre, l'écran À propos, les raisons de veille système (« Lecture vidéo Buntu »), le nom d'un partage exporté (« Partage Buntu.cndshare ») et ses messages d'erreur.
 - **Fichiers de configuration :** `CFBundleName` et `CFBundleDisplayName` des 4 `Info.plist` et de l'extension d'activités, bundle `.app` assemblé par `scripts/run-macos.sh`, installation dans `/Applications/Buntu.app` par `scripts/install-macos.sh` (le script signale une ancienne copie « CND IPTV.app » sans la supprimer).
+- **Identifiants de bundle / packages des apps :** uniformisés sous `com.pcoundia.buntu` (`com.pcoundia.buntu` pour iOS, `.macos`, `.tvos`, `.vision`, `.liveactivity`). Conteneur iCloud `iCloud.com.pcoundia.buntu` et groupe `group.com.pcoundia.buntu`.
 - **Textes :** `README.md`, descriptions du `Taskfile.yml`, message d'erreur du moteur Rust pour un fichier de partage invalide, bannière de la CLI.
 - **Icône du Mac et logo de la barre latérale** (§ 4.1).
 - **Tests :** nom, messages, absence de l'ancien nom dans les textes visibles, contrastes de la palette (`AppBrandTests`).
 
-**Conservé volontairement (identifiants, pas du texte) :**
-- identifiants de bundle `com.cnd.iptv.*`, conteneur iCloud, clés du Trousseau, schéma d'URL `cndiptv://` et extension `.cndshare` : les changer ferait perdre aux utilisateurs leurs données, leur Trousseau et leur synchronisation ;
+**Conservé volontairement (identifiants techniques internes) :**
+- clés du Trousseau (`com.cnd.iptv.*`), schéma d'URL `cndiptv://` et extension `.cndshare` ;
 - dossier de téléchargement `~/Downloads/CndIPTV` : les films déjà téléchargés y sont ;
 - noms des cibles et schémas Xcode (`CndIPTV-macOS`…), chemin `build/CndIPTV.app` et dossier du code : ce sont des noms internes ;
 - User-Agent technique de l'assistant IA (`CndIPTV/1.0`).
