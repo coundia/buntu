@@ -341,6 +341,90 @@ pub fn known_saga_order(saga_root: &str, subtitle: &str) -> Option<u32> {
     None
 }
 
+/// Returns relevant universe franchise keywords to query from the catalog when a film belongs
+/// to a large shared universe (e.g. Marvel Cinematic Universe, DC, Star Wars, Tolkien, etc.).
+pub fn universe_keywords_for(root: &str, title: &str) -> &'static [&'static str] {
+    let lower_title = title.to_lowercase();
+    let lower_root = root.to_lowercase();
+
+    // Marvel Cinematic Universe
+    const MCU: &[&str] = &[
+        "iron man", "captain america", "thor", "hulk", "avengers", "guardians of the galaxy",
+        "gardiens de la galaxie", "ant-man", "doctor strange", "spider-man", "black panther",
+        "captain marvel", "black widow", "eternals", "shang-chi", "deadpool", "wolverine",
+    ];
+    if MCU.iter().any(|k| lower_root.contains(k) || lower_title.contains(k)) {
+        return MCU;
+    }
+
+    // DC Extended Universe / Batman
+    const DC: &[&str] = &[
+        "batman", "superman", "wonder woman", "aquaman", "flash", "justice league",
+        "shazam", "suicide squad", "joker", "black adam",
+    ];
+    if DC.iter().any(|k| lower_root.contains(k) || lower_title.contains(k)) {
+        return DC;
+    }
+
+    // Star Wars
+    const SW: &[&str] = &[
+        "star wars", "rogue one", "solo", "mandalorian",
+    ];
+    if SW.iter().any(|k| lower_root.contains(k) || lower_title.contains(k)) {
+        return SW;
+    }
+
+    // Wizarding World
+    const WW: &[&str] = &[
+        "harry potter", "animaux fantastiques", "fantastic beasts",
+    ];
+    if WW.iter().any(|k| lower_root.contains(k) || lower_title.contains(k)) {
+        return WW;
+    }
+
+    // Lord of the Rings / Middle-earth
+    const LOTR: &[&str] = &[
+        "seigneur des anneaux", "lord of the rings", "hobbit",
+    ];
+    if LOTR.iter().any(|k| lower_root.contains(k) || lower_title.contains(k)) {
+        return LOTR;
+    }
+
+    // Fast & Furious
+    const FF: &[&str] = &[
+        "fast & furious", "fast and furious", "hobbs & shaw",
+    ];
+    if FF.iter().any(|k| lower_root.contains(k) || lower_title.contains(k)) {
+        return FF;
+    }
+
+    // MonsterVerse
+    const MV: &[&str] = &[
+        "godzilla", "kong",
+    ];
+    if MV.iter().any(|k| lower_root.contains(k) || lower_title.contains(k)) {
+        return MV;
+    }
+
+    // Alien / Predator
+    const AP: &[&str] = &[
+        "alien", "predator", "prometheus",
+    ];
+    if AP.iter().any(|k| lower_root.contains(k) || lower_title.contains(k)) {
+        return AP;
+    }
+
+    // Mission Impossible
+    const MI: &[&str] = &[
+        "mission impossible", "mission: impossible",
+    ];
+    if MI.iter().any(|k| lower_root.contains(k) || lower_title.contains(k)) {
+        return MI;
+    }
+
+    &[]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -39,6 +39,19 @@ final class MovieDetailsModel {
         }.value
         self.recommendations = recs
         self.sagaInfo = saga
+
+        if saga == nil, let aiConfig = vod.aiConfigProvider?(), aiConfig.kind != .localOnly {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let newSaga = try? await engine.resolveSagaWithAi(itemId: id, config: aiConfig) {
+                    self.sagaInfo = newSaga
+                    let refreshed = (try? await Task.detached(priority: .userInitiated) {
+                        try engine.recommendationsFor(itemId: id, context: .playing, limit: 10)
+                    }.value) ?? []
+                    self.recommendations = refreshed
+                }
+            }
+        }
     }
 
     private func reloadItem() async {

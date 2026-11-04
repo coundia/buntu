@@ -4,7 +4,7 @@ pub mod scoring;
 
 use crate::ai::intent::{AiProviderConfig, AiProviderKind};
 use crate::db::IptvItemRecord;
-use crate::recommend::saga::{known_saga_order, normalize_root_key, parse_saga_title};
+use crate::recommend::saga::{known_saga_order, parse_saga_title, universe_keywords_for};
 pub use crate::recommend::scoring::{RecommendationReasonKind, SagaPosition, ScoredCandidate};
 use crate::recommend::scoring::{deduplicate_versions, enforce_diversity, score_metadata_similarity};
 use crate::{CndEngine, CndError};
@@ -137,14 +137,9 @@ impl CndEngine {
         // Check DB saga cache
         if let Some((saga_rec, members)) = self.db.find_saga_for_work(&work_key)? {
             let mut member_items = Vec::new();
-            for m in members {
-                // Find item by work key (imdb_id or clean title)
-                let candidates = self.db.load_recommendation_candidates("movie", None, 100)?;
-                for cand in candidates {
-                    let cand_key = cand.imdb_id.clone().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| {
-                        format!("{}:{}", normalize_root_key(&cand.name_clean), cand.year.unwrap_or(0))
-                    });
-                    if cand_key == m.work_key && !member_items.iter().any(|i: &IptvItemRecord| i.id == cand.id) {
+            for m in &members {
+                if let Ok(Some(cand)) = self.db.find_item_by_work_key(&m.work_key) {
+                    if !member_items.iter().any(|i: &IptvItemRecord| i.id == cand.id) {
                         member_items.push(cand);
                     }
                 }
@@ -215,7 +210,9 @@ impl CndEngine {
             return Ok(None);
         }
 
-        let candidates = self.db.load_recommendation_candidates("movie", None, 150)?;
+        let parsed = parse_saga_title(&item.name_clean, item.year);
+        let universe_kw = universe_keywords_for(&parsed.root, &item.name_clean);
+        let candidates = self.db.load_movie_candidates_for_item(&item, &parsed.root, universe_kw, 150)?;
         match llm_saga::resolve_saga_with_llm(self, &config, &item, &candidates).await {
             Ok(Some((saga_rec, members))) => {
                 let _ = self.db.save_saga(&saga_rec, &members);
@@ -238,70 +235,134 @@ impl CndEngine {
         &self,
         current: &IptvItemRecord,
         dismissed: &HashSet<String>,
-        _order_pref: SagaOrderPreference,
+        order_pref: SagaOrderPreference,
     ) -> Result<Vec<ScoredCandidate>, CndError> {
         let mut scored = Vec::new();
         let parsed = parse_saga_title(&current.name_clean, current.year);
+        let universe_kw = universe_keywords_for(&parsed.root, &current.name_clean);
 
-        // 1. Saga detection (Local and Cached)
-        let candidates = self.db.load_recommendation_candidates("movie", None, 100)?;
+        // Preselect candidates related to this movie (franchise root, universe, category, top-rated)
+        let candidates = self.db.load_movie_candidates_for_item(current, &parsed.root, universe_kw, 100)?;
         let deduped_candidates = deduplicate_versions(candidates, current.container_ext.as_deref());
 
-        let mut saga_candidates = Vec::new();
-        for cand in &deduped_candidates {
-            if cand.id == current.id {
-                continue;
+        let work_key = current.imdb_id.clone().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| {
+            format!("{}:{}", parsed.root, current.year.unwrap_or(0))
+        });
+
+        // 1. Check if saga is in DB (either from LLM resolution or cached)
+        let mut db_saga_used = false;
+        if let Ok(Some((saga_rec, mut members))) = self.db.find_saga_for_work(&work_key) {
+            if order_pref == SagaOrderPreference::StoryChronology {
+                members.sort_by_key(|m| m.story_index.unwrap_or(m.release_index));
+            } else {
+                members.sort_by_key(|m| m.release_index);
             }
-            let cand_parsed = parse_saga_title(&cand.name_clean, cand.year);
-            if cand_parsed.root == parsed.root {
-                saga_candidates.push((cand.clone(), cand_parsed));
+
+            let current_pos = members.iter().position(|m| m.work_key == work_key);
+            let total_members = members.len() as u32;
+
+            for (idx, m) in members.iter().enumerate() {
+                if m.work_key == work_key {
+                    continue;
+                }
+                if let Ok(Some(item)) = self.db.find_item_by_work_key(&m.work_key) {
+                    if item.id == current.id || item.stable_hash == current.stable_hash || dismissed.contains(&item.stable_hash) {
+                        continue;
+                    }
+                    if scored.iter().any(|s: &ScoredCandidate| s.item.id == item.id) {
+                        continue;
+                    }
+
+                    let is_next = current_pos.is_some_and(|cp| idx == cp + 1);
+                    let display_num = (idx + 1) as u32;
+                    let pos = SagaPosition {
+                        index: display_num,
+                        total: total_members,
+                    };
+
+                    if is_next {
+                        scored.push(ScoredCandidate {
+                            item: item.clone(),
+                            reason_kind: RecommendationReasonKind::SagaNext,
+                            reason_text: format!("Suite de la saga {} · {}/{}", saga_rec.name, display_num, total_members),
+                            score: 1000.0,
+                            saga_position: Some(pos),
+                            already_watched: item.is_completed,
+                        });
+                    } else {
+                        scored.push(ScoredCandidate {
+                            item: item.clone(),
+                            reason_kind: RecommendationReasonKind::SagaMember,
+                            reason_text: format!("Dans la même saga {} · {}/{}", saga_rec.name, display_num, total_members),
+                            score: 850.0 - (idx as f64 * 2.0),
+                            saga_position: Some(pos),
+                            already_watched: item.is_completed,
+                        });
+                    }
+                    db_saga_used = true;
+                }
             }
         }
 
-        if !saga_candidates.is_empty() {
-            let current_num = parsed
-                .number
-                .or_else(|| known_saga_order(&parsed.root, parsed.subtitle.as_deref().unwrap_or("")))
-                .unwrap_or(1);
+        // 2. Local saga detection if DB saga was not used
+        if !db_saga_used {
+            let mut saga_candidates = Vec::new();
+            for cand in &deduped_candidates {
+                if cand.id == current.id {
+                    continue;
+                }
+                let cand_parsed = parse_saga_title(&cand.name_clean, cand.year);
+                if cand_parsed.root == parsed.root {
+                    saga_candidates.push((cand.clone(), cand_parsed));
+                }
+            }
 
-            // Sort saga candidates by number, then year
-            saga_candidates.sort_by_key(|(_, p)| {
-                let num = p.number.or_else(|| known_saga_order(&p.root, p.subtitle.as_deref().unwrap_or(""))).unwrap_or(1);
-                (num, p.year.unwrap_or(0))
-            });
+            if !saga_candidates.is_empty() {
+                let current_num = parsed
+                    .number
+                    .or_else(|| known_saga_order(&parsed.root, parsed.subtitle.as_deref().unwrap_or("")))
+                    .unwrap_or(1);
 
-            let total_saga = (saga_candidates.len() + 1) as u32;
+                saga_candidates.sort_by_key(|(_, p)| {
+                    let num = p.number.or_else(|| known_saga_order(&p.root, p.subtitle.as_deref().unwrap_or(""))).unwrap_or(1);
+                    if order_pref == SagaOrderPreference::ReleaseOrder {
+                        (p.year.unwrap_or(0), num)
+                    } else {
+                        (num, p.year.unwrap_or(0))
+                    }
+                });
 
-            // Find next film in sequence
-            let mut next_found = false;
-            for (cand, p) in &saga_candidates {
-                let num = p.number.or_else(|| known_saga_order(&p.root, p.subtitle.as_deref().unwrap_or(""))).unwrap_or(1);
-                let is_next = !next_found && (num > current_num || (num == current_num && p.year.unwrap_or(0) > current.year.unwrap_or(0)));
+                let total_saga = (saga_candidates.len() + 1) as u32;
+                let mut next_found = false;
+                for (cand, p) in &saga_candidates {
+                    let num = p.number.or_else(|| known_saga_order(&p.root, p.subtitle.as_deref().unwrap_or(""))).unwrap_or(1);
+                    let is_next = !next_found && (num > current_num || (num == current_num && p.year.unwrap_or(0) > current.year.unwrap_or(0)));
 
-                let pos = SagaPosition {
-                    index: num,
-                    total: total_saga,
-                };
+                    let pos = SagaPosition {
+                        index: num,
+                        total: total_saga,
+                    };
 
-                if is_next {
-                    next_found = true;
-                    scored.push(ScoredCandidate {
-                        item: cand.clone(),
-                        reason_kind: RecommendationReasonKind::SagaNext,
-                        reason_text: format!("Suite de la saga · {}/{}", num, total_saga),
-                        score: 950.0,
-                        saga_position: Some(pos),
-                        already_watched: cand.is_completed,
-                    });
-                } else {
-                    scored.push(ScoredCandidate {
-                        item: cand.clone(),
-                        reason_kind: RecommendationReasonKind::SagaMember,
-                        reason_text: format!("Dans la même saga · {}/{}", num, total_saga),
-                        score: 700.0 - (num as f64 * 2.0),
-                        saga_position: Some(pos),
-                        already_watched: cand.is_completed,
-                    });
+                    if is_next {
+                        next_found = true;
+                        scored.push(ScoredCandidate {
+                            item: cand.clone(),
+                            reason_kind: RecommendationReasonKind::SagaNext,
+                            reason_text: format!("Suite de la saga · {}/{}", num, total_saga),
+                            score: 950.0,
+                            saga_position: Some(pos),
+                            already_watched: cand.is_completed,
+                        });
+                    } else {
+                        scored.push(ScoredCandidate {
+                            item: cand.clone(),
+                            reason_kind: RecommendationReasonKind::SagaMember,
+                            reason_text: format!("Dans la même saga · {}/{}", num, total_saga),
+                            score: 800.0 - (num as f64 * 2.0),
+                            saga_position: Some(pos),
+                            already_watched: cand.is_completed,
+                        });
+                    }
                 }
             }
         }

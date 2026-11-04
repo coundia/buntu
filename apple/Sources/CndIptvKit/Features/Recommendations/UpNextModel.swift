@@ -58,7 +58,7 @@ public final class UpNextModel {
         self.countdownDuration = UserDefaults.standard.object(forKey: "upnext.countdown.seconds") as? Int ?? 10
         let orderRaw = UserDefaults.standard.string(forKey: "upnext.saga.order") ?? "story"
         self.sagaOrderPreference = orderRaw == "release" ? .releaseOrder : .storyChronology
-        self.useAiForSagas = UserDefaults.standard.bool(forKey: "upnext.ai.enabled")
+        self.useAiForSagas = UserDefaults.standard.object(forKey: "upnext.ai.enabled") as? Bool ?? true
     }
 
     public var fallbackNextHandler: (() -> Void)?
@@ -100,10 +100,10 @@ public final class UpNextModel {
         currentMediaId = itemId
         loadRecommendations(itemId: itemId, context: media.kind == .live ? .live : .playing)
 
-        // If playing movie and AI enabled, schedule saga probe after 30 seconds
-        if media.kind == .movie, useAiForSagas, let aiConfig = aiConfigProvider?() {
+        // If playing movie and AI enabled, schedule saga probe after 2 seconds
+        if media.kind == .movie, useAiForSagas, let aiConfig = aiConfigProvider?(), aiConfig.kind != .localOnly {
             aiSagaTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
                 guard !Task.isCancelled, let self, self.currentMediaId == itemId else { return }
                 guard let engine = self.engineProvider() else { return }
                 if let newSaga = try? await engine.resolveSagaWithAi(itemId: itemId, config: aiConfig) {

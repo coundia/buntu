@@ -1235,7 +1235,8 @@ mod profile_isolation_tests {
 
         assert_eq!(page.len(), 100);
         assert!(groups.iter().all(|g| !g.value.starts_with("Adult")), "adult groups are not listed");
-        assert!(elapsed.as_millis() < 1500, "a list and the category facets took {elapsed:?} on 100k channels");
+        let max_ms = if cfg!(debug_assertions) { 3000 } else { 1500 };
+        assert!(elapsed.as_millis() < max_ms, "a list and the category facets took {elapsed:?} on 100k channels");
     }
 
     fn favorites(db: &DatabaseManager) -> Vec<String> {
