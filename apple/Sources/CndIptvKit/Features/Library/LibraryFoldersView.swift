@@ -1,5 +1,8 @@
 import SwiftUI
 import CndCoreBridge
+#if canImport(AppKit)
+import AppKit
+#endif
 
 public struct LibraryFoldersView: View {
     @Bindable var model: LibraryModel
@@ -8,6 +11,9 @@ public struct LibraryFoldersView: View {
 
     @State private var selectedFolderId: Int64?
     @State private var pathComponents: [String] = []
+    @State private var showingAddFolder = false
+    @State private var folderToRemove: LibraryFolderRecord?
+    @State private var showingSettingsSheet = false
 
     public init(
         model: LibraryModel,
@@ -30,6 +36,68 @@ public struct LibraryFoldersView: View {
             }
         }
         .navigationTitle(currentTitle)
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    showingAddFolder = true
+                } label: {
+                    Label("Ajouter un dossier", systemImage: "folder.badge.plus")
+                }
+
+                Button {
+                    showingSettingsSheet = true
+                } label: {
+                    Label("Gérer les dossiers", systemImage: "gearshape")
+                }
+            }
+        }
+        .fileImporter(
+            isPresented: $showingAddFolder,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                Task {
+                    _ = await model.addFolder(url: url)
+                }
+            }
+        }
+        .confirmationDialog(
+            "Retirer le dossier ?",
+            isPresented: Binding(
+                get: { folderToRemove != nil },
+                set: { if !$0 { folderToRemove = nil } }
+            ),
+            presenting: folderToRemove
+        ) { folder in
+            Button("Retirer de la bibliothèque", role: .destructive) {
+                Task {
+                    await model.removeFolder(id: folder.id)
+                    if selectedFolderId == folder.id {
+                        selectedFolderId = nil
+                        pathComponents = []
+                    }
+                }
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: { folder in
+            Text("Les fichiers de « \(folder.displayName) » ne seront plus indexés dans Buntu. Aucun fichier ne sera supprimé de votre disque.")
+        }
+        .sheet(isPresented: $showingSettingsSheet) {
+            NavigationStack {
+                LibrarySettingsView(model: model)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Fermer") {
+                                showingSettingsSheet = false
+                            }
+                        }
+                    }
+            }
+            #if os(macOS)
+            .frame(minWidth: 500, minHeight: 400)
+            #endif
+        }
     }
 
     private var currentTitle: String {
@@ -48,38 +116,93 @@ public struct LibraryFoldersView: View {
     private var rootFoldersList: some View {
         List {
             ForEach(model.folders, id: \.id) { folder in
-                Button {
-                    openFolder(folder.id)
-                } label: {
-                    HStack(spacing: 14) {
-                        Image(systemName: "folder.fill")
-                            .font(.title2)
-                            .foregroundStyle(Color.accentColor)
+                HStack(spacing: 14) {
+                    Button {
+                        openFolder(folder.id)
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "folder.fill")
+                                .font(.title2)
+                                .foregroundStyle(folder.state == "ok" ? Color.accentColor : Color.secondary)
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(folder.displayName)
-                                .font(.body.weight(.medium))
-                                .foregroundStyle(.primary)
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 6) {
+                                    Text(folder.displayName)
+                                        .font(.body.weight(.medium))
+                                        .foregroundStyle(.primary)
 
-                            Text(folder.path)
+                                    if folder.state == "missing" {
+                                        Text("Indisponible")
+                                            .font(.caption2.bold())
+                                            .foregroundStyle(.red)
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(Color.red.opacity(0.12))
+                                            .clipShape(Capsule())
+                                    }
+                                }
+
+                                Text(folder.path)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer()
+
+                            Text("\(folder.itemCount) élément\(folder.itemCount > 1 ? "s" : "")")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+
+                            Image(systemName: "chevron.right")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
                         }
-
-                        Spacer()
-
-                        Text("\(folder.itemCount) élément\(folder.itemCount > 1 ? "s" : "")")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-
-                        Image(systemName: "chevron.right")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 4)
+                    .buttonStyle(.plain)
+
+                    // Quick Remove Button
+                    Button(role: .destructive) {
+                        folderToRemove = folder
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Retirer ce dossier de la bibliothèque")
+                    .accessibilityLabel("Retirer « \(folder.displayName) »")
                 }
-                .buttonStyle(.plain)
+                .padding(.vertical, 4)
+                .contextMenu {
+                    Button {
+                        model.scanFolder(id: folder.id)
+                    } label: {
+                        Label("Réindexer le dossier", systemImage: "arrow.clockwise")
+                    }
+
+                    #if os(macOS)
+                    Button {
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder.path)
+                    } label: {
+                        Label("Afficher dans le Finder", systemImage: "folder")
+                    }
+                    #endif
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        folderToRemove = folder
+                    } label: {
+                        Label("Retirer de la bibliothèque", systemImage: "trash")
+                    }
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        folderToRemove = folder
+                    } label: {
+                        Label("Retirer", systemImage: "trash")
+                    }
+                }
             }
         }
     }
@@ -88,7 +211,7 @@ public struct LibraryFoldersView: View {
 
     private var folderBrowserView: some View {
         VStack(spacing: 0) {
-            // Breadcrumbs / Back button
+            // Breadcrumbs / Back button / Folder Menu
             HStack {
                 Button {
                     goUp()
@@ -105,6 +228,37 @@ public struct LibraryFoldersView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                }
+
+                if let fid = selectedFolderId, let folder = model.folders.first(where: { $0.id == fid }) {
+                    Menu {
+                        Button {
+                            model.scanFolder(id: folder.id)
+                        } label: {
+                            Label("Réindexer ce dossier", systemImage: "arrow.clockwise")
+                        }
+
+                        #if os(macOS)
+                        Button {
+                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder.path)
+                        } label: {
+                            Label("Afficher dans le Finder", systemImage: "folder")
+                        }
+                        #endif
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            folderToRemove = folder
+                        } label: {
+                            Label("Retirer ce dossier de la bibliothèque", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.body)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .accessibilityLabel("Options du dossier")
                 }
             }
             .padding(.horizontal)
@@ -243,6 +397,13 @@ public struct LibraryFoldersView: View {
             Label("Aucun dossier configuré", systemImage: "folder")
         } description: {
             Text("Ajoutez un dossier pour parcourir vos fichiers sur votre disque ou support externe.")
+        } actions: {
+            Button {
+                showingAddFolder = true
+            } label: {
+                Label("Ajouter un dossier…", systemImage: "folder.badge.plus")
+            }
+            .buttonStyle(.borderedProminent)
         }
     }
 }

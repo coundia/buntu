@@ -134,3 +134,4 @@ public struct LibrarySettingsView: View {
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
     }
 }
+

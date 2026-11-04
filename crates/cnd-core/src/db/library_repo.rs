@@ -225,6 +225,7 @@ impl DatabaseManager {
 
     pub fn remove_library_folder(&self, id: i64) -> Result<(), DbError> {
         self.with_conn(|conn| {
+            conn.execute("DELETE FROM library_items WHERE folder_id = ?1", params![id])?;
             conn.execute("DELETE FROM library_folders WHERE id = ?1", params![id])?;
             Ok(())
         })

@@ -7,6 +7,7 @@ public struct LibraryImagesView: View {
     @State private var columnCount: Int = 4
     @State private var selectedIndex: Int?
     @State private var showingAddFolder = false
+    @State private var showingSettingsSheet = false
 
     public init(model: LibraryModel) {
         self.model = model
@@ -41,13 +42,38 @@ public struct LibraryImagesView: View {
                     }
                     #endif
 
-                    Button {
-                        showingAddFolder = true
+                    Menu {
+                        Button {
+                            showingAddFolder = true
+                        } label: {
+                            Label("Ajouter un dossier…", systemImage: "folder.badge.plus")
+                        }
+
+                        Button {
+                            showingSettingsSheet = true
+                        } label: {
+                            Label("Gérer les dossiers…", systemImage: "gearshape")
+                        }
                     } label: {
-                        Label("Ajouter un dossier", systemImage: "folder.badge.plus")
+                        Label("Dossiers", systemImage: "folder")
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showingSettingsSheet) {
+            NavigationStack {
+                LibrarySettingsView(model: model)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Fermer") {
+                                showingSettingsSheet = false
+                            }
+                        }
+                    }
+            }
+            #if os(macOS)
+            .frame(minWidth: 500, minHeight: 400)
+            #endif
         }
         .fileImporter(
             isPresented: $showingAddFolder,

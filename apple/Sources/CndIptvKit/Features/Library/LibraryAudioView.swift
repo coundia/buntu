@@ -16,6 +16,7 @@ public struct LibraryAudioView: View {
 
     @State private var selectedSubTab: AudioSubTab = .tracks
     @State private var showingAddFolder = false
+    @State private var showingSettingsSheet = false
 
     public init(model: LibraryModel) {
         self.model = model
@@ -44,12 +45,37 @@ public struct LibraryAudioView: View {
             }
 
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showingAddFolder = true
+                Menu {
+                    Button {
+                        showingAddFolder = true
+                    } label: {
+                        Label("Ajouter un dossier…", systemImage: "folder.badge.plus")
+                    }
+
+                    Button {
+                        showingSettingsSheet = true
+                    } label: {
+                        Label("Gérer les dossiers…", systemImage: "gearshape")
+                    }
                 } label: {
-                    Label("Ajouter un dossier", systemImage: "folder.badge.plus")
+                    Label("Dossiers", systemImage: "folder")
                 }
             }
+        }
+        .sheet(isPresented: $showingSettingsSheet) {
+            NavigationStack {
+                LibrarySettingsView(model: model)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Fermer") {
+                                showingSettingsSheet = false
+                            }
+                        }
+                    }
+            }
+            #if os(macOS)
+            .frame(minWidth: 500, minHeight: 400)
+            #endif
         }
         .fileImporter(
             isPresented: $showingAddFolder,
@@ -305,3 +331,4 @@ public struct LibraryAudioView: View {
         return nil
     }
 }
+

@@ -9,6 +9,7 @@ public struct LibraryVideoView: View {
     @State private var showingInfoItem: LibraryItemRecord?
     @State private var itemToTrash: LibraryItemRecord?
     @State private var showingAddFolder = false
+    @State private var showingSettingsSheet = false
 
     public init(model: LibraryModel, onPlay: @escaping (LibraryItemRecord) -> Void) {
         self.model = model
@@ -49,12 +50,37 @@ public struct LibraryVideoView: View {
                     Label("Trier & Filtrer", systemImage: "arrow.up.arrow.down")
                 }
 
-                Button {
-                    showingAddFolder = true
+                Menu {
+                    Button {
+                        showingAddFolder = true
+                    } label: {
+                        Label("Ajouter un dossier…", systemImage: "folder.badge.plus")
+                    }
+
+                    Button {
+                        showingSettingsSheet = true
+                    } label: {
+                        Label("Gérer les dossiers…", systemImage: "gearshape")
+                    }
                 } label: {
-                    Label("Ajouter un dossier", systemImage: "folder.badge.plus")
+                    Label("Dossiers", systemImage: "folder")
                 }
             }
+        }
+        .sheet(isPresented: $showingSettingsSheet) {
+            NavigationStack {
+                LibrarySettingsView(model: model)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Fermer") {
+                                showingSettingsSheet = false
+                            }
+                        }
+                    }
+            }
+            #if os(macOS)
+            .frame(minWidth: 500, minHeight: 400)
+            #endif
         }
         .fileImporter(
             isPresented: $showingAddFolder,
@@ -518,3 +544,4 @@ struct VideoInfoSheet: View {
         }
     }
 }
+
