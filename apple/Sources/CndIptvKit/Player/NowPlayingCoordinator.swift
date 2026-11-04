@@ -42,6 +42,8 @@ enum NowPlayingInfoBuilder {
         case .episode: return "Série"
         case .recording: return "Enregistrement"
         case .replay: return "Replay"
+        case .localVideo: return "Vidéo"
+        case .localAudio: return "Audio"
         }
     }
 }

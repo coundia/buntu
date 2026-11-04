@@ -4,6 +4,7 @@ pub mod downloader;
 pub mod health;
 pub mod http_client;
 pub mod iptv;
+pub mod library;
 pub mod metadata;
 pub mod recorder;
 pub mod recommend;
@@ -24,6 +25,11 @@ pub use sharing::{
     SharePreviewSource, ShareSourceOption, ShareWarning,
 };
 pub use subtitles::{SubtitleCue, SubtitleSearchQuery, SubtitleSearchResult};
+pub use db::library_repo::{
+    LibraryAlbumRecord, LibraryArtistRecord, LibraryBrowseEntry, LibraryFolderRecord,
+    LibraryGenreRecord, LibraryItemMetadataInput, LibraryItemRecord, LibraryProgressRecord,
+    LibraryScanReport,
+};
 pub use db::profile_repo::{FavoriteFolderRecord, ProfileRecord};
 pub use db::recording_repo::{NewRecordingRequest, RecordingRecord, SeriesRuleRecord};
 pub use db::catalog_repo::{CatalogFilter, FacetCount, SeasonSummary, SeriesRecord, SortField};
@@ -65,6 +71,10 @@ pub enum CndError {
     Io { message: String },
     #[error("Internal error: {message}")]
     Internal { message: String },
+    #[error("Validation error: {message}")]
+    Validation { message: String },
+    #[error("Not found: {message}")]
+    NotFound { message: String },
 }
 
 impl From<db::DbError> for CndError {
@@ -93,6 +103,7 @@ pub struct CndEngine {
     health_service: Arc<health::HealthService>,
     subtitle_service: Arc<subtitles::SubtitleService>,
     recorder: Arc<recorder::PvrManager>,
+    library: Arc<library::LibraryManager>,
     active_profile_id: std::sync::atomic::AtomicI64,
 }
 
@@ -122,9 +133,10 @@ impl CndEngine {
             Arc::clone(&telemetry),
             default_rec_dir,
         );
+        let library = Arc::new(library::LibraryManager::new());
         telemetry.info(
             "DB",
-            "CndEngine initialized (SQLite WAL + FTS5 + HttpClientPool + PVR)",
+            "CndEngine initialized (SQLite WAL + FTS5 + HttpClientPool + PVR + Library)",
         );
         if recovered > 0 {
             telemetry.info(
@@ -142,6 +154,7 @@ impl CndEngine {
             health_service,
             subtitle_service,
             recorder,
+            library,
             active_profile_id: std::sync::atomic::AtomicI64::new(1),
         }))
     }
@@ -1273,6 +1286,128 @@ impl CndEngine {
     pub async fn resolve_saga_with_ai(&self, item_id: i64, config: AiProviderConfig) -> Result<Option<SagaInfo>, CndError> {
         self.resolve_saga_with_ai_impl(item_id, config).await
     }
+
+    // ------------------------------------------------------------------------
+    // Local Media Library (PRD-32)
+    // ------------------------------------------------------------------------
+
+    pub fn library_add_folder(
+        &self,
+        display_name: String,
+        path: String,
+        bookmark: Option<Vec<u8>>,
+        include_subfolders: bool,
+        kinds: String,
+    ) -> Result<LibraryFolderRecord, CndError> {
+        self.db
+            .add_library_folder(&display_name, &path, bookmark, include_subfolders, &kinds)
+            .map_err(Into::into)
+    }
+
+    pub fn library_remove_folder(&self, id: i64) -> Result<(), CndError> {
+        self.db.remove_library_folder(id).map_err(Into::into)
+    }
+
+    pub fn library_update_folder_state(&self, id: i64, state: String) -> Result<(), CndError> {
+        self.db.update_library_folder_state(id, &state).map_err(Into::into)
+    }
+
+    pub fn library_list_folders(&self) -> Result<Vec<LibraryFolderRecord>, CndError> {
+        self.db.list_library_folders().map_err(Into::into)
+    }
+
+    pub fn library_get_folder(&self, id: i64) -> Result<Option<LibraryFolderRecord>, CndError> {
+        self.db.get_library_folder(id).map_err(Into::into)
+    }
+
+    pub fn library_scan(&self, folder_id: i64, root_path: String) -> Result<LibraryScanReport, CndError> {
+        self.library.scan_folder(&self.db, folder_id, &root_path)
+    }
+
+    pub fn library_cancel_scan(&self, folder_id: i64) {
+        self.library.cancel_scan(folder_id);
+    }
+
+    pub fn library_list_items(
+        &self,
+        kind: Option<String>,
+        folder_id: Option<i64>,
+        sort_by: Option<String>,
+        sort_asc: bool,
+        offset: u32,
+        limit: u32,
+    ) -> Result<Vec<LibraryItemRecord>, CndError> {
+        self.db
+            .list_library_items(kind, folder_id, sort_by, sort_asc, offset, limit)
+            .map_err(Into::into)
+    }
+
+    pub fn library_get_item(&self, id: i64) -> Result<Option<LibraryItemRecord>, CndError> {
+        self.db.get_library_item(id).map_err(Into::into)
+    }
+
+    pub fn library_search(
+        &self,
+        query: String,
+        kind: Option<String>,
+        limit: u32,
+    ) -> Result<Vec<LibraryItemRecord>, CndError> {
+        self.db.search_library(&query, kind, limit).map_err(Into::into)
+    }
+
+    pub fn library_albums(&self, limit: u32, offset: u32) -> Result<Vec<LibraryAlbumRecord>, CndError> {
+        self.db.get_library_albums(limit, offset).map_err(Into::into)
+    }
+
+    pub fn library_artists(&self, limit: u32, offset: u32) -> Result<Vec<LibraryArtistRecord>, CndError> {
+        self.db.get_library_artists(limit, offset).map_err(Into::into)
+    }
+
+    pub fn library_genres(&self) -> Result<Vec<LibraryGenreRecord>, CndError> {
+        self.db.get_library_genres().map_err(Into::into)
+    }
+
+    pub fn library_browse(&self, folder_id: i64, rel_dir: String) -> Result<Vec<LibraryBrowseEntry>, CndError> {
+        self.db.browse_library_dir(folder_id, &rel_dir).map_err(Into::into)
+    }
+
+    pub fn library_pending_metadata(&self, limit: u32) -> Result<Vec<LibraryItemRecord>, CndError> {
+        self.db.get_pending_metadata(limit).map_err(Into::into)
+    }
+
+    pub fn library_store_metadata(
+        &self,
+        item_id: i64,
+        metadata: LibraryItemMetadataInput,
+    ) -> Result<(), CndError> {
+        self.db.update_item_metadata(item_id, &metadata).map_err(Into::into)
+    }
+
+    pub fn library_record_progress(
+        &self,
+        fingerprint: String,
+        position_ms: i64,
+        duration_ms: i64,
+    ) -> Result<(), CndError> {
+        let profile_id = self.active_profile_id();
+        self.db
+            .record_library_progress(profile_id, &fingerprint, position_ms, duration_ms)
+            .map_err(Into::into)
+    }
+
+    pub fn library_get_progress(&self, fingerprint: String) -> Result<Option<LibraryProgressRecord>, CndError> {
+        let profile_id = self.active_profile_id();
+        self.db.get_library_progress(profile_id, &fingerprint).map_err(Into::into)
+    }
+
+    pub fn library_recent(&self, kind: Option<String>, limit: u32) -> Result<Vec<LibraryItemRecord>, CndError> {
+        let profile_id = self.active_profile_id();
+        self.db.list_recent_library_items(kind, profile_id, limit).map_err(Into::into)
+    }
+
+    pub fn library_recently_added(&self, kind: Option<String>, limit: u32) -> Result<Vec<LibraryItemRecord>, CndError> {
+        self.db.list_recently_added_library_items(kind, limit).map_err(Into::into)
+    }
 }
 
 #[uniffi::export]
@@ -2118,5 +2253,132 @@ http://iptv.local:8080/series/u/p/401.mkv
         assert!(engine.delete_profile(1).is_err());
         assert!(engine.delete_profile(kids_prof.id).expect("delete kids"));
         assert_eq!(engine.list_profiles().expect("list").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_cnd_engine_local_media_library_workflow() {
+        use std::fs::{self, File};
+        use std::io::Write;
+
+        let engine = CndEngine::in_memory().expect("engine");
+        let dir = std::env::temp_dir().join(format!("cnd_test_lib_wf_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // Subdirectories: Movies/ and Music/
+        let movies_dir = dir.join("Movies");
+        let music_dir = dir.join("Music");
+        fs::create_dir_all(&movies_dir).unwrap();
+        fs::create_dir_all(&music_dir).unwrap();
+
+        // 1. Files
+        let mut f_vid = File::create(movies_dir.join("Interstellar.2014.mkv")).unwrap();
+        f_vid.write_all(&[0x1Au8, 0x45, 0xDF, 0xA3]).unwrap();
+        f_vid.write_all(&vec![0u8; 10000]).unwrap();
+        drop(f_vid);
+
+        let mut f_sub = File::create(movies_dir.join("Interstellar.2014.fr.srt")).unwrap();
+        f_sub.write_all(b"1\n00:00:01,000 --> 00:00:04,000\nBonjour\n").unwrap();
+        drop(f_sub);
+
+        let mut f_aud = File::create(music_dir.join("song.flac")).unwrap();
+        f_aud.write_all(b"fLaC\x00\x00\x00\x22").unwrap();
+        drop(f_aud);
+
+        let mut f_img = File::create(dir.join("photo.jpg")).unwrap();
+        f_img.write_all(&[0xFF, 0xD8, 0xFF, 0xE0]).unwrap();
+        drop(f_img);
+
+        // 2. Add folder & scan
+        let folder = engine
+            .library_add_folder(
+                "My Files".to_string(),
+                dir.to_str().unwrap().to_string(),
+                None,
+                true,
+                "video,audio,image".to_string(),
+            )
+            .expect("add folder");
+        assert_eq!(folder.display_name, "My Files");
+
+        let scan_report = engine
+            .library_scan(folder.id, dir.to_str().unwrap().to_string())
+            .expect("scan");
+        assert_eq!(scan_report.added, 3); // 1 video, 1 audio, 1 image
+
+        // 3. Verify video & companion subtitle
+        let videos = engine
+            .library_list_items(Some("video".to_string()), None, None, true, 0, 10)
+            .expect("list videos");
+        assert_eq!(videos.len(), 1);
+        assert_eq!(videos[0].subtitles, vec!["Movies/Interstellar.2014.fr.srt"]);
+
+        // 4. Update metadata for audio track
+        let audios = engine
+            .library_list_items(Some("audio".to_string()), None, None, true, 0, 10)
+            .expect("list audio");
+        assert_eq!(audios.len(), 1);
+        let audio_id = audios[0].id;
+
+        let meta = LibraryItemMetadataInput {
+            title: Some("Starman".to_string()),
+            duration_ms: Some(250000),
+            width: None,
+            height: None,
+            codec: Some("flac".to_string()),
+            artist: Some("David Bowie".to_string()),
+            album: Some("Ziggy Stardust".to_string()),
+            album_artist: Some("David Bowie".to_string()),
+            track_no: Some(4),
+            disc_no: Some(1),
+            genre: Some("Glam Rock".to_string()),
+            year: Some(1972),
+            taken_at: None,
+            thumbnail_path: None,
+        };
+        engine.library_store_metadata(audio_id, meta).expect("store metadata");
+
+        // 5. Verify Albums, Artists, Genres
+        let albums = engine.library_albums(10, 0).expect("albums");
+        assert_eq!(albums.len(), 1);
+        assert_eq!(albums[0].name, "Ziggy Stardust");
+
+        let artists = engine.library_artists(10, 0).expect("artists");
+        assert_eq!(artists.len(), 1);
+        assert_eq!(artists[0].name, "David Bowie");
+
+        let genres = engine.library_genres().expect("genres");
+        assert_eq!(genres.len(), 1);
+        assert_eq!(genres[0].name, "Glam Rock");
+
+        // 6. Directory browser
+        let root_entries = engine.library_browse(folder.id, "".to_string()).expect("browse root");
+        let dir_names: Vec<&str> = root_entries.iter().filter(|e| e.is_directory).map(|e| e.name.as_str()).collect();
+        assert!(dir_names.contains(&"Movies"));
+        assert!(dir_names.contains(&"Music"));
+
+        // 7. Search FTS5
+        let search_res = engine.library_search("Bowie".to_string(), None, 10).expect("search");
+        assert_eq!(search_res.len(), 1);
+        assert_eq!(search_res[0].title.as_deref(), Some("Starman"));
+
+        // 8. Progress and Recently Played
+        let fp = &videos[0].fingerprint;
+        engine.library_record_progress(fp.clone(), 30000, 120000).expect("record progress");
+
+        let prog = engine.library_get_progress(fp.clone()).expect("get progress");
+        assert!(prog.is_some());
+        assert_eq!(prog.unwrap().position_ms, 30000);
+
+        let recent = engine.library_recent(Some("video".to_string()), 10).expect("recent");
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].id, videos[0].id);
+
+        // 9. Remove folder
+        engine.library_remove_folder(folder.id).expect("remove folder");
+        let list_folders = engine.library_list_folders().expect("list");
+        assert_eq!(list_folders.len(), 0);
+
+        let _ = fs::remove_dir_all(dir);
     }
 }

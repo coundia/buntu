@@ -8,6 +8,12 @@ enum AppTab: String, CaseIterable, Identifiable {
     case series
     case downloads
     case recordings
+    #if !os(tvOS)
+    case libraryVideo
+    case libraryAudio
+    case libraryImages
+    case libraryFolders
+    #endif
     case sources
     case settings
 
@@ -21,6 +27,12 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .series: return "Séries"
         case .downloads: return "Téléchargements"
         case .recordings: return "Enregistrements"
+        #if !os(tvOS)
+        case .libraryVideo: return "Vidéos"
+        case .libraryAudio: return "Audio"
+        case .libraryImages: return "Photos"
+        case .libraryFolders: return "Dossiers"
+        #endif
         case .sources: return "Sources"
         case .settings: return "Réglages"
         }
@@ -34,6 +46,12 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .series: return "play.tv"
         case .downloads: return "arrow.down.circle"
         case .recordings: return "recordingtape"
+        #if !os(tvOS)
+        case .libraryVideo: return "film.stack"
+        case .libraryAudio: return "music.note.list"
+        case .libraryImages: return "photo.on.rectangle.angled"
+        case .libraryFolders: return "folder"
+        #endif
         case .sources: return "antenna.radiowaves.left.and.right"
         case .settings: return "gearshape"
         }
@@ -111,6 +129,9 @@ private struct LoadedShellView: View {
     @State private var isDropTargeted = false
     @State private var multiViewController = MultiViewController()
     @State private var currentlyPlayingItem: IptvItemRecord?
+    #if !os(tvOS)
+    @State private var libraryModel: LibraryModel
+    #endif
 
     init(state: AppState, engine: CndEngine, commands: AppCommandCenter) {
         self.state = state
@@ -140,6 +161,11 @@ private struct LoadedShellView: View {
         settings.onConsoleVisibilityChanged = { [weak state] visible in state?.showNetworkConsole = visible }
         _settingsModel = State(initialValue: settings)
         _consoleModel = State(initialValue: ConsoleModel(engine: engine))
+        #if !os(tvOS)
+        let library = LibraryModel(engine: engine)
+        library.autoRegisterDownloadsFolder(url: state.downloadDirectory.directory)
+        _libraryModel = State(initialValue: library)
+        #endif
     }
 
     private var isKidsMode: Bool { state.profiles?.isKidsModeActive ?? false }
@@ -162,7 +188,7 @@ private struct LoadedShellView: View {
     }
 
     private var mainShell: some View {
-        platformShell
+        attachSheets(platformShell)
             .environment(vodContext)
             .environment(state.profiles)
             .overlay(alignment: .bottom) {
@@ -194,6 +220,13 @@ private struct LoadedShellView: View {
                 Text(state.errorMessage ?? "")
             }
             .onChange(of: selectedTabRaw) { _, _ in vodContext.selection = nil }
+            #if !os(tvOS)
+            .onChange(of: libraryModel.isAudioPlaying) { _, playing in
+                if playing && player.state == .playing {
+                    player.pause()
+                }
+            }
+            #endif
             #if os(macOS)
             .onChange(of: WindowLevelController.shared.isCompact) { _, compact in
                 if compact {
@@ -238,14 +271,33 @@ private struct LoadedShellView: View {
                 pip.attach(layer: player.surfaceLayer, controller: player)
             }
             .onAppear { connectPlayerIntegrations() }
+            .task { checkInitialProfilePicker() }
+            #if os(macOS)
+            // The expanded player stays up when the window leaves full screen; "Réduire" docks it.
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+                windowIsFullscreen = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+                windowIsFullscreen = false
+                fullscreenIsOurs = false
+            }
+            #endif
+    }
+
+    private func checkInitialProfilePicker() {
+        guard !offeredProfilePicker else { return }
+        let profileCount = state.profiles?.profiles.count ?? 0
+        if profileCount > 1 {
+            offeredProfilePicker = true
+            showingProfilePicker = true
+        }
+    }
+
+    @ViewBuilder
+    private func attachSheets<V: View>(_ content: V) -> some View {
+        content
             .sheet(isPresented: $showingProfilePicker) {
                 if let profiles = state.profiles { ProfilePickerSheet(profiles: profiles) { showingProfilePicker = false } }
-            }
-            .task(id: state.profiles?.profiles.count) {
-                // Once per launch, when there is a choice to make.
-                guard !offeredProfilePicker, (state.profiles?.profiles.count ?? 0) > 1 else { return }
-                offeredProfilePicker = true
-                showingProfilePicker = true
             }
             .sheet(isPresented: $showingKidsExit) {
                 if let profiles = state.profiles { KidsExitSheet(profiles: profiles) { showingKidsExit = false } }
@@ -259,16 +311,6 @@ private struct LoadedShellView: View {
                     .presentationDetents([.medium, .large])
                     #endif
             }
-            #if os(macOS)
-            // The expanded player stays up when the window leaves full screen; "Réduire" docks it.
-            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
-                windowIsFullscreen = true
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
-                windowIsFullscreen = false
-                fullscreenIsOurs = false
-            }
-            #endif
     }
 
     #if os(iOS)
@@ -597,14 +639,45 @@ private struct LoadedShellView: View {
     private var platformShell: some View {
         #if os(macOS)
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(visibleTabs, selection: Binding<AppTab?>(
+            List(selection: Binding<AppTab?>(
                 get: { selectedTab },
                 set: { if let tab = $0 { selectedTabRaw = tab.rawValue } }
-            )) { tab in
-                Label(tab.title, systemImage: tab.systemImage)
-                    .font(ui.font(.body))
-                    .badge(badge(for: tab))
-                    .tag(tab)
+            )) {
+                Section("IPTV") {
+                    ForEach([AppTab.live, .guide, .movies, .series, .downloads, .recordings].filter { visibleTabs.contains($0) }) { tab in
+                        Label(tab.title, systemImage: tab.systemImage)
+                            .font(ui.font(.body))
+                            .badge(badge(for: tab))
+                            .tag(tab)
+                    }
+                }
+                #if !os(tvOS)
+                Section {
+                    ForEach([AppTab.libraryVideo, .libraryAudio, .libraryImages, .libraryFolders].filter { visibleTabs.contains($0) }) { tab in
+                        Label(tab.title, systemImage: tab.systemImage)
+                            .font(ui.font(.body))
+                            .badge(badge(for: tab))
+                            .tag(tab)
+                    }
+                } header: {
+                    HStack {
+                        Text("Mes fichiers")
+                        Spacer()
+                        if libraryModel.isScanning {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+                }
+                #endif
+                Section {
+                    ForEach([AppTab.sources, .settings].filter { visibleTabs.contains($0) }) { tab in
+                        Label(tab.title, systemImage: tab.systemImage)
+                            .font(ui.font(.body))
+                            .badge(badge(for: tab))
+                            .tag(tab)
+                    }
+                }
             }
             .navigationTitle(AppBrand.name)
             .navigationSplitViewColumnWidth(min: ui.sidebarMinWidth, ideal: ui.sidebarIdealWidth, max: ui.sidebarMaxWidth)
@@ -618,6 +691,11 @@ private struct LoadedShellView: View {
                     sidePanelResizeHandle
                     sidePanel.frame(width: sidePanelWidth)
                 }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                #if !os(tvOS)
+                AudioPlayerBar(model: libraryModel)
+                #endif
             }
             .overlay {
                 if isPlayerExpanded { expandedPlayer }
@@ -643,7 +721,14 @@ private struct LoadedShellView: View {
             ForEach(visibleTabs) { tab in
                 NavigationStack {
                     content(for: tab)
-                        .safeAreaInset(edge: .bottom, spacing: 0) { miniPlayerBar }
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            VStack(spacing: 0) {
+                                #if !os(tvOS)
+                                AudioPlayerBar(model: libraryModel)
+                                #endif
+                                miniPlayerBar
+                            }
+                        }
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) { logsToolbarButton }
                             if isKidsMode {
@@ -680,13 +765,18 @@ private struct LoadedShellView: View {
     }
 
     private func badge(for tab: AppTab) -> Int {
-        guard let stats = state.stats else { return 0 }
         switch tab {
-        case .live: return Int(stats.totalLiveChannels)
-        case .movies: return Int(stats.totalMovies)
-        case .series: return Int(stats.totalSeries)
-        case .downloads: return Int(stats.totalDownloads)
-        case .sources: return Int(stats.totalSources)
+        case .live: return Int(state.stats?.totalLiveChannels ?? 0)
+        case .movies: return Int(state.stats?.totalMovies ?? 0)
+        case .series: return Int(state.stats?.totalSeries ?? 0)
+        case .downloads: return Int(state.stats?.totalDownloads ?? 0)
+        case .sources: return Int(state.stats?.totalSources ?? 0)
+        #if !os(tvOS)
+        case .libraryVideo: return libraryModel.videoItems.count
+        case .libraryAudio: return libraryModel.audioItems.count
+        case .libraryImages: return libraryModel.imageItems.count
+        case .libraryFolders: return libraryModel.folders.count
+        #endif
         case .guide, .settings, .recordings: return 0
         }
     }
@@ -738,11 +828,29 @@ private struct LoadedShellView: View {
                 DownloadsDashboardView(model: downloadsModel, directory: state.downloadDirectory, onPlay: playDownload)
             case .recordings:
                 RecordingsView(model: recordingsModel, onPlay: playRecording)
+            #if !os(tvOS)
+            case .libraryVideo:
+                LibraryVideoView(model: libraryModel, onPlay: playLibraryVideo)
+            case .libraryAudio:
+                LibraryAudioView(model: libraryModel)
+            case .libraryImages:
+                LibraryImagesView(model: libraryModel)
+            case .libraryFolders:
+                LibraryFoldersView(model: libraryModel, onPlayVideo: playLibraryVideo)
+            #endif
             case .settings:
+                #if !os(tvOS)
+                SettingsView(
+                    model: settingsModel, directory: state.downloadDirectory, stats: state.stats, sync: state.cloudSync,
+                    ai: state.aiSettings, assistant: assistant, upNext: state.upNext,
+                    library: libraryModel
+                )
+                #else
                 SettingsView(
                     model: settingsModel, directory: state.downloadDirectory, stats: state.stats, sync: state.cloudSync,
                     ai: state.aiSettings, assistant: assistant, upNext: state.upNext
                 )
+                #endif
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -772,7 +880,35 @@ private struct LoadedShellView: View {
 
     // MARK: Player
 
+    #if !os(tvOS)
+    private func playLibraryVideo(_ item: LibraryItemRecord) {
+        libraryModel.stopAudio()
+        let resumePos: Int64
+        if let progress = libraryModel.getProgress(fingerprint: item.fingerprint), !progress.completed {
+            resumePos = progress.positionMs
+        } else {
+            resumePos = 0
+        }
+        let media = PlayableMedia(libraryItem: item, startPositionMs: resumePos)
+        player.open(media)
+
+        let companionSubs = libraryModel.companionSubtitleURLs(for: item)
+        for subUrl in companionSubs {
+            player.loadExternalSubtitle(fileUrl: subUrl, engine: engine)
+        }
+
+        #if os(macOS)
+        setExpanded(true, windowFullscreen: false)
+        #else
+        setExpanded(true)
+        #endif
+    }
+    #endif
+
     private func play(_ item: IptvItemRecord) {
+        #if !os(tvOS)
+        libraryModel.stopAudio()
+        #endif
         currentlyPlayingItem = item
         guard let media = PlayableMedia(item: item) else {
             state.errorMessage = "L'URL du flux de « \(item.name) » est invalide."
@@ -791,6 +927,9 @@ private struct LoadedShellView: View {
     }
 
     private func playCatchup(channel: IptvItemRecord, program: EpgProgramRecord, replayUrlString: String) {
+        #if !os(tvOS)
+        libraryModel.stopAudio()
+        #endif
         currentlyPlayingItem = channel
         guard let url = URL(string: replayUrlString),
               let media = PlayableMedia(
@@ -838,6 +977,9 @@ private struct LoadedShellView: View {
 
     /// Opens a finished download straight from disk in the built-in player.
     private func playDownload(_ task: DownloadTaskRecord) {
+        #if !os(tvOS)
+        libraryModel.stopAudio()
+        #endif
         guard FileManager.default.fileExists(atPath: task.savePath) else {
             toasts.show("Le fichier « \(task.fileName) » est introuvable sur le disque.", isError: true)
             return
@@ -847,6 +989,9 @@ private struct LoadedShellView: View {
 
     /// Opens a completed or partial recording from disk.
     private func playRecording(_ recording: RecordingRecord) {
+        #if !os(tvOS)
+        libraryModel.stopAudio()
+        #endif
         guard let path = recording.filePath, FileManager.default.fileExists(atPath: path) else {
             toasts.show("Le fichier de l'enregistrement est introuvable sur le disque.", isError: true)
             return
@@ -1106,8 +1251,24 @@ private struct LoadedShellView: View {
             return openShare(share)
         }
         let playlists = urls.filter(SourcesModel.isM3uFile)
-        guard !playlists.isEmpty else { return false }
-        Task { for url in playlists { await sourcesModel.importM3u(from: url) } }
-        return true
+        if !playlists.isEmpty {
+            Task { for url in playlists { await sourcesModel.importM3u(from: url) } }
+            return true
+        }
+        #if !os(tvOS)
+        let directoryUrls = urls.filter { url in
+            var isDir: ObjCBool = false
+            return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+        }
+        if let firstDir = directoryUrls.first {
+            Task {
+                if let folder = await libraryModel.addFolder(url: firstDir) {
+                    toasts.show("Dossier « \(folder.displayName) » ajouté à la bibliothèque.")
+                }
+            }
+            return true
+        }
+        #endif
+        return false
     }
 }

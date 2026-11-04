@@ -15,6 +15,7 @@ final class DeferredProgressRecorder: WatchProgressRecording, @unchecked Sendabl
     func recordWatchProgress(stableHash: String, positionMs: Int64, durationMs: Int64) throws {
         guard let engine = lock.withLock({ self.engine }) else { return }
         try engine.recordWatchProgress(stableHash: stableHash, positionMs: positionMs, durationMs: durationMs)
+        try? engine.libraryRecordProgress(fingerprint: stableHash, positionMs: positionMs, durationMs: durationMs)
     }
 }
 
