@@ -131,6 +131,7 @@ private struct LoadedShellView: View {
             playQueue: { [weak state] medias, index in state?.player.openQueue(medias, startIndex: index) },
             openDownloads: { UserDefaults.standard.set(AppTab.downloads.rawValue, forKey: "shell.selectedTab") },
             onFavoriteChanged: { [weak state] in state?.reloadSnapshot(notifyScreens: false) },
+            aiConfigProvider: { [weak state] in state?.aiSettings.providerConfig() ?? AiProviderConfig(kind: .localOnly, model: "", baseUrl: nil, apiKey: nil, timeoutMs: 8_000) },
             connections: state.downloadCoordinator
         ))
         _downloadsModel = State(initialValue: DownloadsModel(backend: engine))

@@ -134,7 +134,7 @@ mod tests {
 
         tokio::spawn(async move {
             if let Ok((mut socket, _)) = listener.accept().await {
-                let head = "HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\n\r\n";
+                let head = "HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\nConnection: close\r\n\r\n";
                 let _ = socket.write_all(head.as_bytes()).await;
                 let chunk = vec![0x47u8; 188 * 10];
                 for _ in 0..10 {
