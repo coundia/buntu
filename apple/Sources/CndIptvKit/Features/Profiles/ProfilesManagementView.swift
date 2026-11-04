@@ -81,6 +81,7 @@ public struct ProfilesManagementView: View {
                                         .foregroundColor(.red)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Supprimer le profil \(profile.name)")
                             }
                         }
                         .padding(.vertical, 4)
@@ -227,9 +228,10 @@ private struct AddProfileSheet: View {
                                 .padding()
                                 .background(selectedAvatar == av ? Color.accentColor.opacity(0.2) : Color.clear)
                                 .clipShape(Circle())
-                                .onTapGesture {
+                                .accessibleTap("Avatar \(av)") {
                                     selectedAvatar = av
                                 }
+                                .accessibilityAddTraits(selectedAvatar == av ? .isSelected : [])
                         }
                     }
                     .padding(.vertical, 8)

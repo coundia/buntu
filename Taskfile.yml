@@ -24,6 +24,11 @@ tasks:
     cmds:
       - ./scripts/test-gen-default-keys.sh
 
+  lint:ui:
+    desc: Report fixed sizes written in views instead of the design tokens (PRD 30; STRICT=1 to fail)
+    cmds:
+      - ./scripts/lint-ui.sh {{if .STRICT}}--strict{{end}}
+
   secrets:check:
     desc: Fails if .env is tracked or a known API key shape is in a versioned file
     cmds:

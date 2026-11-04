@@ -152,6 +152,7 @@ final class SeriesDetailsModel {
 }
 
 struct SeriesDetailsView: View {
+    @Environment(\.uiMetrics) private var ui
     @State private var model: SeriesDetailsModel
     /// Narrow layout for the side panel (under the player) instead of a full page.
     let compact: Bool
@@ -202,7 +203,7 @@ struct SeriesDetailsView: View {
     private var compactHeader: some View {
         HStack(alignment: .top, spacing: 12) {
             ThumbnailImageView(urlString: series.posterUrl, size: .poster, placeholderSystemImage: "play.tv", fills: true)
-                .frame(width: 96, height: 144)
+                .frame(width: ui.posterCompactWidth, height: ui.posterHeight(forWidth: ui.posterCompactWidth))
                 .background(.quaternary)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 6) {
@@ -237,7 +238,7 @@ struct SeriesDetailsView: View {
                 .overlay(LinearGradient(colors: [.clear, Color.black.opacity(0.65)], startPoint: .top, endPoint: .bottom))
             HStack(alignment: .bottom, spacing: 20) {
                 ThumbnailImageView(urlString: series.posterUrl, size: .poster, placeholderSystemImage: "play.tv", fills: true)
-                    .frame(width: 140, height: 210)
+                    .frame(width: ui.value(140), height: ui.posterHeight(forWidth: ui.value(140)))
                     .background(.quaternary)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .shadow(radius: 10)
@@ -436,9 +437,9 @@ struct EpisodeRow: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .accessibilityLabel("Plus d'actions pour cet épisode")
         }
         .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onPlay)
+        .accessibleTap(perform: onPlay)
     }
 }

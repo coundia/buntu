@@ -2,6 +2,7 @@ import SwiftUI
 import CndCoreBridge
 
 struct DownloadsDashboardView: View {
+    @Environment(\.uiMetrics) private var ui
     @Bindable var model: DownloadsModel
     let directory: DownloadDirectoryManager
     let onPlay: (DownloadTaskRecord) -> Void
@@ -72,7 +73,7 @@ struct DownloadsDashboardView: View {
                     Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).padding([.horizontal, .top])
                 }
                 if wide {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 420), spacing: 12)], spacing: 12) { cards }.padding()
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: ui.downloadCardMinWidth), spacing: ui.spacingM)], spacing: ui.spacingM) { cards }.padding()
                 } else {
                     LazyVStack(spacing: 12) { cards }.padding()
                 }

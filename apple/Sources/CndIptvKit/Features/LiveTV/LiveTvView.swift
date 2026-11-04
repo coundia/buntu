@@ -2,6 +2,7 @@ import SwiftUI
 import CndCoreBridge
 
 struct LiveTvView: View {
+    @Environment(\.uiMetrics) private var ui
     @State private var model: LiveTvModel
     let revision: Int
     let totalChannels: Int
@@ -232,7 +233,7 @@ struct LiveTvView: View {
     }
 
     private var grid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 240, maximum: 340), spacing: 12)], spacing: 12) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: ui.channelCardMinWidth, maximum: ui.channelCardMaxWidth), spacing: ui.spacingM)], spacing: ui.spacingM) {
             ForEach(model.channels, id: \.id) { card($0, style: .card) }
         }
     }
@@ -252,7 +253,7 @@ struct LiveTvView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label(title, systemImage: icon).font(.title3.bold())
                 HorizontalShelf(items: items, spacing: 12) { item in
-                    card(item, style: .card).frame(width: 280)
+                    card(item, style: .card).frame(width: ui.shelfChannelCardWidth)
                 }
             }
         }
