@@ -937,7 +937,8 @@ private struct LoadedShellView: View {
                 detailsPanel(route)
             } else if hasMedia {
                 dockedInfo
-                if state.upNext.isUpNextShelfEnabled && !state.upNext.recommendations.isEmpty {
+                // No recommendations while a live channel plays (a live stream has no "next").
+                if !player.isLive && state.upNext.isUpNextShelfEnabled && !state.upNext.recommendations.isEmpty {
                     Divider()
                     ScrollView {
                         UpNextShelf(

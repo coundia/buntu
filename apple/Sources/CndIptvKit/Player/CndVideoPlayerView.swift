@@ -199,7 +199,7 @@ public struct CndVideoPlayerView: View {
                 ProgressView().controlSize(.large).tint(.white)
             }
 
-            if let upNext {
+            if let upNext, !controller.isLive {
                 VStack {
                     Spacer()
                     HStack {
@@ -217,7 +217,7 @@ public struct CndVideoPlayerView: View {
                 topBar
                 Spacer()
                 if hudVisible {
-                    if showShelf, let upNext, upNext.isUpNextShelfEnabled, !upNext.recommendations.isEmpty {
+                    if showShelf, !controller.isLive, let upNext, upNext.isUpNextShelfEnabled, !upNext.recommendations.isEmpty {
                         shelfOverlay(upNext)
                     }
                     bottomBar
