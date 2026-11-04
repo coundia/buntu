@@ -94,8 +94,8 @@ cat > "${BUNDLE_DIR}/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
-  <key>CFBundleName</key><string>CND IPTV</string>
-  <key>CFBundleDisplayName</key><string>CND IPTV</string>
+  <key>CFBundleName</key><string>Buntu</string>
+  <key>CFBundleDisplayName</key><string>Buntu</string>
   <key>CFBundleExecutable</key><string>${PRODUCT}</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -115,7 +115,7 @@ cat > "${BUNDLE_DIR}/Contents/Info.plist" <<PLIST
   <array>
     <dict>
       <key>UTTypeIdentifier</key><string>${BUNDLE_ID}.share</string>
-      <key>UTTypeDescription</key><string>Partage de sources CND IPTV</string>
+      <key>UTTypeDescription</key><string>Partage de sources Buntu</string>
       <key>UTTypeConformsTo</key><array><string>public.data</string></array>
       <key>UTTypeTagSpecification</key>
       <dict><key>public.filename-extension</key><array><string>cndshare</string></array></dict>
@@ -124,7 +124,7 @@ cat > "${BUNDLE_DIR}/Contents/Info.plist" <<PLIST
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
-      <key>CFBundleTypeName</key><string>Partage de sources CND IPTV</string>
+      <key>CFBundleTypeName</key><string>Partage de sources Buntu</string>
       <key>CFBundleTypeRole</key><string>Viewer</string>
       <key>LSHandlerRank</key><string>Owner</string>
       <key>LSItemContentTypes</key><array><string>${BUNDLE_ID}.share</string></array>

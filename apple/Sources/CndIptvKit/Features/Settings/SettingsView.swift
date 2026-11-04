@@ -508,8 +508,8 @@ struct SettingsView: View {
             HStack(spacing: 12) {
                 AppLogoView(size: 44)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CND IPTV").font(.headline)
-                    Text("Lecteur IPTV natif pour Mac, iPhone et iPad").font(.caption).foregroundStyle(.secondary)
+                    Text(AppBrand.name).font(.headline)
+                    Text(AppBrand.descriptor).font(.caption).foregroundStyle(.secondary)
                 }
             }
             LabeledContent("Application", value: SettingsModel.appVersion)

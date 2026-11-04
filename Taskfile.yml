@@ -82,13 +82,13 @@ tasks:
       - ./scripts/run-macos.sh --build-only
 
   install:
-    desc: Build (release) and install CND IPTV into /Applications on this Mac
+    desc: Build (release) and install Buntu into /Applications on this Mac
     aliases: [app:install]
     cmds:
       - ./scripts/install-macos.sh
 
   install:user:
-    desc: Build (release) and install CND IPTV into ~/Applications (user-only)
+    desc: Build (release) and install Buntu into ~/Applications (user-only)
     cmds:
       - ./scripts/install-macos.sh --user
 

@@ -289,7 +289,7 @@ fn read_document(json: &str, now: i64) -> Result<ShareDocument, CndError> {
     let document: ShareDocument =
         serde_json::from_str(json).map_err(|_| parse_error("Ce fichier n'est pas un partage de sources valide."))?;
     if document.format != FORMAT {
-        return Err(parse_error("Ce fichier n'est pas un partage de sources CND IPTV."));
+        return Err(parse_error("Ce fichier n'est pas un partage de sources Buntu."));
     }
     if document.version != VERSION {
         return Err(parse_error(format!(

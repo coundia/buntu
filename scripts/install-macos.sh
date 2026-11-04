@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs CND IPTV into macOS Applications folder (/Applications or ~/Applications).
+# Installs Buntu into macOS Applications folder (/Applications or ~/Applications).
 #
 # Usage:
 #   ./scripts/install-macos.sh              # Build release & install into /Applications
@@ -58,15 +58,19 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-APP_NAME="CND IPTV.app"
+APP_NAME="Buntu.app"
 SOURCE_BUNDLE="${ROOT_DIR}/build/CndIPTV.app"
 TARGET_APP="${DEST_DIR}/${APP_NAME}"
 
 echo "=================================================="
-echo "  Installation de CND IPTV sur votre Mac"
+echo "  Installation de Buntu sur votre Mac"
 echo "=================================================="
 echo "• Mode : ${CONFIG}"
 echo "• Destination : ${TARGET_APP}"
+if [[ -d "${DEST_DIR}/CND IPTV.app" ]]; then
+  echo "• Une ancienne copie « CND IPTV.app » est présente dans ${DEST_DIR} : vous pouvez la supprimer."
+  echo "  Vos sources, favoris et réglages sont conservés (même identifiant d'application)."
+fi
 echo ""
 
 # 1. Vérification des permissions du dossier de destination
@@ -126,10 +130,10 @@ fi
 
 echo ""
 echo "=================================================="
-echo "  ✅ CND IPTV a été installé avec succès !"
+echo "  ✅ Buntu a été installé avec succès !"
 echo "=================================================="
 echo "Emplacement : ${TARGET_APP}"
-echo "Disponible dans : Launchpad, Spotlight (⌘ + Espace -> CND IPTV) et Finder."
+echo "Disponible dans : Launchpad, Spotlight (⌘ + Espace -> Buntu) et Finder."
 echo ""
 
 # 6. Lancement optionnel

@@ -182,6 +182,6 @@ final class NearbyModelsTests: XCTestCase {
         receiver.onReceived = { _ in called = true }
         receiver.server.onEnvelopeReceived?(Data("not a share".utf8))
         XCTAssertFalse(called)
-        XCTAssertEqual(receiver.status, .failed("Le contenu reçu n'est pas un partage CND IPTV."))
+        XCTAssertEqual(receiver.status, .failed(AppBrand.notAShareContent))
     }
 }

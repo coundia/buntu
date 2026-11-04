@@ -1,12 +1,14 @@
 <p align="center">
-  <img src="assets/AppIcon-1024.png" alt="CND IPTV" width="128">
+  <img src="assets/AppIcon-1024.png" alt="Buntu" width="128">
 </p>
 
-<h1 align="center">CND IPTV</h1>
+<h1 align="center">Buntu</h1>
 
 <p align="center">
-  Lecteur IPTV et gestionnaire de téléchargements 100 % natif pour <b>macOS</b>, <b>iPhone</b> et <b>iPad</b>.<br>
-  Interface SwiftUI, moteur Rust (SQLite + FTS5), lecture <code>AVPlayer</code> + <code>libmpv</code>.
+  <i>Sa bunt ci lépp</i> : la porte d'entrée de tous vos médias.<br>
+  Lecteur de médias et gestionnaire de téléchargements 100 % natif pour <b>macOS</b>, <b>iPhone</b>, <b>iPad</b>, <b>Apple TV</b> et <b>Vision Pro</b>.<br>
+  Interface SwiftUI, moteur Rust (SQLite + FTS5), lecture <code>AVPlayer</code> + <code>libmpv</code>.<br>
+  Buntu est un lecteur : il ne fournit aucun contenu, il lit les sources que vous ajoutez.
 </p>
 
 ---

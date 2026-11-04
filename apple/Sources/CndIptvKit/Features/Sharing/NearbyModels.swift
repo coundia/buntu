@@ -85,7 +85,7 @@ final class NearbyReceiveModel {
     var pairingCode: String { server.pairingCode }
 
     var status: Status {
-        if rejected { return .failed("Le contenu reçu n'est pas un partage CND IPTV.") }
+        if rejected { return .failed(AppBrand.notAShareContent) }
         switch server.state {
         case .idle, .listening: return .waiting
         case .connected: return .connected

@@ -5,9 +5,9 @@
     <key>CFBundleIdentifier</key>
     <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>CFBundleName</key>
-    <string>CND IPTV</string>
+    <string>Buntu</string>
     <key>CFBundleDisplayName</key>
-    <string>CND IPTV</string>
+    <string>Buntu</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundlePackageType</key>
