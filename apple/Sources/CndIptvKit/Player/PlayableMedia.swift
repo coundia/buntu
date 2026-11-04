@@ -52,6 +52,13 @@ public struct PlayableMedia: Equatable, Identifiable, Sendable {
     public let seasonNumber: UInt32?
     public let episodeNumber: UInt32?
 
+    /// A film or an episode from the catalog that streams over the network: the player can offer to
+    /// download it. Live channels and local files cannot be.
+    public var isDownloadable: Bool {
+        guard itemId != nil, itemKind == "movie" || itemKind == "episode" else { return false }
+        return url.scheme == "http" || url.scheme == "https"
+    }
+
     public init(
         title: String,
         url: URL,
