@@ -37,7 +37,7 @@ enum ShareEnvelope {
 
         var errorDescription: String? {
             switch self {
-            case .malformed: return "Ce fichier n'est pas un partage CND IPTV."
+            case .malformed: return AppBrand.notAShareFile
             case .unsupportedVersion(let v): return "Version de partage non prise en charge (\(v)). Mettez l'application à jour."
             case .expired: return "Ce partage a expiré."
             case .wrongCodeOrTampered: return "Code incorrect, ou fichier modifié."

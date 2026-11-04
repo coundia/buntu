@@ -84,7 +84,7 @@ public final class PlaybackSleepManager {
             if sleepActivityToken == nil {
                 sleepActivityToken = ProcessInfo.processInfo.beginActivity(
                     options: [.idleDisplaySleepDisabled, .idleSystemSleepDisabled, .userInitiated],
-                    reason: "Lecture vidéo CND IPTV"
+                    reason: "Lecture vidéo \(AppBrand.name)"
                 )
                 AppLog.shared.info("POWER", "Veille de l'écran et du système désactivée pendant la lecture vidéo (\(self.activeTokens.count) flux actif(s))")
             }

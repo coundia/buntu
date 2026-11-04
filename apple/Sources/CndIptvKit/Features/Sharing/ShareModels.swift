@@ -48,7 +48,7 @@ struct SharePackage {
     var linkFitsInQR: Bool { link.utf8.count <= ShareEnvelope.qrByteLimit }
 
     func writeFile(directory: URL = FileManager.default.temporaryDirectory) throws -> URL {
-        let url = directory.appendingPathComponent("Partage CND IPTV.\(ShareEnvelope.fileExtension)")
+        let url = directory.appendingPathComponent(AppBrand.shareFileName(extension: ShareEnvelope.fileExtension))
         try envelope.write(to: url, options: .atomic)
         return url
     }
@@ -234,7 +234,7 @@ final class ShareImportModel {
     func load(pasted text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed), let incoming = ShareEnvelope.parse(link: url) else {
-            errorMessage = "Ce lien n'est pas un partage CND IPTV."
+            errorMessage = AppBrand.notAShareLink
             return
         }
         load(envelope: incoming.envelope, code: incoming.code)

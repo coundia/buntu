@@ -173,7 +173,7 @@ public final class RecordingsModel {
         if hasActiveRecording && sleepActivityToken == nil {
             sleepActivityToken = ProcessInfo.processInfo.beginActivity(
                 options: [.userInitiated, .idleSystemSleepDisabled],
-                reason: "Enregistrement TV CND IPTV en cours"
+                reason: "Enregistrement TV \(AppBrand.name) en cours"
             )
         } else if !hasActiveRecording, let token = sleepActivityToken {
             ProcessInfo.processInfo.endActivity(token)

@@ -544,7 +544,7 @@ private struct LoadedShellView: View {
     private var sidebarBrand: some View {
         HStack(spacing: 10) {
             AppLogoView(size: ui.value(30))
-            Text("CND IPTV").font(ui.font(.headline))
+            Text(AppBrand.name).font(ui.font(.headline))
             Spacer(minLength: 0)
             if isKidsMode { kidsExitButton }
         }
@@ -606,7 +606,7 @@ private struct LoadedShellView: View {
                     .badge(badge(for: tab))
                     .tag(tab)
             }
-            .navigationTitle("CND IPTV")
+            .navigationTitle(AppBrand.name)
             .navigationSplitViewColumnWidth(min: ui.sidebarMinWidth, ideal: ui.sidebarIdealWidth, max: ui.sidebarMaxWidth)
             .safeAreaInset(edge: .top, spacing: 0) { sidebarBrand }
             .safeAreaInset(edge: .bottom, spacing: 0) { logsButton }

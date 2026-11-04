@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("========================================");
-    println!("  CND IPTV Native CLI (Zero-Lag Engine) ");
+    println!("  Buntu CLI (Zero-Lag Engine) ");
     println!("========================================");
 
     let engine = CndEngine::in_memory()?;
