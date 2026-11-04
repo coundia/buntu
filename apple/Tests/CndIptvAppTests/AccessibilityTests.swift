@@ -186,3 +186,23 @@ final class ProgressSliderTests: XCTestCase {
         }
     }
 }
+
+/// The player's download button only shows for a catalog film or episode that streams over the network.
+final class DownloadableMediaTests: XCTestCase {
+    private func media(_ urlText: String, kind: PlayableKind = .movie, itemKind: String?, itemId: Int64? = 7) -> PlayableMedia {
+        PlayableMedia(title: "T", url: URL(string: urlText)!, kind: kind, itemId: itemId, itemKind: itemKind)
+    }
+
+    func testAFilmOrEpisodeFromTheCatalogIsDownloadable() {
+        XCTAssertTrue(media("http://srv.test/movie/u/p/1.mkv", itemKind: "movie").isDownloadable)
+        XCTAssertTrue(media("https://srv.test/series/u/p/2.mp4", itemKind: "episode").isDownloadable)
+    }
+
+    func testLiveLocalAndUnknownMediaAreNot() {
+        XCTAssertFalse(media("http://srv.test/live/u/p/1.ts", kind: .live, itemKind: "live").isDownloadable)
+        XCTAssertFalse(media("file:///Users/x/Downloads/f.mkv", itemKind: "movie").isDownloadable, "already on the disk")
+        XCTAssertFalse(media("http://srv.test/movie/u/p/1.mkv", itemKind: "movie", itemId: nil).isDownloadable, "not from the catalog")
+        // Without an explicit item kind it follows the playable kind: a live stream stays out.
+        XCTAssertFalse(media("http://srv.test/live/u/p/1.ts", kind: .live, itemKind: nil).isDownloadable)
+    }
+}

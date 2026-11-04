@@ -458,6 +458,21 @@ private struct LoadedShellView: View {
     }
 
     /// Next / previous episode when a queue is playing, otherwise next / previous channel.
+    /// The player's download button: queues the film or episode on screen (same files and folders as the
+    /// download buttons of its sheet) and confirms with the usual toast linking to the Downloads tab.
+    private func downloadCurrentMedia() {
+        guard let media = player.media, media.isDownloadable, let itemId = media.itemId,
+              let item = try? engine.getItemById(itemId: itemId) else {
+            toasts.show("Ce contenu ne peut pas être téléchargé.", isError: true)
+            return
+        }
+        if media.itemKind == "episode" {
+            vodContext.downloadEpisodes([item], seriesTitle: media.seriesTitle ?? item.name)
+        } else {
+            vodContext.downloadMovie(item)
+        }
+    }
+
     /// From a replay back to the channel's live stream.
     private func returnToLive() {
         guard let itemId = player.media?.itemId, let channel = try? engine.getItemById(itemId: itemId) else { return }
@@ -981,6 +996,7 @@ private struct LoadedShellView: View {
             pip: pip,
             subtitleSearch: { makeSubtitleSearch() },
             onReturnToLive: { returnToLive() },
+            onDownload: { downloadCurrentMedia() },
             onToggleCinema: { setExpanded(true) }
         )
         .aspectRatio(16 / 9, contentMode: .fit)
@@ -1030,6 +1046,7 @@ private struct LoadedShellView: View {
             onZap: { zap($0) },
             subtitleSearch: { makeSubtitleSearch() },
             onReturnToLive: { returnToLive() },
+            onDownload: { downloadCurrentMedia() },
             onToggleCinema: cinemaAction,
             isCinema: expandedShowsFullscreen
         )
