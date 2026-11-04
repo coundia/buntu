@@ -14,6 +14,8 @@ final class VodContext {
     let openDownloads: () -> Void
     let onFavoriteChanged: () -> Void
     let aiConfigProvider: (() -> AiProviderConfig)?
+    /// Keeps downloads inside the subscription's connection limit while something plays.
+    let connections: DownloadConnectionCoordinator?
     /// The movie or series shown in the side panel (macOS), under the player. Never a separate page there.
     var selection: VodRoute?
     private let playMedia: (PlayableMedia) -> Void
@@ -28,8 +30,10 @@ final class VodContext {
         playQueue: @escaping ([PlayableMedia], Int) -> Void,
         openDownloads: @escaping () -> Void = {},
         onFavoriteChanged: @escaping () -> Void = {},
-        aiConfigProvider: (() -> AiProviderConfig)? = nil
+        aiConfigProvider: (() -> AiProviderConfig)? = nil,
+        connections: DownloadConnectionCoordinator? = nil
     ) {
+        self.connections = connections
         self.engine = engine
         self.keychain = keychain
         self.toasts = toasts
@@ -89,17 +93,27 @@ final class VodContext {
     @discardableResult
     func enqueue(_ requests: [NewDownloadRequest]) async -> Int {
         var queued = 0
+        var waiting = 0
         var failure: String?
-        for request in requests {
+        for var request in requests {
+            // With one connection, a download started during a playback would fight the stream (502 for both):
+            // it is queued and starts when the playback is over.
+            let waits = connections?.shouldHoldNewDownload(urlString: request.url) == true
+            if waits { request.autoStart = false }
             do {
-                _ = try await engine.enqueueDownload(req: request)
+                let taskId = try await engine.enqueueDownload(req: request)
                 queued += 1
+                if waits {
+                    connections?.hold(taskId: taskId)
+                    waiting += 1
+                }
             } catch {
                 failure = userMessage(for: error)
             }
         }
         if queued > 0 {
-            let text = queued == 1 ? "1 téléchargement ajouté" : "\(queued) téléchargements ajoutés"
+            var text = queued == 1 ? "1 téléchargement ajouté" : "\(queued) téléchargements ajoutés"
+            if waiting > 0 { text += " : démarrage à la fin de la lecture (votre abonnement n'autorise qu'une connexion)" }
             toasts.show(text, actionTitle: "Voir", action: openDownloads)
         }
         if let failure { toasts.show(failure, isError: true) }

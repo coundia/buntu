@@ -25,8 +25,12 @@ final class SettingsModelTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    private func makeModel(delay: Duration = .milliseconds(30)) -> SettingsModel {
-        SettingsModel(engine: engine, keychain: keychain, directory: directory, saveDelay: delay)
+    /// The subscription's connection limit is raised so the segment and file settings can be exercised
+    /// freely; `ConnectionSettingsTests` covers the default of one connection.
+    private func makeModel(delay: Duration = .milliseconds(30), connections: Int = 10) -> SettingsModel {
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.set(connections, forKey: ConnectionBudget.defaultsKey)
+        return SettingsModel(engine: engine, keychain: keychain, directory: directory, saveDelay: delay, defaults: defaults)
     }
 
     func testLoadsEngineDefaults() {
@@ -43,7 +47,7 @@ final class SettingsModelTests: XCTestCase {
 
     func testChangesArePersistedInTheEngine() {
         let model = makeModel()
-        model.segmentsPerFile = 8
+        model.segmentsPerFile = 3
         model.partSizeMB = 32
         model.maxActiveFiles = 3
         model.userAgent = "  CustomAgent/2  "
@@ -51,7 +55,7 @@ final class SettingsModelTests: XCTestCase {
         model.flush()
 
         let stored = engine.getSettings()
-        XCTAssertEqual(stored.segmentsPerFile, 8)
+        XCTAssertEqual(stored.segmentsPerFile, 3)
         XCTAssertEqual(stored.partSizeBytes, 32 * 1024 * 1024)
         XCTAssertEqual(stored.maxActiveFiles, 3)
         XCTAssertEqual(stored.defaultUserAgent, "CustomAgent/2")
@@ -59,7 +63,7 @@ final class SettingsModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
 
         let reopened = makeModel()
-        XCTAssertEqual(reopened.segmentsPerFile, 8)
+        XCTAssertEqual(reopened.segmentsPerFile, 3)
         XCTAssertEqual(reopened.partSizeMB, 32)
     }
 
@@ -73,7 +77,7 @@ final class SettingsModelTests: XCTestCase {
         model.flush()
 
         let stored = engine.getSettings()
-        XCTAssertEqual(stored.segmentsPerFile, 16)
+        XCTAssertEqual(stored.segmentsPerFile, 9, "16 at most, then under the 9 connections a 10-connection subscription leaves downloads")
         XCTAssertEqual(stored.partSizeBytes, 1 * 1024 * 1024)
         XCTAssertEqual(stored.maxActiveFiles, 1)
         XCTAssertEqual(stored.defaultUserAgent, "VLC/3.0.21 LibVLC/3.0.21")
@@ -282,5 +286,72 @@ final class ConsoleModelTests: XCTestCase {
         XCTAssertFalse(LogLevelFilter.errors.matches(.warn))
         XCTAssertTrue(LogLevelFilter.warnings.matches(.warn))
         XCTAssertFalse(LogLevelFilter.warnings.matches(.info))
+    }
+}
+
+/// With the default of one connection, downloads use one segment and one file at a time.
+@MainActor
+final class ConnectionSettingsTests: XCTestCase {
+    private var engine: CndEngine!
+    private var directory: DownloadDirectoryManager!
+    private var root: URL!
+    private var suite = ""
+
+    override func setUpWithError() throws {
+        root = try TestFixtures.makeTempDirectory()
+        engine = try CndEngine.inMemory()
+        suite = "cnd.conn.tests.\(UUID().uuidString)"
+        directory = DownloadDirectoryManager(
+            defaults: UserDefaults(suiteName: suite)!, platformDefault: root.appendingPathComponent("default")
+        )
+    }
+
+    override func tearDownWithError() throws {
+        UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    private func makeModel() -> SettingsModel {
+        SettingsModel(
+            engine: engine, keychain: KeychainStore(service: "com.cnd.iptv.tests.\(UUID().uuidString)"),
+            directory: directory, saveDelay: .milliseconds(10), defaults: UserDefaults(suiteName: suite)!
+        )
+    }
+
+    func testTheEngineDefaultsOfFourSegmentsAndTwoFilesAreBroughtToOne() {
+        XCTAssertEqual(engine.getSettings().segmentsPerFile, 4)
+        let model = makeModel()
+        XCTAssertEqual(model.connectionLimit, 1)
+        XCTAssertEqual(model.segmentsPerFile, 1)
+        XCTAssertEqual(model.maxActiveFiles, 1)
+        model.flush()
+        XCTAssertEqual(engine.getSettings().segmentsPerFile, 1)
+        XCTAssertEqual(engine.getSettings().maxActiveFiles, 1)
+    }
+
+    func testEnforceFixesAnExistingInstall() {
+        ConnectionBudget.enforce(on: engine, defaults: UserDefaults(suiteName: suite)!)
+        XCTAssertEqual(engine.getSettings().segmentsPerFile, 1)
+        XCTAssertEqual(engine.getSettings().maxActiveFiles, 1)
+    }
+
+    func testNoStepperValueCanExceedTheBudget() {
+        let model = makeModel()
+        model.segmentsPerFile = 16
+        model.maxActiveFiles = 8
+        model.flush()
+        XCTAssertEqual(engine.getSettings().segmentsPerFile, 1)
+        XCTAssertEqual(engine.getSettings().maxActiveFiles, 1)
+    }
+
+    func testRaisingTheLimitDoesNotRaiseTheSettingsButLoweringItClampsThem() {
+        let model = makeModel()
+        model.connectionLimit = 5            // 4 connections for downloads
+        model.segmentsPerFile = 4
+        XCTAssertEqual(model.segmentsPerFile, 4 * 1)
+        model.connectionLimit = 2            // 1 connection for downloads
+        XCTAssertEqual(model.segmentsPerFile, 1)
+        XCTAssertEqual(model.maxActiveFiles, 1)
+        XCTAssertEqual(UserDefaults(suiteName: suite)?.integer(forKey: ConnectionBudget.defaultsKey), 2)
     }
 }
