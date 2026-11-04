@@ -106,6 +106,7 @@ flowchart TD
 | **26** | [`26_SOURCE_SHARING_DEVICES_FRIENDS.md`](./26_SOURCE_SHARING_DEVICES_FRIENDS.md) | Partage des sources : mots de passe via Trousseau iCloud (opt-in), enveloppe chiffrée AES-GCM 256, transfert direct à proximité Bonjour, partage vivant `CKShare`. | `[x]` (lots 26.1 à 26.3 ; 26.4 `CKShare` non réalisé) |
 | **27** | [`27_RECOMMENDATIONS_UP_NEXT.md`](./27_RECOMMENDATIONS_UP_NEXT.md) | Rangée « À suivre » sous le lecteur (comme YouTube), carte « Film suivant » en fin de lecture (Apple TV d'abord), chronologie des sagas (Avengers…) par moteur local et fournisseur IA de l'utilisateur. | `[x]` |
 | **28** | [`28_DEFAULT_API_KEYS_DOTENV.md`](./28_DEFAULT_API_KEYS_DOTENV.md) | Clés d'API par défaut (OMDb, TMDB, OpenSubtitles, IA) lues dans un `.env` au build, masquées dans le binaire, clé de l'utilisateur prioritaire, clés IA exclues des builds Release par défaut. | `[x]` (non essayé avec de vraies clés ; voir le statut du PRD) |
+| **29** | [`29_ALWAYS_ON_TOP_WINDOW.md`](./29_ALWAYS_ON_TOP_WINDOW.md) | Option « Toujours au premier plan » sur macOS (Jamais / Toujours / Pendant la lecture), tous les bureaux, lecteur compact 16:9 flottant. | `[x]` (lots 29.1 et 29.2 ; 29.3 et « au-dessus des apps en plein écran » non faits ; non essayé à l'écran) |
 
 ---
 
