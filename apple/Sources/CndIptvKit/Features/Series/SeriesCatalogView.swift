@@ -16,7 +16,10 @@ struct SeriesCatalogView: View {
     let totalSeries: Int
     @Environment(VodContext.self) private var vod
 
-    init(engine: CndEngine, revision: Int, totalSeries: Int) {
+    var onOpenAssistant: ((String) -> Void)?
+
+    init(engine: CndEngine, revision: Int, totalSeries: Int, onOpenAssistant: ((String) -> Void)? = nil) {
+        self.onOpenAssistant = onOpenAssistant
         _model = State(initialValue: VodCatalogModel(kind: "series", source: .series(engine: engine)))
         self.revision = revision
         self.totalSeries = totalSeries
@@ -32,7 +35,9 @@ struct SeriesCatalogView: View {
             titles: VodSectionTitles(resume: "Récemment consultées", resumeIcon: "clock", all: "Toutes les séries"),
             sortOptions: [.name, .rating, .recentlyAdded, .group],
             searchPrompt: "Rechercher une série",
-            emptyDescription: "Ajoutez une source dans l'onglet Sources pour importer des séries."
+            emptyDescription: "Ajoutez une source dans l'onglet Sources pour importer des séries.",
+            assistantStarter: "une série ",
+            onOpenAssistant: onOpenAssistant
         ) { series, style in
             SeriesCard(
                 series: series,

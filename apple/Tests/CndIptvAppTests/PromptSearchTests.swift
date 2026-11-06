@@ -1,5 +1,6 @@
 import XCTest
 import CndCoreBridge
+import SwiftUI
 @testable import CndIptvKit
 
 /// PRD 33 in the app: results while typing, the answer after Enter, and what a tap on a result does.
@@ -376,5 +377,15 @@ final class AutoSearchTests: XCTestCase {
         settings.autoSearch = false
         let again = AiProviderSettings(defaults: defaults, keychain: KeychainStore(service: "x.\(UUID().uuidString)"), bundledKeys: DefaultApiKeys())
         XCTAssertFalse(again.autoSearch)
+    }
+}
+
+/// The AI search button of the Films and Séries screens opens the assistant with a useful start.
+final class AssistantStarterTests: XCTestCase {
+    func testTheSearchFieldBecomesTheQuestionElseAStarterIsUsed() {
+        typealias Catalog = VodCatalogView<IptvItemRecord, EmptyView>
+        XCTAssertEqual(Catalog.assistantPhrase(typed: "  avec Tom Cruise ", starter: "un film "), "avec Tom Cruise")
+        XCTAssertEqual(Catalog.assistantPhrase(typed: "", starter: "un film "), "un film ")
+        XCTAssertEqual(Catalog.assistantPhrase(typed: "   ", starter: "une série "), "une série ")
     }
 }
