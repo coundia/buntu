@@ -4,23 +4,24 @@ use reqwest::header::RANGE;
 use std::fs::File;
 use std::os::unix::fs::FileExt;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 /// Network chunks are accumulated up to this size before a single `pwrite`.
 const FLUSH_THRESHOLD: usize = 256 * 1024;
 const BUFFER_CAPACITY: usize = 512 * 1024;
-const MAX_RETRIES: u32 = 5;
+const MAX_RETRIES: u32 = 8;
 const BACKOFF_BASE_MS: u64 = 250;
-const BACKOFF_MAX_MS: u64 = 8_000;
+const BACKOFF_MAX_MS: u64 = 15_000;
 
 /// Sentinel `end` for a stream of unknown length.
 pub const UNBOUNDED_END: u64 = u64::MAX;
 
 pub struct SegmentSpec {
     pub http_pool: Arc<HttpClientPool>,
-    pub url: String,
+    pub url: Arc<RwLock<String>>,
+    pub source_url: Option<String>,
     pub user_agent: Option<String>,
     pub referer: Option<String>,
     pub headers_json: Option<String>,
@@ -96,8 +97,9 @@ async fn stream_pass(spec: &SegmentSpec, buf: &mut Vec<u8>) -> Result<PassEnd, S
     let done = spec.progress.load(Ordering::Acquire);
     let offset = spec.start + done;
 
+    let current_url = spec.url.read().map(|u| u.clone()).unwrap_or_default();
     let mut req = HttpClientPool::apply_optional_headers(
-        spec.http_pool.get(&spec.url).map_err(|e| SegmentError {
+        spec.http_pool.get(&current_url).map_err(|e| SegmentError {
             message: e.to_string(),
             retryable: false,
         })?,
@@ -124,6 +126,28 @@ async fn stream_pass(spec: &SegmentSpec, buf: &mut Vec<u8>) -> Result<PassEnd, S
     };
 
     let status = resp.status().as_u16();
+    if status == 401 || status == 403 || status == 410 {
+        if let Some(ref source) = spec.source_url {
+            if source != &current_url {
+                // Re-probe source URL to refresh the temporary CDN token
+                if let Ok(new_probe) = crate::downloader::prober::probe_download_url(
+                    &spec.http_pool,
+                    source,
+                    spec.user_agent.as_deref(),
+                    spec.referer.as_deref(),
+                    spec.headers_json.as_deref(),
+                ).await {
+                    if let Ok(mut lock) = spec.url.write() {
+                        *lock = new_probe.final_url;
+                    }
+                    return Err(SegmentError {
+                        message: format!("CDN token refreshed after HTTP {status}"),
+                        retryable: true,
+                    });
+                }
+            }
+        }
+    }
     if status >= 400 {
         let retryable = status >= 500 || status == 408 || status == 429;
         return Err(SegmentError {

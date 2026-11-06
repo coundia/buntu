@@ -112,6 +112,9 @@ final class VodContext {
             }
         }
         if queued > 0 {
+            #if os(iOS) || os(tvOS) || os(visionOS)
+            BackgroundDownloadCoordinator.shared.promoteNextQueuedTasks()
+            #endif
             var text = queued == 1 ? "1 téléchargement ajouté" : "\(queued) téléchargements ajoutés"
             if waiting > 0 { text += " : démarrage à la fin de la lecture (votre abonnement n'autorise qu'une connexion)" }
             toasts.show(text, actionTitle: "Voir", action: openDownloads)
