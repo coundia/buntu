@@ -4,7 +4,7 @@
 
 use crate::ai::intent::{AiProviderConfig, AiProviderKind};
 use crate::ai::test_support::{MockProvider, MockResponse};
-use crate::recommend::ai_rerank::{build_input, DAILY_CAP};
+use crate::recommend::ai_rerank::{build_input, AppleRerankRequest, AppleRerankStart, DAILY_CAP};
 use crate::recommend::shelves::{finalize, Ctx, RecoCard, RecoKind, RecoShelf, RecoShelfKind};
 use crate::search::eval::{seed, NOW};
 use crate::CndEngine;
@@ -686,6 +686,129 @@ async fn a_local_model_has_no_daily_cap_and_is_labelled() {
     let refined = refine(&engine, RecoKind::Movies, cfg, true).await;
     assert_eq!(shelf(&refined, RecoShelfKind::ForYou).unwrap().refined_by.as_deref(), Some("IA locale"));
     assert_eq!(server.calls().len(), 1);
+}
+
+// ------------------------------------------------------------------ the model of Apple (lot 34.5)
+
+fn apple_ask(engine: &CndEngine, kind: RecoKind) -> AppleRerankRequest {
+    match engine.prepare_apple_rerank_at(kind, 12, "fr-FR".into(), 60, NOW).unwrap() {
+        AppleRerankStart::Ask { request } => request,
+        other => panic!("expected a question for the model, got {other:?}"),
+    }
+}
+
+fn apple_answer(kind: &str, picks: Value, confidence: f64) -> String {
+    json!({ "kind": kind, "picks": picks, "discover": [], "confidence": confidence }).to_string()
+}
+
+#[test]
+fn the_model_of_apple_gets_a_prompt_with_opaque_ids_and_no_address() {
+    let engine = movie_engine();
+    let request = apple_ask(&engine, RecoKind::Movies);
+    assert_eq!(request.kind, RecoKind::Movies);
+    assert!(request.system.contains("\"movie\""), "the kind to answer is in the rules");
+    assert!(request.user.contains("\"m1\"") && request.user.contains("CANDIDATES"));
+    for secret in ["http://h/", "stream", "host", "profile", "movie_"] {
+        assert!(!request.user.contains(secret), "the prompt leaks {secret}: {}", request.user);
+    }
+    // It never sees more than its small context can hold.
+    let sent = request.user.matches("\"id\":").count();
+    assert!(sent <= crate::recommend::ai_rerank::APPLE_MAX_CANDIDATES, "{sent} candidates");
+    // The titles watched never leave the device, so they are allowed here.
+    assert!(request.user.contains("Interstellar"), "{}", request.user);
+}
+
+#[test]
+fn a_good_answer_of_apple_re_ranks_the_shelf_and_is_labelled() {
+    let engine = movie_engine();
+    let titles = candidate_titles(&engine, RecoKind::Movies);
+    let request = apple_ask(&engine, RecoKind::Movies);
+    let answer = apple_answer("movie", json!([{ "id": "m3", "reason": "Même tension" }, { "id": "m1", "reason": null }]), 0.9);
+    let refined = engine.finish_apple_rerank_impl(request, answer).unwrap();
+    let for_you = shelf(&refined, RecoShelfKind::ForYou).unwrap();
+    assert_eq!(for_you.refined_by.as_deref(), Some("Modèle d'Apple"));
+    let got = names(for_you);
+    assert_eq!(got[0], titles[2], "the model's first pick leads");
+    assert_eq!(got[1], titles[0]);
+    assert_eq!(for_you.items[0].reason_text, "Même tension");
+    assert!(for_you.items[0].ai_reason);
+}
+
+#[test]
+fn an_answer_of_apple_for_another_kind_or_with_invented_ids_changes_nothing() {
+    let engine = movie_engine();
+    let local = shelves(&engine, RecoKind::Movies);
+    for bad in [
+        apple_answer("series", json!([{ "id": "m1", "reason": null }]), 0.9),
+        apple_answer("movie", json!([{ "id": "m99", "reason": null }]), 0.9),
+        apple_answer("movie", json!([{ "id": "m1", "reason": null }]), 0.1),
+        "Voici mes recommandations : …".to_string(),
+        String::new(),
+    ] {
+        let request = apple_ask(&engine, RecoKind::Movies);
+        let refined = engine.finish_apple_rerank_impl(request, bad.clone()).unwrap();
+        assert!(refined.iter().all(|s| s.refined_by.is_none()), "{bad}");
+        assert_eq!(all_names(&refined), all_names(&local), "{bad}");
+    }
+}
+
+#[test]
+fn an_answer_of_apple_is_refused_when_the_candidates_changed_meanwhile() {
+    let engine = movie_engine();
+    let request = apple_ask(&engine, RecoKind::Movies);
+    // The viewer finishes another film while the model thinks.
+    finish(&engine, &hash_of_movie(&engine, "Parasite"), 0);
+    let answer = apple_answer("movie", json!([{ "id": "m1", "reason": null }]), 0.9);
+    let refined = engine.finish_apple_rerank_impl(request, answer).unwrap();
+    assert!(refined.iter().all(|s| s.refined_by.is_none()), "ids that moved must not be applied to other titles");
+}
+
+#[test]
+fn the_answer_of_apple_is_kept_for_the_same_candidates() {
+    let engine = movie_engine();
+    let request = apple_ask(&engine, RecoKind::Movies);
+    let answer = apple_answer("movie", json!([{ "id": "m2", "reason": "Test" }]), 0.9);
+    let first = engine.finish_apple_rerank_impl(request, answer).unwrap();
+    match engine.prepare_apple_rerank_at(RecoKind::Movies, 12, "fr-FR".into(), 60, NOW).unwrap() {
+        AppleRerankStart::Cached { shelves } => {
+            assert_eq!(names(shelf(&shelves, RecoShelfKind::ForYou).unwrap()), names(shelf(&first, RecoShelfKind::ForYou).unwrap()));
+            assert_eq!(shelf(&shelves, RecoShelfKind::ForYou).unwrap().refined_by.as_deref(), Some("Modèle d'Apple"));
+        }
+        other => panic!("expected the kept answer, got {other:?}"),
+    }
+    // Other candidates: the model is asked again.
+    finish(&engine, &hash_of_movie(&engine, "Parasite"), 0);
+    assert!(matches!(engine.prepare_apple_rerank_at(RecoKind::Movies, 12, "fr-FR".into(), 60, NOW).unwrap(), AppleRerankStart::Ask { .. }));
+}
+
+#[test]
+fn the_model_of_apple_is_never_asked_for_the_kids_profile() {
+    let engine = movie_engine();
+    let kid = engine.create_profile("Léo".into(), "bear".into(), true).unwrap();
+    engine.set_active_profile_id(kid.id);
+    engine.allow_group(kid.id, "movie".into(), "FR | ANIMATION".into()).unwrap();
+    assert!(matches!(engine.prepare_apple_rerank_at(RecoKind::Movies, 12, "fr-FR".into(), 60, NOW).unwrap(), AppleRerankStart::Skip));
+}
+
+#[test]
+fn apple_re_ranks_series_and_programmes_inside_their_kind() {
+    let engine = engine();
+    finish(&engine, &hash_of_movie(&engine, "Inception"), 1);
+    for (kind, key, prefix) in [(RecoKind::Series, "series", "s"), (RecoKind::Live, "live", "t")] {
+        let AppleRerankStart::Ask { request } = engine.prepare_apple_rerank_at(kind, 12, "fr-FR".into(), 60, NOW).unwrap() else {
+            continue; // not enough candidates of this kind in the small catalog
+        };
+        assert!(request.user.contains(&format!("\"{prefix}1\"")));
+        let wrong = apple_answer("movie", json!([{ "id": format!("{prefix}1"), "reason": null }]), 0.9);
+        assert!(engine.finish_apple_rerank_impl(request.clone(), wrong).unwrap().iter().all(|s| s.refined_by.is_none()));
+        let good = apple_answer(key, json!([{ "id": format!("{prefix}2"), "reason": null }]), 0.9);
+        let refined = engine.finish_apple_rerank_impl(request, good).unwrap();
+        for s in &refined {
+            for card in &s.items {
+                assert!(crate::recommend::shelves::belongs(kind, card), "a card of another kind in {key}");
+            }
+        }
+    }
 }
 
 #[tokio::test]

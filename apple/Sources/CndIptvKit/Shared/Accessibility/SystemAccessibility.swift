@@ -60,3 +60,53 @@ struct StatusDot: View {
         .accessibilityLabel(description)
     }
 }
+
+/// Compact outage indicator ("HS" / triangle icon) with full tooltip and VoiceOver label.
+struct BrokenBadge: View {
+    enum Style {
+        /// Ultra-compact icon pill for tight list rows.
+        case icon
+        /// Short "HS" pill matching HD/4K quality tags on cards and headers.
+        case compact
+        /// High-contrast dark capsule overlay for poster corners.
+        case poster
+    }
+
+    var style: Style = .compact
+
+    var body: some View {
+        Group {
+            switch style {
+            case .icon:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.red.opacity(0.18), in: Capsule())
+            case .compact:
+                HStack(spacing: 3) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text("HS")
+                }
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1.5)
+                .background(Color.red.opacity(0.2), in: Capsule())
+                .foregroundStyle(.red)
+            case .poster:
+                HStack(spacing: 3) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text("HS")
+                }
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.75), in: Capsule())
+                .foregroundStyle(.red)
+            }
+        }
+        .help("Flux signalé hors service (en panne)")
+        .accessibilityLabel("En panne")
+    }
+}

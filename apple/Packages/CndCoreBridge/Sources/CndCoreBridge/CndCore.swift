@@ -660,6 +660,12 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func findMirrors(itemId: Int64) throws  -> [IptvItemRecord]
     
+    /**
+     * Step 2: validates the text the model answered with the same rules as the other providers.
+     * Returns the re-ranked shelves, or the local shelves when the answer is not usable.
+     */
+    func finishAppleRerank(request: AppleRerankRequest, answer: String) throws  -> [RecoShelf]
+    
     func getChannelEpg(tvgId: String, fromTs: Int64, toTs: Int64) throws  -> [EpgProgramRecord]
     
     func getDownloadLogs(taskId: Int64, limit: UInt32) throws  -> [DownloadLogRecord]
@@ -805,6 +811,12 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     func pauseAllDownloads() async throws 
     
     func pauseDownload(taskId: Int64) async throws 
+    
+    /**
+     * Step 1 of a re-rank by the on-device model of Apple (called from Swift, lot 34.5): the prompt to
+     * give the model, or nothing to ask (Kids profile, too few candidates, answer already kept).
+     */
+    func prepareAppleRerank(kind: RecoKind, limitPerShelf: UInt32, locale: String, utcOffsetMinutes: Int32) throws  -> AppleRerankStart
     
     /**
      * Reads a decrypted share document and tells what it contains and what already exists here.
@@ -1330,6 +1342,19 @@ open func findMirrors(itemId: Int64)throws  -> [IptvItemRecord]  {
     return try  FfiConverterSequenceTypeIptvItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_find_mirrors(self.uniffiClonePointer(),
         FfiConverterInt64.lower(itemId),$0
+    )
+})
+}
+    
+    /**
+     * Step 2: validates the text the model answered with the same rules as the other providers.
+     * Returns the re-ranked shelves, or the local shelves when the answer is not usable.
+     */
+open func finishAppleRerank(request: AppleRerankRequest, answer: String)throws  -> [RecoShelf]  {
+    return try  FfiConverterSequenceTypeRecoShelf.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_finish_apple_rerank(self.uniffiClonePointer(),
+        FfiConverterTypeAppleRerankRequest_lower(request),
+        FfiConverterString.lower(answer),$0
     )
 })
 }
@@ -1929,6 +1954,21 @@ open func pauseDownload(taskId: Int64)async throws   {
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeCndError_lift
         )
+}
+    
+    /**
+     * Step 1 of a re-rank by the on-device model of Apple (called from Swift, lot 34.5): the prompt to
+     * give the model, or nothing to ask (Kids profile, too few candidates, answer already kept).
+     */
+open func prepareAppleRerank(kind: RecoKind, limitPerShelf: UInt32, locale: String, utcOffsetMinutes: Int32)throws  -> AppleRerankStart  {
+    return try  FfiConverterTypeAppleRerankStart_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_prepare_apple_rerank(self.uniffiClonePointer(),
+        FfiConverterTypeRecoKind_lower(kind),
+        FfiConverterUInt32.lower(limitPerShelf),
+        FfiConverterString.lower(locale),
+        FfiConverterInt32.lower(utcOffsetMinutes),$0
+    )
+})
 }
     
     /**
@@ -2975,6 +3015,139 @@ public func FfiConverterTypeAiProviderStatus_lift(_ buf: RustBuffer) throws -> A
 #endif
 public func FfiConverterTypeAiProviderStatus_lower(_ value: AiProviderStatus) -> RustBuffer {
     return FfiConverterTypeAiProviderStatus.lower(value)
+}
+
+
+/**
+ * What Swift needs to ask the model, and what `finish` needs to check the answer.
+ */
+public struct AppleRerankRequest {
+    public var kind: RecoKind
+    public var system: String
+    public var user: String
+    /**
+     * The moment the candidates were computed: `finish` computes them again at that moment.
+     */
+    public var now: Int64
+    /**
+     * Hash of the candidates sent; an answer is refused if they are not the same any more.
+     */
+    public var candidatesHash: String
+    public var limitPerShelf: UInt32
+    public var locale: String
+    public var utcOffsetMinutes: Int32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: RecoKind, system: String, user: String, 
+        /**
+         * The moment the candidates were computed: `finish` computes them again at that moment.
+         */now: Int64, 
+        /**
+         * Hash of the candidates sent; an answer is refused if they are not the same any more.
+         */candidatesHash: String, limitPerShelf: UInt32, locale: String, utcOffsetMinutes: Int32) {
+        self.kind = kind
+        self.system = system
+        self.user = user
+        self.now = now
+        self.candidatesHash = candidatesHash
+        self.limitPerShelf = limitPerShelf
+        self.locale = locale
+        self.utcOffsetMinutes = utcOffsetMinutes
+    }
+}
+
+#if compiler(>=6)
+extension AppleRerankRequest: Sendable {}
+#endif
+
+
+extension AppleRerankRequest: Equatable, Hashable {
+    public static func ==(lhs: AppleRerankRequest, rhs: AppleRerankRequest) -> Bool {
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.system != rhs.system {
+            return false
+        }
+        if lhs.user != rhs.user {
+            return false
+        }
+        if lhs.now != rhs.now {
+            return false
+        }
+        if lhs.candidatesHash != rhs.candidatesHash {
+            return false
+        }
+        if lhs.limitPerShelf != rhs.limitPerShelf {
+            return false
+        }
+        if lhs.locale != rhs.locale {
+            return false
+        }
+        if lhs.utcOffsetMinutes != rhs.utcOffsetMinutes {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(system)
+        hasher.combine(user)
+        hasher.combine(now)
+        hasher.combine(candidatesHash)
+        hasher.combine(limitPerShelf)
+        hasher.combine(locale)
+        hasher.combine(utcOffsetMinutes)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAppleRerankRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AppleRerankRequest {
+        return
+            try AppleRerankRequest(
+                kind: FfiConverterTypeRecoKind.read(from: &buf), 
+                system: FfiConverterString.read(from: &buf), 
+                user: FfiConverterString.read(from: &buf), 
+                now: FfiConverterInt64.read(from: &buf), 
+                candidatesHash: FfiConverterString.read(from: &buf), 
+                limitPerShelf: FfiConverterUInt32.read(from: &buf), 
+                locale: FfiConverterString.read(from: &buf), 
+                utcOffsetMinutes: FfiConverterInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AppleRerankRequest, into buf: inout [UInt8]) {
+        FfiConverterTypeRecoKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.system, into: &buf)
+        FfiConverterString.write(value.user, into: &buf)
+        FfiConverterInt64.write(value.now, into: &buf)
+        FfiConverterString.write(value.candidatesHash, into: &buf)
+        FfiConverterUInt32.write(value.limitPerShelf, into: &buf)
+        FfiConverterString.write(value.locale, into: &buf)
+        FfiConverterInt32.write(value.utcOffsetMinutes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAppleRerankRequest_lift(_ buf: RustBuffer) throws -> AppleRerankRequest {
+    return try FfiConverterTypeAppleRerankRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAppleRerankRequest_lower(_ value: AppleRerankRequest) -> RustBuffer {
+    return FfiConverterTypeAppleRerankRequest.lower(value)
 }
 
 
@@ -10204,6 +10377,101 @@ extension AiProviderKind: Equatable, Hashable {}
 
 
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The first step of a re-rank by the model of Apple.
+ */
+
+public enum AppleRerankStart {
+    
+    /**
+     * Nothing to ask: Kids profile, too few candidates, nothing to re-rank.
+     */
+    case skip
+    /**
+     * An earlier answer for these very candidates: the shelves are already re-ranked.
+     */
+    case cached(shelves: [RecoShelf]
+    )
+    /**
+     * Ask the model this, then give its text to `finish_apple_rerank`.
+     */
+    case ask(request: AppleRerankRequest
+    )
+}
+
+
+#if compiler(>=6)
+extension AppleRerankStart: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAppleRerankStart: FfiConverterRustBuffer {
+    typealias SwiftType = AppleRerankStart
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AppleRerankStart {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .skip
+        
+        case 2: return .cached(shelves: try FfiConverterSequenceTypeRecoShelf.read(from: &buf)
+        )
+        
+        case 3: return .ask(request: try FfiConverterTypeAppleRerankRequest.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AppleRerankStart, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .skip:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .cached(shelves):
+            writeInt(&buf, Int32(2))
+            FfiConverterSequenceTypeRecoShelf.write(shelves, into: &buf)
+            
+        
+        case let .ask(request):
+            writeInt(&buf, Int32(3))
+            FfiConverterTypeAppleRerankRequest.write(request, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAppleRerankStart_lift(_ buf: RustBuffer) throws -> AppleRerankStart {
+    return try FfiConverterTypeAppleRerankStart.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAppleRerankStart_lower(_ value: AppleRerankStart) -> RustBuffer {
+    return FfiConverterTypeAppleRerankStart.lower(value)
+}
+
+
+extension AppleRerankStart: Equatable, Hashable {}
+
+
+
+
+
+
 
 public enum CndError: Swift.Error {
 
@@ -12846,6 +13114,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_find_mirrors() != 47437) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_finish_apple_rerank() != 13153) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_get_channel_epg() != 33464) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -13045,6 +13316,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_pause_download() != 48394) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_prepare_apple_rerank() != 36404) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_preview_share_document() != 2937) {

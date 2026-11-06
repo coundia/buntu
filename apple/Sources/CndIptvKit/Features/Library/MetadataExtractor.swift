@@ -1,3 +1,4 @@
+#if !os(tvOS)
 import Foundation
 import AVFoundation
 import ImageIO
@@ -302,3 +303,4 @@ public actor MetadataExtractor {
         return String(cString: bytes).trimmingCharacters(in: .whitespaces)
     }
 }
+#endif

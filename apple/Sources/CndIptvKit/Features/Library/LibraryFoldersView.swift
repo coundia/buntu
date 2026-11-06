@@ -1,3 +1,4 @@
+#if !os(tvOS)
 import SwiftUI
 import CndCoreBridge
 #if canImport(AppKit)
@@ -407,3 +408,4 @@ public struct LibraryFoldersView: View {
         }
     }
 }
+#endif

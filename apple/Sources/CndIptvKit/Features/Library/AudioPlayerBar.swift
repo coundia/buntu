@@ -1,3 +1,4 @@
+#if !os(tvOS)
 import SwiftUI
 import CndCoreBridge
 
@@ -171,6 +172,7 @@ public struct NowPlayingAudioView: View {
 
                 // Progress Slider
                 VStack(spacing: 4) {
+                    #if !os(tvOS)
                     Slider(
                         value: Binding(
                             get: { model.audioDuration > 0 ? model.audioCurrentTime / model.audioDuration : 0 },
@@ -178,6 +180,10 @@ public struct NowPlayingAudioView: View {
                         )
                     )
                     .tint(.accentColor)
+                    #else
+                    ProgressView(value: model.audioDuration > 0 ? model.audioCurrentTime / model.audioDuration : 0)
+                        .tint(.accentColor)
+                    #endif
 
                     HStack {
                         Text(formatDuration(seconds: model.audioCurrentTime))
@@ -269,4 +275,4 @@ public struct NowPlayingAudioView: View {
         return nil
     }
 }
-
+#endif

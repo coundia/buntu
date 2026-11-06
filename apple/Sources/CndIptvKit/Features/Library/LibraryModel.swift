@@ -1,3 +1,4 @@
+#if !os(tvOS)
 import Foundation
 import Observation
 import CndCoreBridge
@@ -410,3 +411,4 @@ extension LibraryGenreRecord: @retroactive Identifiable {
 extension LibraryBrowseEntry: @retroactive Identifiable {
     public var id: String { relPath }
 }
+#endif

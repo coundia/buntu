@@ -1,3 +1,4 @@
+#if !os(tvOS)
 import SwiftUI
 import CndCoreBridge
 
@@ -134,4 +135,4 @@ public struct LibrarySettingsView: View {
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
     }
 }
-
+#endif

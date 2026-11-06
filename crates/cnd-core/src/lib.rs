@@ -1347,6 +1347,28 @@ impl CndEngine {
             .await
     }
 
+    /// Step 1 of a re-rank by the on-device model of Apple (called from Swift, lot 34.5): the prompt to
+    /// give the model, or nothing to ask (Kids profile, too few candidates, answer already kept).
+    pub fn prepare_apple_rerank(
+        &self,
+        kind: RecoKind,
+        limit_per_shelf: u32,
+        locale: String,
+        utc_offset_minutes: i32,
+    ) -> Result<recommend::ai_rerank::AppleRerankStart, CndError> {
+        self.prepare_apple_rerank_impl(kind, limit_per_shelf, locale, utc_offset_minutes)
+    }
+
+    /// Step 2: validates the text the model answered with the same rules as the other providers.
+    /// Returns the re-ranked shelves, or the local shelves when the answer is not usable.
+    pub fn finish_apple_rerank(
+        &self,
+        request: recommend::ai_rerank::AppleRerankRequest,
+        answer: String,
+    ) -> Result<Vec<RecoShelf>, CndError> {
+        self.finish_apple_rerank_impl(request, answer)
+    }
+
     /// "Moins de ce genre": lowers the main feature of this content for this kind only, and hides it.
     pub fn less_like_this(&self, kind: RecoKind, stable_hash: String) -> Result<(), CndError> {
         self.less_like_this_impl(kind, stable_hash)

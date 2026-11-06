@@ -412,6 +412,11 @@ uint64_t uniffi_cnd_core_fn_method_cndengine_fetch_series_metadata(void*_Nonnull
 RustBuffer uniffi_cnd_core_fn_method_cndengine_find_mirrors(void*_Nonnull ptr, int64_t item_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_FINISH_APPLE_RERANK
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_FINISH_APPLE_RERANK
+RustBuffer uniffi_cnd_core_fn_method_cndengine_finish_apple_rerank(void*_Nonnull ptr, RustBuffer request, RustBuffer answer, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_CHANNEL_EPG
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_CHANNEL_EPG
 RustBuffer uniffi_cnd_core_fn_method_cndengine_get_channel_epg(void*_Nonnull ptr, RustBuffer tvg_id, int64_t from_ts, int64_t to_ts, RustCallStatus *_Nonnull out_status
@@ -745,6 +750,11 @@ uint64_t uniffi_cnd_core_fn_method_cndengine_pause_all_downloads(void*_Nonnull p
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PAUSE_DOWNLOAD
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PAUSE_DOWNLOAD
 uint64_t uniffi_cnd_core_fn_method_cndengine_pause_download(void*_Nonnull ptr, int64_t task_id
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PREPARE_APPLE_RERANK
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PREPARE_APPLE_RERANK
+RustBuffer uniffi_cnd_core_fn_method_cndengine_prepare_apple_rerank(void*_Nonnull ptr, RustBuffer kind, uint32_t limit_per_shelf, RustBuffer locale, int32_t utc_offset_minutes, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PREVIEW_SHARE_DOCUMENT
@@ -1452,6 +1462,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_find_mirrors(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_FINISH_APPLE_RERANK
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_FINISH_APPLE_RERANK
+uint16_t uniffi_cnd_core_checksum_method_cndengine_finish_apple_rerank(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_CHANNEL_EPG
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_CHANNEL_EPG
 uint16_t uniffi_cnd_core_checksum_method_cndengine_get_channel_epg(void
@@ -1851,6 +1867,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_pause_all_downloads(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PAUSE_DOWNLOAD
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PAUSE_DOWNLOAD
 uint16_t uniffi_cnd_core_checksum_method_cndengine_pause_download(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PREPARE_APPLE_RERANK
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PREPARE_APPLE_RERANK
+uint16_t uniffi_cnd_core_checksum_method_cndengine_prepare_apple_rerank(void
     
 );
 #endif

@@ -10,7 +10,9 @@ struct SettingsView: View {
     var assistant: AssistantModel?
     var upNext: UpNextModel?
     var forYou: ForYouHub?
+    #if !os(tvOS)
     var library: LibraryModel?
+    #endif
 
     @State private var showsOmdbKey = false
     @State private var showsAiKey = false
@@ -132,9 +134,13 @@ struct SettingsView: View {
             Toggle("Rangées « Pour vous » dans Films", isOn: $hub.moviesEnabled)
             Toggle("Rangées « Pour vous » dans Séries", isOn: $hub.seriesEnabled)
             Toggle("Rangées « Pour vous » dans Live TV", isOn: $hub.liveEnabled)
-            Toggle("Affiner avec l'assistant IA", isOn: $hub.aiRefine)
-                .disabled(ai?.isAssistantEnabled != true)
-            if hub.aiRefine && ai?.endpointIsLocal != true {
+            Toggle("Affiner avec l'IA", isOn: $hub.aiRefine)
+                .disabled(ai?.isAssistantEnabled != true && !hub.onDevice.isAvailable)
+            // Only offered where the device has the model (macOS, iOS and visionOS 26 and later, Apple Intelligence on).
+            if hub.aiRefine && hub.onDevice.isAvailable {
+                Toggle("Utiliser le modèle d'Apple sur cet appareil", isOn: $hub.preferOnDeviceModel)
+            }
+            if hub.aiRefine && ai?.endpointIsLocal != true && !hub.usesOnDeviceModel {
                 Toggle("Envoyer mes derniers titres regardés à l'IA distante", isOn: $hub.sendRecentTitles)
                     .disabled(ai?.isAssistantEnabled != true)
             }
@@ -144,7 +150,7 @@ struct SettingsView: View {
         } header: {
             Text("Rangées « Pour vous »")
         } footer: {
-            Text("Les films, les séries et la TV ont chacun leurs goûts et leurs rangées : ils ne se mélangent jamais. L'IA ne fait que trier des titres déjà présents dans vos sources, sans jamais voir d'adresse de flux, de source ni de profil. Avec un modèle sur cet appareil, rien ne quitte votre machine. Avec un fournisseur distant, seuls des titres, des genres et un résumé de vos goûts sont envoyés ; vos derniers titres regardés ne le sont que si vous l'activez.")
+            Text("Les films, les séries et la TV ont chacun leurs goûts et leurs rangées : ils ne se mélangent jamais. L'IA ne fait que trier des titres déjà présents dans vos sources, sans jamais voir d'adresse de flux, de source ni de profil. Avec un modèle sur cet appareil (le modèle d'Apple, Ollama), rien ne quitte votre machine. Avec un fournisseur distant, seuls des titres, des genres et un résumé de vos goûts sont envoyés ; vos derniers titres regardés ne le sont que si vous l'activez.")
         }
     }
 

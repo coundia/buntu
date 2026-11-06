@@ -12,6 +12,9 @@ protocol ForYouBackend: Sendable {
     func dismiss(stableHash: String) throws
     func lessLikeThis(kind: RecoKind, stableHash: String) throws
     func resetTaste(kind: RecoKind) throws
+    /// Lot 34.5: the two steps of a re-rank by the model of Apple (the engine builds and validates, Swift asks).
+    func prepareAppleRerank(kind: RecoKind, limitPerShelf: UInt32, locale: String, utcOffsetMinutes: Int32) throws -> AppleRerankStart
+    func finishAppleRerank(request: AppleRerankRequest, answer: String) throws -> [RecoShelf]
 }
 
 extension CndEngine: ForYouBackend {
@@ -41,9 +44,12 @@ final class ForYouHub {
     static let liveKey = "reco.foryou.live"
     static let aiRefineKey = "reco.ai.refine"
     static let sendRecentKey = "reco.ai.sendRecent"
+    static let onDeviceKey = "reco.ai.onDevice"
 
     @ObservationIgnored private let defaults: UserDefaults
     let ai: AiProviderSettings
+    /// The model of Apple, when this device has it (lot 34.5).
+    let onDevice: OnDeviceTextModel
 
     var moviesEnabled: Bool { didSet { defaults.set(moviesEnabled, forKey: Self.moviesKey) } }
     var seriesEnabled: Bool { didSet { defaults.set(seriesEnabled, forKey: Self.seriesKey) } }
@@ -52,6 +58,12 @@ final class ForYouHub {
     var aiRefine: Bool { didSet { defaults.set(aiRefine, forKey: Self.aiRefineKey) } }
     /// Send the titles last watched to a REMOTE provider (off by default; a model on this device always gets them).
     var sendRecentTitles: Bool { didSet { defaults.set(sendRecentTitles, forKey: Self.sendRecentKey) } }
+    /// Re-rank with the model of Apple on this device instead of the assistant's provider. Off by default:
+    /// its quality on this task is still to be measured (PRD 34 § 15).
+    var preferOnDeviceModel: Bool { didSet { defaults.set(preferOnDeviceModel, forKey: Self.onDeviceKey) } }
+
+    /// The model of Apple will answer: the user asked for it and the device has it.
+    var usesOnDeviceModel: Bool { preferOnDeviceModel && onDevice.isAvailable }
 
     private(set) var movies: ForYouModel!
     private(set) var series: ForYouModel!
@@ -60,15 +72,21 @@ final class ForYouHub {
     /// Where the shelves come from (the engine; replaced by a fake in tests).
     @ObservationIgnored private var backendProvider: () -> ForYouBackend?
 
-    init(ai: AiProviderSettings, defaults: UserDefaults = .standard, backend: @escaping () -> ForYouBackend? = { nil }) {
+    init(
+        ai: AiProviderSettings, defaults: UserDefaults = .standard,
+        onDevice: OnDeviceTextModel = AppleOnDeviceModel.shared,
+        backend: @escaping () -> ForYouBackend? = { nil }
+    ) {
         self.ai = ai
         self.defaults = defaults
+        self.onDevice = onDevice
         self.backendProvider = backend
         moviesEnabled = defaults.object(forKey: Self.moviesKey) as? Bool ?? true
         seriesEnabled = defaults.object(forKey: Self.seriesKey) as? Bool ?? true
         liveEnabled = defaults.object(forKey: Self.liveKey) as? Bool ?? true
         aiRefine = defaults.object(forKey: Self.aiRefineKey) as? Bool ?? true
         sendRecentTitles = defaults.object(forKey: Self.sendRecentKey) as? Bool ?? false
+        preferOnDeviceModel = defaults.object(forKey: Self.onDeviceKey) as? Bool ?? false
         movies = ForYouModel(kind: .movies, hub: self)
         series = ForYouModel(kind: .series, hub: self)
         live = ForYouModel(kind: .live, hub: self)
@@ -108,6 +126,8 @@ final class ForYouModel {
     @ObservationIgnored private var generation = 0
 
     nonisolated static let shelfLimit: UInt32 = 12
+    /// The model of Apple must answer within this many seconds (PRD 34: 8 s at most).
+    nonisolated static let onDeviceDeadline: Double = 8
 
     init(kind: RecoKind, hub: ForYouHub) {
         self.kind = kind
@@ -120,7 +140,7 @@ final class ForYouModel {
     var refinedBy: String? { shelves.compactMap(\.refinedBy).first }
 
     /// Minutes east of UTC: the TV habits depend on the time of the week, local time.
-    static func utcOffsetMinutes(_ zone: TimeZone = .current, at date: Date = Date()) -> Int32 {
+    nonisolated static func utcOffsetMinutes(_ zone: TimeZone = .current, at date: Date = Date()) -> Int32 {
         Int32(zone.secondsFromGMT(for: date) / 60)
     }
 
@@ -160,6 +180,7 @@ final class ForYouModel {
     func reload(revision: Int = 0) async {
         generation += 1
         let mine = generation
+        isRefining = false
         guard isEnabled, let backend = hub.backend else {
             shelves = []
             return
@@ -172,9 +193,20 @@ final class ForYouModel {
         guard mine == generation else { return }
         shelves = Self.filtered(kind, local)
 
+        guard hub.aiRefine, !shelves.contains(where: { $0.shelf == .guideStale }) else { return }
+
+        // The model of Apple, when the user chose it: nothing leaves the device.
+        if hub.usesOnDeviceModel {
+            isRefining = true
+            let refined = await refineOnDevice(backend: backend, offset: offset)
+            guard mine == generation else { return }
+            isRefining = false
+            if let refined { shelves = Self.filtered(kind, refined) }
+            return
+        }
+
         // The assistant's provider, only when the user switched it on and it is ready (key, consent).
-        guard hub.aiRefine, hub.ai.isAssistantEnabled, hub.ai.isRemoteReady,
-              !shelves.contains(where: { $0.shelf == .guideStale }) else { return }
+        guard hub.ai.isAssistantEnabled, hub.ai.isRemoteReady else { return }
         let config = hub.ai.providerConfig()
         guard config.kind != .localOnly else { return }
         let sendRecent = hub.ai.endpointIsLocal || hub.sendRecentTitles
@@ -188,6 +220,36 @@ final class ForYouModel {
         // A failed or rejected answer comes back as the local shelves (no `refinedBy`): keep what is shown.
         if refined.contains(where: { $0.refinedBy != nil }) {
             shelves = Self.filtered(kind, refined)
+        }
+    }
+
+    /// The two steps of lot 34.5: the engine builds the question, the model of Apple answers, the engine
+    /// validates. `nil` (keep the local shelves) at the first problem: no model, no answer, a bad answer.
+    private func refineOnDevice(backend: ForYouBackend, offset: Int32) async -> [RecoShelf]? {
+        let kind = self.kind
+        let model = hub.onDevice
+        let locale = Locale.current.identifier
+        do {
+            let start = try await Task.detached(priority: .userInitiated) {
+                try backend.prepareAppleRerank(kind: kind, limitPerShelf: Self.shelfLimit, locale: locale, utcOffsetMinutes: offset)
+            }.value
+            let refined: [RecoShelf]
+            switch start {
+            case .skip:
+                return nil
+            case .cached(let cachedShelves):
+                refined = cachedShelves
+            case .ask(let request):
+                let answer = try await withDeadline(seconds: Self.onDeviceDeadline) {
+                    try await model.respond(system: request.system, user: request.user)
+                }
+                refined = try await Task.detached(priority: .userInitiated) {
+                    try backend.finishAppleRerank(request: request, answer: answer)
+                }.value
+            }
+            return refined.contains(where: { $0.refinedBy != nil }) ? refined : nil
+        } catch {
+            return nil
         }
     }
 

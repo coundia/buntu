@@ -166,13 +166,6 @@ struct MovieDetailsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).font(.headline).lineLimit(3)
-                if item.isBroken {
-                    Label("Signalé en panne", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.red.opacity(0.25), in: Capsule())
-                        .foregroundStyle(Color.red)
-                }
                 Text(metaLine).font(.caption).foregroundStyle(.secondary)
                 ratingRow
             }
@@ -202,13 +195,6 @@ struct MovieDetailsView: View {
                     .shadow(radius: 10)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(title).font(.title.bold()).lineLimit(3)
-                    if item.isBroken {
-                        Label("Signalé en panne", systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption.weight(.bold))
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Color.red.opacity(0.3), in: Capsule())
-                            .foregroundStyle(Color.red)
-                    }
                     Text(metaLine).font(.callout)
                     ratingRow
                 }
@@ -231,7 +217,10 @@ struct MovieDetailsView: View {
 
     @ViewBuilder
     private var ratingRow: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
+            if item.isBroken {
+                BrokenBadge(style: .compact)
+            }
             if let rating, rating > 0 {
                 Label(String(format: "%.1f", rating), systemImage: "star.fill").foregroundStyle(.yellow)
                 if let votes = model.metadata?.imdbVotes, votes != "N/A" {
@@ -279,15 +268,22 @@ struct MovieDetailsView: View {
         Button { model.vod.downloadMovie(item) } label: { Label("Télécharger", systemImage: "arrow.down.circle") }
             .buttonStyle(.bordered)
         Button { Task { await model.toggleFavorite() } } label: {
-            Label(item.isFavorite ? "Favori" : "Ajouter aux favoris", systemImage: item.isFavorite ? "star.fill" : "star")
+            Label("Favori", systemImage: item.isFavorite ? "star.fill" : "star")
         }
         .buttonStyle(.bordered)
+        .help(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+        .accessibilityLabel(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
         Button { Task { await model.toggleBroken() } } label: {
-            Label(item.isBroken ? "En panne" : "Signaler en panne",
-                  systemImage: item.isBroken ? "exclamationmark.triangle.fill" : "exclamationmark.triangle")
+            if item.isBroken {
+                Label("HS", systemImage: "exclamationmark.triangle.fill")
+            } else {
+                Image(systemName: "exclamationmark.triangle")
+            }
         }
         .buttonStyle(.bordered)
         .tint(item.isBroken ? .red : .secondary)
+        .help(item.isBroken ? "Signalé en panne — cliquer pour rétablir" : "Signaler ce flux en panne")
+        .accessibilityLabel(item.isBroken ? "Rétablir le flux" : "Signaler en panne")
         Menu {
             MovieActionsMenu(
                 item: item, vod: model.vod,
