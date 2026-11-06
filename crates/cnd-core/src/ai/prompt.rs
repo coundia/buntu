@@ -100,7 +100,7 @@ Answer with a single JSON object, nothing else. Do not search anything yourself 
 \n\
 Fields:\n\
 - \"intent\": \"search\" when the user wants to find something to watch, \"none\" when the request is not about that.\n\
-- \"kinds\": which of \"live\" (a TV channel), \"program\" (a TV programme at a given time), \"movie\", \"series\" the user wants; an empty list means any.\n\
+- \"kinds\": (CONTEXT.only, when not empty, is what the user is browsing: stay inside it) which of \"live\" (a TV channel), \"program\" (a TV programme at a given time), \"movie\", \"series\" the user wants; an empty list means any.\n\
 - \"time_hint\": one of \"now\", \"tonight\", \"tomorrow\", \"yesterday\", \"weekend\", or null.\n\
 - \"genres\": English genre names such as Action, Comedy, Horror, Romance, Drama, Sci-Fi, Animation, Documentary.\n\
 - \"people\": actors, directors or teams named or clearly meant.\n\
@@ -118,12 +118,12 @@ Prompt version: {PROMPT_VERSION}."
     )
 }
 
-pub fn understand_user_prompt(command: &str, now_local: &str, kinds_in_catalog: &[&str]) -> String {
+pub fn understand_user_prompt(command: &str, now_local: &str, kinds_in_catalog: &[&str], only: &[&str]) -> String {
     let command: String = command.chars().filter(|c| !c.is_control()).take(MAX_COMMAND_CHARS).collect();
     format!(
         "COMMAND: {}\nCONTEXT: {}",
         json!(command),
-        json!({ "now_local": now_local, "catalog_has": kinds_in_catalog })
+        json!({ "now_local": now_local, "catalog_has": kinds_in_catalog, "only": only })
     )
 }
 

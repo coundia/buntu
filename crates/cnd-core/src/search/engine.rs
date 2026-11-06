@@ -42,6 +42,10 @@ impl Lang {
 /// Channels the assistant's own local resolution finds for a command ("chaîne 3", "France 2"): the
 /// channel itself, or the few that fit. They come first, so typing "chaine 03" still shows channel 3.
 pub fn command_hits(db: &DatabaseManager, text: &str, context: &SearchContext, clock: Clock, lang: Lang) -> Vec<SearchHit> {
+    // Looking for a film: no channel suggestion.
+    if !context.allows_channels() {
+        return Vec::new();
+    }
     let ai_context = AiCommandContext {
         playing_stable_hash: context.playing_stable_hash.clone(),
         group_title: context.group_title.clone(),
@@ -71,9 +75,19 @@ pub fn command_hits(db: &DatabaseManager, text: &str, context: &SearchContext, c
         .collect()
 }
 
+/// The request restricted to the scope of the screen it was typed on: the scope wins over any kind the
+/// sentence names ("une série" typed among films stays a film search).
+pub fn scoped(mut query: ParsedQuery, context: &SearchContext) -> ParsedQuery {
+    let scope = context.scope();
+    if !scope.is_empty() {
+        query.kinds = scope;
+    }
+    query
+}
+
 /// The local search with the command resolution in front: what the palette shows on each keystroke.
 pub fn search_for_palette(db: &DatabaseManager, text: &str, context: &SearchContext, clock: Clock, lang: Lang, limit: usize) -> Vec<SearchHit> {
-    let parsed = query_parser::parse(text, clock);
+    let parsed = scoped(query_parser::parse(text, clock), context);
     let mut hits = command_hits(db, text, context, clock, lang);
     hits.extend(search_parsed(db, &parsed, clock, lang, limit));
     rank(hits, &parsed, limit)

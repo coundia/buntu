@@ -393,7 +393,7 @@ private struct LoadedShellView: View {
     }
 
     /// Opens the command palette, or says how to enable it.
-    private func openAssistant(startingWith phrase: String = "") {
+    private func openAssistant(startingWith phrase: String = "", scope: SearchScope? = nil) {
         guard KidsModePolicy.canUseAssistant(isKids: isKidsMode) else {
             toasts.show("L'assistant n'est pas disponible avec le profil Enfants.")
             return
@@ -402,8 +402,19 @@ private struct LoadedShellView: View {
             toasts.show("L'assistant est désactivé : choisissez un fournisseur dans Réglages > Assistant IA.")
             return
         }
+        // The screen decides what is searched: films never show up among channels, nor the other way round.
+        assistant.scope = scope ?? currentSearchScope
         assistant.input = phrase
         showingAssistant = true
+    }
+
+    private var currentSearchScope: SearchScope {
+        switch selectedTab {
+        case .movies: return .movies
+        case .series: return .series
+        case .live, .guide: return .tv
+        default: return .all
+        }
     }
 
     /// The player's full-screen button when it is already large: toggles the window's full screen.
@@ -827,12 +838,12 @@ private struct LoadedShellView: View {
             case .movies:
                 vodScreen(MoviesCatalogView(
                     engine: engine, revision: state.catalogRevision, totalMovies: Int(state.stats?.totalMovies ?? 0),
-                    onOpenAssistant: state.aiSettings.isAssistantEnabled ? { openAssistant(startingWith: $0) } : nil
+                    onOpenAssistant: state.aiSettings.isAssistantEnabled ? { openAssistant(startingWith: $0, scope: .movies) } : nil
                 ))
             case .series:
                 vodScreen(SeriesCatalogView(
                     engine: engine, revision: state.catalogRevision, totalSeries: Int(state.stats?.totalSeries ?? 0),
-                    onOpenAssistant: state.aiSettings.isAssistantEnabled ? { openAssistant(startingWith: $0) } : nil
+                    onOpenAssistant: state.aiSettings.isAssistantEnabled ? { openAssistant(startingWith: $0, scope: .series) } : nil
                 ))
             case .downloads:
                 DownloadsDashboardView(model: downloadsModel, directory: state.downloadDirectory, onPlay: playDownload)

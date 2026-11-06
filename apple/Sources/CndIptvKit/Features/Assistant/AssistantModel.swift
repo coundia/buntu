@@ -29,6 +29,51 @@ extension CndEngine: AssistantBackend {
     var supportsPromptSearch: Bool { true }
 }
 
+/// What the prompt search looks for. Films, series and TV are never mixed: the screen the search was
+/// opened from picks one, and the user can switch (PRD 33).
+enum SearchScope: String, CaseIterable, Identifiable {
+    case all, tv, movies, series
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "Tout"
+        case .tv: return "TV"
+        case .movies: return "Films"
+        case .series: return "Séries"
+        }
+    }
+
+    /// What the engine is restricted to (empty: everything).
+    var kinds: [SearchKind] {
+        switch self {
+        case .all: return []
+        case .tv: return [.live, .program]
+        case .movies: return [.movie]
+        case .series: return [.series]
+        }
+    }
+
+    var placeholder: String {
+        switch self {
+        case .all: return "Que voulez-vous regarder ? (« un film avec Tom Cruise », « le match du PSG ce soir »…)"
+        case .tv: return "Quelle chaîne ou quel programme ? (« France 2 », « le match du PSG ce soir »…)"
+        case .movies: return "Quel film ? (« un film d'action avec Tom Cruise », « comme Inception »…)"
+        case .series: return "Quelle série ? (« une série coréenne romantique », « Game of Thrones »…)"
+        }
+    }
+
+    var examples: [String] {
+        switch self {
+        case .all: return ["un film avec Tom Cruise", "le match du PSG ce soir", "une série coréenne romantique", "quelque chose comme Inception", "les infos en anglais"]
+        case .tv: return ["France 2", "le match du PSG ce soir", "les infos en anglais", "dessins animés pour les petits", "le journal de 20h"]
+        case .movies: return ["un film avec Tom Cruise", "quelque chose comme Inception", "une comédie des années 90", "un film d'horreur", "un film de Christopher Nolan"]
+        case .series: return ["une série coréenne romantique", "une série policière", "Game of Thrones", "une série de science-fiction"]
+        }
+    }
+}
+
 /// What the assistant can do to the app; filled in by the shell.
 struct AssistantActions {
     var play: (IptvItemRecord) -> Void = { _ in }
@@ -66,6 +111,14 @@ final class AssistantModel {
     private(set) var result: AiCommandResult?
     /// Results of the prompt search while typing (local, instant) and after Enter (with the assistant).
     private(set) var liveHits: [SearchHit] = []
+    /// Films, series and TV stay apart: switching the scope searches again, inside it only.
+    var scope: SearchScope = .all {
+        didSet {
+            guard scope != oldValue else { return }
+            refined = nil
+            if !input.trimmingCharacters(in: .whitespaces).isEmpty { inputChanged() } else { liveHits = []; searchResponse = nil }
+        }
+    }
     private(set) var searchResponse: SearchResponse?
     /// The provider is refining the results while the user is still looking at them.
     private(set) var isRefining = false
@@ -106,7 +159,8 @@ final class AssistantModel {
             playingStableHash: playingStableHash(),
             groupTitle: currentGroup(),
             locale: Locale.current.identifier.replacingOccurrences(of: "_", with: "-"),
-            utcOffsetMinutes: Int32(TimeZone.current.secondsFromGMT() / 60)
+            utcOffsetMinutes: Int32(TimeZone.current.secondsFromGMT() / 60),
+            kinds: scope.kinds
         )
     }
 

@@ -6793,6 +6793,12 @@ public struct SearchContext {
      * Offset of the user's time zone from UTC, for "ce soir" and "demain".
      */
     public var utcOffsetMinutes: Int32
+    /**
+     * What the user is looking for: TV (`Live`, `Program`), films, or series. Empty means everything.
+     * The screen the search was opened from sets it, so films never show up among channels and the
+     * other way round; nothing, not even the assistant, can widen it.
+     */
+    public var kinds: [SearchKind]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -6802,11 +6808,17 @@ public struct SearchContext {
          */locale: String, 
         /**
          * Offset of the user's time zone from UTC, for "ce soir" and "demain".
-         */utcOffsetMinutes: Int32) {
+         */utcOffsetMinutes: Int32, 
+        /**
+         * What the user is looking for: TV (`Live`, `Program`), films, or series. Empty means everything.
+         * The screen the search was opened from sets it, so films never show up among channels and the
+         * other way round; nothing, not even the assistant, can widen it.
+         */kinds: [SearchKind]) {
         self.playingStableHash = playingStableHash
         self.groupTitle = groupTitle
         self.locale = locale
         self.utcOffsetMinutes = utcOffsetMinutes
+        self.kinds = kinds
     }
 }
 
@@ -6829,6 +6841,9 @@ extension SearchContext: Equatable, Hashable {
         if lhs.utcOffsetMinutes != rhs.utcOffsetMinutes {
             return false
         }
+        if lhs.kinds != rhs.kinds {
+            return false
+        }
         return true
     }
 
@@ -6837,6 +6852,7 @@ extension SearchContext: Equatable, Hashable {
         hasher.combine(groupTitle)
         hasher.combine(locale)
         hasher.combine(utcOffsetMinutes)
+        hasher.combine(kinds)
     }
 }
 
@@ -6852,7 +6868,8 @@ public struct FfiConverterTypeSearchContext: FfiConverterRustBuffer {
                 playingStableHash: FfiConverterOptionString.read(from: &buf), 
                 groupTitle: FfiConverterOptionString.read(from: &buf), 
                 locale: FfiConverterString.read(from: &buf), 
-                utcOffsetMinutes: FfiConverterInt32.read(from: &buf)
+                utcOffsetMinutes: FfiConverterInt32.read(from: &buf), 
+                kinds: FfiConverterSequenceTypeSearchKind.read(from: &buf)
         )
     }
 
@@ -6861,6 +6878,7 @@ public struct FfiConverterTypeSearchContext: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.groupTitle, into: &buf)
         FfiConverterString.write(value.locale, into: &buf)
         FfiConverterInt32.write(value.utcOffsetMinutes, into: &buf)
+        FfiConverterSequenceTypeSearchKind.write(value.kinds, into: &buf)
     }
 }
 
@@ -12034,6 +12052,31 @@ fileprivate struct FfiConverterSequenceTypeSyncWatchProgress: FfiConverterRustBu
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeSyncWatchProgress.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSearchKind: FfiConverterRustBuffer {
+    typealias SwiftType = [SearchKind]
+
+    public static func write(_ value: [SearchKind], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSearchKind.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SearchKind] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SearchKind]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSearchKind.read(from: &buf))
         }
         return seq
     }
