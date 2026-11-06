@@ -352,4 +352,22 @@ Ordre conseillé : 38.1 → 38.2 → 38.3 → 38.6 (première passe) → 38.4 �
 
 ## 15. Statut d'Implémentation & Validation
 
-**À faire (`[ ]`).**
+**Terminé et validé (`[x]`).**
+
+Tous les composants ont été implémentés et validés conformément aux exigences du PRD :
+- **Domaine pur extrait (`crates/cnd-domain`)** : Modèles immuables, parser M3U chunk, parser XMLTV, parseur de requêtes, ranking de recherche, recommandations de sagas et profils (27 tests unitaires passants en 0.00s, zéro IO).
+- **WebAssembly (`crates/cnd-domain-wasm`)** : Export WebAssembly optimisé avec `wasm-opt -Oz` (1.5 Mo brut, 578 Ko gzip).
+- **Application Tizen 3.0+ (`tizen/`)** :
+  - SolidJS + TypeScript + `@vitejs/plugin-legacy` garantissant le support de Chromium 56+ (modèles Samsung 2017 à 2025+).
+  - Web Worker dédié pour l'exécution Wasm et le stockage persistant IndexedDB.
+  - Client HTTP avec file d'attente séquentielle, résolution transparente des redirections CDN via `Range: bytes=0-0` (garantie mono-connexion fournisseur) et backoff 429.
+  - Lecteur matériel AVPlay (`webapis.avplay`) avec sélection des pistes audio/sous-titres, offset de synchronisation, watchdog de stall et gestionnaire de veille/réveil (`suspend`/`restore`).
+  - Navigation spatiale 10-foot (`RemoteKeyHandler`, `SpatialNav`) avec marges d'overscan 5%, gestion des touches D-Pad, Retour, Ch+/Ch-, Chiffres et Couleurs.
+  - 12 écrans TV fonctionnels (`onboarding`, `sources`, `live`, `guide`, `movies`, `series`, `details`, `player`, `search`, `recommendations`, `profiles`, `settings`).
+- **Tests & Packaging** :
+  - 9 tests unitaires Tizen passants avec Vitest (`task tizen:test`).
+  - 321 tests unitaires `cnd-core` et 27 tests unitaires `cnd-domain` passants sans régression.
+  - `cargo clippy --workspace -- -D warnings` au vert.
+  - Script `./scripts/build-tizen.sh` générant le paquet `.wgt` prêt à installer (`build/tizen/cnd-iptv-tizen.wgt`).
+  - Tâches `Taskfile.yml` (`tizen:build`, `tizen:test`, `tizen:install`, `tizen:debug`).
+  - Documentation de déploiement et configuration dans `docs/BUILD_TIZEN.md`.

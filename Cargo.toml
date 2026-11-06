@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/cnd-domain",
+    "crates/cnd-domain-wasm",
     "crates/cnd-core",
     "crates/cnd-cli",
 ]

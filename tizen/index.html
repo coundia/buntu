@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080, initial-scale=1.0, user-scalable=no">
+    <title>CND IPTV</title>
+    <!-- Tizen Webapis for AVPlay & remote keys on real Samsung TVs -->
+    <script type="text/javascript" src="$WEBAPIS/webapis/webapis.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        html, body {
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+            background-color: #07090E;
+            color: #FFFFFF;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        #avplay-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1920px;
+            height: 1080px;
+            z-index: 0;
+            background: transparent;
+            pointer-events: none;
+        }
+        #app {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1920px;
+            height: 1080px;
+            z-index: 10;
+            background: transparent;
+        }
+    </style>
+</head>
+<body>
+    <div id="avplay-container"></div>
+    <div id="app"></div>
+    <script type="module" src="/src/index.tsx"></script>
+</body>
+</html>
