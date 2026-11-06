@@ -67,6 +67,17 @@ struct CommandPaletteView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Effacer")
             }
+            // Closes the palette (a sheet on iPhone has no other obvious way out; esc does it on a Mac).
+            Button { model.onDismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.body.weight(.semibold))
+                    .padding(6)
+                    .background(.quaternary, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            .accessibilityLabel("Fermer l'assistant")
+            .help("Fermer (échap)")
         }
         .padding(14)
     }
@@ -306,8 +317,19 @@ struct CommandPaletteView: View {
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
+                if !model.settings.needsConsentOnly {
+                    Button("Réglages") {
+                        model.onDismiss()
+                        model.onOpenSettings()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
                 if model.settings.needsConsentOnly {
-                    Button("Autoriser") { model.settings.consent = true }
+                    Button("Autoriser") {
+                        model.settings.consent = true
+                        model.providerDidChange()
+                    }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .accessibilityHint("Autorise l'envoi de vos recherches à \(model.settings.choice.title)")
@@ -319,10 +341,42 @@ struct CommandPaletteView: View {
         }
     }
 
+    /// Which AI answers, and a way to change it without leaving the palette.
+    private var providerMenu: some View {
+        Menu {
+            ForEach(AssistantModel.selectableProviders) { provider in
+                Button {
+                    model.select(provider: provider)
+                } label: {
+                    if provider == model.settings.choice {
+                        Label(provider.title, systemImage: "checkmark")
+                    } else {
+                        Text(provider.title)
+                    }
+                }
+            }
+            Divider()
+            Button("Réglages de l'assistant…") {
+                model.onDismiss()
+                model.onOpenSettings()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: model.settings.isRemoteReady ? "network" : "internaldrive")
+                Text(model.settings.summary)
+                Image(systemName: "chevron.up.chevron.down").font(.caption2)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Changer d'IA")
+        .accessibilityLabel("Changer d'IA")
+        .accessibilityValue(model.settings.summary)
+    }
+
     private var footer: some View {
         HStack(spacing: 8) {
-            Image(systemName: model.settings.isRemoteReady ? "network" : "internaldrive")
-            Text(model.settings.summary)
+            providerMenu
             Spacer()
             #if os(macOS)
             Text("↩︎ lancer · ↑↓ historique · esc fermer")

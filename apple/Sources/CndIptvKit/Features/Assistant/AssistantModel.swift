@@ -105,6 +105,8 @@ final class AssistantModel {
     @ObservationIgnored var playingStableHash: () -> String? = { nil }
     @ObservationIgnored var currentGroup: () -> String? = { nil }
     @ObservationIgnored var onDismiss: () -> Void = {}
+    /// Opens Réglages > Assistant IA (a key or an address to enter); set by the shell.
+    @ObservationIgnored var onOpenSettings: () -> Void = {}
 
     var input = "" { didSet { if input != oldValue { inputChanged() } } }
     private(set) var suggestions: [IptvItemRecord] = []
@@ -220,6 +222,28 @@ final class AssistantModel {
         default:
             suggestions = local.alternatives
         }
+    }
+
+    // MARK: Changing provider from the palette
+
+    /// The providers the palette lets the user switch between ("Désactivé" stays a Réglages choice).
+    static var selectableProviders: [AiChoice] { AiChoice.allCases.filter { $0 != .disabled } }
+
+    /// Switches the provider and searches again with it: what was refined by the old one is dropped.
+    func select(provider: AiChoice) {
+        guard provider != settings.choice else { return }
+        settings.choice = provider
+        providerDidChange()
+    }
+
+    /// The provider (or its readiness: key, consent) changed under the open palette.
+    func providerDidChange() {
+        refineTask?.cancel()
+        isRefining = false
+        refined = nil
+        searchResponse = nil
+        guard !input.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        inputChanged()
     }
 
     // MARK: The provider on the search itself
