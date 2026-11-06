@@ -397,6 +397,10 @@ struct SettingsView: View {
                 } else {
                     Toggle("J'accepte d'envoyer mes commandes à ce fournisseur", isOn: $ai.consent)
                 }
+                Toggle("Chercher avec l'assistant pendant la saisie", isOn: $ai.autoSearch)
+                Text("Après une courte pause, ce que vous tapez est envoyé à ce fournisseur pour trouver films, séries et programmes, sans appuyer sur Entrée (une fois par texte). Désactivez pour n'envoyer qu'avec Entrée.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 HStack {
                     Button("Tester") { Task { await runAiTest(assistant) } }
                         .disabled(isTestingAi || (ai.choice.requiresKey && !ai.hasKey))

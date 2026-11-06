@@ -95,6 +95,16 @@ final class AiProviderSettings {
     var baseURL = "" { didSet { if !isLoading { defaults.set(baseURL, forKey: key("baseURL")) } } }
     var apiKey = "" { didSet { if !isLoading { storeKey() } } }
     var consent = false { didSet { if !isLoading { defaults.set(consent, forKey: key("consent")) } } }
+    /// Search with the provider while typing, without pressing Enter (on by default once a provider is ready).
+    static let autoSearchKey = "assistant.autoSearch"
+    var autoSearch: Bool {
+        didSet { defaults.set(autoSearch, forKey: Self.autoSearchKey) }
+    }
+
+    /// The only thing between a chosen provider and its use is the user's consent: the palette offers it.
+    var needsConsentOnly: Bool {
+        choice.isRemote && !consent && !endpointIsLocal && blocker == "Cochez le consentement pour envoyer vos commandes à ce fournisseur."
+    }
     private(set) var keychainError: String?
 
     @ObservationIgnored private var isLoading = false
@@ -109,6 +119,7 @@ final class AiProviderSettings {
         self.bundled = bundledKeys
         self.resolver = ApiKeyResolver(keychain: keychain, defaults: bundledKeys)
         self.quota = BundledAiQuota(defaults: defaults)
+        autoSearch = defaults.object(forKey: Self.autoSearchKey) as? Bool ?? true
         // The provider `.env` proposes is only a starting point: the user's choice always wins, and a
         // remote provider still waits for the consent below.
         choice = defaults.string(forKey: Self.choiceKey).flatMap(AiChoice.init(rawValue:))

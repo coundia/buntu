@@ -54,6 +54,7 @@ final class AssistantModel {
     let settings: AiProviderSettings
     private let defaults: UserDefaults
     private let suggestionDelay: Duration
+    private let autoSearchDelay: Duration
 
     @ObservationIgnored var actions = AssistantActions()
     @ObservationIgnored var playingStableHash: () -> String? = { nil }
@@ -66,6 +67,8 @@ final class AssistantModel {
     /// Results of the prompt search while typing (local, instant) and after Enter (with the assistant).
     private(set) var liveHits: [SearchHit] = []
     private(set) var searchResponse: SearchResponse?
+    /// The provider is refining the results while the user is still looking at them.
+    private(set) var isRefining = false
     private(set) var isResolving = false
     private(set) var errorMessage: String?
     private(set) var history: [String]
@@ -73,6 +76,9 @@ final class AssistantModel {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var suggestionGeneration = 0
     @ObservationIgnored private var suggestionTask: Task<Void, Never>?
+    @ObservationIgnored private var refineTask: Task<Void, Never>?
+    /// The last answer the provider gave while typing, reused when Enter asks for the same text.
+    @ObservationIgnored private var refined: (text: String, response: SearchResponse)?
     @ObservationIgnored private var historyIndex: Int?
     @ObservationIgnored private var isRecalling = false
 
@@ -80,12 +86,14 @@ final class AssistantModel {
         backend: AssistantBackend,
         settings: AiProviderSettings,
         defaults: UserDefaults = .standard,
-        suggestionDelay: Duration = .milliseconds(150)
+        suggestionDelay: Duration = .milliseconds(150),
+        autoSearchDelay: Duration = .milliseconds(700)
     ) {
         self.backend = backend
         self.settings = settings
         self.defaults = defaults
         self.suggestionDelay = suggestionDelay
+        self.autoSearchDelay = autoSearchDelay
         history = defaults.stringArray(forKey: Self.historyKey) ?? []
     }
 
@@ -118,6 +126,8 @@ final class AssistantModel {
         searchResponse = nil
         errorMessage = nil
         suggestionTask?.cancel()
+        refineTask?.cancel()
+        isRefining = false
         suggestionGeneration += 1
         let gen = suggestionGeneration
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -144,6 +154,7 @@ final class AssistantModel {
             let local = await Task.detached { backend.searchLocal(text: text, context: searchContext) }.value
             guard gen == suggestionGeneration else { return }
             liveHits = local.hits
+            scheduleRefinement(for: text, generation: gen)
             return
         }
         let ctx = context
@@ -155,6 +166,39 @@ final class AssistantModel {
         default:
             suggestions = local.alternatives
         }
+    }
+
+    // MARK: The provider on the search itself
+
+    /// When a provider is ready, it works on what is being typed too, after a short pause and without
+    /// Enter: the local results stay on screen and it completes them. A command ("mets TF1") is never
+    /// performed from here, only on Enter. Each distinct text is sent once; Enter reuses the answer.
+    private func scheduleRefinement(for text: String, generation gen: Int) {
+        guard settings.autoSearch, settings.isRemoteReady, text.count >= 3, backend.supportsPromptSearch else { return }
+        if refined?.text == text { return }
+        refineTask?.cancel()
+        let delay = autoSearchDelay
+        refineTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self, gen == self.suggestionGeneration else { return }
+            await self.refine(text, generation: gen)
+        }
+    }
+
+    private func refine(_ text: String, generation gen: Int) async {
+        guard settings.isRemoteReady else { return }
+        let backend = self.backend
+        let config = settings.providerConfig()
+        let ctx = searchContext
+        isRefining = true
+        defer { if gen == suggestionGeneration { isRefining = false } }
+        guard let response = try? await backend.searchWithAi(text: text, context: ctx, config: config),
+              gen == suggestionGeneration else { return }
+        // A direct command waits for Enter; a local fallback has nothing to add to what is shown.
+        guard response.command == nil, response.resolvedBy != "local" || response.fallbackReason != nil else { return }
+        refined = (text, response)
+        searchResponse = response
+        if !response.hits.isEmpty { liveHits = response.hits }
     }
 
     // MARK: Submitting
@@ -170,6 +214,8 @@ final class AssistantModel {
         result = nil
         searchResponse = nil
         if backend.supportsPromptSearch {
+            refineTask?.cancel()
+            isRefining = false
             await submitSearch(command, generation: gen)
             return
         }
@@ -194,6 +240,14 @@ final class AssistantModel {
         let config = settings.providerConfig()
         let ctx = searchContext
         do {
+            // The provider already answered this very text while it was typed: no second call.
+            if let cached = refined, cached.text == command {
+                remember(command)
+                searchResponse = cached.response
+                liveHits = cached.response.hits
+                isResolving = false
+                return
+            }
             let response = try await backend.searchWithAi(text: command, context: ctx, config: config)
             guard gen == generation else { return }
             remember(command)
@@ -220,6 +274,8 @@ final class AssistantModel {
     func cancel() {
         generation += 1
         isResolving = false
+        refineTask?.cancel()
+        isRefining = false
     }
 
     /// The user picked one of the proposed channels.

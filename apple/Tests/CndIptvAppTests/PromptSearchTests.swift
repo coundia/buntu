@@ -33,9 +33,9 @@ final class FakeSearchBackend: AssistantBackend, @unchecked Sendable {
     }
 
     func searchWithAi(text: String, context: SearchContext, config: AiProviderConfig) async throws -> SearchResponse {
-        lock.withLock { storedAiTexts.append(text) }
+        let answer = lock.withLock { storedAiTexts.append(text); return aiResult } // the answer as scripted when asked
         if aiDelay > .zero { try await Task.sleep(for: aiDelay) }
-        return try aiResult.get()
+        return try answer.get()
     }
 }
 
@@ -217,5 +217,164 @@ final class SearchHitTextTests: XCTestCase {
         XCTAssertEqual(SearchHitText.accessibilityLabel(hit), "Top Gun: Maverick. Avec Tom Cruise")
         hit.fromAssistant = true
         XCTAssertEqual(SearchHitText.accessibilityLabel(hit), "Top Gun: Maverick. Avec Tom Cruise. Proposé par l'assistant")
+    }
+}
+
+/// PRD 33: once a provider is active it works on the search itself, not only when Enter is pressed.
+@MainActor
+final class AutoSearchTests: XCTestCase {
+    private var backend: FakeSearchBackend!
+    private var settings: AiProviderSettings!
+    private var model: AssistantModel!
+    private var defaults: UserDefaults!
+    private var suite = ""
+    private var dismissals = 0
+    private var searches: [String] = []
+
+    override func setUp() async throws {
+        suite = "cnd.autosearch.tests.\(UUID())"
+        defaults = UserDefaults(suiteName: suite)
+        backend = FakeSearchBackend()
+        settings = AiProviderSettings(
+            defaults: defaults, keychain: KeychainStore(service: "com.cnd.iptv.tests.auto.\(UUID().uuidString)"), bundledKeys: DefaultApiKeys()
+        )
+        settings.choice = .gemini
+        settings.apiKey = "test-key"
+        settings.consent = true
+        model = AssistantModel(
+            backend: backend, settings: settings, defaults: defaults,
+            suggestionDelay: .milliseconds(10), autoSearchDelay: .milliseconds(30)
+        )
+        dismissals = 0
+        searches = []
+        model.actions = AssistantActions(search: { [unowned self] in searches.append($0) })
+        model.onDismiss = { [unowned self] in dismissals += 1 }
+        backend.local = SearchResponse(
+            command: nil, hits: [makeHit(.movie, name: "Local result")], missingTitles: [], reply: "", resolvedBy: "local", latencyMs: 1, fallbackReason: nil
+        )
+        backend.aiResult = .success(SearchResponse(
+            command: nil, hits: [makeHit(.movie, name: "Assistant result")], missingTitles: ["Jerry Maguire (1996)"],
+            reply: "Films avec Tom Cruise", resolvedBy: "gemini", latencyMs: 9, fallbackReason: nil
+        ))
+    }
+
+    override func tearDown() async throws {
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testAnActiveProviderRefinesTheSearchWhileTyping() async {
+        model.input = "un film avec Tom Cruise"
+        let refined = await eventually { self.model.searchResponse?.resolvedBy == "gemini" }
+        XCTAssertTrue(refined)
+        XCTAssertEqual(backend.aiTexts, ["un film avec Tom Cruise"])
+        XCTAssertEqual(model.liveHits.first.map(SearchHitText.title), "Assistant result")
+        XCTAssertEqual(dismissals, 0, "the palette stays open")
+        XCTAssertFalse(model.isRefining)
+    }
+
+    func testTheLocalResultsAreThereBeforeTheProviderAnswers() async {
+        backend.aiDelay = .milliseconds(300)
+        model.input = "un film avec Tom Cruise"
+        let local = await eventually { self.model.liveHits.first.map(SearchHitText.title) == "Local result" }
+        XCTAssertTrue(local)
+        let refining = await eventually { self.model.isRefining }
+        XCTAssertTrue(refining)
+        let done = await eventually(timeout: 5) { self.model.searchResponse != nil }
+        XCTAssertTrue(done)
+    }
+
+    func testEnterReusesTheAnswerAlreadyGivenForTheSameText() async {
+        model.input = "un film avec Tom Cruise"
+        _ = await eventually { self.model.searchResponse != nil }
+        await model.submit()
+        XCTAssertEqual(backend.aiTexts.count, 1, "no second call for the same text")
+        XCTAssertEqual(model.searchResponse?.reply, "Films avec Tom Cruise")
+        XCTAssertEqual(model.history.first, "un film avec Tom Cruise")
+    }
+
+    func testEachDistinctTextIsSentOnceNotOnEveryKeystroke() async {
+        model.input = "un fil"
+        model.input = "un film"
+        model.input = "un film avec"
+        model.input = "un film avec Tom Cruise"
+        _ = await eventually { self.model.searchResponse != nil }
+        try? await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(backend.aiTexts, ["un film avec Tom Cruise"], "only the text the user stopped on")
+    }
+
+    func testNothingIsSentWithoutAReadyProviderOrWhenTurnedOff() async {
+        settings.consent = false
+        model.input = "un film avec Tom Cruise"
+        _ = await eventually { !self.model.liveHits.isEmpty }
+        try? await Task.sleep(for: .milliseconds(120))
+        XCTAssertTrue(backend.aiTexts.isEmpty, "no consent: nothing leaves")
+
+        settings.consent = true
+        settings.autoSearch = false
+        model.input = "une série coréenne"
+        try? await Task.sleep(for: .milliseconds(150))
+        XCTAssertTrue(backend.aiTexts.isEmpty, "switched off: only Enter sends")
+
+        settings.autoSearch = true
+        settings.choice = .localOnly
+        model.input = "une comédie française"
+        try? await Task.sleep(for: .milliseconds(150))
+        XCTAssertTrue(backend.aiTexts.isEmpty, "local mode")
+    }
+
+    func testVeryShortTextIsNotSent() async {
+        model.input = "ab"
+        try? await Task.sleep(for: .milliseconds(150))
+        XCTAssertTrue(backend.aiTexts.isEmpty)
+    }
+
+    func testACommandFoundWhileTypingIsNeverPerformedUntilEnter() async {
+        backend.aiResult = .success(SearchResponse(command: .nextChannel, hits: [], missingTitles: [], reply: "", resolvedBy: "local", latencyMs: 1, fallbackReason: nil))
+        model.input = "chaîne suivante"
+        try? await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(dismissals, 0)
+        XCTAssertNil(model.searchResponse)
+    }
+
+    func testAFailingProviderLeavesTheLocalResultsAloneAndSilent() async {
+        backend.aiResult = .failure(CndError.Network(message: "délai dépassé"))
+        model.input = "un film avec Tom Cruise"
+        try? await Task.sleep(for: .milliseconds(200))
+        XCTAssertNil(model.errorMessage, "typing never shows an error")
+        XCTAssertEqual(model.liveHits.first.map(SearchHitText.title), "Local result")
+        XCTAssertFalse(model.isRefining)
+    }
+
+    func testTypingAgainDropsTheAnswerOfTheOlderText() async {
+        backend.aiDelay = .milliseconds(150)
+        model.input = "un film avec Tom Cruise"
+        _ = await eventually { self.model.isRefining }
+        // The first answer ("Films avec Tom Cruise") is still on its way when the text changes.
+        backend.aiResult = .success(SearchResponse(
+            command: nil, hits: [makeHit(.series, name: "Autre résultat")], missingTitles: [], reply: "Autre", resolvedBy: "gemini", latencyMs: 1, fallbackReason: nil
+        ))
+        model.input = "autre chose"
+        let settled = await eventually(timeout: 5) { self.model.searchResponse?.reply == "Autre" }
+        XCTAssertTrue(settled, "\(String(describing: model.searchResponse?.reply))")
+        XCTAssertEqual(backend.aiTexts, ["un film avec Tom Cruise", "autre chose"])
+        try? await Task.sleep(for: .milliseconds(250))
+        XCTAssertEqual(model.searchResponse?.reply, "Autre", "the late answer for the old text never replaces it")
+    }
+
+    func testTheConsentIsTheOnlyThingToAskWhenAProviderIsChosen() {
+        settings.consent = false
+        XCTAssertTrue(settings.needsConsentOnly)
+        settings.consent = true
+        XCTAssertFalse(settings.needsConsentOnly)
+        settings.apiKey = ""
+        settings.consent = false
+        XCTAssertFalse(settings.needsConsentOnly, "a missing key is a different problem")
+    }
+
+    func testAutoSearchIsOnByDefaultAndRemembered() {
+        XCTAssertTrue(settings.autoSearch)
+        settings.autoSearch = false
+        let again = AiProviderSettings(defaults: defaults, keychain: KeychainStore(service: "x.\(UUID().uuidString)"), bundledKeys: DefaultApiKeys())
+        XCTAssertFalse(again.autoSearch)
     }
 }
