@@ -100,6 +100,34 @@ tasks:
     cmds:
       - ./scripts/run-android.sh --tv {{if .DEVICE}}--device "{{.DEVICE}}"{{end}}
 
+  # ---------------------------------------------------------------- tizen
+  tizen:build:
+    desc: Build WebAssembly domain and package the Samsung Smart TV app (.wgt)
+    aliases: [tizen:package]
+    cmds:
+      - ./scripts/build-tizen.sh
+
+  tizen:test:
+    desc: Run unit tests for the Tizen Smart TV app (Vitest)
+    cmds:
+      - cd tizen && npm test
+
+  tizen:install:
+    desc: Install .wgt package on a connected Samsung TV in Developer Mode (TV_IP="192.168.x.x")
+    cmds:
+      - |
+        if [ -n "{{.TV_IP}}" ]; then
+          sdb connect {{.TV_IP}}
+        fi
+        sdb install build/tizen/cnd-iptv-tizen.wgt
+
+  tizen:debug:
+    desc: Launch remote web inspector (Chrome DevTools) for debugging on Samsung TV
+    cmds:
+      - sdb dpm --on
+      - sdb forward tcp:9222 tcp:9222
+      - echo "Open chrome://inspect or http://localhost:9222 in Chrome to debug"
+
   run:android:logs:
     desc: Build, install, launch and stream Buntu logcat from a connected Android device
     aliases: [android:logs]

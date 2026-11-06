@@ -27,3 +27,7 @@ android/**/build/
 android/**/bin/
 android/core/engine/src/main/jniLibs/**/*.so
 
+# Tizen (PRD 38)
+tizen/node_modules/
+tizen/dist/
+

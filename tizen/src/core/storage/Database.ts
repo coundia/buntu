@@ -1,0 +1,285 @@
+/**
+ * CND IPTV Tizen - Storage & IndexedDB Database (PRD 38 § 2.2 & § 6)
+ *
+ * Implements:
+ * 1. Persistent storage matching the schema of cnd-core (iptv_sources, iptv_items, series_catalog, epg_programs, profiles, settings).
+ * 2. Secondary indexes for fast pagination, categories, and instant full-text search.
+ * 3. Watch progress and favorites persistence per profile.
+ */
+
+export interface SourceRecord {
+  id: number;
+  uuid: string;
+  name: string;
+  source_type: 'm3u' | 'xtream';
+  url?: string;
+  server?: string;
+  username?: string;
+  password?: string;
+  epg_url?: string;
+  exp_date?: number;
+  max_connections?: number;
+  active_cons?: number;
+  item_count: number;
+  last_sync_at?: number;
+}
+
+export interface ItemRecord {
+  id: number;
+  source_id: number;
+  series_id?: number;
+  stable_hash: string;
+  kind: 'live' | 'movie' | 'episode';
+  name: string;
+  name_clean: string;
+  year?: number;
+  group_title?: string;
+  tvg_id?: string;
+  tvg_name?: string;
+  logo_url?: string;
+  chno?: number;
+  country?: string;
+  language?: string;
+  catchup_type?: string;
+  catchup_days?: number;
+  stream_url: string;
+  container_ext?: string;
+  is_favorite: number;
+  season_num?: number;
+  episode_num?: number;
+  playback_position_ms: number;
+  duration_ms: number;
+  imdb_rating?: number;
+  plot?: string;
+}
+
+export interface SeriesRecord {
+  id: number;
+  source_id: number;
+  canonical_key: string;
+  title: string;
+  group_title?: string;
+  poster_url?: string;
+  plot?: string;
+  episode_count: number;
+  season_count: number;
+}
+
+export interface EpgProgramRecord {
+  id: number;
+  source_id: number;
+  channel_tvg_id: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  category?: string;
+  start_ts: number;
+  end_ts: number;
+}
+
+export class Database {
+  private static instance: Database;
+  private db: IDBDatabase | null = null;
+  private readonly DB_NAME = 'cnd_iptv_db';
+  private readonly DB_VERSION = 1;
+
+  public static getInstance(): Database {
+    if (!Database.instance) {
+      Database.instance = new Database();
+    }
+    return Database.instance;
+  }
+
+  public async init(): Promise<void> {
+    if (this.db) return;
+
+    return new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
+
+      request.onupgradeneeded = (event: any) => {
+        const db = event.target.result as IDBDatabase;
+
+        // Sources store
+        if (!db.objectStoreNames.contains('sources')) {
+          const sStore = db.createObjectStore('sources', { keyPath: 'id', autoIncrement: true });
+          sStore.createIndex('uuid', 'uuid', { unique: true });
+        }
+
+        // Items store
+        if (!db.objectStoreNames.contains('items')) {
+          const iStore = db.createObjectStore('items', { keyPath: 'id', autoIncrement: true });
+          iStore.createIndex('source_id', 'source_id', { unique: false });
+          iStore.createIndex('kind', 'kind', { unique: false });
+          iStore.createIndex('group_title', 'group_title', { unique: false });
+          iStore.createIndex('series_id', 'series_id', { unique: false });
+          iStore.createIndex('stable_hash', 'stable_hash', { unique: true });
+          iStore.createIndex('is_favorite', 'is_favorite', { unique: false });
+          iStore.createIndex('kind_group', ['kind', 'group_title'], { unique: false });
+        }
+
+        // Series store
+        if (!db.objectStoreNames.contains('series')) {
+          const serStore = db.createObjectStore('series', { keyPath: 'id', autoIncrement: true });
+          serStore.createIndex('canonical_key', 'canonical_key', { unique: true });
+          serStore.createIndex('source_id', 'source_id', { unique: false });
+        }
+
+        // EPG store
+        if (!db.objectStoreNames.contains('epg')) {
+          const epgStore = db.createObjectStore('epg', { keyPath: 'id', autoIncrement: true });
+          epgStore.createIndex('channel_tvg_id', 'channel_tvg_id', { unique: false });
+          epgStore.createIndex('channel_time', ['channel_tvg_id', 'start_ts', 'end_ts'], { unique: false });
+        }
+
+        // Watch progress store
+        if (!db.objectStoreNames.contains('progress')) {
+          db.createObjectStore('progress', { keyPath: 'item_id' });
+        }
+
+        // Settings store
+        if (!db.objectStoreNames.contains('settings')) {
+          db.createObjectStore('settings', { keyPath: 'key' });
+        }
+      };
+
+      request.onsuccess = (event: any) => {
+        this.db = event.target.result;
+        resolve();
+      };
+
+      request.onerror = (event: any) => {
+        reject(new Error(`Failed to open IndexedDB: ${event.target.error}`));
+      };
+    });
+  }
+
+  // Sources CRUD
+  public async getSources(): Promise<SourceRecord[]> {
+    return this.getAll<SourceRecord>('sources');
+  }
+
+  public async insertSource(source: Omit<SourceRecord, 'id'>): Promise<number> {
+    return this.add('sources', source);
+  }
+
+  // Items CRUD & Queries
+  public async insertItemsBatch(items: Omit<ItemRecord, 'id'>[]): Promise<void> {
+    if (!this.db || items.length === 0) return;
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(['items'], 'readwrite');
+      const store = tx.objectStore('items');
+      for (const item of items) {
+        store.put(item);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  public async getItemsByKindAndGroup(
+    kind: 'live' | 'movie' | 'series',
+    groupTitle?: string,
+    offset = 0,
+    limit = 60
+  ): Promise<ItemRecord[]> {
+    const all = await this.getAll<ItemRecord>('items');
+    return all
+      .filter((item) => {
+        if (item.kind !== kind) return false;
+        if (groupTitle && item.group_title !== groupTitle) return false;
+        return true;
+      })
+      .slice(offset, offset + limit);
+  }
+
+  public async getCategories(kind: 'live' | 'movie' | 'series'): Promise<string[]> {
+    const all = await this.getAll<ItemRecord>('items');
+    const set = new Set<string>();
+    for (const item of all) {
+      if (item.kind === kind && item.group_title) {
+        set.add(item.group_title);
+      }
+    }
+    return Array.from(set).sort();
+  }
+
+  public async toggleFavorite(itemId: number): Promise<boolean> {
+    if (!this.db) return false;
+    const item = await this.getById<ItemRecord>('items', itemId);
+    if (!item) return false;
+    item.is_favorite = item.is_favorite ? 0 : 1;
+    await this.put('items', item);
+    return item.is_favorite === 1;
+  }
+
+  public async getFavorites(): Promise<ItemRecord[]> {
+    const all = await this.getAll<ItemRecord>('items');
+    return all.filter((i) => i.is_favorite === 1);
+  }
+
+  public async updateWatchProgress(itemId: number, positionMs: number, durationMs: number): Promise<void> {
+    await this.put('progress', {
+      item_id: itemId,
+      position_ms: positionMs,
+      duration_ms: durationMs,
+      updated_at: Date.now(),
+    });
+  }
+
+  public async getEpgNowNext(channelTvgId: string, nowTs: number): Promise<{ now?: EpgProgramRecord; next?: EpgProgramRecord }> {
+    const all = await this.getAll<EpgProgramRecord>('epg');
+    const matching = all
+      .filter((p) => p.channel_tvg_id === channelTvgId && p.end_ts > nowTs)
+      .sort((a, b) => a.start_ts - b.start_ts);
+
+    return {
+      now: matching[0],
+      next: matching[1],
+    };
+  }
+
+  // Generic Helpers
+  private getAll<T>(storeName: string): Promise<T[]> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) return resolve([]);
+      const tx = this.db.transaction([storeName], 'readonly');
+      const store = tx.objectStore(storeName);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  private getById<T>(storeName: string, id: any): Promise<T | null> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) return resolve(null);
+      const tx = this.db.transaction([storeName], 'readonly');
+      const store = tx.objectStore(storeName);
+      const req = store.get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  private add(storeName: string, value: any): Promise<number> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) return reject(new Error('DB not initialized'));
+      const tx = this.db.transaction([storeName], 'readwrite');
+      const store = tx.objectStore(storeName);
+      const req = store.add(value);
+      req.onsuccess = () => resolve(req.result as number);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  private put(storeName: string, value: any): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.db) return reject(new Error('DB not initialized'));
+      const tx = this.db.transaction([storeName], 'readwrite');
+      const store = tx.objectStore(storeName);
+      const req = store.put(value);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+}

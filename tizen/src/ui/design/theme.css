@@ -1,0 +1,182 @@
+:root {
+  --buntu-midnight: #07090E;
+  --buntu-slate: #111622;
+  --buntu-slate-light: #1A2234;
+  --buntu-border: #232D42;
+  --buntu-gold: #F5A623;
+  --buntu-gold-hover: #FFB733;
+  --buntu-cyan: #00E5FF;
+  --buntu-text: #FFFFFF;
+  --buntu-text-muted: #8E9BAE;
+  --buntu-danger: #FF3B30;
+  
+  --tv-safe-pad-v: 48px;
+  --tv-safe-pad-h: 80px;
+}
+
+body {
+  background-color: var(--buntu-midnight);
+  color: var(--buntu-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  width: 1920px;
+  height: 1080px;
+}
+
+.tv-container {
+  width: 1920px;
+  height: 1080px;
+  padding: var(--tv-safe-pad-v) var(--tv-safe-pad-h);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header & Nav */
+.tv-header {
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--buntu-border);
+  margin-bottom: 24px;
+}
+
+.tv-logo {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--buntu-gold);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tv-nav {
+  display: flex;
+  gap: 16px;
+}
+
+.tv-nav-item {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--buntu-text-muted);
+  background: transparent;
+  border: 2px solid transparent;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.tv-nav-item.active {
+  color: var(--buntu-text);
+  background: var(--buntu-slate);
+}
+
+.tv-nav-item.focused {
+  color: #000000;
+  background: var(--buntu-gold);
+  border-color: var(--buntu-gold);
+  transform: scale(1.05);
+}
+
+/* TV Focusable Cards */
+.tv-card {
+  background: var(--buntu-slate);
+  border-radius: 12px;
+  border: 2px solid transparent;
+  overflow: hidden;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  position: relative;
+}
+
+.tv-card.focused {
+  transform: scale(1.08);
+  border-color: var(--buntu-gold);
+  box-shadow: 0 10px 30px rgba(245, 166, 35, 0.4);
+  z-index: 100;
+}
+
+/* Horizontal Shelves */
+.tv-shelf {
+  display: flex;
+  gap: 24px;
+  overflow-x: hidden;
+  padding: 16px 0;
+}
+
+.tv-poster-card {
+  width: 200px;
+  height: 300px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tv-poster-img {
+  width: 100%;
+  height: 240px;
+  object-fit: cover;
+  background: var(--buntu-slate-light);
+}
+
+.tv-poster-title {
+  padding: 8px 12px;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* TV Buttons */
+.tv-btn {
+  padding: 14px 28px;
+  border-radius: 8px;
+  font-size: 20px;
+  font-weight: 700;
+  background: var(--buntu-slate);
+  color: var(--buntu-text);
+  border: 2px solid var(--buntu-border);
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.tv-btn.focused {
+  background: var(--buntu-gold);
+  color: #000000;
+  border-color: var(--buntu-gold);
+  transform: scale(1.06);
+}
+
+/* OSD Video Overlay */
+.tv-osd {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: var(--tv-safe-pad-v) var(--tv-safe-pad-h);
+  background: linear-gradient(to top, rgba(7, 9, 14, 0.95), transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 50;
+  transition: opacity 0.3s ease;
+}
+
+.tv-osd-progress-bg {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.tv-osd-progress-fill {
+  height: 100%;
+  background: var(--buntu-gold);
+  border-radius: 4px;
+}
