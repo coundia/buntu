@@ -1,5 +1,8 @@
 import SwiftUI
 import CndCoreBridge
+#if canImport(UIKit)
+import UIKit
+#endif
 
 enum AppTab: String, CaseIterable, Identifiable {
     case live
@@ -129,8 +132,10 @@ private struct LoadedShellView: View {
     @State private var isDropTargeted = false
     @State private var multiViewController = MultiViewController()
     @State private var currentlyPlayingItem: IptvItemRecord?
+    @State private var presentPlayerTask: Task<Void, Never>?
     #if !os(tvOS)
     @State private var libraryModel: LibraryModel
+    @State private var showingAudioNowPlaying = false
     #endif
 
     init(state: AppState, engine: CndEngine, commands: AppCommandCenter) {
@@ -264,6 +269,16 @@ private struct LoadedShellView: View {
                 updatePlaybackActivity()
                 #endif
             }
+            .onChange(of: player.launchCount) { _, _ in
+                #if !os(macOS)
+                presentPlayerInFront()
+                #endif
+            }
+            #if !os(macOS) && !os(tvOS)
+            .onChange(of: libraryModel.audioLaunchCount) { _, _ in
+                presentAudioInFront()
+            }
+            #endif
             .onChange(of: player.isFavorite) { _, isFav in
                 commands.isFavorite = isFav
             }
@@ -311,7 +326,79 @@ private struct LoadedShellView: View {
                     .presentationDetents([.medium, .large])
                     #endif
             }
+            #if !os(tvOS)
+            .sheet(isPresented: $showingAudioNowPlaying) {
+                NowPlayingAudioView(model: libraryModel)
+            }
+            #endif
     }
+
+    #if !os(macOS)
+    private var hasActiveModalSheet: Bool {
+        #if canImport(UIKit) && !os(tvOS)
+        let keyWindow = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+        return keyWindow?.rootViewController?.presentedViewController != nil
+        #else
+        return false
+        #endif
+    }
+
+    /// Brings the full-screen video player immediately to the front whenever playback starts on mobile/TV.
+    private func presentPlayerInFront() {
+        presentPlayerTask?.cancel()
+        guard player.media != nil, !isPlayerExpanded else { return }
+        if showingAssistant { showingAssistant = false }
+        #if !os(tvOS)
+        if showingAudioNowPlaying { showingAudioNowPlaying = false }
+        #endif
+
+        if !hasActiveModalSheet {
+            setExpanded(true)
+            return
+        }
+
+        presentPlayerTask = Task { @MainActor in
+            for _ in 0..<16 {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                guard !Task.isCancelled, player.media != nil else { return }
+                if !hasActiveModalSheet {
+                    setExpanded(true)
+                    return
+                }
+            }
+            if !Task.isCancelled, player.media != nil {
+                setExpanded(true)
+            }
+        }
+    }
+
+    #if !os(tvOS)
+    private func presentAudioInFront() {
+        guard libraryModel.nowPlayingAudio != nil else { return }
+        if isPlayerExpanded { setExpanded(false) }
+        if !hasActiveModalSheet {
+            showingAudioNowPlaying = true
+            return
+        }
+        Task { @MainActor in
+            for _ in 0..<12 {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                guard libraryModel.nowPlayingAudio != nil else { return }
+                if !hasActiveModalSheet {
+                    showingAudioNowPlaying = true
+                    return
+                }
+            }
+            if libraryModel.nowPlayingAudio != nil {
+                showingAudioNowPlaying = true
+            }
+        }
+    }
+    #endif
+    #endif
 
     #if os(iOS)
     /// Lock screen / Dynamic Island "now playing": started with the media, ended when it is closed.
@@ -741,20 +828,20 @@ private struct LoadedShellView: View {
             ForEach(visibleTabs) { tab in
                 NavigationStack {
                     content(for: tab)
-                        .safeAreaInset(edge: .bottom, spacing: 0) {
-                            VStack(spacing: 0) {
-                                #if !os(tvOS)
-                                AudioPlayerBar(model: libraryModel)
-                                #endif
-                                miniPlayerBar
-                            }
-                        }
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) { logsToolbarButton }
                             if isKidsMode {
                                 ToolbarItem(placement: .topBarTrailing) { kidsExitButton }
                             }
                         }
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 0) {
+                        #if !os(tvOS)
+                        AudioPlayerBar(model: libraryModel)
+                        #endif
+                        miniPlayerBar
+                    }
                 }
                 .tabItem { Label(tab.title, systemImage: tab.systemImage) }
                 #if !os(tvOS)
@@ -927,7 +1014,7 @@ private struct LoadedShellView: View {
         #if os(macOS)
         setExpanded(true, windowFullscreen: false)
         #else
-        setExpanded(true)
+        presentPlayerInFront()
         #endif
     }
     #endif

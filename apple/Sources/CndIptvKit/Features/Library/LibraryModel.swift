@@ -259,11 +259,16 @@ public final class LibraryModel {
 
     // MARK: - Audio Playback Engine
 
-    public func playAudio(item: LibraryItemRecord, inQueue: [LibraryItemRecord] = []) {
+    public private(set) var audioLaunchCount: Int = 0
+
+    public func playAudio(item: LibraryItemRecord, inQueue: [LibraryItemRecord] = [], presentUI: Bool = true) {
         let queue = inQueue.isEmpty ? [item] : inQueue
         self.audioQueue = queue
         self.audioQueueIndex = queue.firstIndex(where: { $0.id == item.id }) ?? 0
         self.nowPlayingAudio = item
+        if presentUI {
+            self.audioLaunchCount &+= 1
+        }
 
         let fileURL = URL(fileURLWithPath: item.fullPath)
         let playerItem = AVPlayerItem(url: fileURL)
@@ -309,7 +314,7 @@ public final class LibraryModel {
             audioQueueIndex = (audioQueueIndex + 1) % audioQueue.count
         }
         let nextItem = audioQueue[audioQueueIndex]
-        playAudio(item: nextItem, inQueue: audioQueue)
+        playAudio(item: nextItem, inQueue: audioQueue, presentUI: false)
     }
 
     public func previousAudio() {
@@ -320,7 +325,7 @@ public final class LibraryModel {
         }
         audioQueueIndex = (audioQueueIndex - 1 + audioQueue.count) % audioQueue.count
         let prevItem = audioQueue[audioQueueIndex]
-        playAudio(item: prevItem, inQueue: audioQueue)
+        playAudio(item: prevItem, inQueue: audioQueue, presentUI: false)
     }
 
     public func seekAudio(toFraction fraction: Double) {

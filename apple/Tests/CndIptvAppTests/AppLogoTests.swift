@@ -29,6 +29,22 @@ final class AppLogoTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(flatRep.colorAt(x: 256, y: 256)).alphaComponent, 1, accuracy: 0.01)
     }
 
+    func testFullBleedIconHasNoTransparencyAtCorners() throws {
+        let image = try XCTUnwrap(AppLogoRenderer.nsImage(pixels: 512, framed: false, fullBleed: true))
+        let rep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
+        let corner = try XCTUnwrap(rep.colorAt(x: 2, y: 2))
+        let center = try XCTUnwrap(rep.colorAt(x: 256, y: 256))
+        XCTAssertEqual(corner.alphaComponent, 1, accuracy: 0.01, "the corners of fullBleed icon are fully opaque")
+        XCTAssertEqual(center.alphaComponent, 1, accuracy: 0.01)
+    }
+
+    func testExportIosIconWhenAsked() throws {
+        guard let path = ProcessInfo.processInfo.environment["CND_EXPORT_IOS_ICON"], !path.isEmpty else {
+            throw XCTSkip("Set CND_EXPORT_IOS_ICON to export the iOS icon.")
+        }
+        try AppLogoRenderer.writeIosIcon(to: URL(fileURLWithPath: path))
+    }
+
     /// `task icon` runs this with `CND_EXPORT_ICON=<dir>/AppIcon.iconset` to regenerate the icon files.
     func testExportIconsetWhenAsked() throws {
         guard let path = ProcessInfo.processInfo.environment["CND_EXPORT_ICON"], !path.isEmpty else {

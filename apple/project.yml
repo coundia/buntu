@@ -54,6 +54,7 @@ targets:
     sources:
       - path: Sources/CndIptvApp
       - path: Sources/CndIptvKit
+      - path: Resources/Assets.xcassets
     preBuildScripts:
       - name: Default API keys
         script: '"${SRCROOT}/../scripts/gen-default-keys.sh"'
@@ -69,6 +70,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.pcoundia.buntu
         INFOPLIST_FILE: Resources/Info-iOS.plist
         TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: Resources/CndIPTV-iOS.entitlements
 
   CndIPTV-tvOS:
     type: application
