@@ -810,6 +810,11 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func nextUp(itemId: Int64) throws  -> Recommendation?
     
+    /**
+     * Other copies of the same film (quality, language, server), for a copy too heavy for the connection.
+     */
+    func otherVersions(itemId: Int64) throws  -> [IptvItemRecord]
+    
     func parseSrt(srtContent: String)  -> [SubtitleCue]
     
     func pauseAllDownloads() async throws 
@@ -917,6 +922,13 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     func setCustomOrder(profileId: Int64, scope: String, key: String, position: Int32) throws 
     
     func setRecordingDirectory(dir: String) 
+    
+    /**
+     * A local address that reads `url` through ONE provider connection at a time (mpv opens a second
+     * one on each seek, which a one-connection subscription refuses with `429`). Returns `url`
+     * unchanged when the relay cannot start or the address is not plain HTTP(S).
+     */
+    func singleConnectionUrl(url: String, userAgent: String?, referer: String?, headers: [String: String])  -> String
     
     func startAllDownloads() async throws 
     
@@ -1944,6 +1956,17 @@ open func nextUp(itemId: Int64)throws  -> Recommendation?  {
 })
 }
     
+    /**
+     * Other copies of the same film (quality, language, server), for a copy too heavy for the connection.
+     */
+open func otherVersions(itemId: Int64)throws  -> [IptvItemRecord]  {
+    return try  FfiConverterSequenceTypeIptvItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_other_versions(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(itemId),$0
+    )
+})
+}
+    
 open func parseSrt(srtContent: String) -> [SubtitleCue]  {
     return try!  FfiConverterSequenceTypeSubtitleCue.lift(try! rustCall() {
     uniffi_cnd_core_fn_method_cndengine_parse_srt(self.uniffiClonePointer(),
@@ -2441,6 +2464,22 @@ open func setRecordingDirectory(dir: String)  {try! rustCall() {
         FfiConverterString.lower(dir),$0
     )
 }
+}
+    
+    /**
+     * A local address that reads `url` through ONE provider connection at a time (mpv opens a second
+     * one on each seek, which a one-connection subscription refuses with `429`). Returns `url`
+     * unchanged when the relay cannot start or the address is not plain HTTP(S).
+     */
+open func singleConnectionUrl(url: String, userAgent: String?, referer: String?, headers: [String: String]) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_single_connection_url(self.uniffiClonePointer(),
+        FfiConverterString.lower(url),
+        FfiConverterOptionString.lower(userAgent),
+        FfiConverterOptionString.lower(referer),
+        FfiConverterDictionaryStringString.lower(headers),$0
+    )
+})
 }
     
 open func startAllDownloads()async throws   {
@@ -13246,6 +13285,32 @@ fileprivate struct FfiConverterSequenceTypeSearchKind: FfiConverterRustBuffer {
         return seq
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
+    public static func write(_ value: [String: String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for (key, value) in value {
+            FfiConverterString.write(key, into: &buf)
+            FfiConverterString.write(value, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: String] {
+        let len: Int32 = try readInt(&buf)
+        var dict = [String: String]()
+        dict.reserveCapacity(Int(len))
+        for _ in 0..<len {
+            let key = try FfiConverterString.read(from: &buf)
+            let value = try FfiConverterString.read(from: &buf)
+            dict[key] = value
+        }
+        return dict
+    }
+}
 private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
 private let UNIFFI_RUST_FUTURE_POLL_MAYBE_READY: Int8 = 1
 
@@ -13602,6 +13667,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_next_up() != 17489) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_other_versions() != 16086) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_parse_srt() != 63021) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -13717,6 +13785,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_set_recording_directory() != 6578) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_single_connection_url() != 31161) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_start_all_downloads() != 46323) {

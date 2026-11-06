@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Teranga Gold doorway / play emblem -->
+    <path
+        android:fillColor="#F5A524"
+        android:pathData="M34,30 L78,54 L34,78 Z" />
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M28,30 L32,30 L32,78 L28,78 Z" />
+</vector>
+

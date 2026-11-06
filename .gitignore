@@ -14,3 +14,16 @@ DerivedData/
 .env.*
 !.env.example
 apple/Sources/CndIptvKit/Generated/
+
+# Android (PRD 37)
+android/.gradle/
+android/**/.gradle/
+android/.kotlin/
+android/**/.kotlin/
+android/.idea/
+android/**/.idea/
+android/local.properties
+android/**/build/
+android/**/bin/
+android/core/engine/src/main/jniLibs/**/*.so
+

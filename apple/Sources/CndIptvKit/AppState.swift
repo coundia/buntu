@@ -102,6 +102,14 @@ public final class AppState {
     }
 
     private func attach(_ engine: CndEngine) {
+        // Films and episodes read by mpv go through the engine's relay: one provider connection at a time.
+        MpvVideoToolboxBackend.addressRewriter = { [weak engine] media in
+            guard let engine else { return nil }
+            let address = engine.singleConnectionUrl(
+                url: media.url.absoluteString, userAgent: media.userAgent, referer: media.referer, headers: media.headers
+            )
+            return URL(string: address)
+        }
         recorder.attach(engine)
         self.engine = engine
         SystemPowerCoordinator.shared.attachEngine(engine)
@@ -123,6 +131,11 @@ public final class AppState {
         player.mirrorFinder = { [weak engine] itemId in
             guard let engine else { return [] }
             return try engine.findMirrors(itemId: itemId)
+        }
+        // Other copies of a film, offered when the one playing is too heavy for the connection.
+        player.versionsFinder = { [weak engine] itemId in
+            guard let engine else { return [] }
+            return try engine.otherVersions(itemId: itemId)
         }
         let healthChecksEnabled = UserDefaults.standard.object(forKey: "healthChecksEnabled") as? Bool ?? true
         if healthChecksEnabled {

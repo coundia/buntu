@@ -7,6 +7,7 @@ pub mod iptv;
 pub mod library;
 pub mod metadata;
 pub mod recorder;
+pub mod relay;
 pub mod search;
 pub mod recommend;
 pub mod sharing;
@@ -108,10 +109,13 @@ pub struct CndEngine {
     recorder: Arc<recorder::PvrManager>,
     library: Arc<library::LibraryManager>,
     active_profile_id: std::sync::atomic::AtomicI64,
+    /// Single-connection relay for films read by mpv, started on first use.
+    stream_relay: std::sync::OnceLock<Arc<relay::StreamRelay>>,
 }
 
 impl CndEngine {
     fn from_db(db: db::DatabaseManager) -> Result<Arc<Self>, CndError> {
+        telemetry::android_log::init_once();
         let initial_settings = db.load_settings()?;
         let settings = Arc::new(RwLock::new(initial_settings));
         let telemetry = Arc::new(TelemetryHub::new());
@@ -159,6 +163,7 @@ impl CndEngine {
             recorder,
             library,
             active_profile_id: std::sync::atomic::AtomicI64::new(1),
+            stream_relay: std::sync::OnceLock::new(),
         }))
     }
 
@@ -1384,6 +1389,51 @@ impl CndEngine {
 
     pub async fn resolve_saga_with_ai(&self, item_id: i64, config: AiProviderConfig) -> Result<Option<SagaInfo>, CndError> {
         self.resolve_saga_with_ai_impl(item_id, config).await
+    }
+
+    /// Other copies of the same film (quality, language, server), for a copy too heavy for the connection.
+    pub fn other_versions(&self, item_id: i64) -> Result<Vec<db::IptvItemRecord>, CndError> {
+        self.other_versions_impl(item_id)
+    }
+
+    // MARK: - Single-connection relay for mpv
+
+    /// A local address that reads `url` through ONE provider connection at a time (mpv opens a second
+    /// one on each seek, which a one-connection subscription refuses with `429`). Returns `url`
+    /// unchanged when the relay cannot start or the address is not plain HTTP(S).
+    pub fn single_connection_url(
+        &self,
+        url: String,
+        user_agent: Option<String>,
+        referer: Option<String>,
+        headers: std::collections::HashMap<String, String>,
+    ) -> String {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            return url;
+        }
+        let relay = match self.stream_relay.get() {
+            Some(r) => Arc::clone(r),
+            None => {
+                let ua = self.settings.read().map(|s| s.default_user_agent.clone()).unwrap_or_default();
+                match relay::StreamRelay::start(ua) {
+                    Ok(r) => Arc::clone(self.stream_relay.get_or_init(|| r)),
+                    Err(e) => {
+                        self.telemetry.warn("PLAYER", format!("Relais local indisponible : {e}"));
+                        return url;
+                    }
+                }
+            }
+        };
+        let mut list: Vec<(String, String)> = headers.into_iter().collect();
+        if let Some(ua) = user_agent.filter(|v| !v.trim().is_empty()) {
+            list.retain(|(k, _)| !k.eq_ignore_ascii_case("user-agent"));
+            list.push(("User-Agent".to_string(), ua));
+        }
+        if let Some(r) = referer.filter(|v| !v.trim().is_empty()) {
+            list.retain(|(k, _)| !k.eq_ignore_ascii_case("referer"));
+            list.push(("Referer".to_string(), r));
+        }
+        relay.register(&url, list)
     }
 
     // MARK: - Recommendations per kind (PRD-34)

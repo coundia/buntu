@@ -1,3 +1,5 @@
+pub mod android_log;
+
 use regex::Regex;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -77,6 +79,13 @@ impl TelemetryHub {
             duration_ms,
             message: safe_message,
         };
+
+        android_log::write_telemetry(
+            level,
+            category,
+            entry.url_redacted.as_deref(),
+            &entry.message,
+        );
 
         if let Ok(mut guard) = self.entries.lock() {
             while guard.len() >= MAX_LOG_ENTRIES {

@@ -28,3 +28,11 @@ async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 futures-util = "0.3"
 tokio-util = { version = "0.7", features = ["io"] }
 
+[profile.android-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+
+

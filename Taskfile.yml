@@ -76,6 +76,41 @@ tasks:
     cmds:
       - ./scripts/run-iphone.sh --list
 
+  run:android:
+    desc: Build, install and launch Buntu on a connected Android phone/tablet/TV/emulator (DEVICE="serial or model" to pick one)
+    aliases: [android:run]
+    cmds:
+      - ./scripts/run-android.sh {{if .DEVICE}}--device "{{.DEVICE}}"{{end}} {{if .REBUILD_CORE}}--rebuild-core{{end}}
+
+  install:android:
+    desc: Build and install Buntu on a connected Android device without launching it (DEVICE="serial or model" to pick one)
+    aliases: [android:install]
+    cmds:
+      - ./scripts/run-android.sh --no-launch {{if .DEVICE}}--device "{{.DEVICE}}"{{end}}
+
+  run:android:release:
+    desc: Same as run:android with an optimized R8 release build
+    aliases: [android:run:release]
+    cmds:
+      - ./scripts/run-android.sh --release {{if .DEVICE}}--device "{{.DEVICE}}"{{end}}
+
+  run:android:tv:
+    desc: Build, install and launch Buntu in Leanback 10-foot TV mode on an Android TV / Google TV device (DEVICE="serial or IP")
+    aliases: [android:tv]
+    cmds:
+      - ./scripts/run-android.sh --tv {{if .DEVICE}}--device "{{.DEVICE}}"{{end}}
+
+  run:android:logs:
+    desc: Build, install, launch and stream Buntu logcat from a connected Android device
+    aliases: [android:logs]
+    cmds:
+      - ./scripts/run-android.sh --logs {{if .DEVICE}}--device "{{.DEVICE}}"{{end}}
+
+  android:devices:
+    desc: List connected Android phones, tablets, TVs and emulators
+    cmds:
+      - ./scripts/run-android.sh --list
+
   bundle:
     desc: Assemble build/CndIPTV.app without launching it
     cmds:
@@ -200,6 +235,33 @@ tasks:
         xcodebuild -scheme CndIPTV-visionOS -configuration Debug
         -destination 'generic/platform=visionOS Simulator'
         -derivedDataPath ../{{.DERIVED_DATA}} CODE_SIGNING_ALLOWED=NO -quiet build
+
+  # ------------------------------------------------------------- android (PRD 37)
+  android:core:
+    desc: Build Rust cnd-core for Android ABIs (arm64-v8a, armeabi-v7a, x86_64) + UniFFI Kotlin bindings
+    cmds:
+      - ./scripts/build-android.sh {{if .FORCE}}--force{{end}}
+
+  android:build:
+    desc: Build Android debug & release APKs (Phone + Android TV)
+    deps: [android:core]
+    dir: android
+    cmds:
+      - ./gradlew assembleDebug assembleRelease
+
+  android:test:
+    desc: Run all Android JVM unit, JNA FFI integration, and SRP module architecture tests
+    deps: [android:core]
+    dir: android
+    cmds:
+      - ./gradlew testDebugUnitTest :core:domain:test lintDebug
+
+  android:bench:
+    desc: Run Macrobenchmark startup & 60 fps scroll suite on a connected Android device
+    deps: [android:core]
+    dir: android
+    cmds:
+      - ./gradlew :benchmark:connectedBenchmarkAndroidTest
 
   # ------------------------------------------------------------ archives (PRD 23)
   # DEVELOPMENT_TEAM=<team id> signs the archive; without it the archive is built unsigned.
