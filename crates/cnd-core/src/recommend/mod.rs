@@ -118,6 +118,34 @@ impl CndEngine {
         Ok(final_list)
     }
 
+    /// The other copies of a film in the sources (another quality, language or server): same IMDb id,
+    /// or same title and year. Used when a copy is too heavy for the connection.
+    pub fn other_versions_impl(&self, item_id: i64) -> Result<Vec<IptvItemRecord>, CndError> {
+        let Some(item) = self.db.get_item_by_id(item_id)? else {
+            return Ok(Vec::new());
+        };
+        if item.kind != "movie" {
+            return Ok(Vec::new());
+        }
+        let key = |i: &IptvItemRecord| (crate::recommend::saga::normalize_root_key(&i.name_clean), i.year);
+        let wanted = key(&item);
+        let imdb = item.imdb_id.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_lowercase);
+        let words: Vec<&str> = item.name_clean.split_whitespace().take(3).collect();
+        let pattern = format!("%{}%", words.join("%"));
+        let mut out: Vec<IptvItemRecord> = self
+            .db
+            .search_movie_candidates_like(&pattern, 60)?
+            .into_iter()
+            .filter(|c| c.id != item.id && c.stable_hash != item.stable_hash && !c.is_broken)
+            .filter(|c| {
+                let same_imdb = imdb.is_some() && c.imdb_id.as_deref().map(|v| v.trim().to_lowercase()) == imdb;
+                same_imdb || key(c) == wanted
+            })
+            .collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
     /// Single next-up recommendation for the end-of-playback card.
     pub fn next_up_impl(&self, item_id: i64) -> Result<Option<Recommendation>, CndError> {
         let recs = self.recommendations_for_impl(item_id, RecommendationContext::Ending, 1)?;
@@ -630,6 +658,27 @@ mod tests {
         .expect("setup items");
 
         CndEngine::from_db(db).expect("engine")
+    }
+
+    #[test]
+    fn other_versions_are_the_same_film_only() {
+        let engine = setup_test_engine();
+        engine
+            .db
+            .with_conn(|conn| {
+                conn.execute(
+                    "INSERT INTO iptv_items (id, source_id, stable_hash, kind, name, name_clean, year, group_title, host, stream_url, created_at, updated_at)
+                     VALUES (50, 1, 'h50', 'movie', 'Inception (2010) 720p', 'Inception', 2010, 'Sci-Fi', 'cdn', 'http://cdn/50.mp4', 1, 1),
+                            (51, 1, 'h51', 'movie', 'Inception (2015)', 'Inception', 2015, 'Sci-Fi', 'cdn', 'http://cdn/51.mp4', 1, 1)",
+                    [],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        let versions = engine.other_versions_impl(20).unwrap();
+        let ids: Vec<i64> = versions.iter().map(|v| v.id).collect();
+        assert_eq!(ids, vec![50], "same title and year only, not the film itself nor another year");
+        assert!(engine.other_versions_impl(31).unwrap().is_empty(), "an episode has no film versions");
     }
 
     #[test]

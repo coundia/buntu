@@ -747,6 +747,11 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_list_sources(void*_Nonnull ptr, R
 RustBuffer uniffi_cnd_core_fn_method_cndengine_next_up(void*_Nonnull ptr, int64_t item_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_OTHER_VERSIONS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_OTHER_VERSIONS
+RustBuffer uniffi_cnd_core_fn_method_cndengine_other_versions(void*_Nonnull ptr, int64_t item_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PARSE_SRT
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PARSE_SRT
 RustBuffer uniffi_cnd_core_fn_method_cndengine_parse_srt(void*_Nonnull ptr, RustBuffer srt_content, RustCallStatus *_Nonnull out_status
@@ -940,6 +945,11 @@ void uniffi_cnd_core_fn_method_cndengine_set_custom_order(void*_Nonnull ptr, int
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SET_RECORDING_DIRECTORY
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SET_RECORDING_DIRECTORY
 void uniffi_cnd_core_fn_method_cndengine_set_recording_directory(void*_Nonnull ptr, RustBuffer dir, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SINGLE_CONNECTION_URL
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SINGLE_CONNECTION_URL
+RustBuffer uniffi_cnd_core_fn_method_cndengine_single_connection_url(void*_Nonnull ptr, RustBuffer url, RustBuffer user_agent, RustBuffer referer, RustBuffer headers, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_START_ALL_DOWNLOADS
@@ -1899,6 +1909,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_next_up(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_OTHER_VERSIONS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_OTHER_VERSIONS
+uint16_t uniffi_cnd_core_checksum_method_cndengine_other_versions(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PARSE_SRT
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PARSE_SRT
 uint16_t uniffi_cnd_core_checksum_method_cndengine_parse_srt(void
@@ -2130,6 +2146,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_set_custom_order(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SET_RECORDING_DIRECTORY
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SET_RECORDING_DIRECTORY
 uint16_t uniffi_cnd_core_checksum_method_cndengine_set_recording_directory(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SINGLE_CONNECTION_URL
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SINGLE_CONNECTION_URL
+uint16_t uniffi_cnd_core_checksum_method_cndengine_single_connection_url(void
     
 );
 #endif

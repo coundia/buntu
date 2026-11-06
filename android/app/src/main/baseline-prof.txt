@@ -1,0 +1,13 @@
+# PRD-37 § 5.1: Baseline Profile rules for AOT pre-compilation of startup, Compose lists & Media3 playback
+HSPLcom/pcoundia/buntu/BuntuApplication;->onCreate()V
+HSPLcom/pcoundia/buntu/MainActivity;->onCreate(Landroid/os/Bundle;)V
+HSPLcom/pcoundia/buntu/ui/MobileShellKt;->**(**)**
+HSPLcom/pcoundia/buntu/ui/TvShellKt;->**(**)**
+HSPLcom/pcoundia/buntu/navigation/BuntuNavHostKt;->**(**)**
+HSPLcom/pcoundia/buntu/core/designsystem/BuntuComponentsKt;->**(**)**
+HSPLcom/pcoundia/buntu/core/designsystem/BuntuMetrics;-><init>(**)**
+HSPLcom/pcoundia/buntu/core/player/ExoPlayerVideoEngine;->**(**)**
+HSPLcom/pcoundia/buntu/core/data/repository/RustCatalogRepository;->**(**)**
+HSPLcom/pcoundia/buntu/feature/live/LiveScreenKt;->**(**)**
+HSPLcom/pcoundia/buntu/feature/movies/MoviesScreenKt;->**(**)**
+

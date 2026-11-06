@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PRD-37 § 8:
+  IPTV providers very commonly serve playlists and MPEG-TS/VOD streams over plain HTTP,
+  and the Rust single-connection VOD relay binds on http://127.0.0.1:<port>.
+  HTTPS sources still validate strictly against system trust anchors.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
+

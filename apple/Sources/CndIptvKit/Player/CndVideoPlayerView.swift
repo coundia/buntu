@@ -197,6 +197,16 @@ public struct CndVideoPlayerView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
+            if let notice = controller.slowSourceNotice {
+                VStack {
+                    SlowSourceBanner(notice: notice, controller: controller)
+                        .padding(.top, 50)
+                        .padding(.horizontal, 16)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             if case .failed(let message) = controller.state {
                 errorOverlay(message)
             } else if controller.state == .loading {
@@ -874,3 +884,45 @@ private struct CinemaCursorHider: NSViewRepresentable {
     }
 }
 #endif
+
+
+/// « Ce film demande 5,9 Mbit/s, la connexion au serveur en donne 2,8 » with what can be done about it.
+struct SlowSourceBanner: View {
+    let notice: SlowSourceNotice
+    let controller: CndPlayerController
+
+    static func message(_ notice: SlowSourceNotice) -> String {
+        let needed = notice.neededMbps.formatted(.number.precision(.fractionLength(1)))
+        let available = notice.availableMbps.formatted(.number.precision(.fractionLength(1)))
+        return "Ce fichier demande \(needed) Mbit/s, la connexion au serveur n'en donne que \(available) : la lecture va s'arrêter souvent."
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(Self.message(notice), systemImage: "speedometer")
+                .font(.callout)
+                .foregroundStyle(.white)
+            HStack(spacing: 8) {
+                if !controller.otherVersions.isEmpty {
+                    Menu("Autre version") {
+                        ForEach(controller.otherVersions, id: \.id) { version in
+                            Button(version.name) { controller.playVersion(version) }
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
+                if controller.downloadHandler != nil, controller.media?.itemId != nil {
+                    Button("Télécharger puis regarder") { controller.downloadInstead() }
+                        .buttonStyle(.borderedProminent)
+                }
+                Button("Continuer") { controller.dismissSlowSourceNotice() }
+                    .buttonStyle(.bordered)
+            }
+            .controlSize(.small)
+        }
+        .padding(12)
+        .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .contain)
+    }
+}

@@ -62,6 +62,10 @@ public struct PlayerTimings: Sendable {
     /// A stream stuck in `.loading` this long is treated as stalled.
     public var loadTimeout: TimeInterval = 15
     public var reconnectBackoff: [TimeInterval] = [1, 2, 4]
+    /// A film or an episode read by mpv: opening a big MKV over a slow single connection (headers, then
+    /// the index at the end) takes long, and reconnecting would only open a new session on the provider.
+    /// (Once playing, a buffer that still receives data never counts as a stall.)
+    public var vodLoadTimeout: TimeInterval = 60
     /// How long a reload may take to show progress before the attempt counts as failed.
     public var recoveryProbe: TimeInterval = 6
     public var progressInterval: TimeInterval = 5
@@ -73,8 +77,10 @@ public struct PlayerTimings: Sendable {
         loadTimeout: TimeInterval = 15,
         reconnectBackoff: [TimeInterval] = [1, 2, 4],
         recoveryProbe: TimeInterval = 6,
-        progressInterval: TimeInterval = 5
+        progressInterval: TimeInterval = 5,
+        vodLoadTimeout: TimeInterval = 60
     ) {
+        self.vodLoadTimeout = vodLoadTimeout
         self.tick = tick
         self.watchdogInterval = watchdogInterval
         self.stallThreshold = stallThreshold
@@ -126,6 +132,16 @@ public final class CndPlayerController {
     public private(set) var availableMirrors: [IptvItemRecord] = []
     /// Non-blocking HUD banner for mirror failover, e.g. « Bascule vers TF1 FHD ».
     public private(set) var failoverBanner: String?
+    /// The film needs more than the connection to the server delivers (shown once per film).
+    public private(set) var slowSourceNotice: SlowSourceNotice?
+    /// Other copies of the film being played, offered with `slowSourceNotice`.
+    public private(set) var otherVersions: [IptvItemRecord] = []
+    /// Finds the other copies of a film (the engine's `otherVersions`).
+    public var versionsFinder: (@Sendable (Int64) async throws -> [IptvItemRecord])?
+    /// « Télécharger puis regarder »: starts the download of what is playing.
+    public var downloadHandler: ((PlayableMedia) -> Void)?
+    @ObservationIgnored private var slowDetector = SlowSourceDetector()
+    @ObservationIgnored private var lastNetworkReadingAt: Date?
     @ObservationIgnored public private(set) var failoverCount = 0
     /// Explains why a stream failed (HTTP status, DNS, timeout…). Set by the app; `nil` skips the check.
     @ObservationIgnored public var streamDiagnoser: (@Sendable (PlayableMedia) async -> StreamDiagnosis)?
@@ -287,6 +303,10 @@ public final class CndPlayerController {
         recentDropouts = []
         availableMirrors = []
         failoverBanner = nil
+        slowSourceNotice = nil
+        otherVersions = []
+        slowDetector.reset()
+        lastNetworkReadingAt = nil
         self.media = media
         self.isFavorite = media.isFavorite
         self.isBroken = media.isBroken
@@ -643,6 +663,7 @@ public final class CndPlayerController {
 
         if now.timeIntervalSince(lastWatchdogCheck) >= timings.watchdogInterval {
             lastWatchdogCheck = now
+            evaluateNetwork(now: now)
             evaluateStall(now: now)
         }
 
@@ -652,17 +673,67 @@ public final class CndPlayerController {
         }
     }
 
+    /// A film read by mpv: whether data is still arriving, and whether the file is too heavy for the connection.
+    private var isVodOnMpv: Bool { !isLive && activeEngine == .mpv }
+
+    private func evaluateNetwork(now: Date) {
+        guard isVodOnMpv, let backend else { return }
+        let reading = backend.networkReading()
+        let interval = lastNetworkReadingAt.map { now.timeIntervalSince($0) } ?? timings.watchdogInterval
+        lastNetworkReadingAt = now
+        // Data still arrives: the picture waits for the buffer, the stream is alive.
+        if let reading, reading.isDownloading, reading.downloadBytesPerSecond > 0, state == .buffering || state == .loading {
+            lastAdvanceAt = now
+        }
+        let buffering = state == .buffering || state == .loading
+        if let notice = slowDetector.add(reading, isBuffering: buffering, interval: interval) {
+            slowSourceNotice = notice
+            AppLog.shared.warn("PLAYER", String(
+                format: "Débit insuffisant : le fichier demande %.1f Mbit/s, la connexion au serveur en donne %.1f",
+                notice.neededMbps, notice.availableMbps
+            ))
+            if let itemId = media?.itemId, let versionsFinder {
+                Task { @MainActor [weak self] in
+                    let versions = (try? await versionsFinder(itemId)) ?? []
+                    self?.otherVersions = versions
+                }
+            }
+        }
+    }
+
     private func evaluateStall(now: Date) {
         guard recoveryTask == nil else { return }
         let idle = now.timeIntervalSince(lastAdvanceAt)
+        let stallLimit = timings.stallThreshold
+        let loadLimit = isVodOnMpv ? timings.vodLoadTimeout : timings.loadTimeout
         switch state {
         case .playing, .buffering:
-            if idle >= timings.stallThreshold { beginRecovery() }
+            if idle >= stallLimit { beginRecovery() }
         case .loading:
-            if idle >= timings.loadTimeout { beginRecovery() }
+            if idle >= loadLimit { beginRecovery() }
         default:
             break
         }
+    }
+
+    // MARK: Slow source: another copy, or download first
+
+    public func dismissSlowSourceNotice() { slowSourceNotice = nil }
+
+    /// Plays another copy of the film from the same position.
+    public func playVersion(_ item: IptvItemRecord) {
+        let resume = positionMs
+        guard let version = PlayableMedia(item: item, startPositionMs: resume) else { return }
+        AppLog.shared.info("PLAYER", "Autre version : « \(item.name) »")
+        open(version)
+    }
+
+    /// Stops playback and downloads the film (one connection): it then plays from the device.
+    public func downloadInstead() {
+        guard let media, let downloadHandler else { return }
+        slowSourceNotice = nil
+        close()
+        downloadHandler(media)
     }
 
     // MARK: Reconnection (NWPathMonitor + backoff 1s, 2s, 4s)
