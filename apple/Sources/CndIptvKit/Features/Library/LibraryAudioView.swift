@@ -1,3 +1,4 @@
+#if !os(tvOS)
 import SwiftUI
 import CndCoreBridge
 
@@ -331,4 +332,4 @@ public struct LibraryAudioView: View {
         return nil
     }
 }
-
+#endif

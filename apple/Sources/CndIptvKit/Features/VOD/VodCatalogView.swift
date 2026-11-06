@@ -214,12 +214,13 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
     }
 }
 
-/// Shared poster artwork: 2:3 frame, rating badge, resume bar and favorite star.
+/// Shared poster artwork: 2:3 frame, rating badge, broken indicator, resume bar and favorite star.
 struct PosterArtwork: View {
     let posterUrl: String?
     let rating: Double?
     let progress: Double?
     let isFavorite: Bool
+    var isBroken: Bool = false
     var placeholder = "film"
     var onToggleFavorite: () -> Void
 
@@ -235,14 +236,19 @@ struct PosterArtwork: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(alignment: .topLeading) {
-                if let rating, rating > 0 {
-                    Text(String(format: "★ %.1f", rating))
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 6).padding(.vertical, 3)
-                        .background(.black.opacity(0.7), in: Capsule())
-                        .foregroundStyle(.yellow)
-                        .padding(6)
+                HStack(spacing: 4) {
+                    if let rating, rating > 0 {
+                        Text(String(format: "★ %.1f", rating))
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(.black.opacity(0.7), in: Capsule())
+                            .foregroundStyle(.yellow)
+                    }
+                    if isBroken {
+                        BrokenBadge(style: .poster)
+                    }
                 }
+                .padding(6)
             }
             .overlay(alignment: .topTrailing) {
                 Button(action: onToggleFavorite) {

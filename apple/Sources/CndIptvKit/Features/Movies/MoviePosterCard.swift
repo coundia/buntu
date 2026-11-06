@@ -23,7 +23,7 @@ struct MovieActionsMenu: View {
         Button(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
                systemImage: item.isFavorite ? "star.slash" : "star", action: onToggleFavorite)
         if let onToggleBroken {
-            Button(item.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel",
+            Button(item.isBroken ? "Rétablir le flux" : "Signaler en panne",
                    systemImage: item.isBroken ? "checkmark.circle" : "exclamationmark.triangle",
                    action: onToggleBroken)
         }
@@ -85,17 +85,10 @@ struct MoviePosterCard: View {
         VStack(alignment: .leading, spacing: 6) {
             PosterArtwork(
                 posterUrl: item.logoUrl, rating: item.imdbRating, progress: progress,
-                isFavorite: item.isFavorite, onToggleFavorite: onToggleFavorite
+                isFavorite: item.isFavorite, isBroken: item.isBroken, onToggleFavorite: onToggleFavorite
             )
             .hoverLift()
             Text(displayTitle).font(.subheadline.weight(.semibold)).lineLimit(2)
-            if item.isBroken {
-                Label("En panne", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 4).padding(.vertical, 1)
-                    .background(Color.red.opacity(0.2), in: RoundedRectangle(cornerRadius: 3))
-                    .foregroundStyle(Color.red)
-            }
             if let year = item.year {
                 Text(String(year)).font(.caption).foregroundStyle(.secondary)
             }
@@ -109,11 +102,11 @@ struct MoviePosterCard: View {
                 .background(.quaternary)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 3) {
-                Text(displayTitle).font(.body.weight(.semibold)).lineLimit(1)
-                if item.isBroken {
-                    Label("En panne", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.red)
+                HStack(spacing: 6) {
+                    Text(displayTitle).font(.body.weight(.semibold)).lineLimit(1)
+                    if item.isBroken {
+                        BrokenBadge(style: .compact)
+                    }
                 }
                 HStack(spacing: 6) {
                     if let year = item.year { Text(String(year)) }
