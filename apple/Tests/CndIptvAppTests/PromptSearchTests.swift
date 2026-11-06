@@ -473,3 +473,108 @@ final class SearchScopeTests: XCTestCase {
         XCTAssertNil(model.searchResponse)
     }
 }
+
+/// The palette lets the user change the AI without leaving it.
+@MainActor
+final class ProviderSwitchTests: XCTestCase {
+    private var backend: FakeSearchBackend!
+    private var settings: AiProviderSettings!
+    private var model: AssistantModel!
+    private var defaults: UserDefaults!
+    private var suite = ""
+    private var settingsOpened = 0
+    private var dismissals = 0
+
+    override func setUp() async throws {
+        suite = "cnd.switch.tests.\(UUID())"
+        defaults = UserDefaults(suiteName: suite)
+        backend = FakeSearchBackend()
+        settings = AiProviderSettings(
+            defaults: defaults, keychain: KeychainStore(service: "com.cnd.iptv.tests.switch.\(UUID().uuidString)"), bundledKeys: DefaultApiKeys()
+        )
+        settings.choice = .gemini
+        settings.apiKey = "gemini-key"
+        settings.consent = true
+        model = AssistantModel(
+            backend: backend, settings: settings, defaults: defaults,
+            suggestionDelay: .milliseconds(10), autoSearchDelay: .milliseconds(30)
+        )
+        settingsOpened = 0
+        dismissals = 0
+        model.onOpenSettings = { [unowned self] in settingsOpened += 1 }
+        model.onDismiss = { [unowned self] in dismissals += 1 }
+        backend.aiResult = .success(SearchResponse(
+            command: nil, hits: [makeHit(.movie, name: "AI result")], missingTitles: [], reply: "Gemini", resolvedBy: "gemini", latencyMs: 1, fallbackReason: nil
+        ))
+    }
+
+    override func tearDown() async throws {
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testTheMenuOffersEveryProviderButNotTheOffSwitch() {
+        let offered = AssistantModel.selectableProviders
+        XCTAssertTrue(offered.contains(.localOnly) && offered.contains(.gemini) && offered.contains(.anthropic) && offered.contains(.openAiCompatible))
+        XCTAssertFalse(offered.contains(.disabled), "turning the assistant off stays in Réglages")
+    }
+
+    func testSwitchingToLocalStopsSendingAndDropsTheOldProvidersAnswer() async {
+        model.input = "un film avec Tom Cruise"
+        _ = await eventually { self.model.searchResponse?.resolvedBy == "gemini" }
+        XCTAssertEqual(backend.aiTexts.count, 1)
+
+        model.select(provider: .localOnly)
+        XCTAssertEqual(settings.choice, .localOnly)
+        XCTAssertNil(model.searchResponse, "what Gemini refined is dropped")
+        try? await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(backend.aiTexts.count, 1, "local mode sends nothing")
+    }
+
+    func testSwitchingBackToAReadyProviderRefinesAgainWithoutRetyping() async {
+        model.input = "un film avec Tom Cruise"
+        _ = await eventually { self.model.searchResponse != nil }
+        model.select(provider: .localOnly)
+        model.select(provider: .gemini)
+        let again = await eventually { self.backend.aiTexts.count == 2 }
+        XCTAssertTrue(again, "the same text is sent to the provider that was just chosen: \(backend.aiTexts)")
+    }
+
+    func testChoosingAProviderThatIsNotSetUpSendsNothingAndSaysWhy() async {
+        model.input = "un film avec Tom Cruise"
+        _ = await eventually { self.model.searchResponse != nil }
+        model.select(provider: .anthropic) // no key, no consent for this one
+        XCTAssertFalse(settings.isRemoteReady)
+        XCTAssertNotNil(settings.blocker)
+        try? await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(backend.aiTexts.count, 1)
+    }
+
+    func testChoosingTheSameProviderDoesNothing() async {
+        model.input = "un film avec Tom Cruise"
+        _ = await eventually { self.model.searchResponse != nil }
+        let before = backend.localTexts.count
+        model.select(provider: .gemini)
+        try? await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(backend.localTexts.count, before)
+        XCTAssertNotNil(model.searchResponse)
+    }
+
+    func testGrantingConsentFromThePaletteWorksRightAway() async {
+        settings.consent = false
+        model.input = "un film avec Tom Cruise"
+        _ = await eventually { !self.model.liveHits.isEmpty || true }
+        try? await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(backend.aiTexts.count, 0)
+        settings.consent = true
+        model.providerDidChange()
+        let sent = await eventually { self.backend.aiTexts.count == 1 }
+        XCTAssertTrue(sent)
+    }
+
+    func testTheSettingsShortcutClosesThePaletteAndOpensRéglages() {
+        model.onDismiss()
+        model.onOpenSettings()
+        XCTAssertEqual(dismissals, 1)
+        XCTAssertEqual(settingsOpened, 1)
+    }
+}
