@@ -11,6 +11,7 @@ struct CommandPaletteView: View {
             inputRow
             Divider()
             content
+            inactiveProviderNote
             Divider()
             footer
         }
@@ -156,7 +157,7 @@ struct CommandPaletteView: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
-            } else if model.isResolving {
+            } else if model.isResolving || model.isRefining {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
                     Text("Résultats locaux · l'assistant affine…").font(.caption).foregroundStyle(.secondary)
@@ -164,7 +165,7 @@ struct CommandPaletteView: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, response == nil && !model.isResolving ? 0 : 10)
+        .padding(.vertical, response == nil && !model.isResolving && !model.isRefining ? 0 : 10)
     }
 
     private func hitRow(_ hit: SearchHit) -> some View {
@@ -278,6 +279,29 @@ struct CommandPaletteView: View {
     }
 
     // MARK: Footer
+
+    /// A provider is chosen but not used: say why, and offer the one click that fixes the usual cause.
+    @ViewBuilder
+    private var inactiveProviderNote: some View {
+        if model.settings.choice.isRemote, let blocker = model.settings.blocker {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text("\(model.settings.choice.title) n'est pas utilisé : \(blocker)")
+                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if model.settings.needsConsentOnly {
+                    Button("Autoriser") { model.settings.consent = true }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .accessibilityHint("Autorise l'envoi de vos recherches à \(model.settings.choice.title)")
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Color.orange.opacity(0.12))
+        }
+    }
 
     private var footer: some View {
         HStack(spacing: 8) {
