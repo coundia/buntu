@@ -281,3 +281,4 @@ pub fn parse_xmltv_chunk(xml_content: &str, cutoff_ts: i64) -> Result<Vec<Parsed
 
     Ok(programmes)
 }
+

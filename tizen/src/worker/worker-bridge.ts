@@ -98,3 +98,4 @@ export class WorkerBridge {
     return this.post('PARSE_SAGA_TITLE', { title, year });
   }
 }
+

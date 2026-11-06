@@ -69,3 +69,4 @@ pub fn user_prompt(command: &str, playing: Option<&str>, candidates: &[AiCandida
     }
     out
 }
+

@@ -94,3 +94,4 @@ export const SettingsView: Component = () => {
     </div>
   );
 };
+

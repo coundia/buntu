@@ -99,3 +99,4 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     </div>
   );
 };
+

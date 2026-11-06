@@ -101,3 +101,4 @@ export const OnboardingView: Component<OnboardingProps> = (props) => {
     </div>
   );
 };
+
