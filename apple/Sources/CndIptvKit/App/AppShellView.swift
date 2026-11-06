@@ -942,6 +942,10 @@ private struct LoadedShellView: View {
             return
         }
         player.open(media)
+        if item.kind == "live" {
+            let rev = state.catalogRevision
+            Task { await state.forYou.live.reload(revision: rev) }
+        }
     }
 
     /// "Revoir depuis le début": the programme on air, played from its start through the provider's archive.
@@ -1126,8 +1130,30 @@ private struct LoadedShellView: View {
                 detailsPanel(route)
             } else if hasMedia {
                 dockedInfo
-                // No recommendations while a live channel plays (a live stream has no "next").
-                if !player.isLive && state.upNext.isUpNextShelfEnabled && !state.upNext.recommendations.isEmpty {
+                if player.isLive {
+                    Divider()
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            LivePlayerForYouView(
+                                model: state.forYou.live,
+                                playingURL: player.media?.url.absoluteString,
+                                onPlay: { item in play(item) },
+                                onRefreshGuide: { Task { await sourcesModel.syncAll(state.sources) } }
+                            )
+                            if state.upNext.isUpNextShelfEnabled && !state.upNext.recommendations.isEmpty {
+                                UpNextShelf(
+                                    model: state.upNext,
+                                    orientation: .vertical,
+                                    onSelect: { [weak state] playable in
+                                        state?.player.open(playable)
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                    }
+                } else if state.upNext.isUpNextShelfEnabled && !state.upNext.recommendations.isEmpty {
                     Divider()
                     ScrollView {
                         UpNextShelf(

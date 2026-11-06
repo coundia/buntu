@@ -1,3 +1,4 @@
+#if !os(tvOS)
 import Foundation
 
 #if canImport(AppKit)
@@ -83,4 +84,4 @@ public enum FolderAccess {
         return exists && isDir.boolValue
     }
 }
-
+#endif

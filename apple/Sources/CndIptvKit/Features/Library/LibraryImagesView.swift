@@ -1,3 +1,4 @@
+#if !os(tvOS)
 import SwiftUI
 import CndCoreBridge
 
@@ -429,3 +430,4 @@ struct ImageInfoSheet: View {
         }
     }
 }
+#endif

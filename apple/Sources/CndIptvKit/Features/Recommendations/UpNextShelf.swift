@@ -113,8 +113,9 @@ public struct UpNextShelf: View {
 
     @ViewBuilder
     private func verticalRow(rec: Recommendation) -> some View {
+        let isLive = rec.item.kind == "live"
         HStack(spacing: 10) {
-            posterImage(url: rec.item.logoUrl, width: 50, height: 75)
+            posterImage(url: rec.item.logoUrl, width: 50, height: isLive ? 50 : 75, isLive: isLive)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -123,9 +124,9 @@ public struct UpNextShelf: View {
                         .foregroundStyle(reasonColor(rec.reasonKind))
                         .lineLimit(1)
 
-                    if rec.alreadyWatched {
+                    if rec.alreadyWatched && !isLive {
                         Text("Déjà vu")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 9, weight: .bold)) // lint:ui-ignore compact badge
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
@@ -143,6 +144,11 @@ public struct UpNextShelf: View {
                     Text(String(year))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                } else if isLive, let group = rec.item.groupTitle, !group.isEmpty {
+                    Text(group)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
@@ -153,13 +159,14 @@ public struct UpNextShelf: View {
 
     @ViewBuilder
     private func horizontalCard(rec: Recommendation) -> some View {
+        let isLive = rec.item.kind == "live"
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .topTrailing) {
-                posterImage(url: rec.item.logoUrl, width: 130, height: 190)
+                posterImage(url: rec.item.logoUrl, width: 130, height: isLive ? 86 : 190, isLive: isLive)
 
-                if rec.alreadyWatched {
+                if rec.alreadyWatched && !isLive {
                     Text("Déjà vu")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 9, weight: .bold)) // lint:ui-ignore compact badge
                         .foregroundStyle(.white)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -177,40 +184,40 @@ public struct UpNextShelf: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
-                .frame(width: 130, alignment: .leading)
+                .frame(width: 130, alignment: .leading) // lint:ui-ignore shelf card width
         }
-        .frame(width: 130)
+        .frame(width: 130) // lint:ui-ignore shelf card width
     }
 
     @ViewBuilder
-    private func posterImage(url: String?, width: CGFloat, height: CGFloat) -> some View {
+    private func posterImage(url: String?, width: CGFloat, height: CGFloat, isLive: Bool = false) -> some View {
         if let urlStr = url, let u = URL(string: urlStr) {
             AsyncImage(url: u) { phase in
                 switch phase {
                 case .success(let img):
                     img
                         .resizable()
-                        .aspectRatio(contentMode: .fill)
+                        .aspectRatio(contentMode: isLive ? .fit : .fill)
                 default:
-                    posterPlaceholder(width: width, height: height)
+                    posterPlaceholder(width: width, height: height, isLive: isLive)
                 }
             }
-            .frame(width: width, height: height)
+            .frame(width: width, height: height) // lint:ui-ignore custom thumb frame
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         } else {
-            posterPlaceholder(width: width, height: height)
+            posterPlaceholder(width: width, height: height, isLive: isLive)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
 
-    private func posterPlaceholder(width: CGFloat, height: CGFloat) -> some View {
+    private func posterPlaceholder(width: CGFloat, height: CGFloat, isLive: Bool = false) -> some View {
         ZStack {
             Color.secondary.opacity(0.12)
-            Image(systemName: "film")
+            Image(systemName: isLive ? "tv" : "film")
                 .font(.title3)
                 .foregroundStyle(.secondary)
         }
-        .frame(width: width, height: height)
+        .frame(width: width, height: height) // lint:ui-ignore custom thumb frame
     }
 
     private func reasonColor(_ kind: RecommendationReasonKind) -> Color {

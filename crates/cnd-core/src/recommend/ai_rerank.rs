@@ -433,13 +433,7 @@ impl CndEngine {
             return Err("plafond quotidien d'appels atteint".into());
         }
 
-        let ids: Vec<(String, &Cand)> = input
-            .cands
-            .iter()
-            .enumerate()
-            .map(|(i, c)| (format!("{}{}", id_prefix(kind), i + 1), c))
-            .collect();
-        let index_of: HashMap<String, usize> = ids.iter().enumerate().map(|(i, (id, _))| (id.clone(), i)).collect();
+        let (ids, index_of) = number_candidates(kind, &input.cands);
         let recent = if send_recent_titles { input.recent.clone() } else { Vec::new() };
         let system = system_prompt(kind, locale);
         let user = user_prompt(kind, &input.taste, &recent, &ids, &now_local(now, utc_offset_minutes));
@@ -457,6 +451,151 @@ impl CndEngine {
             let _ = self.db.save_reco_ai_cache(kind_key(kind), &provider_key, &hash, &json, ttl);
         }
         shelves[target] = merge_shelf(&ctx, kind, &shelves[target], &input.cands, &validated, &label, lang);
+        dedupe_other_shelves(shelves, target);
+        Ok(())
+    }
+}
+
+/// The opaque ids the model sees (`m1`, `s1`, `t1`…) and the way back to the position in the list.
+fn number_candidates(kind: RecoKind, cands: &[Cand]) -> (Vec<(String, &Cand)>, HashMap<String, usize>) {
+    let ids: Vec<(String, &Cand)> = cands.iter().enumerate().map(|(i, c)| (format!("{}{}", id_prefix(kind), i + 1), c)).collect();
+    let index_of = ids.iter().enumerate().map(|(i, (id, _))| (id.clone(), i)).collect();
+    (ids, index_of)
+}
+
+// ------------------------------------------------------------------ the model of Apple (lot 34.5)
+//
+// The on-device model is called from Swift (the framework only exists there), so the re-rank is split
+// in two calls and nothing is kept between them: `prepare` builds the prompt, Swift asks the model,
+// `finish` rebuilds the same candidates, checks they did not change, and validates the answer with the
+// very same code as the other providers.
+
+/// Candidates sent to the model of Apple: its context is small (about 4 000 tokens).
+pub const APPLE_MAX_CANDIDATES: usize = 30;
+/// Recent titles sent to it (they never leave the device).
+const APPLE_RECENT_TITLES: usize = 5;
+const APPLE_PROVIDER_KEY: &str = "Apple:on-device";
+/// What the ✨ of the shelf says.
+pub const APPLE_LABEL: &str = "Modèle d'Apple";
+
+/// What Swift needs to ask the model, and what `finish` needs to check the answer.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct AppleRerankRequest {
+    pub kind: RecoKind,
+    pub system: String,
+    pub user: String,
+    /// The moment the candidates were computed: `finish` computes them again at that moment.
+    pub now: i64,
+    /// Hash of the candidates sent; an answer is refused if they are not the same any more.
+    pub candidates_hash: String,
+    pub limit_per_shelf: u32,
+    pub locale: String,
+    pub utc_offset_minutes: i32,
+}
+
+/// The first step of a re-rank by the model of Apple.
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum AppleRerankStart {
+    /// Nothing to ask: Kids profile, too few candidates, nothing to re-rank.
+    Skip,
+    /// An earlier answer for these very candidates: the shelves are already re-ranked.
+    Cached { shelves: Vec<RecoShelf> },
+    /// Ask the model this, then give its text to `finish_apple_rerank`.
+    Ask { request: AppleRerankRequest },
+}
+
+impl CndEngine {
+    pub fn prepare_apple_rerank_impl(&self, kind: RecoKind, limit_per_shelf: u32, locale: String, utc_offset_minutes: i32) -> Result<AppleRerankStart, CndError> {
+        self.prepare_apple_rerank_at(kind, limit_per_shelf, locale, utc_offset_minutes, crate::db::chrono_now_ts())
+    }
+
+    pub(crate) fn prepare_apple_rerank_at(
+        &self,
+        kind: RecoKind,
+        limit_per_shelf: u32,
+        locale: String,
+        utc_offset_minutes: i32,
+        now: i64,
+    ) -> Result<AppleRerankStart, CndError> {
+        Ok(match self.apple_prepare(kind, limit_per_shelf, &locale, utc_offset_minutes, now) {
+            Ok(start) => start,
+            Err(reason) => {
+                self.telemetry.info("RECO", format!("Affinage Apple ({}) ignoré : {reason}", kind_key(kind)));
+                AppleRerankStart::Skip
+            }
+        })
+    }
+
+    fn apple_prepare(&self, kind: RecoKind, limit_per_shelf: u32, locale: &str, utc_offset_minutes: i32, now: i64) -> Result<AppleRerankStart, String> {
+        if self.db.is_kids_only() {
+            return Err("profil Enfants".into());
+        }
+        let mut shelves = self.recommendation_shelves_at(kind, limit_per_shelf, utc_offset_minutes, now).map_err(|e| e.to_string())?;
+        let target = target_shelf(kind, &shelves).ok_or("rien à affiner")?;
+        let ctx = Ctx::new_at(self, limit_per_shelf, utc_offset_minutes, now).map_err(|e| e.to_string())?;
+        let mut input = build_input(&ctx, kind).map_err(|e| e.to_string())?;
+        input.cands.truncate(APPLE_MAX_CANDIDATES);
+        if input.cands.len() < 3 {
+            return Err("trop peu de candidats".into());
+        }
+        let hash = candidates_hash(&input.cands);
+        let lang = Lang::from_locale(locale);
+
+        if let Ok(Some(cached)) = self.db.load_reco_ai_cache(kind_key(kind), APPLE_PROVIDER_KEY, &hash, now) {
+            if let Ok(v) = serde_json::from_str::<CachedPicks>(&cached) {
+                shelves[target] = merge_shelf(&ctx, kind, &shelves[target], &input.cands, &v.into_validated(), APPLE_LABEL, lang);
+                dedupe_other_shelves(&mut shelves, target);
+                return Ok(AppleRerankStart::Cached { shelves });
+            }
+        }
+
+        let (ids, _) = number_candidates(kind, &input.cands);
+        let recent: Vec<String> = input.recent.iter().take(APPLE_RECENT_TITLES).cloned().collect();
+        Ok(AppleRerankStart::Ask {
+            request: AppleRerankRequest {
+                kind,
+                system: system_prompt(kind, locale),
+                user: user_prompt(kind, &input.taste, &recent, &ids, &now_local(now, utc_offset_minutes)),
+                now,
+                candidates_hash: hash,
+                limit_per_shelf,
+                locale: locale.to_string(),
+                utc_offset_minutes,
+            },
+        })
+    }
+
+    /// Validates what the model of Apple answered and returns the shelves, re-ranked when the answer is
+    /// good and the local shelves otherwise (never an error because of the model).
+    pub fn finish_apple_rerank_impl(&self, request: AppleRerankRequest, answer: String) -> Result<Vec<RecoShelf>, CndError> {
+        let mut shelves = self.recommendation_shelves_at(request.kind, request.limit_per_shelf, request.utc_offset_minutes, request.now)?;
+        if let Err(reason) = self.apple_finish(&request, &answer, &mut shelves) {
+            self.telemetry.info("RECO", format!("Affinage Apple ({}) ignoré : {reason}", kind_key(request.kind)));
+        }
+        Ok(shelves)
+    }
+
+    fn apple_finish(&self, request: &AppleRerankRequest, answer: &str, shelves: &mut [RecoShelf]) -> Result<(), String> {
+        let kind = request.kind;
+        if self.db.is_kids_only() {
+            return Err("profil Enfants".into());
+        }
+        let target = target_shelf(kind, shelves).ok_or("rien à affiner")?;
+        let ctx = Ctx::new_at(self, request.limit_per_shelf, request.utc_offset_minutes, request.now).map_err(|e| e.to_string())?;
+        let mut input = build_input(&ctx, kind).map_err(|e| e.to_string())?;
+        input.cands.truncate(APPLE_MAX_CANDIDATES);
+        if candidates_hash(&input.cands) != request.candidates_hash {
+            return Err("les candidats ont changé pendant la réponse".into());
+        }
+        let (_, index_of) = number_candidates(kind, &input.cands);
+        let validated = validate_answer(answer, kind, &index_of)?;
+
+        let ttl = if kind == RecoKind::Live { 1_800 - request.now.rem_euclid(1_800) } else { TTL_VOD_SECS };
+        if let Ok(json) = serde_json::to_string(&CachedPicks::from_validated(&validated, &input.cands)) {
+            let _ = self.db.save_reco_ai_cache(kind_key(kind), APPLE_PROVIDER_KEY, &request.candidates_hash, &json, ttl);
+        }
+        let lang = Lang::from_locale(&request.locale);
+        shelves[target] = merge_shelf(&ctx, kind, &shelves[target], &input.cands, &validated, APPLE_LABEL, lang);
         dedupe_other_shelves(shelves, target);
         Ok(())
     }

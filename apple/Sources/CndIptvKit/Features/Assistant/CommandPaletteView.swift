@@ -75,7 +75,9 @@ struct CommandPaletteView: View {
                     .background(.quaternary, in: Circle())
             }
             .buttonStyle(.plain)
+            #if !os(tvOS)
             .keyboardShortcut(.cancelAction)
+            #endif
             .accessibilityLabel("Fermer l'assistant")
             .help("Fermer (échap)")
         }

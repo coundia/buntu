@@ -1,3 +1,4 @@
+#if !os(tvOS)
 import SwiftUI
 import CndCoreBridge
 
@@ -544,4 +545,4 @@ struct VideoInfoSheet: View {
         }
     }
 }
-
+#endif

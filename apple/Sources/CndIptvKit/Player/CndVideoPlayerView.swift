@@ -299,7 +299,7 @@ public struct CndVideoPlayerView: View {
                 onZap(-1)
                 showHUD()
             case .down:
-                if !controller.isLive, let upNext, upNext.isUpNextShelfEnabled, !upNext.recommendations.isEmpty {
+                if let upNext, upNext.isUpNextShelfEnabled, !upNext.recommendations.isEmpty {
                     withAnimation { showShelf = true }
                     showHUD()
                     return
@@ -459,15 +459,15 @@ public struct CndVideoPlayerView: View {
                 .foregroundStyle(controller.isBroken ? Color.red : Color.white)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(controller.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel")
-        .help(controller.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel")
+        .accessibilityLabel(controller.isBroken ? "Rétablir le flux" : "Signaler en panne")
+        .help(controller.isBroken ? "Signalé en panne — cliquer pour rétablir" : "Signaler en panne")
     }
 
     @ViewBuilder
     private func shelfOverlay(_ upNext: UpNextModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("À suivre")
+                Text(controller.isLive ? "En direct · Pour vous" : "À suivre")
                     .font(.headline)
                     .foregroundStyle(.white)
                 Spacer()

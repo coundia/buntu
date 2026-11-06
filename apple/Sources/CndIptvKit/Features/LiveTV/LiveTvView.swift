@@ -185,13 +185,15 @@ struct LiveTvView: View {
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     if model.showsSections {
-                        if let forYou {
+                        horizontalSection("Récemment consultés", icon: "clock", items: model.recents)
+                        horizontalSection("Favoris", icon: "star.fill", items: model.favorites)
+                        #if !os(macOS)
+                        if playingURL == nil, let forYou {
                             ForYouShelves(model: forYou, onRefreshGuide: onRefreshGuide) { recoCard in
                                 recommendedChannel(recoCard, forYou: forYou)
                             }
                         }
-                        horizontalSection("Récemment consultés", icon: "clock", items: model.recents)
-                        horizontalSection("Favoris", icon: "star.fill", items: model.favorites)
+                        #endif
                         if !model.recents.isEmpty || !model.favorites.isEmpty {
                             Text("Toutes les chaînes").font(.title3.bold())
                         }

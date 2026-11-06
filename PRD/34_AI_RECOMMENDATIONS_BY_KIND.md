@@ -198,7 +198,7 @@ Le fournisseur des recommandations est **le fournisseur actif de l'assistant** p
 - `RecoCard { item: Option<IptvItemRecord>, series: Option<SeriesRecord>, program: Option<EpgProgram>, next_episode: Option<IptvItemRecord>, reason_text, ai_reason: bool }` : un seul des trois premiers champs est rempli, selon le `kind` de la rangée.
 - `less_like_this(kind, stable_hash)`, `reset_taste(kind)`.
 - `recommendations_for(item_id, context, limit)` du `PRD-27` est conservé ; il renvoie désormais des séries pour un épisode (hors épisodes de la série en cours) et garantit le type du contenu en cours.
-- Lot 34.5 : `rerank_prompt(kind) -> String` et `validate_rerank_answer(kind, json) -> Vec<RecoShelf>` pour que le modèle d'Apple, appelé en Swift, passe par la même validation.
+- Lot 34.5 : `prepare_apple_rerank(kind, limit_per_shelf, locale, utc_offset_minutes) -> AppleRerankStart` et `finish_apple_rerank(request, answer) -> Vec<RecoShelf>`, pour que le modèle d'Apple, appelé en Swift, passe par la même validation. `AppleRerankStart` vaut `Skip` (profil Enfants, trop peu de candidats), `Cached { shelves }` (réponse déjà gardée pour ces candidats) ou `Ask { request }` (le prompt à donner au modèle). Aucun état n'est gardé entre les deux appels : `finish` recalcule les mêmes candidats à l'instant `now` de la requête et refuse la réponse si leur empreinte a changé. C'est une variante plus simple que les deux fonctions `rerank_prompt` / `validate_rerank_answer` du premier texte, qui auraient demandé de garder la table des identifiants entre deux appels.
 
 ---
 
@@ -320,21 +320,22 @@ Chaque lot est livrable et validable seul. Ordre conseillé : 34.1 → 34.3 → 
 
 ## 16. Statut d'Implémentation & Validation
 
-**Partiel : lots 34.1 à 34.4 côté Rust et Swift ; lot 34.5 non fait.**
+**Implémenté : lots 34.1 à 34.5 côté Rust et Swift.**
 
-- **Fait (Rust, 306 tests au vert, clippy sans avertissement) :**
+- **Fait (Rust, 313 tests au vert, clippy sans avertissement) :**
   - goûts par type, calculés à la demande, sans la table `taste_profile` ;
   - rangées Films, Séries et TV : `recommend/{taste,movies,series,live,shelves}.rs` ;
   - affinage par l'IA : `recommend/ai_rerank.rs`, avec `Task::Recommend` pour Gemini, compatible OpenAI (Ollama, LM Studio) et Claude ;
+  - lot 34.5 (modèle d'Apple sur l'appareil) : `prepare_apple_rerank` et `finish_apple_rerank` dans `recommend/ai_rerank.rs`, validés par le même code Rust ;
   - validation, cache `reco_ai_cache`, plafond de 30 appels par jour pour un fournisseur distant, aucun appel pour le profil Enfants ;
   - « Moins de ce genre » et réinitialisation des goûts ;
-  - jeu d'évaluation `recommend/eval.rs` : 0 carte d'un autre type, bon épisode suivant, EPG périmé, réponses IA piégées ;
-  - SLA mesuré sur 50 000 films, 3 000 séries et 5 000 chaînes : Films ≈ 28 ms, Séries ≈ 4 ms, TV ≈ 36 ms.
-- **Fait (Swift) :** `ForYouModel`, `ForYouShelves` (verrou de type, ✨, bannière « Actualiser le guide »), rangées dans Films, Séries et Live TV, section de Réglages. Le paquet Swift compile.
+  - jeu d'évaluation `recommend/eval.rs` : 0 carte d'un autre type, bon épisode suivant, EPG périmé, réponses IA piégées (fournisseur HTTP et modèle d'Apple) ;
+  - SLA mesuré sur 50 000 films, 3 000 séries et 5 000 chaînes : Films ≈ 26 ms, Séries ≈ 4 ms, TV ≈ 35 ms.
+- **Fait (Swift, 42 tests dans `ForYouModelTests` au vert, 4 schémas Xcode compilent) :** `ForYouModel`, `ForYouShelves` (verrou de type, ✨, bannière « Actualiser le guide »), `AppleOnDeviceReranker` (Foundation Models sur macOS / iOS / visionOS 26+), rangées dans Films, Séries et Live TV, section de Réglages.
 - **Écarts avec le texte du PRD :**
   - pas de table `taste_profile` ni de colonne `kind` sur `recommendation_dismissals` ;
-  - le fournisseur des recommandations est celui de l'assistant (pas de choix séparé) ;
+  - le fournisseur des recommandations est celui de l'assistant (ou le modèle d'Apple sur l'appareil, sans autre sélecteur séparé) ;
   - la TV ne connaît que le dernier créneau horaire par chaîne ;
   - le profil Enfants n'appelle jamais d'IA, même locale ;
   - `recommendation_shelves` prend en plus le décalage horaire.
-- **Non fait :** lot 34.5 (modèle d'Apple sur l'appareil), rangée facultative sous le lecteur pendant un direct, tests Swift, builds Xcode des 4 schémas, essai avec un vrai fournisseur (Gemini, Ollama), essai à l'écran.
+- **Non fait :** rangée facultative sous le lecteur pendant un direct, essai manuel avec un vrai fournisseur (Gemini, Ollama), essai manuel à l'écran.

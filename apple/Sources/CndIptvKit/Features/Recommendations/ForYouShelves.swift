@@ -198,3 +198,113 @@ struct RecoChannelFeedback: View {
 
     var body: some View { RecoFeedbackMenu(card: card, model: model) }
 }
+
+/// Live TV recommendations displayed directly below the docked player (PRD 34).
+struct LivePlayerForYouView: View {
+    @Environment(\.uiMetrics) private var ui
+    let model: ForYouModel
+    let playingURL: String?
+    let onPlay: (IptvItemRecord) -> Void
+    var onRefreshGuide: (() -> Void)?
+
+    var body: some View {
+        if model.isEnabled, !model.shelves.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(model.shelves, id: \.id) { shelf in
+                    if shelf.shelf == .guideStale {
+                        staleBanner(shelf)
+                    } else if !shelf.items.isEmpty {
+                        shelfSection(shelf)
+                    }
+                }
+            }
+        }
+    }
+
+    private func shelfSection(_ shelf: RecoShelf) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Label(shelf.title, systemImage: ForYouShelves<EmptyView>.icon(for: shelf.shelf))
+                    .font(.subheadline.weight(.bold))
+                if let by = shelf.refinedBy {
+                    Image(systemName: "sparkles")
+                        .font(.caption)
+                        .foregroundStyle(.tint)
+                        .help("Affiné par \(by)")
+                        .accessibilityLabel("Affiné par \(by)")
+                }
+            }
+            if let note = shelf.note {
+                Text(note).font(.caption2).foregroundStyle(.secondary)
+            }
+            LazyVStack(spacing: 8) {
+                ForEach(Array(shelf.items.enumerated()), id: \.offset) { _, card in
+                    if let channel = card.item, channel.streamUrl != playingURL {
+                        channelRow(card: card, channel: channel)
+                    }
+                }
+            }
+        }
+    }
+
+    private func channelRow(card: RecoCard, channel: IptvItemRecord) -> some View {
+        Button {
+            onPlay(channel)
+        } label: {
+            HStack(spacing: 10) {
+                ThumbnailImageView(urlString: channel.logoUrl, size: .tvLogo)
+                    .frame(width: ui.channelLogo, height: ui.channelLogo)
+                    .padding(2)
+                    .background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
+                        Text(channel.name)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        if channel.isBroken {
+                            BrokenBadge(style: .compact)
+                        }
+                    }
+                    if let program = card.program {
+                        Text(program.title)
+                            .font(.caption)
+                            .foregroundStyle(.primary.opacity(0.85))
+                            .lineLimit(1)
+                    }
+                    RecoReason(card: card)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "play.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(8)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Lire", systemImage: "play.fill") { onPlay(channel) }
+            RecoFeedbackMenu(card: card, model: model)
+        }
+    }
+
+    private func staleBanner(_ shelf: RecoShelf) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "calendar.badge.exclamationmark").foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(shelf.title).font(.subheadline.weight(.semibold))
+                if let note = shelf.note { Text(note).font(.caption).foregroundStyle(.secondary) }
+                if let onRefreshGuide {
+                    Button("Actualiser le guide", action: onRefreshGuide)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+    }
+}

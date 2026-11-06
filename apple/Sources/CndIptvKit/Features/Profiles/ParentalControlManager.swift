@@ -1,5 +1,7 @@
 import Foundation
+#if !os(tvOS)
 import LocalAuthentication
+#endif
 import Observation
 import Security
 import CryptoKit

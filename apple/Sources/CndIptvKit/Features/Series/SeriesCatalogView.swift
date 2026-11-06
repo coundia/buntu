@@ -86,7 +86,7 @@ struct SeriesCard: View {
             Button(series.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
                    systemImage: series.isFavorite ? "star.slash" : "star", action: onToggleFavorite)
             if let onToggleBroken {
-                Button(series.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel",
+                Button(series.isBroken ? "Rétablir le flux" : "Signaler en panne",
                        systemImage: series.isBroken ? "checkmark.circle" : "exclamationmark.triangle",
                        action: onToggleBroken)
             }
@@ -98,17 +98,10 @@ struct SeriesCard: View {
         VStack(alignment: .leading, spacing: 6) {
             PosterArtwork(
                 posterUrl: series.posterUrl, rating: series.imdbRating, progress: nil,
-                isFavorite: series.isFavorite, placeholder: "play.tv", onToggleFavorite: onToggleFavorite
+                isFavorite: series.isFavorite, isBroken: series.isBroken, placeholder: "play.tv", onToggleFavorite: onToggleFavorite
             )
             .hoverLift()
             Text(series.title).font(.subheadline.weight(.semibold)).lineLimit(2)
-            if series.isBroken {
-                Label("En panne", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 4).padding(.vertical, 1)
-                    .background(Color.red.opacity(0.2), in: RoundedRectangle(cornerRadius: 3))
-                    .foregroundStyle(Color.red)
-            }
             Text(SeriesLabels.counts(series)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }
@@ -120,11 +113,11 @@ struct SeriesCard: View {
                 .background(.quaternary)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 3) {
-                Text(series.title).font(.body.weight(.semibold)).lineLimit(1)
-                if series.isBroken {
-                    Label("En panne", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.red)
+                HStack(spacing: 6) {
+                    Text(series.title).font(.body.weight(.semibold)).lineLimit(1)
+                    if series.isBroken {
+                        BrokenBadge(style: .compact)
+                    }
                 }
                 Text(SeriesLabels.counts(series)).font(.caption).foregroundStyle(.secondary)
             }

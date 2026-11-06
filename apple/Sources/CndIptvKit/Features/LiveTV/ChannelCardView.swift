@@ -149,11 +149,7 @@ struct ChannelCardView: View {
                         .foregroundStyle(quality == .uhd ? Color.black : Color.primary)
                 }
                 if item.isBroken {
-                    Label("En panne", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(Color.red.opacity(0.2), in: RoundedRectangle(cornerRadius: 3))
-                        .foregroundStyle(Color.red)
+                    BrokenBadge(style: .compact)
                 }
             }
             if let group = item.groupTitle, !group.isEmpty {
@@ -201,7 +197,7 @@ struct ChannelCardView: View {
     @ViewBuilder
     private var healthIndicator: some View {
         if item.isBroken {
-            StatusDot(kind: .broken, description: "Signalée en panne")
+            EmptyView()
         } else if let health {
             if health.status == "ok" {
                 let isRecent = Date().timeIntervalSince1970 - Double(health.checkedAt) < 3600
@@ -222,7 +218,7 @@ struct ChannelCardView: View {
         Button(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
                systemImage: item.isFavorite ? "star.slash" : "star") { actions.toggleFavorite(item) }
         if let toggleBroken = actions.toggleBroken {
-            Button(item.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel",
+            Button(item.isBroken ? "Rétablir le flux" : "Signaler en panne",
                    systemImage: item.isBroken ? "checkmark.circle" : "exclamationmark.triangle") {
                 toggleBroken(item)
             }
@@ -287,7 +283,7 @@ private struct OptionalChannelActions: ViewModifier {
         content
             .accessibilityActions {
                 if let toggleBroken = actions.toggleBroken {
-                    Button(item.isBroken ? "Marquer comme fonctionnel" : "Signaler comme non fonctionnel") { toggleBroken(item) }
+                    Button(item.isBroken ? "Rétablir le flux" : "Signaler en panne") { toggleBroken(item) }
                 }
                 if let startOver = actions.startOver, let now = nowNext?.now, ChannelCardView.hasArchive(item) {
                     Button("Revoir depuis le début") { startOver(item, now) }
