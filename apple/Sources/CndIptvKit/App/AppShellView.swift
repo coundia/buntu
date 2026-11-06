@@ -393,7 +393,7 @@ private struct LoadedShellView: View {
     }
 
     /// Opens the command palette, or says how to enable it.
-    private func openAssistant() {
+    private func openAssistant(startingWith phrase: String = "") {
         guard KidsModePolicy.canUseAssistant(isKids: isKidsMode) else {
             toasts.show("L'assistant n'est pas disponible avec le profil Enfants.")
             return
@@ -402,7 +402,7 @@ private struct LoadedShellView: View {
             toasts.show("L'assistant est désactivé : choisissez un fournisseur dans Réglages > Assistant IA.")
             return
         }
-        assistant.input = ""
+        assistant.input = phrase
         showingAssistant = true
     }
 
@@ -826,11 +826,13 @@ private struct LoadedShellView: View {
                 SourcesListView(engine: engine, sources: state.sources, model: sourcesModel)
             case .movies:
                 vodScreen(MoviesCatalogView(
-                    engine: engine, revision: state.catalogRevision, totalMovies: Int(state.stats?.totalMovies ?? 0)
+                    engine: engine, revision: state.catalogRevision, totalMovies: Int(state.stats?.totalMovies ?? 0),
+                    onOpenAssistant: state.aiSettings.isAssistantEnabled ? { openAssistant(startingWith: $0) } : nil
                 ))
             case .series:
                 vodScreen(SeriesCatalogView(
-                    engine: engine, revision: state.catalogRevision, totalSeries: Int(state.stats?.totalSeries ?? 0)
+                    engine: engine, revision: state.catalogRevision, totalSeries: Int(state.stats?.totalSeries ?? 0),
+                    onOpenAssistant: state.aiSettings.isAssistantEnabled ? { openAssistant(startingWith: $0) } : nil
                 ))
             case .downloads:
                 DownloadsDashboardView(model: downloadsModel, directory: state.downloadDirectory, onPlay: playDownload)
