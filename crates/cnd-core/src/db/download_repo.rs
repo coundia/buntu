@@ -45,6 +45,23 @@ pub struct DownloadLogRecord {
     pub message: String,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct DownloadPlatformTicket {
+    pub id: i64,
+    pub url: String,
+    pub final_url: Option<String>,
+    pub file_name: String,
+    pub save_path: String,
+    pub temp_path: String,
+    pub total_bytes: u64,
+    pub downloaded_bytes: u64,
+    pub accept_ranges: bool,
+    pub user_agent: Option<String>,
+    pub referer: Option<String>,
+    pub headers_json: Option<String>,
+    pub platform_resume_data: Option<Vec<u8>>,
+}
+
 /// Internal full row of `download_tasks` (includes request headers and temp path).
 #[derive(Debug, Clone)]
 pub struct DownloadTaskRow {
@@ -61,6 +78,9 @@ pub struct DownloadTaskRow {
     pub downloaded_bytes: u64,
     pub accept_ranges: bool,
     pub state: String,
+    pub driver: String,
+    pub platform_resume_data: Option<Vec<u8>>,
+    pub resume_on_wake: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -78,7 +98,7 @@ pub struct PartProgress {
 }
 
 const TASK_COLUMNS: &str = "id, url, last_real_url, referer, user_agent, headers_json, file_name, \
-     save_path, temp_path, total_bytes, downloaded_bytes, accept_ranges, state";
+     save_path, temp_path, total_bytes, downloaded_bytes, accept_ranges, state, driver, platform_resume_data, resume_on_wake";
 
 fn map_task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadTaskRow> {
     Ok(DownloadTaskRow {
@@ -95,6 +115,9 @@ fn map_task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadTaskRow> {
         downloaded_bytes: r.get::<_, Option<i64>>(10)?.unwrap_or(0).max(0) as u64,
         accept_ranges: r.get::<_, Option<i64>>(11)?.unwrap_or(0) != 0,
         state: r.get(12)?,
+        driver: r.get::<_, Option<String>>(13)?.unwrap_or_else(|| "rust".to_string()),
+        platform_resume_data: r.get(14)?,
+        resume_on_wake: r.get::<_, Option<i64>>(15)?.unwrap_or(0) != 0,
     })
 }
 
@@ -458,6 +481,228 @@ impl DatabaseManager {
         })
     }
 
+    pub fn claim_next_queued_for_platform(
+        &self,
+        max_concurrent: u32,
+    ) -> Result<Vec<DownloadPlatformTicket>, DbError> {
+        self.with_conn_mut(|conn| {
+            let tx = conn.transaction()?;
+            let mut tickets = Vec::new();
+            {
+                let mut stmt = tx.prepare(
+                    "SELECT id, url, last_real_url, file_name, save_path, temp_path,
+                            total_bytes, downloaded_bytes, accept_ranges, user_agent,
+                            referer, headers_json, platform_resume_data
+                     FROM download_tasks
+                     WHERE state = 'queued'
+                     ORDER BY id ASC
+                     LIMIT ?1",
+                )?;
+                let rows = stmt.query_map(params![max_concurrent as i64], |r| {
+                    Ok(DownloadPlatformTicket {
+                        id: r.get(0)?,
+                        url: r.get(1)?,
+                        final_url: r.get(2)?,
+                        file_name: r.get(3)?,
+                        save_path: r.get(4)?,
+                        temp_path: r.get(5)?,
+                        total_bytes: r.get::<_, Option<i64>>(6)?.unwrap_or(0).max(0) as u64,
+                        downloaded_bytes: r.get::<_, Option<i64>>(7)?.unwrap_or(0).max(0) as u64,
+                        accept_ranges: r.get::<_, Option<i64>>(8)?.unwrap_or(0) != 0,
+                        user_agent: r.get(9)?,
+                        referer: r.get(10)?,
+                        headers_json: r.get(11)?,
+                        platform_resume_data: r.get(12)?,
+                    })
+                })?;
+                for t in rows {
+                    tickets.push(t?);
+                }
+            }
+            let now = chrono_now_ts();
+            for t in &tickets {
+                tx.execute(
+                    "UPDATE download_tasks SET state = 'running', driver = 'urlsession', updated_at = ?2 WHERE id = ?1",
+                    params![t.id, now],
+                )?;
+            }
+            tx.commit()?;
+            Ok(tickets)
+        })
+    }
+
+    pub fn get_platform_ticket(&self, task_id: i64) -> Result<DownloadPlatformTicket, DbError> {
+        self.with_conn(|conn| {
+            conn.query_row(
+                "SELECT id, url, last_real_url, file_name, save_path, temp_path,
+                        total_bytes, downloaded_bytes, accept_ranges, user_agent,
+                        referer, headers_json, platform_resume_data
+                 FROM download_tasks WHERE id = ?1",
+                params![task_id],
+                |r| {
+                    Ok(DownloadPlatformTicket {
+                        id: r.get(0)?,
+                        url: r.get(1)?,
+                        final_url: r.get(2)?,
+                        file_name: r.get(3)?,
+                        save_path: r.get(4)?,
+                        temp_path: r.get(5)?,
+                        total_bytes: r.get::<_, Option<i64>>(6)?.unwrap_or(0).max(0) as u64,
+                        downloaded_bytes: r.get::<_, Option<i64>>(7)?.unwrap_or(0).max(0) as u64,
+                        accept_ranges: r.get::<_, Option<i64>>(8)?.unwrap_or(0) != 0,
+                        user_agent: r.get(9)?,
+                        referer: r.get(10)?,
+                        headers_json: r.get(11)?,
+                        platform_resume_data: r.get(12)?,
+                    })
+                },
+            )
+            .optional()?
+            .ok_or_else(|| DbError::NotFound(format!("download task id={task_id}")))
+        })
+    }
+
+    pub fn update_platform_download_progress(
+        &self,
+        task_id: i64,
+        downloaded_bytes: u64,
+        total_bytes: u64,
+        speed_bps: f64,
+        eta_seconds: u64,
+        flush_db: bool,
+    ) -> Result<(), DbError> {
+        if !flush_db {
+            return Ok(());
+        }
+        self.with_conn(|conn| {
+            conn.execute(
+                "UPDATE download_tasks
+                 SET downloaded_bytes = ?2,
+                     total_bytes = CASE WHEN ?3 > 0 THEN ?3 ELSE total_bytes END,
+                     speed_bps = ?4,
+                     eta_seconds = ?5,
+                     updated_at = ?6
+                 WHERE id = ?1",
+                params![
+                    task_id,
+                    downloaded_bytes as i64,
+                    total_bytes as i64,
+                    speed_bps,
+                    eta_seconds as i64,
+                    chrono_now_ts()
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn save_platform_resume_data(
+        &self,
+        task_id: i64,
+        state: &str,
+        downloaded_bytes: u64,
+        resume_data: Option<&[u8]>,
+        error_message: Option<&str>,
+    ) -> Result<(), DbError> {
+        self.with_conn(|conn| {
+            let now = chrono_now_ts();
+            conn.execute(
+                "UPDATE download_tasks
+                 SET state = ?2,
+                     downloaded_bytes = ?3,
+                     platform_resume_data = ?4,
+                     speed_bps = 0,
+                     eta_seconds = 0,
+                     updated_at = ?5
+                 WHERE id = ?1",
+                params![
+                    task_id,
+                    state,
+                    downloaded_bytes as i64,
+                    resume_data,
+                    now
+                ],
+            )?;
+            if let Some(err) = error_message {
+                conn.execute(
+                    "INSERT INTO download_logs (task_id, timestamp, level, message) VALUES (?1, ?2, 'error', ?3)",
+                    params![task_id, now, err],
+                )?;
+            }
+            Ok(())
+        })
+    }
+
+    pub fn complete_platform_download(
+        &self,
+        task_id: i64,
+        final_size: u64,
+    ) -> Result<(), DbError> {
+        self.with_conn(|conn| {
+            let now = chrono_now_ts();
+            conn.execute(
+                "UPDATE download_parts SET downloaded_bytes = byte_end - byte_start + 1, state = 'completed'
+                 WHERE task_id = ?1",
+                params![task_id],
+            )?;
+            conn.execute(
+                "UPDATE download_tasks
+                 SET state = 'completed',
+                     total_bytes = CASE WHEN ?2 > 0 THEN ?2 ELSE total_bytes END,
+                     downloaded_bytes = CASE WHEN ?2 > 0 THEN ?2 ELSE downloaded_bytes END,
+                     platform_resume_data = NULL,
+                     speed_bps = 0,
+                     eta_seconds = 0,
+                     updated_at = ?3
+                 WHERE id = ?1",
+                params![task_id, final_size as i64, now],
+            )?;
+            conn.execute(
+                "INSERT INTO download_logs (task_id, timestamp, level, message) VALUES (?1, ?2, 'info', 'Completed via platform background transfer')",
+                params![task_id, now],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn suspend_downloads_for_system_sleep(&self) -> Result<u32, DbError> {
+        self.with_conn(|conn| {
+            let now = chrono_now_ts();
+            let count = conn.execute(
+                "UPDATE download_tasks
+                 SET state = 'paused',
+                     resume_on_wake = 1,
+                     speed_bps = 0,
+                     eta_seconds = 0,
+                     updated_at = ?1
+                 WHERE state IN ('queued', 'running')",
+                params![now],
+            )?;
+            conn.execute(
+                "UPDATE download_parts SET state = 'idle' WHERE state = 'running'",
+                [],
+            )?;
+            Ok(count as u32)
+        })
+    }
+
+    pub fn resume_downloads_after_system_wake(&self) -> Result<u32, DbError> {
+        self.with_conn(|conn| {
+            let now = chrono_now_ts();
+            let count = conn.execute(
+                "UPDATE download_tasks
+                 SET state = 'queued',
+                     resume_on_wake = 0,
+                     speed_bps = 0,
+                     eta_seconds = 0,
+                     updated_at = ?1
+                 WHERE resume_on_wake = 1 AND state = 'paused'",
+                params![now],
+            )?;
+            Ok(count as u32)
+        })
+    }
+
     /// Crash recovery: tasks left `running` by an abrupt shutdown become `paused`.
     pub fn reset_running_tasks_on_startup(&self) -> Result<u32, DbError> {
         self.with_conn(|conn| {
@@ -532,5 +777,83 @@ mod tests {
         db.delete_download_task(id).expect("delete");
         assert!(db.list_download_parts(id).expect("parts").is_empty());
         assert!(db.get_download_logs(id, 10).expect("logs").is_empty());
+    }
+
+    #[test]
+    fn test_platform_download_lifecycle_and_sleep_wake() {
+        let db = DatabaseManager::open_in_memory().expect("db");
+        let id1 = db
+            .create_download_task(
+                "http://h/ep1.mkv",
+                Some("http://cdn/ep1.mkv?token=abc"),
+                None,
+                Some("TestAgent"),
+                None,
+                "ep1.mkv",
+                "/tmp/ep1.mkv",
+                "/tmp/ep1.mkv.part",
+                1000,
+                true,
+            )
+            .expect("create1");
+        db.set_download_state(id1, "queued").expect("queue1");
+
+        let id2 = db
+            .create_download_task(
+                "http://h/ep2.mkv",
+                None,
+                None,
+                None,
+                None,
+                "ep2.mkv",
+                "/tmp/ep2.mkv",
+                "/tmp/ep2.mkv.part",
+                2000,
+                true,
+            )
+            .expect("create2");
+        db.set_download_state(id2, "queued").expect("queue2");
+
+        // Claim 1 task
+        let claimed = db.claim_next_queued_for_platform(1).expect("claim");
+        assert_eq!(claimed.len(), 1);
+        assert_eq!(claimed[0].id, id1);
+        assert_eq!(claimed[0].final_url.as_deref(), Some("http://cdn/ep1.mkv?token=abc"));
+        assert_eq!(claimed[0].user_agent.as_deref(), Some("TestAgent"));
+
+        let row1 = db.get_download_task_row(id1).expect("row1");
+        assert_eq!(row1.state, "running");
+        assert_eq!(row1.driver, "urlsession");
+
+        // Progress update with flush
+        db.update_platform_download_progress(id1, 500, 1000, 250_000.0, 2, true).expect("prog");
+        let ticket = db.get_platform_ticket(id1).expect("ticket");
+        assert_eq!(ticket.downloaded_bytes, 500);
+
+        // Save platform resume data
+        let resume_blob = vec![0x12, 0x34, 0x56];
+        db.save_platform_resume_data(id1, "paused", 500, Some(&resume_blob), Some("Cancelled by user")).expect("save resume");
+        let row1_paused = db.get_download_task_row(id1).expect("row1 paused");
+        assert_eq!(row1_paused.state, "paused");
+        assert_eq!(row1_paused.platform_resume_data, Some(resume_blob));
+
+        // Sleep / Wake cycle
+        db.set_download_state(id2, "running").expect("run2");
+        assert_eq!(db.suspend_downloads_for_system_sleep().expect("suspend"), 1); // id2 was running
+        let row2_suspended = db.get_download_task_row(id2).expect("row2 susp");
+        assert_eq!(row2_suspended.state, "paused");
+        assert!(row2_suspended.resume_on_wake);
+
+        assert_eq!(db.resume_downloads_after_system_wake().expect("wake"), 1);
+        let row2_woken = db.get_download_task_row(id2).expect("row2 wake");
+        assert_eq!(row2_woken.state, "queued");
+        assert!(!row2_woken.resume_on_wake);
+
+        // Completion
+        db.complete_platform_download(id1, 1000).expect("complete");
+        let row1_done = db.get_download_task_row(id1).expect("row1 done");
+        assert_eq!(row1_done.state, "completed");
+        assert_eq!(row1_done.downloaded_bytes, 1000);
+        assert!(row1_done.platform_resume_data.is_none());
     }
 }

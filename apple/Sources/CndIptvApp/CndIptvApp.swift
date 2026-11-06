@@ -22,12 +22,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return !flag
     }
 }
+#elseif os(iOS) || os(tvOS) || os(visionOS)
+import UIKit
+
+final class IosAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        if identifier == BackgroundDownloadCoordinator.sessionIdentifier {
+            BackgroundDownloadCoordinator.shared.backgroundSessionCompletionHandler = completionHandler
+        } else {
+            completionHandler()
+        }
+    }
+}
 #endif
 
 @main
 struct CndIptvApp: App {
     #if os(macOS)
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #elseif os(iOS) || os(tvOS) || os(visionOS)
+    @UIApplicationDelegateAdaptor(IosAppDelegate.self) private var appDelegate
     #endif
     @State private var appState = AppState()
     @State private var commandCenter = AppCommandCenter()

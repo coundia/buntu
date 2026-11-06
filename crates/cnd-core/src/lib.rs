@@ -36,7 +36,8 @@ pub use db::profile_repo::{FavoriteFolderRecord, ProfileRecord};
 pub use db::recording_repo::{NewRecordingRequest, RecordingRecord, SeriesRuleRecord};
 pub use db::catalog_repo::{CatalogFilter, FacetCount, SeasonSummary, SeriesRecord, SortField};
 pub use db::download_repo::{
-    DownloadLogRecord, DownloadPartRecord, DownloadTaskRecord, NewDownloadRequest,
+    DownloadLogRecord, DownloadPartRecord, DownloadPlatformTicket, DownloadTaskRecord,
+    NewDownloadRequest,
 };
 pub use db::epg_repo::{ChannelNowNext, EpgProgramRecord};
 pub use db::ingestion_writer::SyncSummary;
@@ -956,6 +957,72 @@ impl CndEngine {
         limit: u32,
     ) -> Result<Vec<DownloadLogRecord>, CndError> {
         self.downloads.logs(task_id, limit)
+    }
+
+    pub fn claim_next_queued_for_platform(
+        &self,
+        max_concurrent: u32,
+    ) -> Result<Vec<DownloadPlatformTicket>, CndError> {
+        self.downloads.claim_next_queued_for_platform(max_concurrent)
+    }
+
+    pub async fn probe_for_platform_download(
+        &self,
+        task_id: i64,
+    ) -> Result<DownloadPlatformTicket, CndError> {
+        self.downloads.probe_for_platform(task_id).await
+    }
+
+    pub fn update_platform_download_progress(
+        &self,
+        task_id: i64,
+        downloaded_bytes: u64,
+        total_bytes: u64,
+        speed_bps: f64,
+        eta_seconds: u64,
+        flush_db: bool,
+    ) -> Result<(), CndError> {
+        self.downloads.update_platform_progress(
+            task_id,
+            downloaded_bytes,
+            total_bytes,
+            speed_bps,
+            eta_seconds,
+            flush_db,
+        )
+    }
+
+    pub fn save_platform_resume_data(
+        &self,
+        task_id: i64,
+        state: String,
+        downloaded_bytes: u64,
+        resume_data: Option<Vec<u8>>,
+        error_message: Option<String>,
+    ) -> Result<(), CndError> {
+        self.downloads.save_platform_resume_data(
+            task_id,
+            &state,
+            downloaded_bytes,
+            resume_data.as_deref(),
+            error_message.as_deref(),
+        )
+    }
+
+    pub fn complete_platform_download(
+        &self,
+        task_id: i64,
+        final_size: u64,
+    ) -> Result<(), CndError> {
+        self.downloads.complete_platform_download(task_id, final_size)
+    }
+
+    pub async fn suspend_downloads_for_system_sleep(&self) -> Result<u32, CndError> {
+        self.downloads.suspend_downloads_for_system_sleep().await
+    }
+
+    pub async fn resume_downloads_after_system_wake(&self) -> Result<u32, CndError> {
+        self.downloads.resume_downloads_after_system_wake().await
     }
 
     /// Builds the plain share document for the chosen sources (the app encrypts it).

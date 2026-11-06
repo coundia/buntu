@@ -56,6 +56,9 @@ public final class PlaybackSleepManager {
         if isBlockingSleep != wasBlocking {
             updateSleepAssertion()
         }
+        if self === PlaybackSleepManager.shared {
+            SystemPowerCoordinator.shared.setHolding(isPlaying, kind: .videoPlayback, for: id)
+        }
     }
 
     /// Releases any sleep assertion held by the given player identifier.
@@ -67,6 +70,9 @@ public final class PlaybackSleepManager {
         if isBlockingSleep != wasBlocking {
             updateSleepAssertion()
         }
+        if self === PlaybackSleepManager.shared {
+            SystemPowerCoordinator.shared.remove(id: id)
+        }
     }
 
     /// Releases all assertions and re-enables normal system sleep.
@@ -74,6 +80,9 @@ public final class PlaybackSleepManager {
         guard !activeTokens.isEmpty else { return }
         activeTokens.removeAll()
         updateSleepAssertion()
+        if self === PlaybackSleepManager.shared {
+            SystemPowerCoordinator.shared.reset()
+        }
     }
 
     private func updateSleepAssertion() {

@@ -8,6 +8,7 @@ struct CndLiveActivityBundle: WidgetBundle {
     var body: some Widget {
         RecordingLiveActivity()
         PlaybackLiveActivity()
+        DownloadLiveActivity()
     }
 }
 
@@ -133,6 +134,78 @@ struct PlaybackLockScreenView: View {
             if state.durationSeconds > 0 {
                 ProgressView(value: Double(state.positionSeconds), total: Double(state.durationSeconds))
             }
+        }
+        .foregroundStyle(.white)
+    }
+}
+
+// MARK: - Downloads (PRD 36)
+
+struct DownloadLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: DownloadActivityAttributes.self) { context in
+            DownloadLockScreenView(attributes: context.attributes, state: context.state)
+                .padding()
+                .activityBackgroundTint(Color.black.opacity(0.85))
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Label(context.attributes.primaryTitle, systemImage: "arrow.down.circle.fill")
+                        .foregroundStyle(.blue)
+                        .font(.caption.bold())
+                        .lineLimit(1)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text("\(Int(context.state.progress * 100))%")
+                        .font(.caption.bold())
+                        .monospacedDigit()
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    if context.state.remainingTasksCount > 0 {
+                        Text("(+\(context.state.remainingTasksCount) en file)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    ProgressView(value: context.state.progress).tint(.blue)
+                }
+            } compactLeading: {
+                Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
+            } compactTrailing: {
+                Text("\(Int(context.state.progress * 100))%")
+                    .font(.caption2.bold())
+                    .monospacedDigit()
+                    .frame(maxWidth: 42)
+            } minimal: {
+                Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
+            }
+        }
+    }
+}
+
+struct DownloadLockScreenView: View {
+    let attributes: DownloadActivityAttributes
+    let state: DownloadActivityAttributes.ContentState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("Téléchargement en cours", systemImage: "arrow.down.circle.fill")
+                    .foregroundStyle(.blue)
+                    .font(.caption.bold())
+                Spacer()
+                Text("\(Int(state.progress * 100))%")
+                    .font(.caption.bold())
+                    .monospacedDigit()
+            }
+            Text(attributes.primaryTitle).font(.headline).lineLimit(1)
+            if state.remainingTasksCount > 0 {
+                Text("+\(state.remainingTasksCount) autre(s) média(s) en file d'attente")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ProgressView(value: state.progress).tint(.blue)
         }
         .foregroundStyle(.white)
     }

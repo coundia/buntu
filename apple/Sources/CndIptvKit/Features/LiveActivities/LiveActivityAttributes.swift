@@ -57,4 +57,36 @@ public struct PlaybackActivityAttributes: ActivityAttributes, Sendable {
         self.logoUrl = logoUrl
     }
 }
+
+// MARK: - Download Activity Attributes
+
+public struct DownloadActivityAttributes: ActivityAttributes, Sendable {
+    public struct ContentState: Codable, Hashable, Sendable {
+        public var progress: Double
+        public var downloadedBytes: Int64
+        public var totalBytes: Int64
+        public var speedBps: Double
+        public var remainingTasksCount: Int
+
+        public init(
+            progress: Double,
+            downloadedBytes: Int64,
+            totalBytes: Int64,
+            speedBps: Double = 0,
+            remainingTasksCount: Int = 0
+        ) {
+            self.progress = progress
+            self.downloadedBytes = downloadedBytes
+            self.totalBytes = totalBytes
+            self.speedBps = speedBps
+            self.remainingTasksCount = remainingTasksCount
+        }
+    }
+
+    public let primaryTitle: String
+
+    public init(primaryTitle: String) {
+        self.primaryTitle = primaryTitle
+    }
+}
 #endif

@@ -23,6 +23,10 @@ struct SettingsView: View {
     @AppStorage("timeshiftDuration") private var timeshiftDurationRaw: String = TimeshiftDuration.oneHour.rawValue
     @AppStorage("openSubtitlesLanguages") private var openSubtitlesLanguages: String = "fr,en"
     @AppStorage("openSubtitlesAutoSearch") private var openSubtitlesAutoSearch = false
+    @AppStorage("downloads.background.enabled") private var backgroundDownloadsEnabled = true
+    @AppStorage("downloads.cellular.enabled") private var cellularDownloadsEnabled = true
+    @AppStorage("downloads.notifications.enabled") private var downloadNotificationsEnabled = true
+    @AppStorage("downloads.keepAwake.enabled") private var keepScreenAwakeOnDownload = false
     @State private var showingProfilesManagement = false
     @State private var showingAdultUnlock = false
     @State private var parental = ParentalControlManager.shared
@@ -273,6 +277,17 @@ struct SettingsView: View {
 
     private var downloadsSection: some View {
         Section("Téléchargements") {
+            Toggle("Continuer écran éteint / en arrière-plan", isOn: $backgroundDownloadsEnabled)
+            #if os(iOS)
+            Toggle("Autoriser les téléchargements cellulaires (4G/5G)", isOn: $cellularDownloadsEnabled)
+            Toggle("Garder l'écran allumé pendant un téléchargement", isOn: $keepScreenAwakeOnDownload)
+                .onChange(of: keepScreenAwakeOnDownload) { _, newValue in
+                    SystemPowerCoordinator.shared.keepScreenAwakeOnDownload = newValue
+                }
+            #endif
+            #if !os(macOS) && !os(tvOS)
+            Toggle("Notification à la fin du téléchargement", isOn: $downloadNotificationsEnabled)
+            #endif
             #if os(tvOS)
             LabeledContent("Connexions de mon abonnement", value: "\(model.connectionLimit)")
             LabeledContent("Segments par fichier", value: "\(model.segmentsPerFile)")

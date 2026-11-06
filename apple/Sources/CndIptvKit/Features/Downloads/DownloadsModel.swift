@@ -167,11 +167,51 @@ final class DownloadsModel {
         if hasActive { ensurePolling() }
     }
 
-    func start(_ task: DownloadTaskRecord) async { let b = backend; await perform { try await b.startDownload(taskId: task.id) } }
-    func pause(_ task: DownloadTaskRecord) async { let b = backend; await perform { try await b.pauseDownload(taskId: task.id) } }
-    func retry(_ task: DownloadTaskRecord) async { let b = backend; await perform { try await b.retryDownload(taskId: task.id) } }
-    func startAll() async { let b = backend; await perform { try await b.startAllDownloads() } }
-    func pauseAll() async { let b = backend; await perform { try await b.pauseAllDownloads() } }
+    func start(_ task: DownloadTaskRecord) async {
+        let b = backend
+        await perform {
+            try await b.startDownload(taskId: task.id)
+            #if os(iOS) || os(tvOS) || os(visionOS)
+            BackgroundDownloadCoordinator.shared.promoteNextQueuedTasks()
+            #endif
+        }
+    }
+    func pause(_ task: DownloadTaskRecord) async {
+        let b = backend
+        await perform {
+            #if os(iOS) || os(tvOS) || os(visionOS)
+            BackgroundDownloadCoordinator.shared.pauseDownload(taskId: task.id)
+            #endif
+            try await b.pauseDownload(taskId: task.id)
+        }
+    }
+    func retry(_ task: DownloadTaskRecord) async {
+        let b = backend
+        await perform {
+            try await b.retryDownload(taskId: task.id)
+            #if os(iOS) || os(tvOS) || os(visionOS)
+            BackgroundDownloadCoordinator.shared.promoteNextQueuedTasks()
+            #endif
+        }
+    }
+    func startAll() async {
+        let b = backend
+        await perform {
+            try await b.startAllDownloads()
+            #if os(iOS) || os(tvOS) || os(visionOS)
+            BackgroundDownloadCoordinator.shared.promoteNextQueuedTasks()
+            #endif
+        }
+    }
+    func pauseAll() async {
+        let b = backend
+        await perform {
+            #if os(iOS) || os(tvOS) || os(visionOS)
+            BackgroundDownloadCoordinator.shared.pauseAllDownloads()
+            #endif
+            try await b.pauseAllDownloads()
+        }
+    }
 
     func remove(_ task: DownloadTaskRecord, deleteFile: Bool) async {
         let b = backend
@@ -198,6 +238,11 @@ final class DownloadsModel {
         }
         errorMessage = failure
         await refresh()
+        #if os(iOS) || os(tvOS) || os(visionOS)
+        if queued > 0 {
+            BackgroundDownloadCoordinator.shared.promoteNextQueuedTasks()
+        }
+        #endif
         if hasActive { ensurePolling() }
         return queued
     }
