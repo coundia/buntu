@@ -14,6 +14,9 @@ struct LiveTvView: View {
     var onAddToMultiView: ((IptvItemRecord) -> Void)? = nil
     var onOpenMultiView: (() -> Void)? = nil
     var onStartOver: ((IptvItemRecord, EpgProgramRecord) -> Void)? = nil
+    /// The « Pour vous » rows (programmes on the air, soon, usual channels) and the guide refresh (PRD 34).
+    var forYou: ForYouModel?
+    var onRefreshGuide: (() -> Void)?
     @Binding var searchRequest: String?
 
     @AppStorage("live.viewMode") private var viewModeRaw = LiveViewMode.grid.rawValue
@@ -32,8 +35,12 @@ struct LiveTvView: View {
         onAddToMultiView: ((IptvItemRecord) -> Void)? = nil,
         onOpenMultiView: (() -> Void)? = nil,
         onStartOver: ((IptvItemRecord, EpgProgramRecord) -> Void)? = nil,
+        forYou: ForYouModel? = nil,
+        onRefreshGuide: (() -> Void)? = nil,
         searchRequest: Binding<String?> = .constant(nil)
     ) {
+        self.forYou = forYou
+        self.onRefreshGuide = onRefreshGuide
         let model = LiveTvModel(engine: engine)
         model.onFavoriteChanged = onFavoriteChanged
         _model = State(initialValue: model)
@@ -137,6 +144,7 @@ struct LiveTvView: View {
             }
         }
         .task(id: reloadKey) { await model.reload(revision: revision) }
+        .task(id: revision) { await forYou?.reload(revision: revision) }
         .onChange(of: model.channels.count) { _, _ in publishZapList() }
         .onChange(of: model.nowNext.count) { _, _ in publishZapList() }
         .task {
@@ -177,6 +185,11 @@ struct LiveTvView: View {
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     if model.showsSections {
+                        if let forYou {
+                            ForYouShelves(model: forYou, onRefreshGuide: onRefreshGuide) { recoCard in
+                                recommendedChannel(recoCard, forYou: forYou)
+                            }
+                        }
                         horizontalSection("Récemment consultés", icon: "clock", items: model.recents)
                         horizontalSection("Favoris", icon: "star.fill", items: model.favorites)
                         if !model.recents.isEmpty || !model.favorites.isEmpty {
@@ -215,6 +228,29 @@ struct LiveTvView: View {
             } else {
                 ContentUnavailableView.search(text: model.filter.query)
             }
+        }
+    }
+
+    /// A channel of a « Pour vous » row: the usual channel card, with the programme the engine chose and why.
+    @ViewBuilder
+    private func recommendedChannel(_ recoCard: RecoCard, forYou: ForYouModel) -> some View {
+        if let item = recoCard.item {
+            VStack(alignment: .leading, spacing: 4) {
+                ChannelCardView(
+                    item: item,
+                    nowNext: ChannelNowNext(channelTvgId: item.tvgId ?? "", now: recoCard.program, next: nil),
+                    isPlaying: item.streamUrl == playingURL,
+                    style: .card,
+                    actions: actions
+                )
+                HStack(spacing: 3) {
+                    if recoCard.aiReason { Image(systemName: "sparkles").imageScale(.small) }
+                    Text(recoCard.reasonText).lineLimit(2)
+                }
+                .font(.caption)
+                .foregroundStyle(recoCard.aiReason ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+            }
+            .contextMenu { RecoChannelFeedback(card: recoCard, model: forYou) }
         }
     }
 

@@ -7,19 +7,19 @@ use crate::db::{DatabaseManager, DbError, IptvItemRecord};
 use rusqlite::params;
 
 /// The profile rules on `iptv_items i` (alias `i`), with `broken_flags bf` joined.
-const VISIBLE_ITEM: &str = "bf.stable_hash IS NULL \
+pub(crate) const VISIBLE_ITEM: &str = "bf.stable_hash IS NULL \
  AND NOT EXISTS (SELECT 1 FROM hidden_items h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.stable_hash = i.stable_hash) \
  AND (i.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = i.kind AND g.group_key = LOWER(TRIM(i.group_title)))) \
  AND (((SELECT show_adult FROM temp.catalog_flags) = 1 AND (SELECT kids_only FROM temp.catalog_flags) = 0) OR NOT is_adult_group(i.group_title)) \
  AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND k.kind = i.kind AND k.group_key = LOWER(TRIM(i.group_title))))";
 
 /// The profile rules on `series_catalog sc` (alias `sc`), with `broken_flags bf` joined.
-const VISIBLE_SERIES: &str = "bf.stable_hash IS NULL \
+pub(crate) const VISIBLE_SERIES: &str = "bf.stable_hash IS NULL \
  AND (sc.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = 'series' AND g.group_key = LOWER(TRIM(sc.group_title)))) \
  AND (((SELECT show_adult FROM temp.catalog_flags) = 1 AND (SELECT kids_only FROM temp.catalog_flags) = 0) OR NOT is_adult_group(sc.group_title)) \
  AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND k.kind = 'series' AND k.group_key = LOWER(TRIM(sc.group_title))))";
 
-const SERIES_SELECT: &str = "SELECT sc.id, sc.source_id, sc.canonical_key, sc.stable_hash, sc.title, sc.group_title, sc.poster_url, \
+pub(crate) const SERIES_SELECT: &str = "SELECT sc.id, sc.source_id, sc.canonical_key, sc.stable_hash, sc.title, sc.group_title, sc.poster_url, \
  sc.backdrop_url, sc.imdb_id, sc.imdb_rating, sc.plot, sc.episode_count, sc.season_count, \
  (f.stable_hash IS NOT NULL) AS is_favorite, (bf.stable_hash IS NOT NULL) AS is_broken \
  FROM series_catalog sc \
@@ -31,7 +31,7 @@ fn group_has_token(column: &str) -> String {
     format!("(' ' || REPLACE(REPLACE(REPLACE(fold_text(COALESCE({column}, '')), '|', ' '), ':', ' '), '-', ' ') || ' ') LIKE ?")
 }
 
-const ITEM_JOINS: &str = "FROM iptv_items i \
+pub(crate) const ITEM_JOINS: &str = "FROM iptv_items i \
  LEFT JOIN favorites f ON f.profile_id = (SELECT id FROM temp.active_profile) AND f.stable_hash = i.stable_hash \
  LEFT JOIN broken_flags bf ON bf.stable_hash = i.stable_hash \
  LEFT JOIN watch_history wh ON wh.profile_id = (SELECT id FROM temp.active_profile) AND wh.stable_hash = i.stable_hash";

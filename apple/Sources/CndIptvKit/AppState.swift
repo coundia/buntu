@@ -37,6 +37,8 @@ public final class AppState {
     let downloadDirectory: DownloadDirectoryManager
     /// Provider choice and consent of the channel assistant (key in the Keychain).
     let aiSettings = AiProviderSettings()
+    /// The « Pour vous » rows of Films, Séries and Live TV, and their settings (PRD 34).
+    let forYou: ForYouHub
     /// iCloud sync of sources, favorites and progress; reports "local only" when iCloud is unusable.
     private(set) var cloudSync: CloudKitSyncManager?
     /// Profiles (Principal, Enfants…) shared by the shell and the profile screens.
@@ -60,6 +62,8 @@ public final class AppState {
         self.downloadDirectory = downloadDirectory ?? DownloadDirectoryManager()
         let upNext = UpNextModel(engineProvider: { nil })
         self.upNext = upNext
+        self.forYou = ForYouHub(ai: aiSettings)
+        forYou.setBackend { [weak self] in self?.engine }
 
         upNext.setEngineProvider { [weak self] in self?.engine }
         upNext.setPlayHandler { [weak self] media in
