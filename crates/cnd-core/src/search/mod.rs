@@ -61,6 +61,40 @@ pub struct SearchContext {
     pub locale: String,
     /// Offset of the user's time zone from UTC, for "ce soir" and "demain".
     pub utc_offset_minutes: i32,
+    /// What the user is looking for: TV (`Live`, `Program`), films, or series. Empty means everything.
+    /// The screen the search was opened from sets it, so films never show up among channels and the
+    /// other way round; nothing, not even the assistant, can widen it.
+    pub kinds: Vec<SearchKind>,
+}
+
+impl From<SearchKind> for query_parser::Kind {
+    fn from(kind: SearchKind) -> Self {
+        match kind {
+            SearchKind::Live => query_parser::Kind::Live,
+            SearchKind::Program => query_parser::Kind::Program,
+            SearchKind::Movie => query_parser::Kind::Movie,
+            SearchKind::Series => query_parser::Kind::Series,
+        }
+    }
+}
+
+impl SearchContext {
+    /// The scope as parser kinds (empty: no restriction).
+    pub fn scope(&self) -> Vec<query_parser::Kind> {
+        let mut kinds: Vec<query_parser::Kind> = Vec::new();
+        for kind in &self.kinds {
+            let k = query_parser::Kind::from(*kind);
+            if !kinds.contains(&k) {
+                kinds.push(k);
+            }
+        }
+        kinds
+    }
+
+    /// Whether channel commands ("mets TF1", "chaîne 3") make sense here: only when TV is in scope.
+    pub fn allows_channels(&self) -> bool {
+        self.kinds.is_empty() || self.kinds.iter().any(|k| matches!(k, SearchKind::Live | SearchKind::Program))
+    }
 }
 
 #[derive(Debug, Clone, uniffi::Record)]

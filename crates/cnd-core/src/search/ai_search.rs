@@ -273,6 +273,17 @@ pub fn resolve_guesses(
                 });
             }
         }
+        // A title that exists, but as the other kind (a series proposed on a film search), is not "missing".
+        if !found && want_movies && !want_series {
+            found = db.search_series_words(&terms, 4).unwrap_or_default().iter().any(|s| name_match_bonus(&s.title, &terms) >= 1.0);
+        } else if !found && want_series && !want_movies {
+            found = fts_variants(&guess.title).iter().any(|v| {
+                db.query_catalog(&catalog_filter("movie", v, 4))
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|i| name_match_bonus(&i.name_clean, &terms) >= 1.0)
+            });
+        }
         if !found && (want_movies || want_series) {
             let label = match guess.year {
                 Some(y) => format!("{} ({y})", guess.title),
@@ -351,7 +362,12 @@ pub(crate) async fn search_with_ai(
         group_title: context.group_title.clone(),
         locale: context.locale.clone(),
     };
-    let local = local_matcher::resolve_local(&engine.db, &command, &ai_context, clock.now)?;
+    // (Not when the search is scoped to films or series: nothing there is a channel to perform.)
+    let local = if context.allows_channels() {
+        local_matcher::resolve_local(&engine.db, &command, &ai_context, clock.now)?
+    } else {
+        local_matcher::LocalOutcome { action: None, candidates: Vec::new(), note: None }
+    };
     if let Some(action) = local.action {
         if !matches!(action, AiAction::None | AiAction::Search { .. }) {
             let reply = match &action {
@@ -364,7 +380,7 @@ pub(crate) async fn search_with_ai(
         }
     }
 
-    let parsed = query_parser::parse(&command, clock);
+    let parsed = engine::scoped(query_parser::parse(&command, clock), &context);
     let mut local_hits = engine::command_hits(&engine.db, &command, &context, clock, lang);
     local_hits.extend(engine::search_parsed(&engine.db, &parsed, clock, lang, engine::DEFAULT_LIMIT));
     let local_hits = engine::rank(local_hits, &parsed, engine::DEFAULT_LIMIT);
@@ -378,7 +394,17 @@ pub(crate) async fn search_with_ai(
 
     // Step 3: the model understands the request.
     let system = understand_system_prompt(&context.locale);
-    let user = understand_user_prompt(&command, &local_time_label(clock), &kinds_in_catalog(&engine.db));
+    let only: Vec<&str> = parsed
+        .kinds
+        .iter()
+        .map(|k| match k {
+            Kind::Live => "live",
+            Kind::Program => "program",
+            Kind::Movie => "movie",
+            Kind::Series => "series",
+        })
+        .collect();
+    let user = understand_user_prompt(&command, &local_time_label(clock), &kinds_in_catalog(&engine.db), &only);
     let understood = match crate::ai::call_provider_text(engine, &config, &system, &user, Task::UnderstandSearch).await {
         Ok(text) => parse_understanding(&text).map(Understanding::sanitized),
         Err(reason) => Err(reason),
