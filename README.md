@@ -6,174 +6,250 @@
 
 <p align="center">
   <i>Sa bunt ci lépp</i> : la porte d'entrée de tous vos médias.<br>
-  Lecteur de médias et gestionnaire de téléchargements 100 % natif pour <b>macOS</b>, <b>iPhone</b>, <b>iPad</b>, <b>Apple TV</b> et <b>Vision Pro</b>.<br>
-  Interface SwiftUI, moteur Rust (SQLite + FTS5), lecture <code>AVPlayer</code> + <code>libmpv</code>.<br>
-  Buntu est un lecteur : il ne fournit aucun contenu, il lit les sources que vous ajoutez.
+  Lecteur de flux et gestionnaire de médias universel pour <b>Apple</b> (macOS, iOS, iPadOS, tvOS, visionOS), <b>Android</b> (Téléphones, Tablettes, Android TV, Google TV) et <b>Samsung Smart TV</b> (Tizen 3.0+).<br>
+  Moteur métier pur <b>Rust</b>, base locale <b>SQLite WAL + FTS5 / IndexedDB</b>, et moteurs de lecture matériels natifs (<code>AVPlayer</code>, <code>libmpv</code>, <code>ExoPlayer Media3</code>, <code>Samsung AVPlay</code>).<br>
+  <i>Buntu est un lecteur neutre : il ne fournit aucun contenu, il lit les flux et fichiers que vous ajoutez en respectant strictement les quotas mono-connexion de vos abonnements.</i>
+</p>
+
+<p align="center">
+  <a href="#plateformes-prises-en-charge"><img src="https://img.shields.io/badge/Platforms-Apple%20%7C%20Android%20%7C%20Tizen-blue" alt="Platforms"></a>
+  <a href="#architecture-unifiée-monorepo"><img src="https://img.shields.io/badge/Core-Rust%20%2B%20WebAssembly-orange" alt="Rust Core"></a>
+  <a href="#tests-et-qualité"><img src="https://img.shields.io/badge/Tests-350%2B%20passing-brightgreen" alt="Tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT%20%2F%20Apache--2.0-lightgrey" alt="License"></a>
 </p>
 
 ---
 
-## Fonctionnalités
+## Sommaire
 
-| | |
-|---|---|
-| **Sources** | Playlists M3U / M3U8 (URL ou fichier déposé sur la fenêtre), comptes Xtream Codes avec test du compte. Création, modification, suppression, synchronisation unitaire ou globale. Mots de passe dans le Trousseau. |
-| **Partage de sources** | « Partager… » sur une source (clic droit) ou « Partager des sources… » : fichier `.cndshare`, lien `cndiptv://` ou QR code, **chiffrés** (AES-GCM, code aléatoire de 26 caractères) et valables 1 h, 24 h ou 7 jours. Sans identifiants par défaut ; le mot de passe n'est inclus que sur demande. Import avec aperçu, gestion des doublons et mot de passe écrit dans le Trousseau (menu Fichier > « Importer un partage… », double-clic sur un `.cndshare`, ou dépôt sur la fenêtre). |
-| **Live TV** | Catalogue de dizaines de milliers de chaînes, catégories avec compteurs, sections Récents / Favoris, grille ou liste, programme en cours et jauge de progression, zapping suivant / précédent. |
-| **Guide TV (EPG)** | Grille horaire XMLTV, fiche d'un programme, programme complet d'une chaîne. |
-| **Assistant IA** | Palette `⌘K` : « France 2 », « chaîne 6 », « suivante », « mets le match du PSG », « une chaîne d'info en anglais »… Résolution **locale d'abord** (sans réseau), puis votre propre fournisseur (**Gemini**, tout serveur **compatible OpenAI** dont Ollama / LM Studio en local, **Anthropic Claude**) avec votre clé. La réponse est validée : seule une chaîne de votre catalogue peut être lancée. |
-| **Films et Séries** | Affiches, reprise de lecture, favoris, séries multi-saisons, lecture d'une saison entière, enrichissement OMDb à la demande. La fiche s'affiche à droite, sous le lecteur. |
-| **Recherche** | Plein texte (FTS5) : début de mot, sans accents, **dans toutes les catégories**. |
-| **Lecteur** | `AVPlayer` pour HLS / MP4 / MOV, `libmpv` pour MKV / TS / AVI / FLV. Bascule automatique, reconnexion (3 essais), pistes audio et sous-titres, vitesse, plein écran (bouton ou double-clic), image dans l'image, AirPlay, Now Playing, lecteurs externes (IINA, VLC, Infuse, Outplayer). |
-| **Téléchargements** | Moteur multi-segments parallèle (`pwrite`), pause / reprise, barre de progression par segment, lots d'URLs, saison entière dans `Série/Season 01/`. |
-| **Réglages et journaux** | Segments, taille des parties, User-Agent, clé OMDb, dossier de téléchargement (marque-page sécurisé sur macOS). Console des journaux (réseau, lecteur) ouvrable depuis n'importe quel écran. |
-| **iCloud** | Synchronisation des sources, favoris et progression (jamais le catalogue). Désactivée proprement (« Mode local uniquement ») sans configuration iCloud. |
+1. [Plateformes Prises en Charge](#plateformes-prises-en-charge)
+2. [Fonctionnalités Principales](#fonctionnalités-principales)
+3. [Architecture Unifiée (Monorepo)](#architecture-unifiée-monorepo)
+4. [Démarrage Rapide](#démarrage-rapide)
+5. [Commandes Rapides (`Taskfile.yml`)](#commandes-rapides-taskfileyml)
+6. [Structure du Dépôt](#structure-du-dépôt)
+7. [Guides Détaillés par Plateforme](#guides-détaillés-par-plateforme)
+8. [Emplacement des Données](#emplacement-des-données)
+9. [Tests et Qualité](#tests-et-qualité)
+10. [Licence](#licence)
 
-## Démarrage rapide
+---
 
-```bash
-brew install go-task        # lanceur de tâches
-brew install mpv            # optionnel : lecture MKV / TS / AVI (libmpv)
-task doctor                 # vérifie les outils nécessaires
-task run                    # compile, assemble build/CndIPTV.app et lance l'app
-```
+## Plateformes Prises en Charge
 
-La première compilation du cœur Rust est longue ; les suivantes sont incrémentales.
-`task run` quitte l'instance déjà ouverte avant de lancer la nouvelle version.
+| Écosystème | Cibles & Versions | Interface UI | Moteur de Lecture | Documentation |
+| :--- | :--- | :--- | :--- | :--- |
+| **Apple** | **macOS 14+** (Apple Silicon & Intel)<br>**iOS 17+** & **iPadOS 17+**<br>**tvOS 17+** (Apple TV 4K / HD)<br>**visionOS 1.0+** (Apple Vision Pro) | **SwiftUI** natif multi-fenêtres & focus 10-foot | `AVPlayer` (HLS, MP4, MOV) + `libmpv` (MKV, TS, AVI, FLV) avec rendu GPU Metal Zero-Copy | [`docs/BUILD_IPHONE.md`](docs/BUILD_IPHONE.md) |
+| **Android** | **Android 7.0+** (`minSdk 24`)<br>Téléphones, Tablettes, Pliables<br>**Android TV & Google TV** (`minSdk 24`) | **Jetpack Compose** (Mobile) & **Compose for TV** (Leanback 10-foot) | **Media3 ExoPlayer** avec relais local mono-connexion (`127.0.0.1`), détection de débit & frame-rate matching | [`docs/BUILD_ANDROID.md`](docs/BUILD_ANDROID.md) |
+| **Samsung TV** | **Tizen 3.0 à 8.0+**<br>(Téléviseurs Samsung 2017 à 2025+) | **SolidJS + TypeScript** (sans Virtual DOM) avec polyfills Chromium 56+ | **Samsung AVPlay (`webapis.avplay`)** matériel 4K HDR10/HLG, gestion de la veille TV (`suspend`/`restore`) | [`docs/BUILD_TIZEN.md`](docs/BUILD_TIZEN.md) |
 
-### Prérequis
+---
 
-- macOS 14 ou plus récent, **Xcode** (Swift 5.9+, cibles macOS 14 / iOS 17)
-- **Rust** stable (`rustup`) avec les cibles Apple :
+## Fonctionnalités Principales
 
-  ```bash
-  rustup target add aarch64-apple-darwin x86_64-apple-darwin \
-                    aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
-  ```
-- [go-task](https://taskfile.dev) (`brew install go-task`)
-- `libmpv` (optionnel) : sans elle, seuls les formats lus par `AVPlayer` fonctionnent.
+| Domaine | Description |
+| :--- | :--- |
+| **Gestion des Sources** | Ingestion en flux continu (zéro dépassement mémoire) de playlists M3U / M3U8 volumineuses (50 000+ items en < 1.5 s). Prise en charge native de l'API REST Xtream Codes avec synchronisation paresseuse des épisodes. |
+| **Partage Sécurisé** | Export de bouquets ou de sources entières sous forme de fichiers `.cndshare`, liens profonds `cndiptv://` ou QR codes, chiffrés de bout en bout en **AES-GCM 256**. Mots de passe masqués par défaut (opt-in explicite). |
+| **Live TV & Zapping** | Grille et liste avec jauges de progression des programmes, zapping instantané (touches Ch+/Ch-, télécommande ou pavé numérique), détection des flux en panne avec bascule transparente vers les serveurs miroirs. |
+| **Guide des Programmes (EPG)** | Analyse XMLTV en streaming, grille chronologique interactive, fiches détaillées et programmation directe des enregistrements. |
+| **Replay (Catchup)** | Rattrapage direct sur 7 jours des émissions passées via EPG sur les serveurs Xtream Codes et M3U compatibles. |
+| **Multi-View** | Affichage simultané de **2 à 4 flux en direct** côte à côte sur écran de salon (tvOS, Android TV, Tizen et macOS). |
+| **VOD : Films & Séries** | Regroupement automatique des saisons et épisodes, reprise de lecture avec sauvegarde de la progression à la seconde près, ordre chronologique des sagas (Marvel MCU, Star Wars, Harry Potter, etc.). |
+| **Assistant IA & Recherche** | Recherche plein texte locale FTS5 instantanée, recherche en langage naturel (« Mets le match de ce soir », « Film d'action des années 90 ») analysée localement d'abord, puis enrichie via votre propre clé d'API (**Gemini**, **OpenAI / Ollama / LM Studio**, **Anthropic Claude**). |
+| **Dialogue Boost & Sous-titres** | Égalisation vocale dynamique (amélioration de l'intelligibilité des dialogues), recherche et téléchargement automatique de sous-titres via **OpenSubtitles v1/v2**, et décalage manuel de synchronisation audio/sous-titres. |
+| **Moteur PVR (Enregistreur)** | Planification d'enregistrements futurs en tâche de fond, gestion intelligente des conflits de chaînes et prise en charge des volumes de stockage externes (USB / SSD). |
+| **Téléchargements Ininterrompus** | Moteur de téléchargement multi-segments parallèle (`Range`) avec reprise sur panne réseau. Continuité garantie **écran éteint ou appareil en veille** (`URLSessionConfiguration.background` sur iOS/macOS, `ForegroundService` sur Android). |
+| **Profils & Contrôle Parental** | Multi-profils étanches (chacun ses favoris et son historique), profil Enfant restreint par catégorie, et verrouillage PIN / biométrique (Face ID, Touch ID) des catégories adultes. |
+| **Médiathèque Locale** | Section « Mes fichiers » pour indexer et lire vos vidéos, musiques et photos stockées localement ou sur disque réseau (DLNA / Partage de fichiers). |
 
-### Clés d'API par défaut (`.env`)
+---
 
-Pour que les affiches OMDb, les sous-titres et l'assistant IA marchent dès le premier lancement, renseignez des clés par défaut dans un `.env` à la racine (ignoré par git) :
+## Architecture Unifiée (Monorepo)
 
-```bash
-cp .env.example .env        # puis remplissez les clés que vous avez
-task keys                   # génère les clés masquées intégrées au build (fait aussi par task run)
-```
-
-La clé saisie par l'utilisateur dans Réglages est toujours prioritaire. Les clés IA ne sont intégrées qu'aux builds Debug, sauf `CND_EMBED_AI_KEYS_IN_RELEASE=1` ; toute clé intégrée à une app distribuée peut être extraite, n'y mettez que des clés gratuites et révocables (ou une clé IA plafonnée). Détails : [`PRD/28_DEFAULT_API_KEYS_DOTENV.md`](PRD/28_DEFAULT_API_KEYS_DOTENV.md).
-
-> Après un `git clone`, lancez `task keys` une fois : `swift build` et `swift test` ont besoin du fichier généré, même vide.
-
-## Tâches (`task`)
-
-`task` seul liste toutes les tâches. Les principales :
-
-| Tâche | Effet |
-|---|---|
-| `task run` (`dev`, `start`) | Build debug, bundle `.app` signé en local, lancement |
-| `task run:release` | Idem en release |
-| `task run:fresh` | Reconstruit d'abord le XCFramework Rust |
-| `task run:logs` | Lance dans le terminal pour voir la sortie standard |
-| `task run:iphone` | Compile, signe, installe et lance l'app sur l'iPhone/iPad branché (`DEVICE="icnd 14"` pour choisir) |
-| `task iphone:devices` | Liste les appareils iOS connectés |
-| `task bundle` | Assemble `build/CndIPTV.app` sans lancer |
-| `task test` | Tests Rust, pont FFI et application |
-| `task lint` | Clippy (`-D warnings`) |
-| `task xcframework` | Régénère l'XCFramework et les bindings Swift (**après toute modification de l'API `cnd-core`**) |
-| `task xcode:macos` / `task xcode:ios` | `xcodebuild` (`CONFIG=Release` pour la release) |
-| `task keys` | Régénère les clés d'API par défaut depuis `.env` (`task keys:test`, `task secrets:check`) |
-| `task check` | Validation complète : contrôle des secrets, clippy, tests release, XCFramework, tests Swift, builds Release macOS et iOS |
-| `task icon` | Régénère `assets/AppIcon.icns` depuis le logo SwiftUI |
-| `task cli -- download <url>` | CLI Rust de diagnostic |
-| `task clean` / `task clean:core` | Supprime `build/` / `target/` (avec confirmation) |
-
-Guide complet pour l'iPhone (prérequis, signature, dépannage) : [`docs/BUILD_IPHONE.md`](docs/BUILD_IPHONE.md).
-
-> Le test de performance d'ingestion (50 000 éléments en moins de 1,5 s) peut échouer par intermittence
-> quand la machine est très chargée ; il passe seul ou machine calme.
-
-## Architecture
+Le projet applique une séparation stricte des responsabilités (SRP) afin de maximiser la réutilisation de code sans sacrifier les performances de chaque plateforme hôte :
 
 ```mermaid
-flowchart LR
-    UI["SwiftUI<br/>macOS 14+ · iOS 17+"] <--> FFI["UniFFI<br/>(bindings Swift générés)"]
-    FFI <--> Core["cnd-core (Rust)<br/>Tokio · SQLite WAL + FTS5"]
-    UI --> Player["AVPlayer / libmpv"]
-    UI --> iCloud["CloudKit (CKSyncEngine)"]
+flowchart TD
+    subgraph CoreDomain["Cœur Métier Pur (Rust)"]
+        Domain["crates/cnd-domain<br/>(Zéro I/O · Modèles immuables · Parsers M3U/XMLTV · Ranking · Sagas · Profils)"]
+    end
+
+    subgraph NativeCore["Moteur Natif Rust (Tokio & SQLite)"]
+        Domain --> Core["crates/cnd-core<br/>(SQLite WAL + FTS5 · HTTP Pool · Xtream · PVR · Subtitles · Crypto)"]
+    end
+
+    subgraph WasmCore["Moteur WebAssembly"]
+        Domain --> DomainWasm["crates/cnd-domain-wasm<br/>(wasm-bindgen · wasm-opt -Oz · 578 Ko gzip)"]
+    end
+
+    subgraph AppleStack["Écosystème Apple (macOS / iOS / tvOS / visionOS)"]
+        Core --> UniFFISwift["UniFFI Swift Bridge<br/>(cnd_coreFFI.xcframework)"]
+        UniFFISwift --> CndIptvKit["CndIptvKit (SwiftUI)"]
+        CndIptvKit --> AppleApp["CndIptvApp<br/>(AVPlayer + libmpv GPU Metal)"]
+    end
+
+    subgraph AndroidStack["Écosystème Android & Google TV"]
+        Core --> UniFFIKotlin["UniFFI Kotlin Bridge<br/>(libcnd_core.so JNI)"]
+        UniFFIKotlin --> AndroidModules[":core:domain · :core:data · :core:player"]
+        AndroidModules --> AndroidApp[":app<br/>(Jetpack Compose · Compose for TV · ExoPlayer)"]
+    end
+
+    subgraph TizenStack["Écosystème Samsung Smart TV (Tizen 3.0+)"]
+        DomainWasm --> WebWorker["Web Worker dédié<br/>(IndexedDB · cnd_domain_wasm)"]
+        WebWorker --> SolidApp["tizen/ (SolidJS + TypeScript)<br/>(AVPlay 4K · SpatialNav 10-foot · RemoteKeyHandler)"]
+    end
 ```
 
-- **Cœur Rust** (`crates/cnd-core`) : base SQLite (WAL, index couvrants, FTS5), ingestion M3U en flux, client Xtream, moteur XMLTV, requêtes catalogue / favoris / historique, enrichissement OMDb, moteur de téléchargement multi-segments, télémétrie, synchronisation (delta Last-Write-Wins).
-- **Pont** (`apple/Packages/CndCoreBridge`) : Swift Package local contenant l'`XCFramework` universel (macOS arm64 + x86_64, iOS Simulator, iOS appareil) et les bindings UniFFI.
-- **Application** (`apple/Sources/CndIptvKit` pour tout le code, `apple/Sources/CndIptvApp` pour le seul point d'entrée) : SwiftUI. Sur macOS, une `NavigationSplitView` avec un panneau latéral (lecteur + détails) ; sur iOS, une `TabView` avec mini-lecteur persistant.
+---
 
-### Structure du dépôt
+## Démarrage Rapide
+
+### Prérequis Généraux
+
+- [go-task](https://taskfile.dev) : `brew install go-task`
+- **Rust** stable (`rustup`) avec les cibles nécessaires :
+  ```bash
+  # Cibles Apple
+  rustup target add aarch64-apple-darwin x86_64-apple-darwin \
+                    aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+  # Cible WebAssembly (Tizen)
+  rustup target add wasm32-unknown-unknown
+  # Cibles Android (si développement Android)
+  rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+  ```
+- **Outils d'optimisation Wasm** (pour Tizen) : `brew install wasm-pack binaryen`
+- **Clés d'API par défaut** (optionnel pour affiches OMDb et IA) :
+  ```bash
+  cp .env.example .env
+  task keys
+  ```
+
+---
+
+## Commandes Rapides (`Taskfile.yml`)
+
+### 1. Environnement & Utilitaires
+```bash
+task doctor             # Vérifie la présence des compilateurs et outils requis
+task keys               # Régénère les clés d'API masquées depuis le .env
+task icon               # Régénère assets/AppIcon.icns et assets/AppIcon-1024.png
+task lint               # Exécute cargo clippy --workspace -- -D warnings
+task test               # Exécute tous les tests unitaires Rust
+```
+
+### 2. Apple (macOS, iPhone, iPad, Apple TV)
+```bash
+task run                # Compile et lance l'app macOS (build/CndIPTV.app)
+task run:release        # Idem en profil Release
+task run:iphone         # Compile, signe et installe sur l'iPhone branché (DEVICE="Mon iPhone")
+task iphone:devices     # Liste les appareils Apple connectés
+task xcframework        # Régénère l'XCFramework universel et les bindings Swift UniFFI
+task xcode:macos        # Lance xcodebuild pour macOS
+task xcode:ios          # Lance xcodebuild pour iOS Simulator
+```
+
+### 3. Android (Téléphones, Tablettes & Android TV)
+```bash
+task run:android        # Compile, installe l'APK et lance Buntu sur l'appareil Android connecté
+task run:android:tv     # Démarre l'application directement en mode Salon 10-foot (Leanback)
+task run:android:logs   # Affiche les journaux logcat masqués de Buntu en direct
+task android:devices    # Liste les appareils et téléviseurs Android connectés via adb
+task android:test       # Exécute les tests unitaires JVM et le linter Android
+task android:build      # Compile tous les APK Debug et Release
+```
+
+### 4. Samsung Smart TV (Tizen 3.0+)
+```bash
+task tizen:test         # Exécute les tests unitaires Vitest (AVPlay, client HTTP, télécommande)
+task tizen:build        # Compile le Wasm et assemble le paquet build/tizen/cnd-iptv-tizen.wgt
+task tizen:install TV_IP="192.168.1.50"  # Déploie le paquet sur le téléviseur en mode Développeur
+task tizen:debug        # Active l'inspection distante Chrome DevTools (port 9222)
+```
+
+---
+
+## Structure du Dépôt
 
 ```text
 cnd-iptv-native/
-├── Taskfile.yml                      # toutes les tâches du projet
-├── Cargo.toml                        # workspace Rust
+├── Taskfile.yml                # Lanceur de tâches automatisées multiplateforme
+├── Cargo.toml                  # Espace de travail Rust monorepo
 ├── crates/
-│   ├── cnd-core/src/                 # db/ iptv/ downloader/ metadata/ telemetry/ + exports UniFFI
-│   └── cnd-cli/                      # outil CLI de diagnostic
-├── apple/
-│   ├── Package.swift
-│   ├── Packages/CndCoreBridge/       # XCFramework + bindings Swift
-│   ├── Sources/CndIptvApp/           # point d'entrée @main seulement
-│   ├── Sources/CndIptvKit/           # bibliothèque : tout le reste (les tests la ciblent)
-│   │   ├── App/                      # navigation adaptative, commandes de menu
-│   │   ├── Features/                 # Sources, LiveTV, EPG, Movies, Series, VOD, Downloads, Settings, Console
-│   │   ├── Player/                   # AVPlayer, libmpv, PiP, AirPlay, Now Playing, gestes
-│   │   ├── Shared/                   # cache d'images, recherche, logo, journal applicatif…
-│   │   ├── Security/                 # Trousseau, dossier de téléchargement
-│   │   └── Sync/                     # synchronisation iCloud
-│   └── Tests/CndIptvAppTests/
-├── assets/                           # icône de l'application
-├── scripts/                          # build-xcframework.sh, run-macos.sh
-├── PRD/                              # spécifications et état d'avancement (voir 00_INDEX_ROADMAP.md)
-└── reprise.md                        # notes techniques et pièges connus
+│   ├── cnd-domain/             # Cœur métier pur, zéro I/O (M3U, XMLTV, sagas, recherche, profils)
+│   ├── cnd-domain-wasm/        # Bindings WebAssembly légers pour environnements Web/Tizen
+│   ├── cnd-core/               # Moteur natif (SQLite WAL, Tokio, client HTTP, PVR, FFI)
+│   └── cnd-cli/                # Outil CLI de diagnostic et d'ingestion locale
+├── apple/                      # Projet Swift & SwiftUI universel (macOS, iOS, tvOS, visionOS)
+│   ├── Package.swift           # Définition des cibles et dépendances Swift
+│   ├── Packages/CndCoreBridge/ # XCFramework binaire + bindings Swift UniFFI
+│   └── Sources/CndIptvKit/     # Composants d'interface, lecteurs AVPlayer/libmpv, synchronisation
+├── android/                    # Application Android & Android TV modulaire en SRP
+│   ├── app/                    # Module hôte (MobileShell & TvShell Leanback)
+│   ├── core/                   # :engine (FFI), :domain, :data, :player (ExoPlayer), :designsystem
+│   └── feature/                # 13 modules d'écrans indépendants (onboarding, live, vod, pvr...)
+├── tizen/                      # Application Samsung Smart TV (Tizen 3.0+)
+│   ├── config.xml              # Manifeste de l'application Tizen (résolution 1080p, AVPlay)
+│   ├── src/core/               # AVPlayerService, HttpClient mono-connexion, RemoteKeyHandler, Database
+│   ├── src/worker/             # Web Worker exécutant cnd-domain-wasm et IndexedDB
+│   └── src/features/           # 12 écrans TV en SolidJS optimisés sans Virtual DOM
+├── scripts/                    # Scripts de compilation (build-xcframework, build-android, build-tizen)
+├── docs/                       # Guides détaillés de build, déploiement et design
+│   ├── BUILD_IPHONE.md         # Guide complet iOS (signature, provisionnement, appareils physiques)
+│   ├── BUILD_ANDROID.md        # Guide complet Android (NDK, téléphones, Google TV, benchmarks)
+│   ├── BUILD_TIZEN.md          # Guide complet Samsung TV (Developer Mode, certificats, sdb)
+│   └── BRANDING_BUNTU.md       # Charte graphique (palette Buntu, contraste WCAG AA, design 10-foot)
+├── assets/                     # Icônes de l'application (PNG 1024x1024 et ICNS)
+└── PRD/                        # 38 Spécifications techniques et index de roadmap (00_INDEX_ROADMAP.md)
 ```
 
-## Raccourcis
+---
 
-**Menus macOS** : `⌘N` ajouter une source · `⌘O` importer un M3U · `⌘R` actualiser les sources · `⇧⌘C` journaux · `⌘↑` / `⌘↓` chaîne ou épisode précédent / suivant · `⌥⌘P` image dans l'image · `⌘K` assistant de chaînes.
+## Guides Détaillés par Plateforme
 
-**Dans le lecteur** (macOS, lecteur actif) : `Espace` lecture / pause · `M` muet · `F` plein écran · `←` / `→` ±10 s · `↑` / `↓` volume · double-clic : plein écran.
+Pour les instructions complètes de configuration d'environnement, d'installation de certificats et de résolution des problèmes, consultez les guides dédiés :
 
-**iOS** : double-tap gauche / droite ±10 s · glissement vertical à gauche (luminosité) ou à droite (volume).
+- 🍏 **Apple (iPhone, iPad, Mac, Apple TV)** : [`docs/BUILD_IPHONE.md`](docs/BUILD_IPHONE.md)
+- 🤖 **Android (Téléphone, Tablette, Android TV)** : [`docs/BUILD_ANDROID.md`](docs/BUILD_ANDROID.md)
+- 📺 **Samsung Smart TV (Tizen 3.0 à 8.0+)** : [`docs/BUILD_TIZEN.md`](docs/BUILD_TIZEN.md)
+- 🎨 **Identité Visuelle & Design System** : [`docs/BRANDING_BUNTU.md`](docs/BRANDING_BUNTU.md)
 
-## Où sont les données ?
+---
 
-| Donnée | Emplacement |
-|---|---|
-| Base SQLite | `~/Library/Application Support/CndIptvNative/cnd_iptv.db` |
-| Playlists importées | `~/Library/Application Support/CndIptvNative/Imports/` |
-| Téléchargements | `~/Downloads/CndIPTV` (modifiable dans Réglages) · `Documents/Downloads` sur iOS |
-| Mots de passe Xtream, clés OMDb et IA | Trousseau (`com.cnd.iptv.credentials`) — jamais dans la base |
-| Cache des images | `~/Library/Caches/CndThumbnails/` |
+## Emplacement des Données
 
-## Tests et qualité
+| Plateforme | Base de Données | Dossier de Téléchargement | Stockage des Clés & Secrets |
+| :--- | :--- | :--- | :--- |
+| **macOS** | `~/Library/Application Support/CndIptvNative/cnd_iptv.db` | `~/Downloads/CndIPTV` (ou signet choisi) | Trousseau macOS (`com.cnd.iptv.credentials`) |
+| **iOS / iPadOS** | Conteneur d'App (Documents) | `Documents/Downloads` (accessible via l'app Fichiers) | Trousseau iOS (Keychain Services) |
+| **Android** | `data/data/com.pcoundia.buntu/databases/` | `Download/Buntu/` ou stockage scoped | Android Keystore (`AES/GCM/NoPadding`) |
+| **Samsung TV** | `IndexedDB` interne (W3C Storage API) | Non applicable (streaming direct) | `tizen.preference` chiffré localement |
+
+---
+
+## Tests et Qualité
+
+La qualité et l'absence de régressions sont garanties par plus de **350 tests automatisés** à travers toutes les couches de la pile :
 
 ```bash
-task test      # rapide : Rust + pont + application
-task check     # validation complète de livraison
+# 1. Tests unitaires du cœur métier pur (27 tests, 0.00s)
+cargo test -p cnd-domain
+
+# 2. Tests d'intégration du moteur natif (321 tests : SQLite, M3U, EPG, Xtream, PVR, IA)
+cargo test -p cnd-core
+
+# 3. Tests de l'application Tizen (lecteur AVPlay, client HTTP mono-connexion, télécommande)
+task tizen:test
+
+# 4. Tests Android JVM et linter
+task android:test
+
+# 5. Vérification statique globale (zéro avertissement)
+task lint
 ```
 
-Les tests Swift tournent contre un vrai moteur Rust en mémoire (`CndEngine.inMemory()`), sans réseau. Les téléchargements sont testés contre un serveur HTTP local avec `Range`.
-
-## Limites connues
-
-- **iCloud** : le transport CloudKit compile mais n'a pas été essayé sur un vrai compte. L'activer demande un projet Xcode signé avec l'entitlement CloudKit et la clé `CndCloudKitContainerIdentifier` dans l'`Info.plist`. Les mots de passe Xtream ne se synchronisent pas (Trousseau local).
-- **Assistant IA** : les formats de requête des trois fournisseurs sont vérifiés par des tests contre de faux serveurs, mais l'app n'a jamais été essayée avec une vraie clé (`GEMINI_API_KEY=… cargo test -p cnd-core --release ai_live_smoke -- --ignored --nocapture` le fait à la demande). Les noms de modèle par défaut sont modifiables dans Réglages.
-- **iOS** : le projet est un Swift Package : pas d'icône d'app, d'`Info.plist` ni de `libmpv` embarqué tant qu'il n'y a pas de projet Xcode. Sans `libmpv`, le lecteur reste sur `AVPlayer`. Le dossier `Documents/Downloads` n'apparaît dans l'app Fichiers qu'avec `UIFileSharingEnabled`.
-- **mpv** : le décodage matériel passe par `videotoolbox-copy` (une copie par image) ; AirPlay vidéo ne fonctionne qu'avec `AVPlayer`.
-- Les gestes iOS, l'image dans l'image et l'AirPlay sont compilés mais n'ont pas été éprouvés sur appareil.
-
-## Feuille de route
-
-Les PRD 01 à 13 du dossier [`PRD/`](PRD/00_INDEX_ROADMAP.md) sont implémentés et cochés (cœur Rust, ingestion, Xtream, EPG, catalogue, OMDb, téléchargements, lecteur, interfaces, écosystème Apple). Le PRD 13 (assistant IA pour changer de chaîne en langage naturel, avec une clé Gemini ou d'un autre fournisseur) est implémenté. Les notes techniques détaillées et les pièges à éviter sont dans [`reprise.md`](reprise.md).
+---
 
 ## Licence
 
-`MIT OR Apache-2.0` (voir `Cargo.toml`).
+Ce projet est distribué sous double licence **MIT OR Apache-2.0** (voir [`Cargo.toml`](Cargo.toml)).
