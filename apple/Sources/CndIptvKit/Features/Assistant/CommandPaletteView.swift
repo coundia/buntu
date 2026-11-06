@@ -28,7 +28,7 @@ struct CommandPaletteView: View {
     private var inputRow: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles").foregroundStyle(.tint).font(.title3)
-            TextField("Quelle chaîne voulez-vous ? (« France 2 », « le match du PSG »…)", text: $model.input)
+            TextField("Que voulez-vous regarder ? (« un film avec Tom Cruise », « le match du PSG ce soir »…)", text: $model.input)
                 .textFieldStyle(.plain)
                 .font(.title3)
                 .focused($fieldFocused)
@@ -62,8 +62,13 @@ struct CommandPaletteView: View {
             message(error, systemImage: "exclamationmark.triangle.fill", tint: .red)
         } else if let result = model.result {
             resultView(result)
+        } else if !model.liveHits.isEmpty {
+            // While the assistant works the local results stay on screen: it refines them, never replaces them.
+            searchResultsView(model.searchResponse)
         } else if model.isResolving {
-            message("Recherche de la chaîne…", systemImage: "hourglass", tint: .secondary)
+            message("Recherche en cours…", systemImage: "hourglass", tint: .secondary)
+        } else if let response = model.searchResponse, !response.missingTitles.isEmpty {
+            searchResultsView(response)
         } else if !model.suggestions.isEmpty {
             channelList(model.suggestions, title: "Suggestions")
         } else if model.input.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -80,6 +85,116 @@ struct CommandPaletteView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Prompt search results (PRD 33)
+
+    private static let kindOrder: [SearchKind] = [.program, .live, .movie, .series]
+
+    private func title(of kind: SearchKind) -> String {
+        switch kind {
+        case .program: return "Programmes"
+        case .live: return "Chaînes en direct"
+        case .movie: return "Films"
+        case .series: return "Séries"
+        }
+    }
+
+    private func sections(_ hits: [SearchHit]) -> [(kind: SearchKind, hits: [SearchHit])] {
+        // The kind of the best result first, then the others in their usual order.
+        let bestFirst = hits.first?.kind
+        let order = Self.kindOrder.sorted { a, b in
+            if a == bestFirst { return b != bestFirst }
+            if b == bestFirst { return false }
+            return (Self.kindOrder.firstIndex(of: a) ?? 0) < (Self.kindOrder.firstIndex(of: b) ?? 0)
+        }
+        return order.compactMap { kind in
+            let group = hits.filter { $0.kind == kind }
+            return group.isEmpty ? nil : (kind, group)
+        }
+    }
+
+    private func searchResultsView(_ response: SearchResponse?) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            searchHeader(response)
+            List {
+                ForEach(sections(model.liveHits), id: \.kind) { section in
+                    Section(title(of: section.kind)) {
+                        ForEach(Array(section.hits.enumerated()), id: \.offset) { _, hit in
+                            hitRow(hit)
+                        }
+                    }
+                }
+                if let missing = response?.missingTitles, !missing.isEmpty {
+                    Section {
+                        Label(
+                            "\(missing.count) titre\(missing.count > 1 ? "s" : "") connu\(missing.count > 1 ? "s" : "") absent\(missing.count > 1 ? "s" : "") de vos sources : \(missing.prefix(4).joined(separator: ", "))\(missing.count > 4 ? "…" : "")",
+                            systemImage: "tray"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .listStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func searchHeader(_ response: SearchResponse?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let response {
+                if !response.reply.isEmpty { Text(response.reply).font(.headline) }
+                HStack(spacing: 6) {
+                    Text(response.resolvedBy == "local" ? "Recherche locale" : "Classés par l'assistant (\(response.resolvedBy))")
+                    Text("· \(response.latencyMs) ms")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                if let reason = response.fallbackReason {
+                    Label("Assistant indisponible, résultats locaux : \(reason)", systemImage: "arrow.uturn.backward.circle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            } else if model.isResolving {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text("Résultats locaux · l'assistant affine…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, response == nil && !model.isResolving ? 0 : 10)
+    }
+
+    private func hitRow(_ hit: SearchHit) -> some View {
+        Button { model.choose(hit) } label: {
+            HStack(spacing: 10) {
+                ThumbnailImageView(
+                    urlString: hit.series?.posterUrl ?? hit.item?.logoUrl,
+                    size: hit.kind == .movie || hit.kind == .series ? .poster : .tvLogo
+                )
+                .frame(width: 32, height: hit.kind == .movie || hit.kind == .series ? 48 : 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(SearchHitText.title(hit)).lineLimit(1)
+                        if hit.fromAssistant {
+                            Image(systemName: "sparkles").font(.caption2).foregroundStyle(.tint)
+                                .accessibilityLabel("Proposé par l'assistant")
+                        }
+                    }
+                    if !hit.reason.isEmpty {
+                        Text(hit.reason).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                Spacer()
+                Image(systemName: SearchHitText.actionSymbol(hit)).foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(SearchHitText.accessibilityLabel(hit))
+        .accessibilityHint(SearchHitText.actionLabel(hit))
     }
 
     private func resultView(_ result: AiCommandResult) -> some View {
@@ -136,7 +251,7 @@ struct CommandPaletteView: View {
         VStack(alignment: .leading, spacing: 8) {
             if model.history.isEmpty {
                 Text("Exemples").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                ForEach(["France 2", "chaîne 6", "mets le match du PSG", "une chaîne d'info en anglais", "suivante"], id: \.self) { example in
+                ForEach(["un film avec Tom Cruise", "le match du PSG ce soir", "une série coréenne romantique", "quelque chose comme Inception", "les infos en anglais"], id: \.self) { example in
                     suggestionButton(example)
                 }
             } else {

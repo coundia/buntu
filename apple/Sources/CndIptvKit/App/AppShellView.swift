@@ -460,6 +460,14 @@ private struct LoadedShellView: View {
                     multiViewController.isPresented = true
                 }
                 Haptics.light()
+            },
+            openMovie: { item in
+                selectedTabRaw = AppTab.movies.rawValue
+                vodContext.selection = .movie(item)
+            },
+            openSeries: { series in
+                selectedTabRaw = AppTab.series.rawValue
+                vodContext.selection = .series(series)
             }
         )
         commands.openAssistant = { openAssistant() }

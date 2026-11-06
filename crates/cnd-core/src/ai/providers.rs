@@ -4,7 +4,7 @@
 //! Keys travel in headers (`x-goog-api-key`, `Authorization`, `x-api-key`), never in the URL or body.
 
 use crate::ai::intent::{AiProviderConfig, AiProviderKind};
-use crate::ai::prompt::{decision_schema, gemini_schema};
+use crate::ai::prompt::{decision_schema, gemini_schema, understand_gemini_schema, understand_schema};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -23,15 +23,34 @@ pub struct ProviderRequest {
     pub body: Value,
 }
 
+/// What the request asks the model for: one channel action, or the understanding of a search prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Task {
+    Command,
+    UnderstandSearch,
+}
+
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 const GEMINI_MAX_OUTPUT_TOKENS: u32 = 1024;
 const ANTHROPIC_MAX_TOKENS: u32 = 512;
+/// A search understanding holds up to 25 titles: more room than a single action, still under 2 000.
+const UNDERSTAND_MAX_TOKENS: u32 = 1024;
 
 pub fn build_request(
     config: &AiProviderConfig,
     system: &str,
     user: &str,
     mode: RequestMode,
+) -> Result<ProviderRequest, String> {
+    build_request_for(config, system, user, mode, Task::Command)
+}
+
+pub fn build_request_for(
+    config: &AiProviderConfig,
+    system: &str,
+    user: &str,
+    mode: RequestMode,
+    task: Task,
 ) -> Result<ProviderRequest, String> {
     let key = config.key();
     if config.requires_key() && key.is_none() {
@@ -55,7 +74,10 @@ pub fn build_request(
                 "maxOutputTokens": GEMINI_MAX_OUTPUT_TOKENS,
             });
             if mode == RequestMode::Strict {
-                generation["responseSchema"] = gemini_schema();
+                generation["responseSchema"] = match task {
+                    Task::Command => gemini_schema(),
+                    Task::UnderstandSearch => understand_gemini_schema(),
+                };
             }
             Ok(ProviderRequest {
                 url: format!("{base}/models/{}:generateContent", model.trim_start_matches("models/")),
@@ -69,10 +91,16 @@ pub fn build_request(
         }
         AiProviderKind::OpenAiCompatible => {
             let response_format = match mode {
-                RequestMode::Strict => json!({
-                    "type": "json_schema",
-                    "json_schema": { "name": "channel_action", "strict": true, "schema": decision_schema() }
-                }),
+                RequestMode::Strict => match task {
+                    Task::Command => json!({
+                        "type": "json_schema",
+                        "json_schema": { "name": "channel_action", "strict": true, "schema": decision_schema() }
+                    }),
+                    Task::UnderstandSearch => json!({
+                        "type": "json_schema",
+                        "json_schema": { "name": "search_understanding", "strict": true, "schema": understand_schema() }
+                    }),
+                },
                 RequestMode::Light => json!({ "type": "json_object" }),
             };
             let mut headers = Vec::new();
@@ -100,18 +128,30 @@ pub fn build_request(
                     ("x-api-key", key.unwrap_or_default().to_string()),
                     ("anthropic-version", ANTHROPIC_VERSION.to_string()),
                 ],
-                body: json!({
-                    "model": model,
-                    "max_tokens": ANTHROPIC_MAX_TOKENS,
-                    "system": system,
-                    "messages": [{ "role": "user", "content": user }],
-                    "tools": [{
-                        "name": "choose_action",
-                        "description": "Record the single action chosen for the user's command.",
-                        "input_schema": decision_schema(),
-                    }],
-                    "tool_choice": { "type": "tool", "name": "choose_action" },
-                }),
+                body: {
+                    let (tool_name, description, schema, max_tokens) = match task {
+                        Task::Command => (
+                            "choose_action",
+                            "Record the single action chosen for the user's command.",
+                            decision_schema(),
+                            ANTHROPIC_MAX_TOKENS,
+                        ),
+                        Task::UnderstandSearch => (
+                            "understand_search",
+                            "Record what the user is looking for and the titles that fit.",
+                            understand_schema(),
+                            UNDERSTAND_MAX_TOKENS,
+                        ),
+                    };
+                    json!({
+                        "model": model,
+                        "max_tokens": max_tokens,
+                        "system": system,
+                        "messages": [{ "role": "user", "content": user }],
+                        "tools": [{ "name": tool_name, "description": description, "input_schema": schema }],
+                        "tool_choice": { "type": "tool", "name": tool_name },
+                    })
+                },
             })
         }
     }

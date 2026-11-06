@@ -1,0 +1,221 @@
+import XCTest
+import CndCoreBridge
+@testable import CndIptvKit
+
+/// PRD 33 in the app: results while typing, the answer after Enter, and what a tap on a result does.
+final class FakeSearchBackend: AssistantBackend, @unchecked Sendable {
+    private let lock = NSLock()
+    var supportsPromptSearch: Bool { true }
+    var local = SearchResponse(command: nil, hits: [], missingTitles: [], reply: "", resolvedBy: "local", latencyMs: 1, fallbackReason: nil)
+    var aiResult: Result<SearchResponse, Error> = .success(
+        SearchResponse(command: nil, hits: [], missingTitles: [], reply: "", resolvedBy: "local", latencyMs: 1, fallbackReason: nil)
+    )
+    var aiDelay: Duration = .zero
+    private var storedLocalTexts: [String] = []
+    private var storedAiTexts: [String] = []
+    var localTexts: [String] { lock.withLock { storedLocalTexts } }
+    var aiTexts: [String] { lock.withLock { storedAiTexts } }
+
+    func aiResolveCommand(command: String, context: AiCommandContext, config: AiProviderConfig) async throws -> AiCommandResult {
+        XCTFail("the prompt search must not use the old command path")
+        throw CndError.Internal(message: "unused")
+    }
+
+    func aiTestProvider(config: AiProviderConfig) async throws -> AiProviderStatus {
+        AiProviderStatus(ok: true, latencyMs: 1, model: "m", message: "ok")
+    }
+
+    func getItemById(itemId: Int64) throws -> IptvItemRecord? { nil }
+
+    func searchLocal(text: String, context: SearchContext) -> SearchResponse {
+        lock.withLock { storedLocalTexts.append(text) }
+        return local
+    }
+
+    func searchWithAi(text: String, context: SearchContext, config: AiProviderConfig) async throws -> SearchResponse {
+        lock.withLock { storedAiTexts.append(text) }
+        if aiDelay > .zero { try await Task.sleep(for: aiDelay) }
+        return try aiResult.get()
+    }
+}
+
+func makeHit(_ kind: SearchKind, name: String, program: EpgProgramRecord? = nil, reason: String = "Titre correspondant", id: Int64 = 1) -> SearchHit {
+    var series: SeriesRecord?
+    var item: IptvItemRecord?
+    if kind == .series {
+        series = SeriesRecord(
+            id: id, sourceId: 1, canonicalKey: "k\(id)", stableHash: "s\(id)", title: name, groupTitle: "FR | SERIES", posterUrl: nil,
+            backdropUrl: nil, imdbId: nil, imdbRating: nil, plot: nil, episodeCount: 10, seasonCount: 1, isFavorite: false, isBroken: false
+        )
+    } else {
+        item = makeChannel(id: id, name: name)
+    }
+    return SearchHit(kind: kind, item: item, series: series, program: program, reason: reason, score: 1, fromAssistant: false)
+}
+
+func makeProgram(title: String, start: Int64, end: Int64) -> EpgProgramRecord {
+    EpgProgramRecord(id: 1, channelTvgId: "c", startTs: start, endTs: end, title: title, subtitle: nil, description: nil, category: nil, progressRatio: 0)
+}
+
+@MainActor
+final class PromptSearchTests: XCTestCase {
+    private var backend: FakeSearchBackend!
+    private var model: AssistantModel!
+    private var defaults: UserDefaults!
+    private var suite = ""
+    private var played: [String] = []
+    private var guides: [String] = []
+    private var movies: [String] = []
+    private var seriesOpened: [String] = []
+    private var searches: [String] = []
+    private var dismissals = 0
+
+    override func setUp() async throws {
+        suite = "cnd.promptsearch.tests.\(UUID())"
+        defaults = UserDefaults(suiteName: suite)
+        backend = FakeSearchBackend()
+        let settings = AiProviderSettings(
+            defaults: defaults, keychain: KeychainStore(service: "com.cnd.iptv.tests.ps.\(UUID().uuidString)"), bundledKeys: DefaultApiKeys()
+        )
+        model = AssistantModel(backend: backend, settings: settings, defaults: defaults, suggestionDelay: .milliseconds(20))
+        played = []; guides = []; movies = []; seriesOpened = []; searches = []; dismissals = 0
+        model.actions = AssistantActions(
+            play: { [unowned self] in played.append($0.name) },
+            showGuide: { [unowned self] in guides.append($0.name) },
+            next: {}, previous: {},
+            search: { [unowned self] in searches.append($0) },
+            multiView: { _ in },
+            openMovie: { [unowned self] in movies.append($0.name) },
+            openSeries: { [unowned self] in seriesOpened.append($0.title) }
+        )
+        model.onDismiss = { [unowned self] in dismissals += 1 }
+    }
+
+    override func tearDown() async throws {
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    private func response(hits: [SearchHit], command: AiAction? = nil, missing: [String] = [], reply: String = "", by: String = "gemini", fallback: String? = nil) -> SearchResponse {
+        SearchResponse(command: command, hits: hits, missingTitles: missing, reply: reply, resolvedBy: by, latencyMs: 5, fallbackReason: fallback)
+    }
+
+    // MARK: Typing
+
+    func testResultsAppearWhileTypingFromTheLocalSearch() async {
+        backend.local = response(hits: [makeHit(.movie, name: "Top Gun: Maverick")], by: "local")
+        model.input = "un film avec Tom Cruise"
+        let shown = await eventually { !self.model.liveHits.isEmpty }
+        XCTAssertTrue(shown)
+        XCTAssertEqual(backend.localTexts.last, "un film avec Tom Cruise")
+        XCTAssertTrue(backend.aiTexts.isEmpty, "nothing goes to the provider before Enter")
+    }
+
+    func testClearingTheFieldClearsTheResults() async {
+        backend.local = response(hits: [makeHit(.movie, name: "Inception")], by: "local")
+        model.input = "inception"
+        _ = await eventually { !self.model.liveHits.isEmpty }
+        model.input = ""
+        XCTAssertTrue(model.liveHits.isEmpty)
+        XCTAssertNil(model.searchResponse)
+    }
+
+    // MARK: Enter
+
+    func testEnterShowsTheAssistantsResultsAndKeepsThePaletteOpen() async {
+        backend.aiResult = .success(response(
+            hits: [makeHit(.movie, name: "Top Gun: Maverick", reason: "Avec Tom Cruise")],
+            missing: ["Jerry Maguire (1996)"], reply: "Films avec Tom Cruise"
+        ))
+        model.input = "un film avec Tom Cruise"
+        await model.submit()
+        XCTAssertEqual(model.searchResponse?.reply, "Films avec Tom Cruise")
+        XCTAssertEqual(model.liveHits.count, 1)
+        XCTAssertEqual(model.searchResponse?.missingTitles, ["Jerry Maguire (1996)"])
+        XCTAssertEqual(dismissals, 0)
+        XCTAssertFalse(model.isResolving)
+        XCTAssertEqual(model.history.first, "un film avec Tom Cruise")
+    }
+
+    func testADirectCommandIsPerformedAndClosesThePalette() async {
+        backend.aiResult = .success(response(hits: [], command: .nextChannel, by: "local"))
+        model.input = "chaîne suivante"
+        await model.submit()
+        XCTAssertEqual(dismissals, 1)
+        XCTAssertNil(model.searchResponse)
+    }
+
+    func testNothingFoundHandsTheWordsToTheCatalogSearch() async {
+        backend.aiResult = .success(response(hits: [], by: "local"))
+        model.input = "zzzzz"
+        await model.submit()
+        XCTAssertEqual(searches, ["zzzzz"])
+        XCTAssertEqual(dismissals, 1)
+    }
+
+    func testOnlyMissingTitlesStillShowsThem() async {
+        backend.aiResult = .success(response(hits: [], missing: ["Jerry Maguire (1996)"]))
+        model.input = "un film avec Tom Cruise"
+        await model.submit()
+        XCTAssertEqual(searches, [], "not a plain search: the assistant knew titles")
+        XCTAssertEqual(dismissals, 0)
+        XCTAssertEqual(model.searchResponse?.missingTitles.count, 1)
+    }
+
+    func testAProviderErrorIsShownWithAHint() async {
+        backend.aiResult = .failure(CndError.Network(message: "clé refusée par le fournisseur"))
+        model.input = "un film avec Tom Cruise"
+        await model.submit()
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertNil(model.searchResponse)
+    }
+
+    func testAnAnswerForAnOlderQuestionIsDropped() async {
+        backend.aiDelay = .milliseconds(150)
+        backend.aiResult = .success(response(hits: [makeHit(.movie, name: "Old answer")]))
+        model.input = "premier"
+        let first = Task { await model.submit() }
+        try? await Task.sleep(for: .milliseconds(30))
+        model.cancel()
+        await first.value
+        XCTAssertNil(model.searchResponse, "cancelled: the late answer must not appear")
+    }
+
+    // MARK: Taps
+
+    func testATapDoesWhatTheResultIs() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let t = Int64(now.timeIntervalSince1970)
+        model.choose(makeHit(.live, name: "TF1"), now: now)
+        model.choose(makeHit(.movie, name: "Inception"), now: now)
+        model.choose(makeHit(.series, name: "Squid Game"), now: now)
+        model.choose(makeHit(.program, name: "beIN 1", program: makeProgram(title: "PSG", start: t - 600, end: t + 600)), now: now)
+        model.choose(makeHit(.program, name: "beIN 2", program: makeProgram(title: "OM", start: t + 3_600, end: t + 7_200)), now: now)
+        XCTAssertEqual(played, ["TF1", "beIN 1"], "live and on-air programmes play")
+        XCTAssertEqual(movies, ["Inception"])
+        XCTAssertEqual(seriesOpened, ["Squid Game"])
+        XCTAssertEqual(guides, ["beIN 2"], "a later programme opens the guide")
+        XCTAssertEqual(dismissals, 5)
+    }
+}
+
+final class SearchHitTextTests: XCTestCase {
+    func testTitlesAndActions() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let t = Int64(now.timeIntervalSince1970)
+        let onAir = makeHit(.program, name: "beIN 1", program: makeProgram(title: "PSG - OM", start: t - 60, end: t + 60))
+        let later = makeHit(.program, name: "beIN 1", program: makeProgram(title: "PSG - OL", start: t + 600, end: t + 900))
+        XCTAssertEqual(SearchHitText.title(onAir), "PSG - OM")
+        XCTAssertEqual(SearchHitText.actionLabel(onAir, now: now), "Lire la chaîne")
+        XCTAssertEqual(SearchHitText.actionLabel(later, now: now), "Voir le guide de la chaîne")
+        XCTAssertEqual(SearchHitText.actionSymbol(later, now: now), "calendar")
+        XCTAssertEqual(SearchHitText.actionLabel(makeHit(.movie, name: "Inception"), now: now), "Ouvrir la fiche du film")
+        XCTAssertEqual(SearchHitText.title(makeHit(.series, name: "Squid Game")), "Squid Game")
+    }
+
+    func testTheSpokenLabelNamesWhyAndWhoSuggestedIt() {
+        var hit = makeHit(.movie, name: "Top Gun: Maverick", reason: "Avec Tom Cruise")
+        XCTAssertEqual(SearchHitText.accessibilityLabel(hit), "Top Gun: Maverick. Avec Tom Cruise")
+        hit.fromAssistant = true
+        XCTAssertEqual(SearchHitText.accessibilityLabel(hit), "Top Gun: Maverick. Avec Tom Cruise. Proposé par l'assistant")
+    }
+}

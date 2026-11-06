@@ -165,7 +165,7 @@ pub(crate) fn map_item_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<IptvItemRe
     })
 }
 
-fn map_series_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<SeriesRecord> {
+pub(crate) fn map_series_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<SeriesRecord> {
     Ok(SeriesRecord {
         id: r.get(0)?,
         source_id: r.get(1)?,

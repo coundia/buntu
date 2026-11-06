@@ -10,7 +10,7 @@ pub mod local_matcher;
 pub mod prompt;
 pub mod providers;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 
 pub use intent::{
     AiAction, AiCommandContext, AiCommandResult, AiProviderConfig, AiProviderKind, AiProviderStatus,
@@ -276,14 +276,27 @@ fn validate(decision: &ModelDecision, candidates: &[Candidate]) -> Result<(AiAct
     }
 }
 
-/// One provider round-trip, with the two retries that are worth it: a lighter response format when
-/// the server rejects the schema, and a single retry after a short rate-limit pause.
+/// One provider round-trip for a channel command.
 async fn call_provider(
     engine: &CndEngine,
     config: &AiProviderConfig,
     system: &str,
     user: &str,
 ) -> Result<ModelDecision, String> {
+    let text = call_provider_text(engine, config, system, user, providers::Task::Command).await?;
+    providers::parse_decision(&text)
+}
+
+/// One provider round-trip, with the two retries that are worth it: a lighter response format when
+/// the server rejects the schema, and a single retry after a short rate-limit pause. Returns the text
+/// (a JSON document) the model produced; the caller parses and validates it.
+pub(crate) async fn call_provider_text(
+    engine: &CndEngine,
+    config: &AiProviderConfig,
+    system: &str,
+    user: &str,
+    task: providers::Task,
+) -> Result<String, String> {
     let timeout = Duration::from_millis(config.effective_timeout_ms());
     let deadline = Instant::now() + timeout;
     let mut mode = RequestMode::Strict;
@@ -295,14 +308,12 @@ async fn call_provider(
         if remaining.is_zero() {
             return Err("délai dépassé".to_string());
         }
-        let request = providers::build_request(config, system, user, mode)?;
+        let request = providers::build_request_for(config, system, user, mode, task)?;
         let (status, retry_after, body) = send(engine, config, &request, remaining).await?;
-
         if (200..300).contains(&status) {
             let json: serde_json::Value =
                 serde_json::from_str(&body).map_err(|_| "réponse non JSON du fournisseur".to_string())?;
-            let text = providers::extract_text(config.kind, &json)?;
-            return providers::parse_decision(&text);
+            return providers::extract_text(config.kind, &json);
         }
         if status == 429 && !rate_limited && retry_after.unwrap_or(1) <= 2 {
             rate_limited = true;

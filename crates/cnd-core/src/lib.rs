@@ -7,6 +7,7 @@ pub mod iptv;
 pub mod library;
 pub mod metadata;
 pub mod recorder;
+pub mod search;
 pub mod recommend;
 pub mod sharing;
 pub mod subtitles;
@@ -17,6 +18,7 @@ pub use recommend::{
     SagaPosition,
 };
 
+pub use search::{SearchContext, SearchHit, SearchKind, SearchResponse};
 pub use ai::{
     AiAction, AiCommandContext, AiCommandResult, AiProviderConfig, AiProviderKind, AiProviderStatus,
 };
@@ -991,6 +993,36 @@ impl CndEngine {
         config: AiProviderConfig,
     ) -> Result<AiCommandResult, CndError> {
         ai::resolve(self, command, context, config).await
+    }
+
+    /// Prompt search: channels, programmes, films and series from a sentence, without any network. Fast
+    /// enough to run on every keystroke; nothing the profile may not see is ever returned.
+    pub fn search_local(&self, text: String, context: search::SearchContext) -> search::SearchResponse {
+        let started = std::time::Instant::now();
+        let clock = search::query_parser::Clock { now: db::chrono_now_ts(), utc_offset_minutes: context.utc_offset_minutes };
+        let lang = search::engine::Lang::from_locale(&context.locale);
+        let hits = search::engine::search_for_palette(&self.db, text.trim(), &context, clock, lang, search::engine::DEFAULT_LIMIT);
+        search::SearchResponse {
+            command: None,
+            hits,
+            missing_titles: Vec::new(),
+            reply: String::new(),
+            resolved_by: "local".to_string(),
+            latency_ms: started.elapsed().as_millis() as u64,
+            fallback_reason: None,
+        }
+    }
+
+    /// Prompt search with the user's own AI provider: a direct command is resolved locally; otherwise the
+    /// provider understands the request and proposes titles, which are looked up in the catalog (the
+    /// provider never sees it). Falls back to the local results on any failure.
+    pub async fn search_with_ai(
+        &self,
+        text: String,
+        context: search::SearchContext,
+        config: AiProviderConfig,
+    ) -> Result<search::SearchResponse, CndError> {
+        search::ai_search::search_with_ai(self, text, context, config).await
     }
 
     /// Checks that the provider answers (key, model, address) and how fast.

@@ -110,6 +110,7 @@ flowchart TD
 | **30** | [`30_RESPONSIVE_UI_SCALING.md`](./30_RESPONSIVE_UI_SCALING.md) | Interface responsive : jetons de design (icônes, cartes, affiches, colonnes), réglage « Taille de l'interface » et Dynamic Type, seuils adaptatifs, accessibilité, Apple TV, contrôle `lint:ui`. | `[x]` (lot 30.1 ; 30.2 et 30.3 en partie ; 30.4 non fait ; non essayé à l'écran) |
 | **31** | [`31_ACCESSIBILITY.md`](./31_ACCESSIBILITY.md) | Accessibilité : VoiceOver (libellés, actions, rotors, annonces), clavier complet, Contrôle vocal, sous-titres SDH et audiodescription, réglages visuels du système, audits automatiques. | `[x]` (partiel : voir le statut du PRD ; aucun essai avec VoiceOver) |
 | **32** | [`32_LOCAL_MEDIA_LIBRARY.md`](./32_LOCAL_MEDIA_LIBRARY.md) | « Mes fichiers » dans la barre latérale (Vidéo, Audio, Images, Dossiers) comme VLC : dossiers autorisés par l'utilisateur (signets de sécurité), index Rust incrémental, lecteur audio, visionneuse d'images. | `[x]` |
+| **33** | [`33_AI_PROMPT_SEARCH.md`](./33_AI_PROMPT_SEARCH.md) | Recherche par prompt : chaînes, programmes EPG, replay, films et séries en langage naturel ; analyse locale, puis l'IA comprend et propose des titres cherchés dans le catalogue, jeu d'évaluation mesuré. | `[x]` (lots 33.1 et 33.2, 33.3 en partie ; Siri, fichiers, affinage non faits ; non essayé avec un vrai fournisseur IA) |
 
 ---
 

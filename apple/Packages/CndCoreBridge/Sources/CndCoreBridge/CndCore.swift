@@ -841,7 +841,20 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func scheduleRecording(req: NewRecordingRequest) throws  -> Int64
     
+    /**
+     * Prompt search: channels, programmes, films and series from a sentence, without any network. Fast
+     * enough to run on every keystroke; nothing the profile may not see is ever returned.
+     */
+    func searchLocal(text: String, context: SearchContext)  -> SearchResponse
+    
     func searchSubtitles(query: SubtitleSearchQuery, apiKey: String?) async throws  -> [SubtitleSearchResult]
+    
+    /**
+     * Prompt search with the user's own AI provider: a direct command is resolved locally; otherwise the
+     * provider understands the request and proposes titles, which are looked up in the catalog (the
+     * provider never sees it). Falls back to the local results on any failure.
+     */
+    func searchWithAi(text: String, context: SearchContext, config: AiProviderConfig) async throws  -> SearchResponse
     
     func setActiveProfileId(id: Int64) 
     
@@ -2125,6 +2138,19 @@ open func scheduleRecording(req: NewRecordingRequest)throws  -> Int64  {
 })
 }
     
+    /**
+     * Prompt search: channels, programmes, films and series from a sentence, without any network. Fast
+     * enough to run on every keystroke; nothing the profile may not see is ever returned.
+     */
+open func searchLocal(text: String, context: SearchContext) -> SearchResponse  {
+    return try!  FfiConverterTypeSearchResponse_lift(try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_search_local(self.uniffiClonePointer(),
+        FfiConverterString.lower(text),
+        FfiConverterTypeSearchContext_lower(context),$0
+    )
+})
+}
+    
 open func searchSubtitles(query: SubtitleSearchQuery, apiKey: String?)async throws  -> [SubtitleSearchResult]  {
     return
         try  await uniffiRustCallAsync(
@@ -2138,6 +2164,28 @@ open func searchSubtitles(query: SubtitleSearchQuery, apiKey: String?)async thro
             completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeSubtitleSearchResult.lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
+    /**
+     * Prompt search with the user's own AI provider: a direct command is resolved locally; otherwise the
+     * provider understands the request and proposes titles, which are looked up in the catalog (the
+     * provider never sees it). Falls back to the local results on any failure.
+     */
+open func searchWithAi(text: String, context: SearchContext, config: AiProviderConfig)async throws  -> SearchResponse  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_search_with_ai(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(text),FfiConverterTypeSearchContext_lower(context),FfiConverterTypeAiProviderConfig_lower(config)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSearchResponse_lift,
             errorHandler: FfiConverterTypeCndError_lift
         )
 }
@@ -6734,6 +6782,358 @@ public func FfiConverterTypeSagaPosition_lower(_ value: SagaPosition) -> RustBuf
 }
 
 
+public struct SearchContext {
+    public var playingStableHash: String?
+    public var groupTitle: String?
+    /**
+     * UI language such as `fr-FR`; reasons and replies are written in it.
+     */
+    public var locale: String
+    /**
+     * Offset of the user's time zone from UTC, for "ce soir" and "demain".
+     */
+    public var utcOffsetMinutes: Int32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(playingStableHash: String?, groupTitle: String?, 
+        /**
+         * UI language such as `fr-FR`; reasons and replies are written in it.
+         */locale: String, 
+        /**
+         * Offset of the user's time zone from UTC, for "ce soir" and "demain".
+         */utcOffsetMinutes: Int32) {
+        self.playingStableHash = playingStableHash
+        self.groupTitle = groupTitle
+        self.locale = locale
+        self.utcOffsetMinutes = utcOffsetMinutes
+    }
+}
+
+#if compiler(>=6)
+extension SearchContext: Sendable {}
+#endif
+
+
+extension SearchContext: Equatable, Hashable {
+    public static func ==(lhs: SearchContext, rhs: SearchContext) -> Bool {
+        if lhs.playingStableHash != rhs.playingStableHash {
+            return false
+        }
+        if lhs.groupTitle != rhs.groupTitle {
+            return false
+        }
+        if lhs.locale != rhs.locale {
+            return false
+        }
+        if lhs.utcOffsetMinutes != rhs.utcOffsetMinutes {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(playingStableHash)
+        hasher.combine(groupTitle)
+        hasher.combine(locale)
+        hasher.combine(utcOffsetMinutes)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSearchContext: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchContext {
+        return
+            try SearchContext(
+                playingStableHash: FfiConverterOptionString.read(from: &buf), 
+                groupTitle: FfiConverterOptionString.read(from: &buf), 
+                locale: FfiConverterString.read(from: &buf), 
+                utcOffsetMinutes: FfiConverterInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SearchContext, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.playingStableHash, into: &buf)
+        FfiConverterOptionString.write(value.groupTitle, into: &buf)
+        FfiConverterString.write(value.locale, into: &buf)
+        FfiConverterInt32.write(value.utcOffsetMinutes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchContext_lift(_ buf: RustBuffer) throws -> SearchContext {
+    return try FfiConverterTypeSearchContext.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchContext_lower(_ value: SearchContext) -> RustBuffer {
+    return FfiConverterTypeSearchContext.lower(value)
+}
+
+
+/**
+ * One result. `item` is the channel (live, programme) or the film; `series` the series; `program` the
+ * programme of a programme hit, carried by the channel in `item`.
+ */
+public struct SearchHit {
+    public var kind: SearchKind
+    public var item: IptvItemRecord?
+    public var series: SeriesRecord?
+    public var program: EpgProgramRecord?
+    /**
+     * Why it is there: « Avec Tom Cruise », « Ce soir 21:00 sur Canal+ Sport ».
+     */
+    public var reason: String
+    public var score: Double
+    /**
+     * Found thanks to a title proposed by the assistant.
+     */
+    public var fromAssistant: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: SearchKind, item: IptvItemRecord?, series: SeriesRecord?, program: EpgProgramRecord?, 
+        /**
+         * Why it is there: « Avec Tom Cruise », « Ce soir 21:00 sur Canal+ Sport ».
+         */reason: String, score: Double, 
+        /**
+         * Found thanks to a title proposed by the assistant.
+         */fromAssistant: Bool) {
+        self.kind = kind
+        self.item = item
+        self.series = series
+        self.program = program
+        self.reason = reason
+        self.score = score
+        self.fromAssistant = fromAssistant
+    }
+}
+
+#if compiler(>=6)
+extension SearchHit: Sendable {}
+#endif
+
+
+extension SearchHit: Equatable, Hashable {
+    public static func ==(lhs: SearchHit, rhs: SearchHit) -> Bool {
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.item != rhs.item {
+            return false
+        }
+        if lhs.series != rhs.series {
+            return false
+        }
+        if lhs.program != rhs.program {
+            return false
+        }
+        if lhs.reason != rhs.reason {
+            return false
+        }
+        if lhs.score != rhs.score {
+            return false
+        }
+        if lhs.fromAssistant != rhs.fromAssistant {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(item)
+        hasher.combine(series)
+        hasher.combine(program)
+        hasher.combine(reason)
+        hasher.combine(score)
+        hasher.combine(fromAssistant)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSearchHit: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchHit {
+        return
+            try SearchHit(
+                kind: FfiConverterTypeSearchKind.read(from: &buf), 
+                item: FfiConverterOptionTypeIptvItemRecord.read(from: &buf), 
+                series: FfiConverterOptionTypeSeriesRecord.read(from: &buf), 
+                program: FfiConverterOptionTypeEpgProgramRecord.read(from: &buf), 
+                reason: FfiConverterString.read(from: &buf), 
+                score: FfiConverterDouble.read(from: &buf), 
+                fromAssistant: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SearchHit, into buf: inout [UInt8]) {
+        FfiConverterTypeSearchKind.write(value.kind, into: &buf)
+        FfiConverterOptionTypeIptvItemRecord.write(value.item, into: &buf)
+        FfiConverterOptionTypeSeriesRecord.write(value.series, into: &buf)
+        FfiConverterOptionTypeEpgProgramRecord.write(value.program, into: &buf)
+        FfiConverterString.write(value.reason, into: &buf)
+        FfiConverterDouble.write(value.score, into: &buf)
+        FfiConverterBool.write(value.fromAssistant, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchHit_lift(_ buf: RustBuffer) throws -> SearchHit {
+    return try FfiConverterTypeSearchHit.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchHit_lower(_ value: SearchHit) -> RustBuffer {
+    return FfiConverterTypeSearchHit.lower(value)
+}
+
+
+public struct SearchResponse {
+    /**
+     * A direct command ("mets TF1", "chaîne suivante") resolved locally: the app performs it.
+     */
+    public var command: AiAction?
+    public var hits: [SearchHit]
+    /**
+     * Titles the assistant knows that are not in the user's sources (text only, never playable).
+     */
+    public var missingTitles: [String]
+    public var reply: String
+    /**
+     * `"local"`, or the provider that understood the request.
+     */
+    public var resolvedBy: String
+    public var latencyMs: UInt64
+    public var fallbackReason: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * A direct command ("mets TF1", "chaîne suivante") resolved locally: the app performs it.
+         */command: AiAction?, hits: [SearchHit], 
+        /**
+         * Titles the assistant knows that are not in the user's sources (text only, never playable).
+         */missingTitles: [String], reply: String, 
+        /**
+         * `"local"`, or the provider that understood the request.
+         */resolvedBy: String, latencyMs: UInt64, fallbackReason: String?) {
+        self.command = command
+        self.hits = hits
+        self.missingTitles = missingTitles
+        self.reply = reply
+        self.resolvedBy = resolvedBy
+        self.latencyMs = latencyMs
+        self.fallbackReason = fallbackReason
+    }
+}
+
+#if compiler(>=6)
+extension SearchResponse: Sendable {}
+#endif
+
+
+extension SearchResponse: Equatable, Hashable {
+    public static func ==(lhs: SearchResponse, rhs: SearchResponse) -> Bool {
+        if lhs.command != rhs.command {
+            return false
+        }
+        if lhs.hits != rhs.hits {
+            return false
+        }
+        if lhs.missingTitles != rhs.missingTitles {
+            return false
+        }
+        if lhs.reply != rhs.reply {
+            return false
+        }
+        if lhs.resolvedBy != rhs.resolvedBy {
+            return false
+        }
+        if lhs.latencyMs != rhs.latencyMs {
+            return false
+        }
+        if lhs.fallbackReason != rhs.fallbackReason {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(command)
+        hasher.combine(hits)
+        hasher.combine(missingTitles)
+        hasher.combine(reply)
+        hasher.combine(resolvedBy)
+        hasher.combine(latencyMs)
+        hasher.combine(fallbackReason)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSearchResponse: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchResponse {
+        return
+            try SearchResponse(
+                command: FfiConverterOptionTypeAiAction.read(from: &buf), 
+                hits: FfiConverterSequenceTypeSearchHit.read(from: &buf), 
+                missingTitles: FfiConverterSequenceString.read(from: &buf), 
+                reply: FfiConverterString.read(from: &buf), 
+                resolvedBy: FfiConverterString.read(from: &buf), 
+                latencyMs: FfiConverterUInt64.read(from: &buf), 
+                fallbackReason: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SearchResponse, into buf: inout [UInt8]) {
+        FfiConverterOptionTypeAiAction.write(value.command, into: &buf)
+        FfiConverterSequenceTypeSearchHit.write(value.hits, into: &buf)
+        FfiConverterSequenceString.write(value.missingTitles, into: &buf)
+        FfiConverterString.write(value.reply, into: &buf)
+        FfiConverterString.write(value.resolvedBy, into: &buf)
+        FfiConverterUInt64.write(value.latencyMs, into: &buf)
+        FfiConverterOptionString.write(value.fallbackReason, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchResponse_lift(_ buf: RustBuffer) throws -> SearchResponse {
+    return try FfiConverterTypeSearchResponse.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchResponse_lower(_ value: SearchResponse) -> RustBuffer {
+    return FfiConverterTypeSearchResponse.lower(value)
+}
+
+
 public struct SeasonSummary {
     public var seasonNum: UInt32
     public var episodeCount: UInt32
@@ -9940,6 +10340,90 @@ extension SagaOrderPreference: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum SearchKind {
+    
+    case live
+    case program
+    case movie
+    case series
+}
+
+
+#if compiler(>=6)
+extension SearchKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSearchKind: FfiConverterRustBuffer {
+    typealias SwiftType = SearchKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .live
+        
+        case 2: return .program
+        
+        case 3: return .movie
+        
+        case 4: return .series
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SearchKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .live:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .program:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .movie:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .series:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchKind_lift(_ buf: RustBuffer) throws -> SearchKind {
+    return try FfiConverterTypeSearchKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchKind_lower(_ value: SearchKind) -> RustBuffer {
+    return FfiConverterTypeSearchKind.lower(value)
+}
+
+
+extension SearchKind: Equatable, Hashable {}
+
+
+
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum ShareImportAction {
     
     case skip
@@ -10584,6 +11068,30 @@ fileprivate struct FfiConverterOptionTypeStreamHealthRecord: FfiConverterRustBuf
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeAiAction: FfiConverterRustBuffer {
+    typealias SwiftType = AiAction?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAiAction.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAiAction.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceInt64: FfiConverterRustBuffer {
     typealias SwiftType = [Int64]
 
@@ -11101,6 +11609,31 @@ fileprivate struct FfiConverterSequenceTypeRecordingRecord: FfiConverterRustBuff
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeRecordingRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSearchHit: FfiConverterRustBuffer {
+    typealias SwiftType = [SearchHit]
+
+    public static func write(_ value: [SearchHit], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSearchHit.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SearchHit] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SearchHit]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSearchHit.read(from: &buf))
         }
         return seq
     }
@@ -11918,7 +12451,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_schedule_recording() != 9925) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_search_local() != 5159) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_search_subtitles() != 11615) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_search_with_ai() != 57305) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_set_active_profile_id() != 13927) {

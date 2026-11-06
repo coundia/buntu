@@ -7,9 +7,27 @@ protocol AssistantBackend: AnyObject, Sendable {
     func aiResolveCommand(command: String, context: AiCommandContext, config: AiProviderConfig) async throws -> AiCommandResult
     func aiTestProvider(config: AiProviderConfig) async throws -> AiProviderStatus
     func getItemById(itemId: Int64) throws -> IptvItemRecord?
+    /// Prompt search (PRD 33): films, series, programmes and channels from a sentence.
+    var supportsPromptSearch: Bool { get }
+    func searchLocal(text: String, context: SearchContext) -> SearchResponse
+    func searchWithAi(text: String, context: SearchContext, config: AiProviderConfig) async throws -> SearchResponse
 }
 
-extension CndEngine: AssistantBackend {}
+extension AssistantBackend {
+    var supportsPromptSearch: Bool { false }
+
+    func searchLocal(text: String, context: SearchContext) -> SearchResponse {
+        SearchResponse(command: nil, hits: [], missingTitles: [], reply: "", resolvedBy: "local", latencyMs: 0, fallbackReason: nil)
+    }
+
+    func searchWithAi(text: String, context: SearchContext, config: AiProviderConfig) async throws -> SearchResponse {
+        throw CndError.Internal(message: "La recherche par prompt n'est pas disponible.")
+    }
+}
+
+extension CndEngine: AssistantBackend {
+    var supportsPromptSearch: Bool { true }
+}
 
 /// What the assistant can do to the app; filled in by the shell.
 struct AssistantActions {
@@ -19,6 +37,9 @@ struct AssistantActions {
     var previous: () -> Void = {}
     var search: (String) -> Void = { _ in }
     var multiView: ([IptvItemRecord]) -> Void = { _ in }
+    /// Shows a film's page (PRD 33): the search finds films and series, not only channels.
+    var openMovie: (IptvItemRecord) -> Void = { _ in }
+    var openSeries: (SeriesRecord) -> Void = { _ in }
 }
 
 /// State of the command palette: typed phrase, live local suggestions, the resolved action and the
@@ -42,6 +63,9 @@ final class AssistantModel {
     var input = "" { didSet { if input != oldValue { inputChanged() } } }
     private(set) var suggestions: [IptvItemRecord] = []
     private(set) var result: AiCommandResult?
+    /// Results of the prompt search while typing (local, instant) and after Enter (with the assistant).
+    private(set) var liveHits: [SearchHit] = []
+    private(set) var searchResponse: SearchResponse?
     private(set) var isResolving = false
     private(set) var errorMessage: String?
     private(set) var history: [String]
@@ -69,6 +93,15 @@ final class AssistantModel {
         AiProviderConfig(kind: .localOnly, model: "", baseUrl: nil, apiKey: nil, timeoutMs: AiProviderSettings.timeoutMs)
     }
 
+    private var searchContext: SearchContext {
+        SearchContext(
+            playingStableHash: playingStableHash(),
+            groupTitle: currentGroup(),
+            locale: Locale.current.identifier.replacingOccurrences(of: "_", with: "-"),
+            utcOffsetMinutes: Int32(TimeZone.current.secondsFromGMT() / 60)
+        )
+    }
+
     private var context: AiCommandContext {
         AiCommandContext(
             playingStableHash: playingStableHash(),
@@ -82,6 +115,7 @@ final class AssistantModel {
     private func inputChanged() {
         if !isRecalling { historyIndex = nil }
         result = nil
+        searchResponse = nil
         errorMessage = nil
         suggestionTask?.cancel()
         suggestionGeneration += 1
@@ -89,6 +123,7 @@ final class AssistantModel {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
             suggestions = []
+            liveHits = []
             return
         }
         let delay = suggestionDelay
@@ -103,6 +138,14 @@ final class AssistantModel {
     /// synonyms as a real command, so what is suggested is what pressing Enter would find.
     private func refreshSuggestions(for text: String, generation gen: Int) async {
         let backend = self.backend
+        if backend.supportsPromptSearch {
+            // The prompt search answers every keystroke from the catalog, without any network.
+            let searchContext = self.searchContext
+            let local = await Task.detached { backend.searchLocal(text: text, context: searchContext) }.value
+            guard gen == suggestionGeneration else { return }
+            liveHits = local.hits
+            return
+        }
         let ctx = context
         guard let local = try? await backend.aiResolveCommand(command: text, context: ctx, config: Self.localConfig) else { return }
         guard gen == suggestionGeneration else { return }
@@ -125,6 +168,11 @@ final class AssistantModel {
         isResolving = true
         errorMessage = nil
         result = nil
+        searchResponse = nil
+        if backend.supportsPromptSearch {
+            await submitSearch(command, generation: gen)
+            return
+        }
         let config = settings.providerConfig()
         let ctx = context
         let backend = self.backend
@@ -140,6 +188,35 @@ final class AssistantModel {
         if gen == generation { isResolving = false }
     }
 
+    /// Prompt search with the user's provider: a direct command is performed, anything else shows results.
+    private func submitSearch(_ command: String, generation gen: Int) async {
+        let backend = self.backend
+        let config = settings.providerConfig()
+        let ctx = searchContext
+        do {
+            let response = try await backend.searchWithAi(text: command, context: ctx, config: config)
+            guard gen == generation else { return }
+            remember(command)
+            if let action = response.command {
+                perform(AiCommandResult(
+                    action: action, alternatives: [], reply: response.reply, resolvedBy: response.resolvedBy,
+                    latencyMs: response.latencyMs, fallbackReason: response.fallbackReason
+                ))
+            } else if response.hits.isEmpty && response.missingTitles.isEmpty {
+                // Nothing in the sources: hand the words to the catalog search, as before.
+                actions.search(command)
+                onDismiss()
+            } else {
+                searchResponse = response
+                liveHits = response.hits
+            }
+        } catch {
+            guard gen == generation else { return }
+            errorMessage = settings.explaining(userMessage(for: error))
+        }
+        if gen == generation { isResolving = false }
+    }
+
     func cancel() {
         generation += 1
         isResolving = false
@@ -148,6 +225,28 @@ final class AssistantModel {
     /// The user picked one of the proposed channels.
     func choose(_ item: IptvItemRecord) {
         actions.play(item)
+        onDismiss()
+    }
+
+    /// The user picked a result of the prompt search: what happens depends on what it is.
+    /// A programme on the air plays its channel; a later or past one opens the channel's guide.
+    func choose(_ hit: SearchHit, now: Date = Date()) {
+        switch hit.kind {
+        case .live:
+            if let item = hit.item { actions.play(item) }
+        case .program:
+            guard let channel = hit.item else { return }
+            if let program = hit.program,
+               Int64(now.timeIntervalSince1970) >= program.startTs, Int64(now.timeIntervalSince1970) < program.endTs {
+                actions.play(channel)
+            } else {
+                actions.showGuide(channel)
+            }
+        case .movie:
+            if let item = hit.item { actions.openMovie(item) }
+        case .series:
+            if let series = hit.series { actions.openSeries(series) }
+        }
         onDismiss()
     }
 

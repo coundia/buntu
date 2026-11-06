@@ -7,6 +7,7 @@ pub mod profile_repo;
 pub mod recording_repo;
 pub mod recommend_repo;
 pub mod schema;
+pub mod search_repo;
 pub mod settings_repo;
 pub mod sync_repo;
 
@@ -162,6 +163,16 @@ impl DatabaseManager {
             |ctx| {
                 let group: Option<String> = ctx.get(0)?;
                 Ok(group.is_some_and(|g| profile_repo::is_adult_category(&g)))
+            },
+        )?;
+        // Accents and case folded away, for `LIKE` prefilters over titles ("epopee" finds "Épopée").
+        conn.create_scalar_function(
+            "fold_text",
+            1,
+            rusqlite::functions::FunctionFlags::SQLITE_UTF8 | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+            |ctx| {
+                let text: Option<String> = ctx.get(0)?;
+                Ok(text.map(|t| crate::iptv::normalizer::fold_diacritics_ascii(&t).to_lowercase()))
             },
         )?;
         Ok(())

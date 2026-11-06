@@ -479,18 +479,19 @@ final class AssistantWithEngineTests: XCTestCase {
 
     func testSuggestionsAppearAsYouType() async {
         let (model, _) = make()
+        let names = { model.liveHits.compactMap { $0.item?.name } }
 
-        // A number: the channel itself is the single suggestion.
+        // A number: the channel itself comes back (the prompt search answers every keystroke, locally).
         model.input = "chaine 03"
-        let numbered = await eventually(timeout: 5) { model.suggestions.map(\.name) == ["Chaine 003"] }
-        XCTAssertTrue(numbered, "\(model.suggestions.map(\.name))")
+        let numbered = await eventually(timeout: 5) { names().contains("Chaine 003") }
+        XCTAssertTrue(numbered, "\(names())")
 
-        // A word: several candidates, at most five.
+        // A word: several channels, all live, bounded.
         model.input = "chai"
-        let several = await eventually(timeout: 5) { model.suggestions.count > 1 }
-        XCTAssertTrue(several)
-        XCTAssertLessThanOrEqual(model.suggestions.count, 5)
-        XCTAssertTrue(model.suggestions.allSatisfy { $0.name.hasPrefix("Chaine") })
+        let several = await eventually(timeout: 5) { names().count > 1 }
+        XCTAssertTrue(several, "\(names())")
+        XCTAssertLessThanOrEqual(model.liveHits.count, 40)
+        XCTAssertTrue(model.liveHits.allSatisfy { $0.kind == .live && ($0.item?.name.hasPrefix("Chaine") ?? false) })
     }
 
     func testTheAssistantNeverReachesTheNetworkInLocalMode() async {
