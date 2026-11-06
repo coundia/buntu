@@ -317,9 +317,19 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_build_catchup_url(void*_Nonnull p
 int8_t uniffi_cnd_core_fn_method_cndengine_cancel_recording(void*_Nonnull ptr, int64_t id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_CLAIM_NEXT_QUEUED_FOR_PLATFORM
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_CLAIM_NEXT_QUEUED_FOR_PLATFORM
+RustBuffer uniffi_cnd_core_fn_method_cndengine_claim_next_queued_for_platform(void*_Nonnull ptr, uint32_t max_concurrent, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_CLEAR_LOGS
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_CLEAR_LOGS
 void uniffi_cnd_core_fn_method_cndengine_clear_logs(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_COMPLETE_PLATFORM_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_COMPLETE_PLATFORM_DOWNLOAD
+void uniffi_cnd_core_fn_method_cndengine_complete_platform_download(void*_Nonnull ptr, int64_t task_id, uint64_t final_size, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_COMPUTE_FILE_MOVIEHASH
@@ -762,6 +772,11 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_prepare_apple_rerank(void*_Nonnul
 RustBuffer uniffi_cnd_core_fn_method_cndengine_preview_share_document(void*_Nonnull ptr, RustBuffer json, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PROBE_FOR_PLATFORM_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PROBE_FOR_PLATFORM_DOWNLOAD
+uint64_t uniffi_cnd_core_fn_method_cndengine_probe_for_platform_download(void*_Nonnull ptr, int64_t task_id
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PROBE_STREAM
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_PROBE_STREAM
 uint64_t uniffi_cnd_core_fn_method_cndengine_probe_stream(void*_Nonnull ptr, RustBuffer url, RustBuffer headers_json, RustBuffer user_agent, RustBuffer referer
@@ -857,6 +872,11 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_resolve_catchup_url(void*_Nonnull
 uint64_t uniffi_cnd_core_fn_method_cndengine_resolve_saga_with_ai(void*_Nonnull ptr, int64_t item_id, RustBuffer config
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESUME_DOWNLOADS_AFTER_SYSTEM_WAKE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESUME_DOWNLOADS_AFTER_SYSTEM_WAKE
+uint64_t uniffi_cnd_core_fn_method_cndengine_resume_downloads_after_system_wake(void*_Nonnull ptr
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RETRY_DOWNLOAD
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RETRY_DOWNLOAD
 uint64_t uniffi_cnd_core_fn_method_cndengine_retry_download(void*_Nonnull ptr, int64_t task_id
@@ -870,6 +890,11 @@ uint64_t uniffi_cnd_core_fn_method_cndengine_run_health_check_cycle(void*_Nonnul
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SAGA_FOR
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SAGA_FOR
 RustBuffer uniffi_cnd_core_fn_method_cndengine_saga_for(void*_Nonnull ptr, int64_t item_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SAVE_PLATFORM_RESUME_DATA
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SAVE_PLATFORM_RESUME_DATA
+void uniffi_cnd_core_fn_method_cndengine_save_platform_resume_data(void*_Nonnull ptr, int64_t task_id, RustBuffer state, uint64_t downloaded_bytes, RustBuffer resume_data, RustBuffer error_message, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SCHEDULE_RECORDING
@@ -952,6 +977,11 @@ void uniffi_cnd_core_fn_method_cndengine_subtitles_sign_out(void*_Nonnull ptr, R
 int8_t uniffi_cnd_core_fn_method_cndengine_subtitles_signed_in(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SUSPEND_DOWNLOADS_FOR_SYSTEM_SLEEP
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SUSPEND_DOWNLOADS_FOR_SYSTEM_SLEEP
+uint64_t uniffi_cnd_core_fn_method_cndengine_suspend_downloads_for_system_sleep(void*_Nonnull ptr
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_TOGGLE_BROKEN
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_TOGGLE_BROKEN
 int8_t uniffi_cnd_core_fn_method_cndengine_toggle_broken(void*_Nonnull ptr, RustBuffer stable_hash, RustBuffer item_kind, RustCallStatus *_Nonnull out_status
@@ -970,6 +1000,11 @@ int8_t uniffi_cnd_core_fn_method_cndengine_unhide_group(void*_Nonnull ptr, int64
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_UNHIDE_ITEM
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_UNHIDE_ITEM
 int8_t uniffi_cnd_core_fn_method_cndengine_unhide_item(void*_Nonnull ptr, int64_t profile_id, RustBuffer stable_hash, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_UPDATE_PLATFORM_DOWNLOAD_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_UPDATE_PLATFORM_DOWNLOAD_PROGRESS
+void uniffi_cnd_core_fn_method_cndengine_update_platform_download_progress(void*_Nonnull ptr, int64_t task_id, uint64_t downloaded_bytes, uint64_t total_bytes, double speed_bps, uint64_t eta_seconds, int8_t flush_db, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_UPDATE_PROFILE
@@ -1348,9 +1383,21 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_cancel_recording(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_CLAIM_NEXT_QUEUED_FOR_PLATFORM
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_CLAIM_NEXT_QUEUED_FOR_PLATFORM
+uint16_t uniffi_cnd_core_checksum_method_cndengine_claim_next_queued_for_platform(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_CLEAR_LOGS
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_CLEAR_LOGS
 uint16_t uniffi_cnd_core_checksum_method_cndengine_clear_logs(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_COMPLETE_PLATFORM_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_COMPLETE_PLATFORM_DOWNLOAD
+uint16_t uniffi_cnd_core_checksum_method_cndengine_complete_platform_download(void
     
 );
 #endif
@@ -1882,6 +1929,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_preview_share_document(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PROBE_FOR_PLATFORM_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PROBE_FOR_PLATFORM_DOWNLOAD
+uint16_t uniffi_cnd_core_checksum_method_cndengine_probe_for_platform_download(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PROBE_STREAM
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_PROBE_STREAM
 uint16_t uniffi_cnd_core_checksum_method_cndengine_probe_stream(void
@@ -1996,6 +2049,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_resolve_saga_with_ai(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESUME_DOWNLOADS_AFTER_SYSTEM_WAKE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESUME_DOWNLOADS_AFTER_SYSTEM_WAKE
+uint16_t uniffi_cnd_core_checksum_method_cndengine_resume_downloads_after_system_wake(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RETRY_DOWNLOAD
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RETRY_DOWNLOAD
 uint16_t uniffi_cnd_core_checksum_method_cndengine_retry_download(void
@@ -2011,6 +2070,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_run_health_check_cycle(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SAGA_FOR
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SAGA_FOR
 uint16_t uniffi_cnd_core_checksum_method_cndengine_saga_for(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SAVE_PLATFORM_RESUME_DATA
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SAVE_PLATFORM_RESUME_DATA
+uint16_t uniffi_cnd_core_checksum_method_cndengine_save_platform_resume_data(void
     
 );
 #endif
@@ -2110,6 +2175,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_subtitles_signed_in(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SUSPEND_DOWNLOADS_FOR_SYSTEM_SLEEP
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SUSPEND_DOWNLOADS_FOR_SYSTEM_SLEEP
+uint16_t uniffi_cnd_core_checksum_method_cndengine_suspend_downloads_for_system_sleep(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_TOGGLE_BROKEN
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_TOGGLE_BROKEN
 uint16_t uniffi_cnd_core_checksum_method_cndengine_toggle_broken(void
@@ -2131,6 +2202,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_unhide_group(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_UNHIDE_ITEM
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_UNHIDE_ITEM
 uint16_t uniffi_cnd_core_checksum_method_cndengine_unhide_item(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_UPDATE_PLATFORM_DOWNLOAD_PROGRESS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_UPDATE_PLATFORM_DOWNLOAD_PROGRESS
+uint16_t uniffi_cnd_core_checksum_method_cndengine_update_platform_download_progress(void
     
 );
 #endif

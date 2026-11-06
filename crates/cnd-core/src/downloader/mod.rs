@@ -391,7 +391,7 @@ impl DownloadManager {
         Ok(())
     }
 
-    pub async fn pause_all(&self) -> Result<(), CndError> {
+        pub async fn pause_all(&self) -> Result<(), CndError> {
         let ids: Vec<i64> = self
             .active
             .lock()
@@ -401,6 +401,153 @@ impl DownloadManager {
             self.pause(id).await?;
         }
         Ok(())
+    }
+
+    pub fn claim_next_queued_for_platform(
+        &self,
+        max_concurrent: u32,
+    ) -> Result<Vec<crate::db::download_repo::DownloadPlatformTicket>, CndError> {
+        Ok(self.db.claim_next_queued_for_platform(max_concurrent)?)
+    }
+
+    pub async fn probe_for_platform(
+        &self,
+        task_id: i64,
+    ) -> Result<crate::db::download_repo::DownloadPlatformTicket, CndError> {
+        let row = self.db.get_download_task_row(task_id)?;
+        let probe = prober::probe_download_url(
+            &self.http_pool,
+            &row.url,
+            row.user_agent.as_deref(),
+            row.referer.as_deref(),
+            row.headers_json.as_deref(),
+        )
+        .await?;
+        self.db.update_download_probe(
+            task_id,
+            &probe.final_url,
+            probe.total_bytes,
+            probe.accept_ranges,
+        )?;
+        Ok(crate::db::download_repo::DownloadPlatformTicket {
+            id: task_id,
+            url: row.url,
+            final_url: Some(probe.final_url),
+            file_name: row.file_name,
+            save_path: row.save_path,
+            temp_path: row.temp_path,
+            total_bytes: probe.total_bytes,
+            downloaded_bytes: row.downloaded_bytes,
+            accept_ranges: probe.accept_ranges,
+            user_agent: row.user_agent,
+            referer: row.referer,
+            headers_json: row.headers_json,
+            platform_resume_data: row.platform_resume_data,
+        })
+    }
+
+    pub fn update_platform_progress(
+        &self,
+        task_id: i64,
+        downloaded_bytes: u64,
+        total_bytes: u64,
+        speed_bps: f64,
+        eta_seconds: u64,
+        flush_db: bool,
+    ) -> Result<(), CndError> {
+        if let Ok(mut map) = self.live.lock() {
+            let entry = map.entry(task_id).or_insert_with(|| {
+                Arc::new(LiveProgress {
+                    parts: vec![Arc::new(AtomicU64::new(downloaded_bytes))],
+                    lens: vec![total_bytes],
+                    size_known: total_bytes > 0,
+                    speed_bits: AtomicU64::new(speed_bps.to_bits()),
+                    eta_seconds: AtomicU64::new(eta_seconds),
+                })
+            });
+            if !entry.parts.is_empty() {
+                entry.parts[0].store(downloaded_bytes, Ordering::Release);
+            }
+            entry.speed_bits.store(speed_bps.to_bits(), Ordering::Release);
+            entry.eta_seconds.store(eta_seconds, Ordering::Release);
+        }
+        self.db.update_platform_download_progress(
+            task_id,
+            downloaded_bytes,
+            total_bytes,
+            speed_bps,
+            eta_seconds,
+            flush_db,
+        )?;
+        Ok(())
+    }
+
+    pub fn save_platform_resume_data(
+        &self,
+        task_id: i64,
+        state: &str,
+        downloaded_bytes: u64,
+        resume_data: Option<&[u8]>,
+        error_message: Option<&str>,
+    ) -> Result<(), CndError> {
+        if let Ok(mut map) = self.live.lock() {
+            map.remove(&task_id);
+        }
+        self.db.save_platform_resume_data(
+            task_id,
+            state,
+            downloaded_bytes,
+            resume_data,
+            error_message,
+        )?;
+        Ok(())
+    }
+
+    pub fn complete_platform_download(
+        &self,
+        task_id: i64,
+        final_size: u64,
+    ) -> Result<(), CndError> {
+        if let Ok(mut map) = self.live.lock() {
+            map.remove(&task_id);
+        }
+        self.db.complete_platform_download(task_id, final_size)?;
+        Ok(())
+    }
+
+    pub async fn suspend_downloads_for_system_sleep(&self) -> Result<u32, CndError> {
+        let ids: Vec<i64> = self
+            .active
+            .lock()
+            .map(|a| a.keys().copied().collect())
+            .unwrap_or_default();
+        for id in ids {
+            self.stop_active(id).await;
+        }
+        if let Ok(mut map) = self.live.lock() {
+            map.clear();
+        }
+        let count = self.db.suspend_downloads_for_system_sleep()?;
+        self.telemetry.info("DL", format!("Suspended {count} downloads for system sleep"));
+        Ok(count)
+    }
+
+    pub async fn resume_downloads_after_system_wake(self: &Arc<Self>) -> Result<u32, CndError> {
+        let count = self.db.resume_downloads_after_system_wake()?;
+        let mut started = 0;
+        if let Ok(rows) = self.db.list_download_task_rows() {
+            for row in rows {
+                if row.state == "queued" && row.driver == "rust" {
+                    let _ = self.start(row.id);
+                    started += 1;
+                }
+            }
+        }
+        self.telemetry.info(
+            "DL",
+            format!("Resumed {count} downloads after system wake (started {started} Rust tasks)"),
+        );
+        Ok(count)
     }
 
     pub fn list(&self, query: Option<&str>) -> Result<Vec<DownloadTaskRecord>, CndError> {
@@ -636,6 +783,7 @@ impl DownloadManager {
                 format!("{pending} parts to finish, {segments} at a time"),
             );
         }
+        let shared_url = Arc::new(RwLock::new(probe.final_url.clone()));
         for (i, part) in parts.iter().enumerate() {
             if size_known && counters[i].load(Ordering::Acquire) >= lens[i] {
                 continue;
@@ -644,7 +792,8 @@ impl DownloadManager {
             let gate_token = segment_token.clone();
             let spec = SegmentSpec {
                 http_pool: Arc::clone(&self.http_pool),
-                url: probe.final_url.clone(),
+                url: Arc::clone(&shared_url),
+                source_url: Some(row.url.clone()),
                 user_agent: row.user_agent.clone(),
                 referer: row.referer.clone(),
                 headers_json: row.headers_json.clone(),

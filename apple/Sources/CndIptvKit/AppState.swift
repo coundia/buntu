@@ -104,6 +104,8 @@ public final class AppState {
     private func attach(_ engine: CndEngine) {
         recorder.attach(engine)
         self.engine = engine
+        SystemPowerCoordinator.shared.attachEngine(engine)
+        BackgroundDownloadCoordinator.shared.attachEngine(engine, coordinator: downloadCoordinator)
         ConnectionBudget.enforce(on: engine)
         player.autoFailoverEnabled = UserDefaults.standard.object(forKey: "autoFailoverEnabled") as? Bool ?? true
         if let raw = UserDefaults.standard.string(forKey: "timeshiftDuration"),
@@ -161,6 +163,12 @@ public final class AppState {
                     )
                     let directory = appSupport.appendingPathComponent("CndIptvNative", isDirectory: true)
                     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    #if os(iOS) || os(tvOS) || os(visionOS)
+                    try? (FileManager.default as FileManager).setAttributes(
+                        [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                        ofItemAtPath: directory.path
+                    )
+                    #endif
                     return try CndEngine(dbPath: directory.appendingPathComponent("cnd_iptv.db").path)
                 }.value
                 self?.attach(engine)

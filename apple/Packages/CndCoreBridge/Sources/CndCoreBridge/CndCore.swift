@@ -609,7 +609,11 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func cancelRecording(id: Int64) throws  -> Bool
     
+    func claimNextQueuedForPlatform(maxConcurrent: UInt32) throws  -> [DownloadPlatformTicket]
+    
     func clearLogs() 
+    
+    func completePlatformDownload(taskId: Int64, finalSize: UInt64) throws 
     
     func computeFileMoviehash(filePath: String) throws  -> String
     
@@ -823,6 +827,8 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
      */
     func previewShareDocument(json: String) throws  -> SharePreview
     
+    func probeForPlatformDownload(taskId: Int64) async throws  -> DownloadPlatformTicket
+    
     func probeStream(url: String, headersJson: String?, userAgent: String?, referer: String?) async throws  -> ProbeResultRecord
     
     func queryCatalog(filter: CatalogFilter) throws  -> [IptvItemRecord]
@@ -872,11 +878,15 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func resolveSagaWithAi(itemId: Int64, config: AiProviderConfig) async throws  -> SagaInfo?
     
+    func resumeDownloadsAfterSystemWake() async throws  -> UInt32
+    
     func retryDownload(taskId: Int64) async throws 
     
     func runHealthCheckCycle(throttle: Bool) async throws  -> UInt32
     
     func sagaFor(itemId: Int64) throws  -> SagaInfo?
+    
+    func savePlatformResumeData(taskId: Int64, state: String, downloadedBytes: UInt64, resumeData: Data?, errorMessage: String?) throws 
     
     func scheduleRecording(req: NewRecordingRequest) throws  -> Int64
     
@@ -925,6 +935,8 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func subtitlesSignedIn()  -> Bool
     
+    func suspendDownloadsForSystemSleep() async throws  -> UInt32
+    
     func toggleBroken(stableHash: String, itemKind: String) throws  -> Bool
     
     func toggleFavorite(stableHash: String, itemKind: String) throws  -> Bool
@@ -932,6 +944,8 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     func unhideGroup(profileId: Int64, kind: String, group: String) throws  -> Bool
     
     func unhideItem(profileId: Int64, stableHash: String) throws  -> Bool
+    
+    func updatePlatformDownloadProgress(taskId: Int64, downloadedBytes: UInt64, totalBytes: UInt64, speedBps: Double, etaSeconds: UInt64, flushDb: Bool) throws 
     
     func updateProfile(id: Int64, name: String, avatar: String, isKids: Bool) throws 
     
@@ -1122,8 +1136,24 @@ open func cancelRecording(id: Int64)throws  -> Bool  {
 })
 }
     
+open func claimNextQueuedForPlatform(maxConcurrent: UInt32)throws  -> [DownloadPlatformTicket]  {
+    return try  FfiConverterSequenceTypeDownloadPlatformTicket.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_claim_next_queued_for_platform(self.uniffiClonePointer(),
+        FfiConverterUInt32.lower(maxConcurrent),$0
+    )
+})
+}
+    
 open func clearLogs()  {try! rustCall() {
     uniffi_cnd_core_fn_method_cndengine_clear_logs(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+open func completePlatformDownload(taskId: Int64, finalSize: UInt64)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_complete_platform_download(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(taskId),
+        FfiConverterUInt64.lower(finalSize),$0
     )
 }
 }
@@ -1982,6 +2012,23 @@ open func previewShareDocument(json: String)throws  -> SharePreview  {
 })
 }
     
+open func probeForPlatformDownload(taskId: Int64)async throws  -> DownloadPlatformTicket  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_probe_for_platform_download(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(taskId)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadPlatformTicket_lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
 open func probeStream(url: String, headersJson: String?, userAgent: String?, referer: String?)async throws  -> ProbeResultRecord  {
     return
         try  await uniffiRustCallAsync(
@@ -2222,6 +2269,23 @@ open func resolveSagaWithAi(itemId: Int64, config: AiProviderConfig)async throws
         )
 }
     
+open func resumeDownloadsAfterSystemWake()async throws  -> UInt32  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_resume_downloads_after_system_wake(
+                    self.uniffiClonePointer()
+                    
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_u32,
+            completeFunc: ffi_cnd_core_rust_future_complete_u32,
+            freeFunc: ffi_cnd_core_rust_future_free_u32,
+            liftFunc: FfiConverterUInt32.lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
 open func retryDownload(taskId: Int64)async throws   {
     return
         try  await uniffiRustCallAsync(
@@ -2262,6 +2326,17 @@ open func sagaFor(itemId: Int64)throws  -> SagaInfo?  {
         FfiConverterInt64.lower(itemId),$0
     )
 })
+}
+    
+open func savePlatformResumeData(taskId: Int64, state: String, downloadedBytes: UInt64, resumeData: Data?, errorMessage: String?)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_save_platform_resume_data(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(taskId),
+        FfiConverterString.lower(state),
+        FfiConverterUInt64.lower(downloadedBytes),
+        FfiConverterOptionData.lower(resumeData),
+        FfiConverterOptionString.lower(errorMessage),$0
+    )
+}
 }
     
 open func scheduleRecording(req: NewRecordingRequest)throws  -> Int64  {
@@ -2448,6 +2523,23 @@ open func subtitlesSignedIn() -> Bool  {
 })
 }
     
+open func suspendDownloadsForSystemSleep()async throws  -> UInt32  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_suspend_downloads_for_system_sleep(
+                    self.uniffiClonePointer()
+                    
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_u32,
+            completeFunc: ffi_cnd_core_rust_future_complete_u32,
+            freeFunc: ffi_cnd_core_rust_future_free_u32,
+            liftFunc: FfiConverterUInt32.lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
+}
+    
 open func toggleBroken(stableHash: String, itemKind: String)throws  -> Bool  {
     return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_toggle_broken(self.uniffiClonePointer(),
@@ -2483,6 +2575,18 @@ open func unhideItem(profileId: Int64, stableHash: String)throws  -> Bool  {
         FfiConverterString.lower(stableHash),$0
     )
 })
+}
+    
+open func updatePlatformDownloadProgress(taskId: Int64, downloadedBytes: UInt64, totalBytes: UInt64, speedBps: Double, etaSeconds: UInt64, flushDb: Bool)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_update_platform_download_progress(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(taskId),
+        FfiConverterUInt64.lower(downloadedBytes),
+        FfiConverterUInt64.lower(totalBytes),
+        FfiConverterDouble.lower(speedBps),
+        FfiConverterUInt64.lower(etaSeconds),
+        FfiConverterBool.lower(flushDb),$0
+    )
+}
 }
     
 open func updateProfile(id: Int64, name: String, avatar: String, isKids: Bool)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
@@ -3682,6 +3786,164 @@ public func FfiConverterTypeDownloadPartRecord_lift(_ buf: RustBuffer) throws ->
 #endif
 public func FfiConverterTypeDownloadPartRecord_lower(_ value: DownloadPartRecord) -> RustBuffer {
     return FfiConverterTypeDownloadPartRecord.lower(value)
+}
+
+
+public struct DownloadPlatformTicket {
+    public var id: Int64
+    public var url: String
+    public var finalUrl: String?
+    public var fileName: String
+    public var savePath: String
+    public var tempPath: String
+    public var totalBytes: UInt64
+    public var downloadedBytes: UInt64
+    public var acceptRanges: Bool
+    public var userAgent: String?
+    public var referer: String?
+    public var headersJson: String?
+    public var platformResumeData: Data?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, url: String, finalUrl: String?, fileName: String, savePath: String, tempPath: String, totalBytes: UInt64, downloadedBytes: UInt64, acceptRanges: Bool, userAgent: String?, referer: String?, headersJson: String?, platformResumeData: Data?) {
+        self.id = id
+        self.url = url
+        self.finalUrl = finalUrl
+        self.fileName = fileName
+        self.savePath = savePath
+        self.tempPath = tempPath
+        self.totalBytes = totalBytes
+        self.downloadedBytes = downloadedBytes
+        self.acceptRanges = acceptRanges
+        self.userAgent = userAgent
+        self.referer = referer
+        self.headersJson = headersJson
+        self.platformResumeData = platformResumeData
+    }
+}
+
+#if compiler(>=6)
+extension DownloadPlatformTicket: Sendable {}
+#endif
+
+
+extension DownloadPlatformTicket: Equatable, Hashable {
+    public static func ==(lhs: DownloadPlatformTicket, rhs: DownloadPlatformTicket) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.url != rhs.url {
+            return false
+        }
+        if lhs.finalUrl != rhs.finalUrl {
+            return false
+        }
+        if lhs.fileName != rhs.fileName {
+            return false
+        }
+        if lhs.savePath != rhs.savePath {
+            return false
+        }
+        if lhs.tempPath != rhs.tempPath {
+            return false
+        }
+        if lhs.totalBytes != rhs.totalBytes {
+            return false
+        }
+        if lhs.downloadedBytes != rhs.downloadedBytes {
+            return false
+        }
+        if lhs.acceptRanges != rhs.acceptRanges {
+            return false
+        }
+        if lhs.userAgent != rhs.userAgent {
+            return false
+        }
+        if lhs.referer != rhs.referer {
+            return false
+        }
+        if lhs.headersJson != rhs.headersJson {
+            return false
+        }
+        if lhs.platformResumeData != rhs.platformResumeData {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(url)
+        hasher.combine(finalUrl)
+        hasher.combine(fileName)
+        hasher.combine(savePath)
+        hasher.combine(tempPath)
+        hasher.combine(totalBytes)
+        hasher.combine(downloadedBytes)
+        hasher.combine(acceptRanges)
+        hasher.combine(userAgent)
+        hasher.combine(referer)
+        hasher.combine(headersJson)
+        hasher.combine(platformResumeData)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDownloadPlatformTicket: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadPlatformTicket {
+        return
+            try DownloadPlatformTicket(
+                id: FfiConverterInt64.read(from: &buf), 
+                url: FfiConverterString.read(from: &buf), 
+                finalUrl: FfiConverterOptionString.read(from: &buf), 
+                fileName: FfiConverterString.read(from: &buf), 
+                savePath: FfiConverterString.read(from: &buf), 
+                tempPath: FfiConverterString.read(from: &buf), 
+                totalBytes: FfiConverterUInt64.read(from: &buf), 
+                downloadedBytes: FfiConverterUInt64.read(from: &buf), 
+                acceptRanges: FfiConverterBool.read(from: &buf), 
+                userAgent: FfiConverterOptionString.read(from: &buf), 
+                referer: FfiConverterOptionString.read(from: &buf), 
+                headersJson: FfiConverterOptionString.read(from: &buf), 
+                platformResumeData: FfiConverterOptionData.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadPlatformTicket, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterString.write(value.url, into: &buf)
+        FfiConverterOptionString.write(value.finalUrl, into: &buf)
+        FfiConverterString.write(value.fileName, into: &buf)
+        FfiConverterString.write(value.savePath, into: &buf)
+        FfiConverterString.write(value.tempPath, into: &buf)
+        FfiConverterUInt64.write(value.totalBytes, into: &buf)
+        FfiConverterUInt64.write(value.downloadedBytes, into: &buf)
+        FfiConverterBool.write(value.acceptRanges, into: &buf)
+        FfiConverterOptionString.write(value.userAgent, into: &buf)
+        FfiConverterOptionString.write(value.referer, into: &buf)
+        FfiConverterOptionString.write(value.headersJson, into: &buf)
+        FfiConverterOptionData.write(value.platformResumeData, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDownloadPlatformTicket_lift(_ buf: RustBuffer) throws -> DownloadPlatformTicket {
+    return try FfiConverterTypeDownloadPlatformTicket.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDownloadPlatformTicket_lower(_ value: DownloadPlatformTicket) -> RustBuffer {
+    return FfiConverterTypeDownloadPlatformTicket.lower(value)
 }
 
 
@@ -12063,6 +12325,31 @@ fileprivate struct FfiConverterSequenceTypeDownloadPartRecord: FfiConverterRustB
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeDownloadPlatformTicket: FfiConverterRustBuffer {
+    typealias SwiftType = [DownloadPlatformTicket]
+
+    public static func write(_ value: [DownloadPlatformTicket], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDownloadPlatformTicket.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DownloadPlatformTicket] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DownloadPlatformTicket]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDownloadPlatformTicket.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeDownloadTaskRecord: FfiConverterRustBuffer {
     typealias SwiftType = [DownloadTaskRecord]
 
@@ -13057,7 +13344,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_cancel_recording() != 39354) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_claim_next_queued_for_platform() != 27469) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_clear_logs() != 44053) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_complete_platform_download() != 36178) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_compute_file_moviehash() != 56313) {
@@ -13324,6 +13617,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_preview_share_document() != 2937) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_probe_for_platform_download() != 47058) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_probe_stream() != 17857) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -13381,6 +13677,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_resolve_saga_with_ai() != 62394) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_resume_downloads_after_system_wake() != 39078) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_retry_download() != 11426) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -13388,6 +13687,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_saga_for() != 2563) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_save_platform_resume_data() != 28531) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_schedule_recording() != 9925) {
@@ -13438,6 +13740,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_subtitles_signed_in() != 55309) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_suspend_downloads_for_system_sleep() != 5945) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_toggle_broken() != 30986) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -13448,6 +13753,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_unhide_item() != 56458) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_update_platform_download_progress() != 32661) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_update_profile() != 1794) {

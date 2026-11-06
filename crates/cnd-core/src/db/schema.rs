@@ -201,6 +201,9 @@ CREATE TABLE IF NOT EXISTS download_tasks (
     state TEXT DEFAULT 'queued', -- queued, running, paused, completed, error
     speed_bps REAL DEFAULT 0,
     eta_seconds INTEGER DEFAULT 0,
+    driver TEXT NOT NULL DEFAULT 'rust',
+    platform_resume_data BLOB,
+    resume_on_wake INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
