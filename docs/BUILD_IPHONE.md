@@ -82,9 +82,10 @@ L'app iPhone embarque le cœur Rust sous forme de XCFramework. Après un changem
 
 ## 5. Ce qui diffère du Mac
 
-- **Lecteur** : `libmpv` n'est pas inclus sur iPhone, seul `AVPlayer` lit les flux.
-  - Les chaînes en direct Xtream (`.ts`) sont lues par leur adresse **HLS** (`.m3u8`) quand le serveur la propose.
-  - Les films **MP4** fonctionnent. Les **MKV, AVI et FLV** ne se lisent pas dans l'app : un message l'indique, et le bouton « Ouvrir dans une autre app » propose VLC, Infuse ou Outplayer (à installer séparément).
+- **Lecteur** : `libmpv` (MPVKit) est lié statiquement à l'app iPhone, donc **MKV, AVI, FLV et TS** se lisent dans l'app. `AVPlayer` reste utilisé pour les formats qu'il lit seul.
+  - Le code nomme explicitement les fonctions de libmpv (`MpvLibrary.linkedSymbols`) : sans cela l'éditeur de liens les supprimait et l'app affichait « libmpv introuvable ».
+  - Les films et épisodes lus par mpv passent par un relais local du cœur Rust (`relay.rs`) : une seule connexion au serveur à la fois. Sans lui, un abonnement limité à une connexion répond `429 Connection limit reached` dès que mpv saute dans le fichier (lecture de l'index d'un MKV).
+  - Si le moteur manque malgré tout, un message l'indique et le bouton « Ouvrir dans une autre app » propose VLC, Infuse ou Outplayer.
 - **iCloud** : désactivé avec un compte développeur gratuit (pas de droit iCloud). L'app fonctionne en local ; la clé `CndCloudKitContainerIdentifier` est volontairement absente de `Info-iOS.plist`. Ne la remettez que si l'entitlement iCloud est signé, sinon l'app plante au lancement.
 - **Réseau local** : l'envoi de sources entre appareils (Sources > « Envoyer vers l'iPhone » / « Recevoir depuis un autre appareil… ») demande l'autorisation « Réseau local » au premier usage. Les deux appareils doivent être sur le même Wi-Fi.
 

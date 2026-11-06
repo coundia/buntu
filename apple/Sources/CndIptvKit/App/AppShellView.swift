@@ -515,6 +515,15 @@ private struct LoadedShellView: View {
 
     /// Hooks the system integrations (Now Playing, media keys, menu bar) to this shell.
     private func connectPlayerIntegrations() {
+        // « Télécharger puis regarder » from the slow-source banner: one connection, then plays from the device.
+        player.downloadHandler = { [vodContext, weak state] media in
+            guard let itemId = media.itemId, let item = try? state?.engine?.getItemById(itemId: itemId) else { return }
+            if item.kind == "episode" {
+                vodContext.downloadEpisodes([item], seriesTitle: media.seriesTitle ?? item.name)
+            } else {
+                vodContext.downloadMovie(item)
+            }
+        }
         #if os(macOS)
         // Covers runs that are not a .app bundle (swift run, Xcode scheme): they would show a generic icon.
         if Bundle.main.bundlePath.hasSuffix(".app") == false, let icon = AppLogoRenderer.nsImage(pixels: 512) {

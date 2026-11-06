@@ -1,0 +1,4 @@
+[bindings.kotlin]
+package_name = "com.pcoundia.buntu.core.engine.ffi"
+cdylib_name = "cnd_core"
+

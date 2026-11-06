@@ -24,6 +24,9 @@ final class AppLog: @unchecked Sendable {
             ))
             if storage.count > Self.capacity { storage.removeFirst(storage.count - Self.capacity) }
         }
+        // Also on stderr: `devicectl device process launch --console` shows it while the app runs on an iPhone.
+        let line = "[\(level)] \(category) — \(message)\n"
+        FileHandle.standardError.write(Data(line.utf8))
     }
 
     func info(_ category: String, _ message: String) { record(.info, category, message) }
