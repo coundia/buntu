@@ -113,6 +113,8 @@ public final class CndPlayerController {
     public private(set) var isFavorite: Bool = false
     /// Whether the currently playing media is flagged as broken.
     public private(set) var isBroken: Bool = false
+    /// Increments on each explicit `open` / `openQueue` call so mobile shells can present the player in front.
+    public private(set) var launchCount: Int = 0
 
     /// Whether automatic failover to alternative mirror streams is enabled.
     public var autoFailoverEnabled: Bool = true
@@ -244,6 +246,7 @@ public final class CndPlayerController {
 
     public func open(_ media: PlayableMedia) {
         queue = nil
+        launchCount &+= 1
         start(media, resumeAt: media.startPositionMs)
     }
 
@@ -251,6 +254,7 @@ public final class CndPlayerController {
         let playlist = PlaylistQueue(items: items, currentIndex: startIndex)
         guard let first = playlist.current else { return }
         queue = playlist
+        launchCount &+= 1
         start(first, resumeAt: first.startPositionMs)
     }
 

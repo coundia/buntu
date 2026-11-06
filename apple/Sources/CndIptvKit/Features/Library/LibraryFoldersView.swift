@@ -15,6 +15,7 @@ public struct LibraryFoldersView: View {
     @State private var showingAddFolder = false
     @State private var folderToRemove: LibraryFolderRecord?
     @State private var showingSettingsSheet = false
+    @State private var selectedImageItem: LibraryItemRecord?
 
     public init(
         model: LibraryModel,
@@ -96,9 +97,19 @@ public struct LibraryFoldersView: View {
                     }
             }
             #if os(macOS)
-            .frame(minWidth: 500, minHeight: 400)
+            .frame(minWidth: 500, minHeight: 400) // lint:ui-ignore sheet min size
             #endif
         }
+        #if os(macOS)
+        .sheet(item: $selectedImageItem) { imageItem in
+            ImageViewer(items: [imageItem], initialIndex: 0)
+                .frame(minWidth: 800, minHeight: 600) // lint:ui-ignore sheet min size
+        }
+        #else
+        .fullScreenCover(item: $selectedImageItem) { imageItem in
+            ImageViewer(items: [imageItem], initialIndex: 0)
+        }
+        #endif
     }
 
     private var currentTitle: String {
@@ -374,6 +385,8 @@ public struct LibraryFoldersView: View {
             model.playAudio(item: item)
         } else if item.kind == "video" {
             onPlayVideo?(item)
+        } else if item.kind == "image" {
+            selectedImageItem = item
         }
     }
 

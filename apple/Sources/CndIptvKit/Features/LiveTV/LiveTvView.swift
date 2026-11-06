@@ -161,6 +161,7 @@ struct LiveTvView: View {
                 target: wrapper.item,
                 mirrors: mirrorList,
                 onPlay: { mirror in
+                    mirrorTarget = nil
                     model.markWatched(mirror)
                     onPlay(mirror)
                 }
