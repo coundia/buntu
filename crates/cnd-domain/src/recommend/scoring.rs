@@ -42,3 +42,4 @@ pub fn score_candidates(taste: &Taste, items: &[CandidateItem]) -> Vec<ScoredIte
     scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     scored
 }
+

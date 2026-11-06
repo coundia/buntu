@@ -33,3 +33,4 @@
     <tizen:metadata key="http://samsung.com/tv/metadata/use.avplay" value="true"/>
     <tizen:metadata key="http://samsung.com/tv/metadata/devel.mode" value="true"/>
 </widget>
+

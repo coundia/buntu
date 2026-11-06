@@ -73,3 +73,4 @@ echo " Package size: $(du -h "$WGT_PATH" | cut -f1)"
 echo " SHA256: $(shasum -a 256 "$WGT_PATH" | cut -d' ' -f1)"
 echo " To install on TV: sdb connect <TV_IP> && sdb install $WGT_PATH"
 echo "=============================================================================="
+

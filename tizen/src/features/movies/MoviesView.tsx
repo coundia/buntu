@@ -100,3 +100,4 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     </div>
   );
 };
+

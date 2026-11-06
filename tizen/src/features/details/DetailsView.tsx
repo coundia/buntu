@@ -120,3 +120,4 @@ export const DetailsView: Component<DetailsViewProps> = (props) => {
     </div>
   );
 };
+
