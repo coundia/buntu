@@ -14,7 +14,7 @@ fn engine() -> std::sync::Arc<CndEngine> {
 }
 
 fn context() -> SearchContext {
-    SearchContext { playing_stable_hash: None, group_title: None, locale: "fr-FR".into(), utc_offset_minutes: 60 }
+    SearchContext { playing_stable_hash: None, group_title: None, locale: "fr-FR".into(), utc_offset_minutes: 60, kinds: Vec::new() }
 }
 
 fn config(server: &MockProvider) -> AiProviderConfig {
@@ -199,4 +199,47 @@ async fn filters_found_by_the_model_find_films_the_words_alone_could_not() {
     let response = engine.search_with_ai("quelque chose de sombre".into(), context(), config(&server)).await.unwrap();
     let titles: Vec<String> = response.hits.iter().filter(|h| h.kind == SearchKind::Movie).map(title).collect();
     assert!(titles.contains(&"Hereditary".to_string()), "{titles:?}");
+}
+
+fn scoped(kinds: Vec<SearchKind>) -> SearchContext {
+    SearchContext { kinds, ..context() }
+}
+
+#[tokio::test]
+async fn the_assistant_cannot_widen_the_scope_to_series_or_channels() {
+    let engine = engine();
+    let server = MockProvider::start(vec![gemini(json!({
+        "intent": "search", "kinds": ["series", "live"], "time_hint": null, "genres": [], "people": [],
+        "year_from": null, "year_to": null, "languages": [], "similar_to": null, "query_rewrite": null,
+        "title_guesses": [{ "title": "Game of Thrones", "year": 2011 }, { "title": "Inception", "year": 2010 }],
+        "reply": "ok"
+    }))])
+    .await;
+    let response = engine.search_with_ai("quelque chose de bien".into(), scoped(vec![SearchKind::Movie]), config(&server)).await.unwrap();
+    assert!(response.hits.iter().all(|h| h.kind == SearchKind::Movie), "{:?}", response.hits.iter().map(title).collect::<Vec<_>>());
+    assert!(response.hits.iter().any(|h| title(h).starts_with("Inception")));
+    assert!(!response.missing_titles.iter().any(|t| t.contains("Game of Thrones")), "a series title is not 'missing' from a film search");
+    // (The context travels as JSON inside the prompt text, so its quotes are escaped in the request body.)
+    assert!(server.calls()[0].body.contains("\\\"only\\\":[\\\"movie\\\"]"), "the model is told what the user is browsing");
+}
+
+#[tokio::test]
+async fn a_channel_command_is_not_performed_from_the_films_screen() {
+    let engine = engine();
+    let server = MockProvider::start(vec![gemini(understanding(json!([])))]).await;
+    let response = engine.search_with_ai("mets TF1".into(), scoped(vec![SearchKind::Movie]), config(&server)).await.unwrap();
+    assert!(response.command.is_none(), "{:?}", response.command);
+    assert!(response.hits.iter().all(|h| h.kind == SearchKind::Movie));
+}
+
+#[tokio::test]
+async fn the_tv_scope_keeps_films_out_of_the_assistants_titles() {
+    let engine = engine();
+    let server = MockProvider::start(vec![gemini(understanding(json!([{ "title": "Top Gun: Maverick", "year": 2022 }])))]).await;
+    let response = engine
+        .search_with_ai("un film avec Tom Cruise".into(), scoped(vec![SearchKind::Live, SearchKind::Program]), config(&server))
+        .await
+        .unwrap();
+    assert!(response.hits.iter().all(|h| matches!(h.kind, SearchKind::Live | SearchKind::Program)));
+    assert!(response.missing_titles.is_empty());
 }

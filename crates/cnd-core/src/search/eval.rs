@@ -318,3 +318,66 @@ fn local_search_is_fast_enough_for_each_keystroke() {
     let each = started.elapsed() / 20;
     assert!(each.as_millis() < 150, "{each:?}");
 }
+
+// ---------------------------------------------------------------- scope: nothing mixes
+
+fn scoped_context(kinds: Vec<SearchKind>) -> crate::search::SearchContext {
+    crate::search::SearchContext { playing_stable_hash: None, group_title: None, locale: "fr-FR".into(), utc_offset_minutes: 60, kinds }
+}
+
+fn run_scoped(db: &DatabaseManager, prompt: &str, kinds: Vec<SearchKind>) -> Vec<SearchHit> {
+    crate::search::engine::search_for_palette(db, prompt, &scoped_context(kinds), CLOCK, Lang::Fr, 40)
+}
+
+fn kinds_of(hits: &[SearchHit]) -> std::collections::HashSet<String> {
+    hits.iter().map(|h| format!("{:?}", h.kind)).collect()
+}
+
+#[test]
+fn searching_films_never_returns_channels_programmes_or_series() {
+    let db = catalog();
+    for prompt in ["Inception", "tf1", "psg", "game of thrones", "action", "journal", "une série coréenne", "mets TF1", "chaîne 3"] {
+        let hits = run_scoped(&db, prompt, vec![SearchKind::Movie]);
+        assert!(hits.iter().all(|h| h.kind == SearchKind::Movie), "{prompt}: {:?}", kinds_of(&hits));
+    }
+    assert!(run_scoped(&db, "Inception", vec![SearchKind::Movie]).iter().any(|h| title(h).starts_with("Inception")));
+    assert!(run_scoped(&db, "tf1", vec![SearchKind::Movie]).is_empty(), "TF1 is a channel, not a film");
+}
+
+#[test]
+fn searching_series_returns_only_series() {
+    let db = catalog();
+    for prompt in ["Game of Thrones", "inception", "tf1", "une série coréenne", "film d'action"] {
+        let hits = run_scoped(&db, prompt, vec![SearchKind::Series]);
+        assert!(hits.iter().all(|h| h.kind == SearchKind::Series), "{prompt}: {:?}", kinds_of(&hits));
+    }
+    assert!(run_scoped(&db, "squid game", vec![SearchKind::Series]).iter().any(|h| title(h) == "Squid Game"));
+}
+
+#[test]
+fn searching_tv_returns_channels_and_programmes_but_no_films_or_series() {
+    let db = catalog();
+    let tv = vec![SearchKind::Live, SearchKind::Program];
+    for prompt in ["Inception", "Game of Thrones", "film d'action", "un film avec Tom Cruise", "série coréenne"] {
+        let hits = run_scoped(&db, prompt, tv.clone());
+        assert!(hits.iter().all(|h| matches!(h.kind, SearchKind::Live | SearchKind::Program)), "{prompt}: {:?}", kinds_of(&hits));
+    }
+    let hits = run_scoped(&db, "le match du PSG ce soir", tv.clone());
+    assert!(hits.iter().any(|h| h.kind == SearchKind::Program));
+    assert!(run_scoped(&db, "tf1", tv).iter().any(|h| title(h).contains("TF1")));
+}
+
+#[test]
+fn the_scope_wins_over_the_kind_the_sentence_names() {
+    let db = catalog();
+    // "une série" typed while browsing films is still a film search.
+    let hits = run_scoped(&db, "une série policière", vec![SearchKind::Movie]);
+    assert!(hits.iter().all(|h| h.kind == SearchKind::Movie), "{:?}", kinds_of(&hits));
+}
+
+#[test]
+fn without_a_scope_everything_may_come_back() {
+    let db = catalog();
+    let all = kinds_of(&run_scoped(&db, "dark", Vec::new())); // a film (The Dark Knight) and a series (Dark)
+    assert!(all.len() >= 2, "{all:?}");
+}

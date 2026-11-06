@@ -9,6 +9,7 @@ struct CommandPaletteView: View {
     var body: some View {
         VStack(spacing: 0) {
             inputRow
+            scopePicker
             Divider()
             content
             inactiveProviderNote
@@ -26,10 +27,25 @@ struct CommandPaletteView: View {
 
     // MARK: Input
 
+    /// Films, series and TV are searched apart; the screen the palette was opened from picks one.
+    @ViewBuilder
+    private var scopePicker: some View {
+        if model.backend.supportsPromptSearch {
+            Picker("Chercher dans", selection: $model.scope) {
+                ForEach(SearchScope.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 14)
+            .padding(.bottom, 10)
+            .accessibilityLabel("Chercher dans")
+        }
+    }
+
     private var inputRow: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles").foregroundStyle(.tint).font(.title3)
-            TextField("Que voulez-vous regarder ? (« un film avec Tom Cruise », « le match du PSG ce soir »…)", text: $model.input)
+            TextField(model.scope.placeholder, text: $model.input)
                 .textFieldStyle(.plain)
                 .font(.title3)
                 .focused($fieldFocused)
@@ -252,7 +268,7 @@ struct CommandPaletteView: View {
         VStack(alignment: .leading, spacing: 8) {
             if model.history.isEmpty {
                 Text("Exemples").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                ForEach(["un film avec Tom Cruise", "le match du PSG ce soir", "une série coréenne romantique", "quelque chose comme Inception", "les infos en anglais"], id: \.self) { example in
+                ForEach(model.scope.examples, id: \.self) { example in
                     suggestionButton(example)
                 }
             } else {

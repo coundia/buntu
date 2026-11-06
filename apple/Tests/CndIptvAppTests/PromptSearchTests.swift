@@ -14,6 +14,10 @@ final class FakeSearchBackend: AssistantBackend, @unchecked Sendable {
     var aiDelay: Duration = .zero
     private var storedLocalTexts: [String] = []
     private var storedAiTexts: [String] = []
+    private var storedLocalKinds: [[SearchKind]] = []
+    private var storedAiKinds: [[SearchKind]] = []
+    var localKinds: [[SearchKind]] { lock.withLock { storedLocalKinds } }
+    var aiKinds: [[SearchKind]] { lock.withLock { storedAiKinds } }
     var localTexts: [String] { lock.withLock { storedLocalTexts } }
     var aiTexts: [String] { lock.withLock { storedAiTexts } }
 
@@ -29,12 +33,12 @@ final class FakeSearchBackend: AssistantBackend, @unchecked Sendable {
     func getItemById(itemId: Int64) throws -> IptvItemRecord? { nil }
 
     func searchLocal(text: String, context: SearchContext) -> SearchResponse {
-        lock.withLock { storedLocalTexts.append(text) }
+        lock.withLock { storedLocalTexts.append(text); storedLocalKinds.append(context.kinds) }
         return local
     }
 
     func searchWithAi(text: String, context: SearchContext, config: AiProviderConfig) async throws -> SearchResponse {
-        let answer = lock.withLock { storedAiTexts.append(text); return aiResult } // the answer as scripted when asked
+        let answer = lock.withLock { storedAiTexts.append(text); storedAiKinds.append(context.kinds); return aiResult } // the answer as scripted when asked
         if aiDelay > .zero { try await Task.sleep(for: aiDelay) }
         return try answer.get()
     }
@@ -387,5 +391,85 @@ final class AssistantStarterTests: XCTestCase {
         XCTAssertEqual(Catalog.assistantPhrase(typed: "  avec Tom Cruise ", starter: "un film "), "avec Tom Cruise")
         XCTAssertEqual(Catalog.assistantPhrase(typed: "", starter: "un film "), "un film ")
         XCTAssertEqual(Catalog.assistantPhrase(typed: "   ", starter: "une série "), "une série ")
+    }
+}
+
+
+/// Films, series and TV are searched apart (the user's rule for the prompt search).
+@MainActor
+final class SearchScopeTests: XCTestCase {
+    private var backend: FakeSearchBackend!
+    private var model: AssistantModel!
+    private var defaults: UserDefaults!
+    private var suite = ""
+
+    override func setUp() async throws {
+        suite = "cnd.scope.tests.\(UUID())"
+        defaults = UserDefaults(suiteName: suite)
+        backend = FakeSearchBackend()
+        let settings = AiProviderSettings(
+            defaults: defaults, keychain: KeychainStore(service: "com.cnd.iptv.tests.scope.\(UUID().uuidString)"), bundledKeys: DefaultApiKeys()
+        )
+        model = AssistantModel(backend: backend, settings: settings, defaults: defaults, suggestionDelay: .milliseconds(10))
+        model.onDismiss = {}
+    }
+
+    override func tearDown() async throws {
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testEachScopeNamesTheKindsItIsRestrictedTo() {
+        XCTAssertEqual(SearchScope.all.kinds, [])
+        XCTAssertEqual(SearchScope.tv.kinds, [.live, .program])
+        XCTAssertEqual(SearchScope.movies.kinds, [.movie])
+        XCTAssertEqual(SearchScope.series.kinds, [.series])
+    }
+
+    func testEveryScopeHasItsOwnPlaceholderAndExamples() {
+        XCTAssertEqual(Set(SearchScope.allCases.map(\.placeholder)).count, 4)
+        XCTAssertTrue(SearchScope.movies.placeholder.contains("film"))
+        XCTAssertTrue(SearchScope.tv.placeholder.contains("chaîne"))
+        for scope in SearchScope.allCases { XCTAssertFalse(scope.examples.isEmpty) }
+        XCTAssertFalse(SearchScope.tv.examples.contains { $0.lowercased().contains("film") }, "no film among the TV examples")
+        XCTAssertFalse(SearchScope.movies.examples.contains { $0.lowercased().contains("chaîne") })
+    }
+
+    func testTheScopeTravelsWithEveryKeystrokeAndWithEnter() async {
+        model.scope = .movies
+        model.input = "inception"
+        let asked = await eventually { !self.backend.localKinds.isEmpty }
+        XCTAssertTrue(asked)
+        XCTAssertEqual(backend.localKinds.last, [.movie])
+        backend.aiResult = .success(SearchResponse(command: nil, hits: [makeHit(.movie, name: "Inception")], missingTitles: [], reply: "", resolvedBy: "local", latencyMs: 1, fallbackReason: nil))
+        await model.submit()
+        XCTAssertEqual(backend.aiKinds.last, [.movie], "the provider path is scoped too")
+    }
+
+    func testSwitchingTheScopeSearchesAgainInsideTheNewOne() async {
+        model.scope = .tv
+        model.input = "france"
+        _ = await eventually { self.backend.localKinds.last == [.live, .program] }
+        let before = backend.localTexts.count
+        model.scope = .series
+        let again = await eventually { self.backend.localKinds.last == [.series] && self.backend.localTexts.count > before }
+        XCTAssertTrue(again, "\(backend.localKinds)")
+        XCTAssertEqual(backend.localTexts.last, "france", "the same words, searched among series")
+    }
+
+    func testSwitchingTheScopeClearsWhatWasShownForTheOldOne() async {
+        backend.local = SearchResponse(command: nil, hits: [makeHit(.live, name: "TF1")], missingTitles: [], reply: "", resolvedBy: "local", latencyMs: 1, fallbackReason: nil)
+        model.scope = .tv
+        model.input = "tf1"
+        _ = await eventually { !self.model.liveHits.isEmpty }
+        backend.local = SearchResponse(command: nil, hits: [], missingTitles: [], reply: "", resolvedBy: "local", latencyMs: 1, fallbackReason: nil)
+        model.scope = .movies
+        let cleared = await eventually { self.model.liveHits.isEmpty }
+        XCTAssertTrue(cleared, "a channel must not stay on screen after switching to films")
+    }
+
+    func testChangingTheScopeWithAnEmptyFieldJustClears() {
+        model.scope = .series
+        XCTAssertTrue(model.liveHits.isEmpty)
+        XCTAssertNil(model.searchResponse)
     }
 }
