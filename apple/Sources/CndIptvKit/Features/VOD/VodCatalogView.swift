@@ -54,6 +54,8 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
     var onOpenAssistant: ((String) -> Void)?
     /// What the assistant starts with when nothing is typed: "un film ", "une série ".
     let assistantStarter: String
+    /// The « Pour vous » rows of this kind (PRD 34), above the catalog while nothing is searched.
+    var forYou: ForYouModel?
     @ViewBuilder let card: (Entry, VodCardStyle) -> Card
 
     @AppStorage private var viewModeRaw: String
@@ -70,8 +72,10 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
         emptyDescription: String,
         assistantStarter: String = "",
         onOpenAssistant: ((String) -> Void)? = nil,
+        forYou: ForYouModel? = nil,
         @ViewBuilder card: @escaping (Entry, VodCardStyle) -> Card
     ) {
+        self.forYou = forYou
         self.assistantStarter = assistantStarter
         self.onOpenAssistant = onOpenAssistant
         self.title = title
@@ -133,6 +137,7 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
             }
         }
         .task(id: reloadKey) { await model.reload(revision: revision) }
+        .task(id: revision) { await forYou?.reload(revision: revision) }
     }
 
     @ViewBuilder
@@ -154,6 +159,7 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     if model.showsSections {
+                        if let forYou { ForYouShelves(model: forYou) }
                         shelf(titles.resume, icon: titles.resumeIcon, entries: model.resume)
                         shelf(titles.favorites, icon: "star.fill", entries: model.favorites)
                         if !model.resume.isEmpty || !model.favorites.isEmpty {

@@ -1,10 +1,20 @@
+pub mod ai_rerank;
+pub mod live;
 pub mod llm_saga;
+pub mod movies;
 pub mod saga;
 pub mod scoring;
+pub mod series;
+pub mod shelves;
+pub mod taste;
+
+#[cfg(test)]
+mod eval;
 
 use crate::ai::intent::{AiProviderConfig, AiProviderKind};
 use crate::db::IptvItemRecord;
 use crate::recommend::saga::{known_saga_order, parse_saga_title, universe_keywords_for};
+pub use crate::recommend::shelves::{RecoCard, RecoKind, RecoShelf, RecoShelfKind};
 pub use crate::recommend::scoring::{RecommendationReasonKind, SagaPosition, ScoredCandidate};
 use crate::recommend::scoring::{deduplicate_versions, enforce_diversity, score_metadata_similarity};
 use crate::{CndEngine, CndError};
@@ -69,6 +79,14 @@ impl CndEngine {
                 && c.item.stable_hash != item.stable_hash
                 && !dismissed.contains(&c.item.stable_hash)
         });
+
+        // The kind of what plays is the kind of what is proposed: a film never leads to a channel.
+        let expected = match item.kind.as_str() {
+            "live" => "live",
+            "episode" => "episode",
+            _ => "movie",
+        };
+        scored_list.retain(|c| c.item.kind == expected);
 
         // In Ending context, prioritize saga continuation or next episode at position 0
         if context == RecommendationContext::Ending {
@@ -487,19 +505,28 @@ impl CndEngine {
             }
         }
 
-        // 3. Similar episodes / series
-        let candidates = self.db.load_recommendation_candidates("episode", current.group_title.as_deref(), 30)?;
-        for cand in candidates {
-            if cand.id != current.id && !scored.iter().any(|s| s.item.id == cand.id) {
-                scored.push(ScoredCandidate {
-                    item: cand,
-                    reason_kind: RecommendationReasonKind::SimilarGenre,
-                    reason_text: "Dans la même catégorie".to_string(),
-                    score: 150.0,
-                    saga_position: None,
-                    already_watched: false,
-                });
+        // 3. Close series: one card per series (its first episode), never a random episode of another series.
+        let mut near = 0;
+        for s in self.db.reco_series_pool(80, 0)? {
+            if near >= 10 {
+                break;
             }
+            if current.series_id == Some(s.id) || dismissed.contains(&s.stable_hash) {
+                continue;
+            }
+            if current.group_title.is_some() && s.group_title != current.group_title {
+                continue;
+            }
+            let Some(first) = self.db.get_series_episodes(s.id, None)?.into_iter().next() else { continue };
+            near += 1;
+            scored.push(ScoredCandidate {
+                item: first,
+                reason_kind: RecommendationReasonKind::SimilarGenre,
+                reason_text: format!("Série proche · {}", s.title),
+                score: 150.0 + s.imdb_rating.unwrap_or(0.0),
+                saga_position: None,
+                already_watched: false,
+            });
         }
 
         scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));

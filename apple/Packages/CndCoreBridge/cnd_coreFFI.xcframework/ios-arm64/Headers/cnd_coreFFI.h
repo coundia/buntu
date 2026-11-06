@@ -537,6 +537,16 @@ int8_t uniffi_cnd_core_fn_method_cndengine_is_catchup_available(void*_Nonnull pt
 int8_t uniffi_cnd_core_fn_method_cndengine_is_health_check_running(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_IS_LOCAL_AI_PROVIDER
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_IS_LOCAL_AI_PROVIDER
+int8_t uniffi_cnd_core_fn_method_cndengine_is_local_ai_provider(void*_Nonnull ptr, RustBuffer config, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LESS_LIKE_THIS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LESS_LIKE_THIS
+void uniffi_cnd_core_fn_method_cndengine_less_like_this(void*_Nonnull ptr, RustBuffer kind, RustBuffer stable_hash, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LIBRARY_ADD_FOLDER
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LIBRARY_ADD_FOLDER
 RustBuffer uniffi_cnd_core_fn_method_cndengine_library_add_folder(void*_Nonnull ptr, RustBuffer display_name, RustBuffer path, RustBuffer bookmark, int8_t include_subfolders, RustBuffer kinds, RustCallStatus *_Nonnull out_status
@@ -762,6 +772,11 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_query_items(void*_Nonnull ptr, Ru
 RustBuffer uniffi_cnd_core_fn_method_cndengine_query_series(void*_Nonnull ptr, RustBuffer filter, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RECOMMENDATION_SHELVES
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RECOMMENDATION_SHELVES
+RustBuffer uniffi_cnd_core_fn_method_cndengine_recommendation_shelves(void*_Nonnull ptr, RustBuffer kind, uint32_t limit_per_shelf, int32_t utc_offset_minutes, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RECOMMENDATIONS_FOR
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RECOMMENDATIONS_FOR
 RustBuffer uniffi_cnd_core_fn_method_cndengine_recommendations_for(void*_Nonnull ptr, int64_t item_id, RustBuffer context, uint32_t limit, RustCallStatus *_Nonnull out_status
@@ -775,6 +790,11 @@ int64_t uniffi_cnd_core_fn_method_cndengine_record_now(void*_Nonnull ptr, int64_
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RECORD_WATCH_PROGRESS
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RECORD_WATCH_PROGRESS
 void uniffi_cnd_core_fn_method_cndengine_record_watch_progress(void*_Nonnull ptr, RustBuffer stable_hash, int64_t position_ms, int64_t duration_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_REFINE_SHELVES_WITH_AI
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_REFINE_SHELVES_WITH_AI
+uint64_t uniffi_cnd_core_fn_method_cndengine_refine_shelves_with_ai(void*_Nonnull ptr, RustBuffer kind, RustBuffer config, uint32_t limit_per_shelf, int8_t send_recent_titles, RustBuffer locale, int32_t utc_offset_minutes
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_REFRESH_SOURCE
@@ -812,6 +832,11 @@ int8_t uniffi_cnd_core_fn_method_cndengine_remove_series_rule(void*_Nonnull ptr,
 void uniffi_cnd_core_fn_method_cndengine_reset_dismissed_recommendations(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESET_TASTE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESET_TASTE
+void uniffi_cnd_core_fn_method_cndengine_reset_taste(void*_Nonnull ptr, RustBuffer kind, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESOLVE_CATCHUP_URL
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESOLVE_CATCHUP_URL
 RustBuffer uniffi_cnd_core_fn_method_cndengine_resolve_catchup_url(void*_Nonnull ptr, RustBuffer stream_url, RustBuffer catchup_type, RustBuffer catchup_source, RustBuffer catchup_days, int64_t start_ts, int64_t end_ts, RustCallStatus *_Nonnull out_status
@@ -842,9 +867,19 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_saga_for(void*_Nonnull ptr, int64
 int64_t uniffi_cnd_core_fn_method_cndengine_schedule_recording(void*_Nonnull ptr, RustBuffer req, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SEARCH_LOCAL
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SEARCH_LOCAL
+RustBuffer uniffi_cnd_core_fn_method_cndengine_search_local(void*_Nonnull ptr, RustBuffer text, RustBuffer context, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SEARCH_SUBTITLES
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SEARCH_SUBTITLES
 uint64_t uniffi_cnd_core_fn_method_cndengine_search_subtitles(void*_Nonnull ptr, RustBuffer query, RustBuffer api_key
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SEARCH_WITH_AI
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SEARCH_WITH_AI
+uint64_t uniffi_cnd_core_fn_method_cndengine_search_with_ai(void*_Nonnull ptr, RustBuffer text, RustBuffer context, RustBuffer config
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SET_ACTIVE_PROFILE_ID
@@ -1567,6 +1602,18 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_is_health_check_running(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_IS_LOCAL_AI_PROVIDER
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_IS_LOCAL_AI_PROVIDER
+uint16_t uniffi_cnd_core_checksum_method_cndengine_is_local_ai_provider(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_LESS_LIKE_THIS
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_LESS_LIKE_THIS
+uint16_t uniffi_cnd_core_checksum_method_cndengine_less_like_this(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_LIBRARY_ADD_FOLDER
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_LIBRARY_ADD_FOLDER
 uint16_t uniffi_cnd_core_checksum_method_cndengine_library_add_folder(void
@@ -1837,6 +1884,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_query_series(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RECOMMENDATION_SHELVES
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RECOMMENDATION_SHELVES
+uint16_t uniffi_cnd_core_checksum_method_cndengine_recommendation_shelves(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RECOMMENDATIONS_FOR
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RECOMMENDATIONS_FOR
 uint16_t uniffi_cnd_core_checksum_method_cndengine_recommendations_for(void
@@ -1852,6 +1905,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_record_now(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RECORD_WATCH_PROGRESS
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RECORD_WATCH_PROGRESS
 uint16_t uniffi_cnd_core_checksum_method_cndengine_record_watch_progress(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_REFINE_SHELVES_WITH_AI
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_REFINE_SHELVES_WITH_AI
+uint16_t uniffi_cnd_core_checksum_method_cndengine_refine_shelves_with_ai(void
     
 );
 #endif
@@ -1897,6 +1956,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_reset_dismissed_recommendatio
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESET_TASTE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESET_TASTE
+uint16_t uniffi_cnd_core_checksum_method_cndengine_reset_taste(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESOLVE_CATCHUP_URL
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESOLVE_CATCHUP_URL
 uint16_t uniffi_cnd_core_checksum_method_cndengine_resolve_catchup_url(void
@@ -1933,9 +1998,21 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_schedule_recording(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SEARCH_LOCAL
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SEARCH_LOCAL
+uint16_t uniffi_cnd_core_checksum_method_cndengine_search_local(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SEARCH_SUBTITLES
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SEARCH_SUBTITLES
 uint16_t uniffi_cnd_core_checksum_method_cndengine_search_subtitles(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SEARCH_WITH_AI
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SEARCH_WITH_AI
+uint16_t uniffi_cnd_core_checksum_method_cndengine_search_with_ai(void
     
 );
 #endif
