@@ -50,6 +50,10 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
     let sortOptions: [SortField]
     let searchPrompt: String
     let emptyDescription: String
+    /// Opens the assistant (PRD 33) with a starting phrase; the button shows only when an AI search is possible.
+    var onOpenAssistant: ((String) -> Void)?
+    /// What the assistant starts with when nothing is typed: "un film ", "une série ".
+    let assistantStarter: String
     @ViewBuilder let card: (Entry, VodCardStyle) -> Card
 
     @AppStorage private var viewModeRaw: String
@@ -64,8 +68,12 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
         sortOptions: [SortField],
         searchPrompt: String,
         emptyDescription: String,
+        assistantStarter: String = "",
+        onOpenAssistant: ((String) -> Void)? = nil,
         @ViewBuilder card: @escaping (Entry, VodCardStyle) -> Card
     ) {
+        self.assistantStarter = assistantStarter
+        self.onOpenAssistant = onOpenAssistant
         self.title = title
         self.model = model
         self.totalCount = totalCount
@@ -76,6 +84,12 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
         self.emptyDescription = emptyDescription
         self.card = card
         _viewModeRaw = AppStorage(wrappedValue: LiveViewMode.grid.rawValue, viewModeKey)
+    }
+
+    /// The question the assistant opens with: what is typed in the search field, else the starter.
+    static func assistantPhrase(typed: String, starter: String) -> String {
+        let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? starter : text
     }
 
     private var viewMode: LiveViewMode { LiveViewMode(rawValue: viewModeRaw) ?? .grid }
@@ -98,6 +112,18 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
             prompt: searchPrompt
         )
         .toolbar {
+            if let onOpenAssistant {
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        // What is already typed in the search field becomes the question.
+                        onOpenAssistant(Self.assistantPhrase(typed: model.filter.query, starter: assistantStarter))
+                    } label: {
+                        Label("Chercher avec l'assistant", systemImage: "sparkles")
+                    }
+                    .help("Trouver un titre en langage naturel : « un film avec Tom Cruise », « une série coréenne » (⌘K)")
+                    .accessibilityLabel("Chercher avec l'assistant")
+                }
+            }
             ToolbarItem(placement: .automatic) {
                 Picker("Affichage", selection: $viewModeRaw) {
                     Label("Grille", systemImage: "square.grid.2x2").tag(LiveViewMode.grid.rawValue)
