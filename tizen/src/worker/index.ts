@@ -100,3 +100,4 @@ self.onmessage = async (e: MessageEvent) => {
     self.postMessage({ id, success: false, error: err?.message || String(err) });
   }
 };
+

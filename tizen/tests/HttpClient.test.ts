@@ -38,3 +38,4 @@ describe('HttpClient - Single Connection & 429 Backoff', () => {
     expect(client.getRateLimitSecondsRemaining()).toBe(0);
   });
 });
+

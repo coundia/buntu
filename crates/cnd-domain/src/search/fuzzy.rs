@@ -105,3 +105,4 @@ mod tests {
         assert_eq!(match_edits(&w("avengers zorro"), &w("avengers")), None, "every word must fit");
     }
 }
+

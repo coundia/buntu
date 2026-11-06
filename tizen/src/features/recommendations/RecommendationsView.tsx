@@ -81,3 +81,4 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
     </div>
   );
 };
+

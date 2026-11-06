@@ -46,3 +46,4 @@ mod tests {
         assert!(!is_kids_allowed("Sport", &allowed));
     }
 }
+

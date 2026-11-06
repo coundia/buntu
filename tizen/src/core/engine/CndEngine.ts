@@ -212,3 +212,4 @@ export class CndEngine {
     return this.worker.rankSearch(parsedQuery, searchCandidates);
   }
 }
+

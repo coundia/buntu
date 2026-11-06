@@ -125,3 +125,4 @@ Avant toute soumission ou mise en production, valider la checklist suivante :
 - [x] **Navigation 100% Télécommande** : Navigation D-Pad fluide, touche Return gérée sans quitter inopinément l'application, raccourcis Ch+/Ch- fonctionnels.
 - [x] **Respect du Fournisseur Mono-Connexion** : `HttpClient` résout l'URL finale via `bytes=0-0` avant de la transmettre à AVPlay, empêchant l'ouverture de connexions concurrentes.
 - [x] **Cycle de Veille TV** : Mise en veille du téléviseur en cours de lecture et réveil gérés gracieusement par les écouteurs `appcommon.AppCommonScreenSaverState` et `document.addEventListener("visibilitychange")`.
+

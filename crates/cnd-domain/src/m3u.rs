@@ -541,3 +541,4 @@ pub fn parse_m3u_chunk(content: &str, source_uuid: &str) -> (M3uHeaderInfo, Vec<
 
     (header, items)
 }
+

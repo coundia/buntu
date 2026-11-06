@@ -37,3 +37,4 @@ describe('RemoteKeyHandler - Tizen Key Normalization', () => {
     }
   });
 });
+
