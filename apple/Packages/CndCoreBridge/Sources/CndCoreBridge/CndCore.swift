@@ -716,6 +716,16 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func isHealthCheckRunning()  -> Bool
     
+    /**
+     * Whether this provider runs on this machine or the local network (nothing leaves it).
+     */
+    func isLocalAiProvider(config: AiProviderConfig)  -> Bool
+    
+    /**
+     * "Moins de ce genre": lowers the main feature of this content for this kind only, and hides it.
+     */
+    func lessLikeThis(kind: RecoKind, stableHash: String) throws 
+    
     func libraryAddFolder(displayName: String, path: String, bookmark: Data?, includeSubfolders: Bool, kinds: String) throws  -> LibraryFolderRecord
     
     func libraryAlbums(limit: UInt32, offset: UInt32) throws  -> [LibraryAlbumRecord]
@@ -809,11 +819,23 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     
     func querySeries(filter: CatalogFilter) throws  -> [SeriesRecord]
     
+    /**
+     * Local shelves of one kind (films, series or TV): synchronous, no network.
+     * `utc_offset_minutes` places the time of the week for the TV habits.
+     */
+    func recommendationShelves(kind: RecoKind, limitPerShelf: UInt32, utcOffsetMinutes: Int32) throws  -> [RecoShelf]
+    
     func recommendationsFor(itemId: Int64, context: RecommendationContext, limit: UInt32) throws  -> [Recommendation]
     
     func recordNow(itemId: Int64, durationMinutes: UInt32) throws  -> Int64
     
     func recordWatchProgress(stableHash: String, positionMs: Int64, durationMs: Int64) throws 
+    
+    /**
+     * The same shelves with the main one re-ranked by the user's AI provider. Never fails because of the
+     * AI: any problem returns the local shelves (`refined_by` is then empty).
+     */
+    func refineShelvesWithAi(kind: RecoKind, config: AiProviderConfig, limitPerShelf: UInt32, sendRecentTitles: Bool, locale: String, utcOffsetMinutes: Int32) async throws  -> [RecoShelf]
     
     func refreshSource(sourceId: Int64) async throws  -> SyncSummary
     
@@ -828,6 +850,11 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
     func removeSeriesRule(id: Int64) throws  -> Bool
     
     func resetDismissedRecommendations() throws 
+    
+    /**
+     * Forgets the taste feedback and the cached AI answers of one kind.
+     */
+    func resetTaste(kind: RecoKind) throws 
     
     func resolveCatchupUrl(streamUrl: String, catchupType: String?, catchupSource: String?, catchupDays: UInt32?, startTs: Int64, endTs: Int64) throws  -> String?
     
@@ -1532,6 +1559,28 @@ open func isHealthCheckRunning() -> Bool  {
 })
 }
     
+    /**
+     * Whether this provider runs on this machine or the local network (nothing leaves it).
+     */
+open func isLocalAiProvider(config: AiProviderConfig) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_cnd_core_fn_method_cndengine_is_local_ai_provider(self.uniffiClonePointer(),
+        FfiConverterTypeAiProviderConfig_lower(config),$0
+    )
+})
+}
+    
+    /**
+     * "Moins de ce genre": lowers the main feature of this content for this kind only, and hides it.
+     */
+open func lessLikeThis(kind: RecoKind, stableHash: String)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_less_like_this(self.uniffiClonePointer(),
+        FfiConverterTypeRecoKind_lower(kind),
+        FfiConverterString.lower(stableHash),$0
+    )
+}
+}
+    
 open func libraryAddFolder(displayName: String, path: String, bookmark: Data?, includeSubfolders: Bool, kinds: String)throws  -> LibraryFolderRecord  {
     return try  FfiConverterTypeLibraryFolderRecord_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_library_add_folder(self.uniffiClonePointer(),
@@ -1939,6 +1988,20 @@ open func querySeries(filter: CatalogFilter)throws  -> [SeriesRecord]  {
 })
 }
     
+    /**
+     * Local shelves of one kind (films, series or TV): synchronous, no network.
+     * `utc_offset_minutes` places the time of the week for the TV habits.
+     */
+open func recommendationShelves(kind: RecoKind, limitPerShelf: UInt32, utcOffsetMinutes: Int32)throws  -> [RecoShelf]  {
+    return try  FfiConverterSequenceTypeRecoShelf.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_recommendation_shelves(self.uniffiClonePointer(),
+        FfiConverterTypeRecoKind_lower(kind),
+        FfiConverterUInt32.lower(limitPerShelf),
+        FfiConverterInt32.lower(utcOffsetMinutes),$0
+    )
+})
+}
+    
 open func recommendationsFor(itemId: Int64, context: RecommendationContext, limit: UInt32)throws  -> [Recommendation]  {
     return try  FfiConverterSequenceTypeRecommendation.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_recommendations_for(self.uniffiClonePointer(),
@@ -1965,6 +2028,27 @@ open func recordWatchProgress(stableHash: String, positionMs: Int64, durationMs:
         FfiConverterInt64.lower(durationMs),$0
     )
 }
+}
+    
+    /**
+     * The same shelves with the main one re-ranked by the user's AI provider. Never fails because of the
+     * AI: any problem returns the local shelves (`refined_by` is then empty).
+     */
+open func refineShelvesWithAi(kind: RecoKind, config: AiProviderConfig, limitPerShelf: UInt32, sendRecentTitles: Bool, locale: String, utcOffsetMinutes: Int32)async throws  -> [RecoShelf]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_cnd_core_fn_method_cndengine_refine_shelves_with_ai(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeRecoKind_lower(kind),FfiConverterTypeAiProviderConfig_lower(config),FfiConverterUInt32.lower(limitPerShelf),FfiConverterBool.lower(sendRecentTitles),FfiConverterString.lower(locale),FfiConverterInt32.lower(utcOffsetMinutes)
+                )
+            },
+            pollFunc: ffi_cnd_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_cnd_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_cnd_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeRecoShelf.lift,
+            errorHandler: FfiConverterTypeCndError_lift
+        )
 }
     
 open func refreshSource(sourceId: Int64)async throws  -> SyncSummary  {
@@ -2054,6 +2138,16 @@ open func removeSeriesRule(id: Int64)throws  -> Bool  {
     
 open func resetDismissedRecommendations()throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_reset_dismissed_recommendations(self.uniffiClonePointer(),$0
+    )
+}
+}
+    
+    /**
+     * Forgets the taste feedback and the cached AI answers of one kind.
+     */
+open func resetTaste(kind: RecoKind)throws   {try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_reset_taste(self.uniffiClonePointer(),
+        FfiConverterTypeRecoKind_lower(kind),$0
     )
 }
 }
@@ -6184,6 +6278,240 @@ public func FfiConverterTypeProfileRecord_lower(_ value: ProfileRecord) -> RustB
 }
 
 
+/**
+ * One card. Exactly one of `item`, `series` is the subject (a film or a channel, or a series);
+ * `program` goes with a channel, `next_episode` with a series.
+ */
+public struct RecoCard {
+    public var item: IptvItemRecord?
+    public var series: SeriesRecord?
+    public var program: EpgProgramRecord?
+    public var nextEpisode: IptvItemRecord?
+    public var reasonText: String
+    /**
+     * The reason or the place of the card comes from the AI.
+     */
+    public var aiReason: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(item: IptvItemRecord?, series: SeriesRecord?, program: EpgProgramRecord?, nextEpisode: IptvItemRecord?, reasonText: String, 
+        /**
+         * The reason or the place of the card comes from the AI.
+         */aiReason: Bool) {
+        self.item = item
+        self.series = series
+        self.program = program
+        self.nextEpisode = nextEpisode
+        self.reasonText = reasonText
+        self.aiReason = aiReason
+    }
+}
+
+#if compiler(>=6)
+extension RecoCard: Sendable {}
+#endif
+
+
+extension RecoCard: Equatable, Hashable {
+    public static func ==(lhs: RecoCard, rhs: RecoCard) -> Bool {
+        if lhs.item != rhs.item {
+            return false
+        }
+        if lhs.series != rhs.series {
+            return false
+        }
+        if lhs.program != rhs.program {
+            return false
+        }
+        if lhs.nextEpisode != rhs.nextEpisode {
+            return false
+        }
+        if lhs.reasonText != rhs.reasonText {
+            return false
+        }
+        if lhs.aiReason != rhs.aiReason {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(item)
+        hasher.combine(series)
+        hasher.combine(program)
+        hasher.combine(nextEpisode)
+        hasher.combine(reasonText)
+        hasher.combine(aiReason)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRecoCard: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RecoCard {
+        return
+            try RecoCard(
+                item: FfiConverterOptionTypeIptvItemRecord.read(from: &buf), 
+                series: FfiConverterOptionTypeSeriesRecord.read(from: &buf), 
+                program: FfiConverterOptionTypeEpgProgramRecord.read(from: &buf), 
+                nextEpisode: FfiConverterOptionTypeIptvItemRecord.read(from: &buf), 
+                reasonText: FfiConverterString.read(from: &buf), 
+                aiReason: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RecoCard, into buf: inout [UInt8]) {
+        FfiConverterOptionTypeIptvItemRecord.write(value.item, into: &buf)
+        FfiConverterOptionTypeSeriesRecord.write(value.series, into: &buf)
+        FfiConverterOptionTypeEpgProgramRecord.write(value.program, into: &buf)
+        FfiConverterOptionTypeIptvItemRecord.write(value.nextEpisode, into: &buf)
+        FfiConverterString.write(value.reasonText, into: &buf)
+        FfiConverterBool.write(value.aiReason, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecoCard_lift(_ buf: RustBuffer) throws -> RecoCard {
+    return try FfiConverterTypeRecoCard.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecoCard_lower(_ value: RecoCard) -> RustBuffer {
+    return FfiConverterTypeRecoCard.lower(value)
+}
+
+
+public struct RecoShelf {
+    public var id: String
+    public var kind: RecoKind
+    public var shelf: RecoShelfKind
+    public var title: String
+    public var items: [RecoCard]
+    /**
+     * « Gemini », « Ollama (local) »… when the AI re-ranked this shelf.
+     */
+    public var refinedBy: String?
+    /**
+     * A sentence under the title (why the shelf is what it is, or that the guide is out of date).
+     */
+    public var note: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, kind: RecoKind, shelf: RecoShelfKind, title: String, items: [RecoCard], 
+        /**
+         * « Gemini », « Ollama (local) »… when the AI re-ranked this shelf.
+         */refinedBy: String?, 
+        /**
+         * A sentence under the title (why the shelf is what it is, or that the guide is out of date).
+         */note: String?) {
+        self.id = id
+        self.kind = kind
+        self.shelf = shelf
+        self.title = title
+        self.items = items
+        self.refinedBy = refinedBy
+        self.note = note
+    }
+}
+
+#if compiler(>=6)
+extension RecoShelf: Sendable {}
+#endif
+
+
+extension RecoShelf: Equatable, Hashable {
+    public static func ==(lhs: RecoShelf, rhs: RecoShelf) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.shelf != rhs.shelf {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.items != rhs.items {
+            return false
+        }
+        if lhs.refinedBy != rhs.refinedBy {
+            return false
+        }
+        if lhs.note != rhs.note {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(kind)
+        hasher.combine(shelf)
+        hasher.combine(title)
+        hasher.combine(items)
+        hasher.combine(refinedBy)
+        hasher.combine(note)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRecoShelf: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RecoShelf {
+        return
+            try RecoShelf(
+                id: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypeRecoKind.read(from: &buf), 
+                shelf: FfiConverterTypeRecoShelfKind.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                items: FfiConverterSequenceTypeRecoCard.read(from: &buf), 
+                refinedBy: FfiConverterOptionString.read(from: &buf), 
+                note: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RecoShelf, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterTypeRecoKind.write(value.kind, into: &buf)
+        FfiConverterTypeRecoShelfKind.write(value.shelf, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterSequenceTypeRecoCard.write(value.items, into: &buf)
+        FfiConverterOptionString.write(value.refinedBy, into: &buf)
+        FfiConverterOptionString.write(value.note, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecoShelf_lift(_ buf: RustBuffer) throws -> RecoShelf {
+    return try FfiConverterTypeRecoShelf.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecoShelf_lower(_ value: RecoShelf) -> RustBuffer {
+    return FfiConverterTypeRecoShelf.lower(value)
+}
+
+
 public struct Recommendation {
     public var item: IptvItemRecord
     public var reasonKind: RecommendationReasonKind
@@ -10099,6 +10427,238 @@ extension LogLevel: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum RecoKind {
+    
+    case movies
+    case series
+    case live
+}
+
+
+#if compiler(>=6)
+extension RecoKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRecoKind: FfiConverterRustBuffer {
+    typealias SwiftType = RecoKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RecoKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .movies
+        
+        case 2: return .series
+        
+        case 3: return .live
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RecoKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .movies:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .series:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .live:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecoKind_lift(_ buf: RustBuffer) throws -> RecoKind {
+    return try FfiConverterTypeRecoKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecoKind_lower(_ value: RecoKind) -> RustBuffer {
+    return FfiConverterTypeRecoKind.lower(value)
+}
+
+
+extension RecoKind: Equatable, Hashable {}
+
+
+
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum RecoShelfKind {
+    
+    /**
+     * Movies started and not finished.
+     */
+    case resume
+    /**
+     * Next episode of each series in progress.
+     */
+    case `continue`
+    case forYou
+    /**
+     * New profile: the best of the sources.
+     */
+    case popular
+    /**
+     * Next film of the sagas the user watches.
+     */
+    case sagas
+    case becauseYouWatched
+    case newForYou
+    case newSeason
+    case onNow
+    case soon
+    case usualChannels
+    /**
+     * The guide has nothing on the air: no programme shelf, a message instead.
+     */
+    case guideStale
+}
+
+
+#if compiler(>=6)
+extension RecoShelfKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRecoShelfKind: FfiConverterRustBuffer {
+    typealias SwiftType = RecoShelfKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RecoShelfKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .resume
+        
+        case 2: return .`continue`
+        
+        case 3: return .forYou
+        
+        case 4: return .popular
+        
+        case 5: return .sagas
+        
+        case 6: return .becauseYouWatched
+        
+        case 7: return .newForYou
+        
+        case 8: return .newSeason
+        
+        case 9: return .onNow
+        
+        case 10: return .soon
+        
+        case 11: return .usualChannels
+        
+        case 12: return .guideStale
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RecoShelfKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .resume:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .`continue`:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .forYou:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .popular:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .sagas:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .becauseYouWatched:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .newForYou:
+            writeInt(&buf, Int32(7))
+        
+        
+        case .newSeason:
+            writeInt(&buf, Int32(8))
+        
+        
+        case .onNow:
+            writeInt(&buf, Int32(9))
+        
+        
+        case .soon:
+            writeInt(&buf, Int32(10))
+        
+        
+        case .usualChannels:
+            writeInt(&buf, Int32(11))
+        
+        
+        case .guideStale:
+            writeInt(&buf, Int32(12))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecoShelfKind_lift(_ buf: RustBuffer) throws -> RecoShelfKind {
+    return try FfiConverterTypeRecoShelfKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRecoShelfKind_lower(_ value: RecoShelfKind) -> RustBuffer {
+    return FfiConverterTypeRecoShelfKind.lower(value)
+}
+
+
+extension RecoShelfKind: Equatable, Hashable {}
+
+
+
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum RecommendationContext {
     
     case playing
@@ -11585,6 +12145,56 @@ fileprivate struct FfiConverterSequenceTypeProfileRecord: FfiConverterRustBuffer
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeRecoCard: FfiConverterRustBuffer {
+    typealias SwiftType = [RecoCard]
+
+    public static func write(_ value: [RecoCard], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRecoCard.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RecoCard] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RecoCard]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRecoCard.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRecoShelf: FfiConverterRustBuffer {
+    typealias SwiftType = [RecoShelf]
+
+    public static func write(_ value: [RecoShelf], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRecoShelf.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RecoShelf] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RecoShelf]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRecoShelf.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeRecommendation: FfiConverterRustBuffer {
     typealias SwiftType = [Recommendation]
 
@@ -12311,6 +12921,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_is_health_check_running() != 14603) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_is_local_ai_provider() != 25045) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_less_like_this() != 21888) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_library_add_folder() != 39627) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -12446,6 +13062,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_query_series() != 15417) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_cnd_core_checksum_method_cndengine_recommendation_shelves() != 13387) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_cnd_core_checksum_method_cndengine_recommendations_for() != 15204) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -12453,6 +13072,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_record_watch_progress() != 64786) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_refine_shelves_with_ai() != 36183) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_refresh_source() != 13278) {
@@ -12474,6 +13096,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_reset_dismissed_recommendations() != 39800) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_reset_taste() != 59546) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_resolve_catchup_url() != 35548) {

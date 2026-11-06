@@ -9,6 +9,7 @@ struct SettingsView: View {
     var ai: AiProviderSettings?
     var assistant: AssistantModel?
     var upNext: UpNextModel?
+    var forYou: ForYouHub?
     var library: LibraryModel?
 
     @State private var showsOmdbKey = false
@@ -28,6 +29,7 @@ struct SettingsView: View {
         Form {
             playbackAndHealthSection
             if let upNext { recommendationsSection(upNext) }
+            if let forYou { forYouSection(forYou) }
             profilesAndBouquetsSection
             parentalSection
             appearanceSection
@@ -119,6 +121,30 @@ struct SettingsView: View {
             Text("Recommandations & Sagas")
         } footer: {
             Text("L'assistant IA facultatif permet d'ordonner les sagas selon la chronologie de l'histoire en analysant uniquement les titres et les années. Aucune donnée personnelle ni URL de flux n'est transmise.")
+        }
+    }
+
+    /// The « Pour vous » rows of PRD 34: one switch per kind, the AI refinement, and a reset of the taste per kind.
+    @ViewBuilder
+    private func forYouSection(_ forYou: ForYouHub) -> some View {
+        @Bindable var hub = forYou
+        Section {
+            Toggle("Rangées « Pour vous » dans Films", isOn: $hub.moviesEnabled)
+            Toggle("Rangées « Pour vous » dans Séries", isOn: $hub.seriesEnabled)
+            Toggle("Rangées « Pour vous » dans Live TV", isOn: $hub.liveEnabled)
+            Toggle("Affiner avec l'assistant IA", isOn: $hub.aiRefine)
+                .disabled(ai?.isAssistantEnabled != true)
+            if hub.aiRefine && ai?.endpointIsLocal != true {
+                Toggle("Envoyer mes derniers titres regardés à l'IA distante", isOn: $hub.sendRecentTitles)
+                    .disabled(ai?.isAssistantEnabled != true)
+            }
+            Button("Réinitialiser mes goûts : films") { forYou.movies.resetTaste() }
+            Button("Réinitialiser mes goûts : séries") { forYou.series.resetTaste() }
+            Button("Réinitialiser mes goûts : TV") { forYou.live.resetTaste() }
+        } header: {
+            Text("Rangées « Pour vous »")
+        } footer: {
+            Text("Les films, les séries et la TV ont chacun leurs goûts et leurs rangées : ils ne se mélangent jamais. L'IA ne fait que trier des titres déjà présents dans vos sources, sans jamais voir d'adresse de flux, de source ni de profil. Avec un modèle sur cet appareil, rien ne quitte votre machine. Avec un fournisseur distant, seuls des titres, des genres et un résumé de vos goûts sont envoyés ; vos derniers titres regardés ne le sont que si vous l'activez.")
         }
     }
 

@@ -821,6 +821,8 @@ private struct LoadedShellView: View {
                     onAddToMultiView: addToMultiView,
                     onOpenMultiView: openMultiView,
                     onStartOver: { channel, program in startOver(channel: channel, program: program) },
+                    forYou: state.forYou.live,
+                    onRefreshGuide: { Task { await sourcesModel.syncAll(state.sources) } },
                     searchRequest: $liveSearchRequest
                 )
             case .guide:
@@ -839,11 +841,13 @@ private struct LoadedShellView: View {
             case .movies:
                 vodScreen(MoviesCatalogView(
                     engine: engine, revision: state.catalogRevision, totalMovies: Int(state.stats?.totalMovies ?? 0),
+                    forYou: state.forYou.movies,
                     onOpenAssistant: state.aiSettings.isAssistantEnabled ? { openAssistant(startingWith: $0, scope: .movies) } : nil
                 ))
             case .series:
                 vodScreen(SeriesCatalogView(
                     engine: engine, revision: state.catalogRevision, totalSeries: Int(state.stats?.totalSeries ?? 0),
+                    forYou: state.forYou.series,
                     onOpenAssistant: state.aiSettings.isAssistantEnabled ? { openAssistant(startingWith: $0, scope: .series) } : nil
                 ))
             case .downloads:
@@ -865,12 +869,13 @@ private struct LoadedShellView: View {
                 SettingsView(
                     model: settingsModel, directory: state.downloadDirectory, stats: state.stats, sync: state.cloudSync,
                     ai: state.aiSettings, assistant: assistant, upNext: state.upNext,
-                    library: libraryModel
+                    forYou: state.forYou, library: libraryModel
                 )
                 #else
                 SettingsView(
                     model: settingsModel, directory: state.downloadDirectory, stats: state.stats, sync: state.cloudSync,
-                    ai: state.aiSettings, assistant: assistant, upNext: state.upNext
+                    ai: state.aiSettings, assistant: assistant, upNext: state.upNext,
+                    forYou: state.forYou
                 )
                 #endif
             }

@@ -14,7 +14,7 @@ pub mod subtitles;
 pub mod telemetry;
 
 pub use recommend::{
-    Recommendation, RecommendationContext, RecommendationReasonKind, SagaInfo, SagaOrderPreference,
+    RecoCard, RecoKind, RecoShelf, RecoShelfKind, Recommendation, RecommendationContext, RecommendationReasonKind, SagaInfo, SagaOrderPreference,
     SagaPosition,
 };
 
@@ -1317,6 +1317,49 @@ impl CndEngine {
 
     pub async fn resolve_saga_with_ai(&self, item_id: i64, config: AiProviderConfig) -> Result<Option<SagaInfo>, CndError> {
         self.resolve_saga_with_ai_impl(item_id, config).await
+    }
+
+    // MARK: - Recommendations per kind (PRD-34)
+
+    /// Local shelves of one kind (films, series or TV): synchronous, no network.
+    /// `utc_offset_minutes` places the time of the week for the TV habits.
+    pub fn recommendation_shelves(
+        &self,
+        kind: RecoKind,
+        limit_per_shelf: u32,
+        utc_offset_minutes: i32,
+    ) -> Result<Vec<RecoShelf>, CndError> {
+        self.recommendation_shelves_impl(kind, limit_per_shelf, utc_offset_minutes)
+    }
+
+    /// The same shelves with the main one re-ranked by the user's AI provider. Never fails because of the
+    /// AI: any problem returns the local shelves (`refined_by` is then empty).
+    pub async fn refine_shelves_with_ai(
+        &self,
+        kind: RecoKind,
+        config: AiProviderConfig,
+        limit_per_shelf: u32,
+        send_recent_titles: bool,
+        locale: String,
+        utc_offset_minutes: i32,
+    ) -> Result<Vec<RecoShelf>, CndError> {
+        self.refine_shelves_with_ai_impl(kind, config, limit_per_shelf, send_recent_titles, locale, utc_offset_minutes)
+            .await
+    }
+
+    /// "Moins de ce genre": lowers the main feature of this content for this kind only, and hides it.
+    pub fn less_like_this(&self, kind: RecoKind, stable_hash: String) -> Result<(), CndError> {
+        self.less_like_this_impl(kind, stable_hash)
+    }
+
+    /// Forgets the taste feedback and the cached AI answers of one kind.
+    pub fn reset_taste(&self, kind: RecoKind) -> Result<(), CndError> {
+        self.reset_taste_impl(kind)
+    }
+
+    /// Whether this provider runs on this machine or the local network (nothing leaves it).
+    pub fn is_local_ai_provider(&self, config: AiProviderConfig) -> bool {
+        recommend::ai_rerank::is_local_provider(&config)
     }
 
     // ------------------------------------------------------------------------

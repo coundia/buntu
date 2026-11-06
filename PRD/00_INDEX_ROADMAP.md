@@ -111,6 +111,7 @@ flowchart TD
 | **31** | [`31_ACCESSIBILITY.md`](./31_ACCESSIBILITY.md) | Accessibilité : VoiceOver (libellés, actions, rotors, annonces), clavier complet, Contrôle vocal, sous-titres SDH et audiodescription, réglages visuels du système, audits automatiques. | `[x]` (partiel : voir le statut du PRD ; aucun essai avec VoiceOver) |
 | **32** | [`32_LOCAL_MEDIA_LIBRARY.md`](./32_LOCAL_MEDIA_LIBRARY.md) | « Mes fichiers » dans la barre latérale (Vidéo, Audio, Images, Dossiers) comme VLC : dossiers autorisés par l'utilisateur (signets de sécurité), index Rust incrémental, lecteur audio, visionneuse d'images. | `[x]` |
 | **33** | [`33_AI_PROMPT_SEARCH.md`](./33_AI_PROMPT_SEARCH.md) | Recherche par prompt : chaînes, programmes EPG, replay, films et séries en langage naturel ; analyse locale, puis l'IA comprend et propose des titres cherchés dans le catalogue, jeu d'évaluation mesuré. | `[x]` (lots 33.1 et 33.2, 33.3 en partie ; Siri, fichiers, affinage non faits ; non essayé avec un vrai fournisseur IA) |
+| **34** | [`34_AI_RECOMMENDATIONS_BY_KIND.md`](./34_AI_RECOMMENDATIONS_BY_KIND.md) | Recommandations séparées pour les films, les séries et la TV (jamais mélangées) : rangées « Pour vous » dans chaque écran, goûts du profil par type, séries au niveau de la série, programmes EPG pour la TV, affinage par Gemini, une IA locale (Ollama, modèle d'Apple) ou un autre fournisseur. | `[x]` (lots 34.1 à 34.4 ; 34.5, tests Swift et essais réels non faits) |
 
 ---
 

@@ -189,6 +189,70 @@ pub fn understand_gemini_schema() -> Value {
     })
 }
 
+/// Longest reason and counts of a recommendation answer (PRD 34 § 6.2).
+pub const MAX_RECO_PICKS: usize = 30;
+pub const MAX_RECO_DISCOVER: usize = 10;
+pub const MAX_RECO_REASON_CHARS: usize = 60;
+
+/// JSON Schema of a recommendation answer (strict-mode friendly: every field required).
+pub fn recommend_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "kind": { "type": "string", "enum": ["movie", "series", "live"] },
+            "picks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": { "id": { "type": "string" }, "reason": { "type": ["string", "null"] } },
+                    "required": ["id", "reason"],
+                    "additionalProperties": false
+                }
+            },
+            "discover": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": { "title": { "type": "string" }, "year": { "type": ["integer", "null"] } },
+                    "required": ["title", "year"],
+                    "additionalProperties": false
+                }
+            },
+            "confidence": { "type": "number" }
+        },
+        "required": ["kind", "picks", "discover", "confidence"],
+        "additionalProperties": false
+    })
+}
+
+/// The same schema in the OpenAPI subset Gemini's `responseSchema` accepts.
+pub fn recommend_gemini_schema() -> Value {
+    json!({
+        "type": "OBJECT",
+        "properties": {
+            "kind": { "type": "STRING", "enum": ["movie", "series", "live"] },
+            "picks": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": { "id": { "type": "STRING" }, "reason": { "type": "STRING", "nullable": true } },
+                    "required": ["id", "reason"]
+                }
+            },
+            "discover": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": { "title": { "type": "STRING" }, "year": { "type": "INTEGER", "nullable": true } },
+                    "required": ["title", "year"]
+                }
+            },
+            "confidence": { "type": "NUMBER" }
+        },
+        "required": ["kind", "picks", "discover", "confidence"]
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

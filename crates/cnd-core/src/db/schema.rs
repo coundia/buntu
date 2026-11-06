@@ -373,6 +373,40 @@ CREATE TABLE IF NOT EXISTS recommendation_dismissals (
     PRIMARY KEY(profile_id, stable_hash)
 );
 
+-- Per-kind recommendations (PRD-34)
+-- "Moins de ce genre": a signed weight on one taste feature, per profile and per kind.
+CREATE TABLE IF NOT EXISTS reco_feedback (
+    profile_id INTEGER NOT NULL DEFAULT 1,
+    kind TEXT NOT NULL, -- 'movie' | 'series' | 'live'
+    feature TEXT NOT NULL,
+    delta REAL NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(profile_id, kind, feature)
+);
+
+-- Answer of the AI re-rank, kept with REAL ids (never the opaque ones sent to the model).
+CREATE TABLE IF NOT EXISTS reco_ai_cache (
+    profile_id INTEGER NOT NULL DEFAULT 1,
+    kind TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    candidates_hash TEXT NOT NULL,
+    picks TEXT NOT NULL, -- JSON
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    PRIMARY KEY(profile_id, kind)
+);
+
+-- Calls made to a remote provider for recommendations, per day (daily cap).
+CREATE TABLE IF NOT EXISTS reco_ai_usage (
+    day TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    calls INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(day, provider)
+);
+CREATE INDEX IF NOT EXISTS idx_series_rating ON series_catalog(imdb_rating DESC);
+CREATE INDEX IF NOT EXISTS idx_series_updated ON series_catalog(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_history_profile_recent ON watch_history(profile_id, last_watched_at);
+
 -- Local Media Library (PRD-32)
 CREATE TABLE IF NOT EXISTS library_folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

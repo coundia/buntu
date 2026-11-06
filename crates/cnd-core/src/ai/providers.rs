@@ -4,7 +4,9 @@
 //! Keys travel in headers (`x-goog-api-key`, `Authorization`, `x-api-key`), never in the URL or body.
 
 use crate::ai::intent::{AiProviderConfig, AiProviderKind};
-use crate::ai::prompt::{decision_schema, gemini_schema, understand_gemini_schema, understand_schema};
+use crate::ai::prompt::{
+    decision_schema, gemini_schema, recommend_gemini_schema, recommend_schema, understand_gemini_schema, understand_schema,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -28,6 +30,8 @@ pub struct ProviderRequest {
 pub enum Task {
     Command,
     UnderstandSearch,
+    /// Re-rank the candidates of one recommendation shelf (PRD 34).
+    Recommend,
 }
 
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -35,6 +39,8 @@ const GEMINI_MAX_OUTPUT_TOKENS: u32 = 1024;
 const ANTHROPIC_MAX_TOKENS: u32 = 512;
 /// A search understanding holds up to 25 titles: more room than a single action, still under 2 000.
 const UNDERSTAND_MAX_TOKENS: u32 = 1024;
+/// A shelf answer: up to 30 picks with a short reason each, and up to 10 titles to discover.
+const RECOMMEND_MAX_TOKENS: u32 = 2048;
 
 pub fn build_request(
     config: &AiProviderConfig,
@@ -71,12 +77,13 @@ pub fn build_request_for(
             let mut generation = json!({
                 "responseMimeType": "application/json",
                 "temperature": 0,
-                "maxOutputTokens": GEMINI_MAX_OUTPUT_TOKENS,
+                "maxOutputTokens": if task == Task::Recommend { RECOMMEND_MAX_TOKENS } else { GEMINI_MAX_OUTPUT_TOKENS },
             });
             if mode == RequestMode::Strict {
                 generation["responseSchema"] = match task {
                     Task::Command => gemini_schema(),
                     Task::UnderstandSearch => understand_gemini_schema(),
+                    Task::Recommend => recommend_gemini_schema(),
                 };
             }
             Ok(ProviderRequest {
@@ -99,6 +106,10 @@ pub fn build_request_for(
                     Task::UnderstandSearch => json!({
                         "type": "json_schema",
                         "json_schema": { "name": "search_understanding", "strict": true, "schema": understand_schema() }
+                    }),
+                    Task::Recommend => json!({
+                        "type": "json_schema",
+                        "json_schema": { "name": "recommendations", "strict": true, "schema": recommend_schema() }
                     }),
                 },
                 RequestMode::Light => json!({ "type": "json_object" }),
@@ -141,6 +152,12 @@ pub fn build_request_for(
                             "Record what the user is looking for and the titles that fit.",
                             understand_schema(),
                             UNDERSTAND_MAX_TOKENS,
+                        ),
+                        Task::Recommend => (
+                            "recommend",
+                            "Record the candidates to show, best first, and the titles worth discovering.",
+                            recommend_schema(),
+                            RECOMMEND_MAX_TOKENS,
                         ),
                     };
                     json!({

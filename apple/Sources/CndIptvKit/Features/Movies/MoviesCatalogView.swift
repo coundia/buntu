@@ -6,10 +6,12 @@ struct MoviesCatalogView: View {
     let revision: Int
     let totalMovies: Int
     var onOpenAssistant: ((String) -> Void)?
+    var forYou: ForYouModel?
     @Environment(VodContext.self) private var vod
 
-    init(engine: CndEngine, revision: Int, totalMovies: Int, onOpenAssistant: ((String) -> Void)? = nil) {
+    init(engine: CndEngine, revision: Int, totalMovies: Int, forYou: ForYouModel? = nil, onOpenAssistant: ((String) -> Void)? = nil) {
         self.onOpenAssistant = onOpenAssistant
+        self.forYou = forYou
         _model = State(initialValue: VodCatalogModel(kind: "movie", source: .movies(engine: engine)))
         self.revision = revision
         self.totalMovies = totalMovies
@@ -27,7 +29,8 @@ struct MoviesCatalogView: View {
             searchPrompt: "Rechercher un film",
             emptyDescription: "Ajoutez une source dans l'onglet Sources pour importer des films.",
             assistantStarter: "un film ",
-            onOpenAssistant: onOpenAssistant
+            onOpenAssistant: onOpenAssistant,
+            forYou: forYou
         ) { item, style in
             MoviePosterCard(
                 item: item,

@@ -10,7 +10,7 @@ pub mod ai_search;
 mod ai_tests;
 pub mod engine;
 #[cfg(test)]
-mod eval;
+pub(crate) mod eval;
 pub mod fuzzy;
 pub mod query_parser;
 

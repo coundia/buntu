@@ -6,6 +6,7 @@ pub mod library_repo;
 pub mod profile_repo;
 pub mod recording_repo;
 pub mod recommend_repo;
+pub mod reco_repo;
 pub mod schema;
 pub mod search_repo;
 pub mod settings_repo;
