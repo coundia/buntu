@@ -447,6 +447,7 @@ private struct LoadedShellView: View {
             showingAssistant = false
             assistant.input = ""
         }
+        assistant.onOpenSettings = { selectedTabRaw = AppTab.settings.rawValue }
         assistant.actions = AssistantActions(
             play: { item in
                 Task.detached { try? engine.recordWatchProgress(stableHash: item.stableHash, positionMs: 0, durationMs: 0) }
