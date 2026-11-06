@@ -10,6 +10,8 @@ struct AppLogoView: View {
     var size: CGFloat
     /// `true` adds the transparent margin and soft shadow of a macOS app icon (the tile fills 80 %).
     var framed = false
+    /// `true` renders a full-bleed square with no corner rounding (for iOS, iPadOS app icons).
+    var fullBleed = false
 
     static let tileTop = BrandPalette.slate.color
     static let tileBottom = BrandPalette.midnight.color
@@ -18,15 +20,25 @@ struct AppLogoView: View {
         let tile = framed ? size * 0.8 : size
         Canvas { context, canvas in
             let t = canvas.width
-            let radius = t * 0.2237
             let tileRect = CGRect(origin: .zero, size: canvas)
-            context.fill(
-                Path(roundedRect: tileRect, cornerRadius: radius, style: .continuous),
-                with: .linearGradient(
-                    Gradient(colors: [Self.tileTop, Self.tileBottom]),
-                    startPoint: CGPoint(x: t * 0.2, y: 0), endPoint: CGPoint(x: t * 0.8, y: t)
+            if fullBleed {
+                context.fill(
+                    Path(tileRect),
+                    with: .linearGradient(
+                        Gradient(colors: [Self.tileTop, Self.tileBottom]),
+                        startPoint: CGPoint(x: t * 0.2, y: 0), endPoint: CGPoint(x: t * 0.8, y: t)
+                    )
                 )
-            )
+            } else {
+                let radius = t * 0.2237
+                context.fill(
+                    Path(roundedRect: tileRect, cornerRadius: radius, style: .continuous),
+                    with: .linearGradient(
+                        Gradient(colors: [Self.tileTop, Self.tileBottom]),
+                        startPoint: CGPoint(x: t * 0.2, y: 0), endPoint: CGPoint(x: t * 0.8, y: t)
+                    )
+                )
+            }
 
             func point(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: x * t, y: y * t) }
             let gold = BrandPalette.gold.color
@@ -71,7 +83,7 @@ struct AppLogoView: View {
             }
         }
         .frame(width: tile, height: tile)
-        .shadow(color: .black.opacity(framed ? 0.28 : 0), radius: size * 0.02, y: size * 0.012)
+        .shadow(color: .black.opacity((framed && !fullBleed) ? 0.28 : 0), radius: size * 0.02, y: size * 0.012)
         .frame(width: size, height: size)
         .accessibilityHidden(true)
     }
@@ -81,10 +93,23 @@ struct AppLogoView: View {
 enum AppLogoRenderer {
     /// A bitmap of the logo (used for the Dock icon when the app does not run from a `.app` bundle).
     @MainActor
-    static func nsImage(pixels: CGFloat, framed: Bool = true) -> NSImage? {
-        let renderer = ImageRenderer(content: AppLogoView(size: pixels, framed: framed))
+    static func nsImage(pixels: CGFloat, framed: Bool = true, fullBleed: Bool = false) -> NSImage? {
+        let renderer = ImageRenderer(content: AppLogoView(size: pixels, framed: framed, fullBleed: fullBleed))
         renderer.scale = 1
         return renderer.nsImage
+    }
+
+    /// Writes a square full-bleed icon for iOS / iPadOS into `fileURL`.
+    @MainActor
+    static func writeIosIcon(to fileURL: URL, pixels: CGFloat = 1024) throws {
+        guard let image = nsImage(pixels: pixels, framed: false, fullBleed: true),
+              let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try png.write(to: fileURL)
     }
 
     /// Writes the ten sizes of a macOS `.iconset` into `directory`.

@@ -275,10 +275,10 @@ tasks:
   icon:
     desc: Regenerate assets/AppIcon.icns and assets/AppIcon-1024.png from the SwiftUI logo
     cmds:
-      - rm -rf build/icon && mkdir -p build/icon assets
-      - cd {{.APPLE_DIR}} && CND_EXPORT_ICON="$PWD/../build/icon/AppIcon.iconset" swift test --filter AppLogoTests/testExportIconsetWhenAsked
+      - rm -rf build/icon && mkdir -p build/icon assets apple/Resources/Assets.xcassets/AppIcon.appiconset
+      - cd {{.APPLE_DIR}} && CND_EXPORT_ICON="$PWD/../build/icon/AppIcon.iconset" CND_EXPORT_IOS_ICON="$PWD/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" swift test --filter AppLogoTests
       - iconutil -c icns build/icon/AppIcon.iconset -o assets/AppIcon.icns
-      - cp build/icon/AppIcon.iconset/icon_512x512@2x.png assets/AppIcon-1024.png
+      - cp apple/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png assets/AppIcon-1024.png
 
   clean:
     desc: Remove the build/ folder (app bundle, Swift scratch and DerivedData)
