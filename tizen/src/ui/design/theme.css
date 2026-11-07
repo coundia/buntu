@@ -68,11 +68,13 @@ html, body {
 }
 
 .tv-container {
-  width: 1920px;
-  height: 1080px;
-  padding: var(--tv-safe-pad-v) var(--tv-safe-pad-h);
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0 var(--tv-safe-pad-h) var(--tv-safe-pad-v);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* Header & Nav */
@@ -478,6 +480,278 @@ html, body {
 .tv-btn:disabled {
   opacity: 0.35;
   pointer-events: none;
+}
+
+/* ==========================================================================
+   Live TV Screen (Apple TV / TiviMate UX)
+   ========================================================================== */
+
+.tv-live-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  margin-bottom: 20px;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 12px;
+  box-sizing: border-box;
+}
+
+.tv-live-title {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--buntu-gold);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tv-live-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  border-radius: 20px;
+  padding: 6px 18px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--buntu-cyan);
+  letter-spacing: 0.5px;
+}
+
+.tv-live-layout {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Sidebar: Categories */
+.tv-live-sidebar {
+  width: 360px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin-right: 28px;
+  padding-right: 12px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-sizing: border-box;
+}
+
+.tv-live-sidebar::-webkit-scrollbar,
+.tv-live-channels::-webkit-scrollbar {
+  width: 6px;
+}
+.tv-live-sidebar::-webkit-scrollbar-thumb,
+.tv-live-channels::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+}
+
+.tv-category-item {
+  display: block;
+  padding: 14px 20px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--buntu-text-muted);
+  background: rgba(255, 255, 255, 0.03);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  box-sizing: border-box;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.tv-category-item:last-child {
+  margin-bottom: 24px;
+}
+
+.tv-category-item.active {
+  color: #FFFFFF;
+  background: rgba(245, 166, 35, 0.12);
+  border-left: 5px solid var(--buntu-gold);
+}
+
+.tv-category-item.focused {
+  background: var(--buntu-gold) !important;
+  color: #000000 !important;
+  border-color: var(--buntu-gold) !important;
+  font-weight: 800;
+  transform: translateX(8px);
+  box-shadow: 0 4px 18px rgba(245, 166, 35, 0.35);
+}
+
+/* Channel List Container */
+.tv-live-channels {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+  box-sizing: border-box;
+}
+
+/* Individual Channel Row */
+.tv-channel-row {
+  display: flex;
+  align-items: center;
+  min-height: 74px;
+  height: 74px;
+  margin-bottom: 10px;
+  padding: 0 20px;
+  background: var(--buntu-slate);
+  border: 2px solid transparent;
+  border-radius: 14px;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.tv-channel-row:last-child {
+  margin-bottom: 20px;
+}
+
+/* Focused row: horizontal slide + gold left accent. NO VERTICAL SCALE so rows NEVER overlap! */
+.tv-channel-row.focused {
+  background: rgba(245, 166, 35, 0.15) !important;
+  border-color: rgba(245, 166, 35, 0.6) !important;
+  border-left: 8px solid var(--buntu-gold) !important;
+  transform: translateX(10px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(245, 166, 35, 0.25);
+  z-index: 10;
+}
+
+/* Channel Number Badge: min-width 72px fits 4+ digits effortlessly without colliding */
+.tv-channel-num {
+  min-width: 72px;
+  height: 44px;
+  padding: 0 8px;
+  margin-right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 229, 255, 0.1);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  border-radius: 8px;
+  color: var(--buntu-cyan);
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.tv-channel-row.focused .tv-channel-num {
+  background: rgba(245, 166, 35, 0.25);
+  border-color: var(--buntu-gold);
+  color: #FFFFFF;
+}
+
+/* Channel Logo */
+.tv-channel-logo {
+  width: 58px;
+  height: 44px;
+  margin-right: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.tv-channel-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.tv-channel-logo-fallback {
+  font-size: 20px;
+  opacity: 0.6;
+}
+
+/* Channel Info Text */
+.tv-channel-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin-right: 16px;
+  overflow: hidden;
+}
+
+.tv-channel-name {
+  font-size: 21px;
+  font-weight: 700;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+
+.tv-channel-meta {
+  font-size: 15px;
+  color: var(--buntu-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 3px;
+  line-height: 1.2;
+}
+
+/* Channel Action Badges */
+.tv-channel-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tv-channel-catchup {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--buntu-gold);
+  background: rgba(245, 166, 35, 0.12);
+  border: 1px solid rgba(245, 166, 35, 0.3);
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-right: 14px;
+}
+
+.tv-watch-pill {
+  background: var(--buntu-gold);
+  color: #000000;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.8px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(245, 166, 35, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 
