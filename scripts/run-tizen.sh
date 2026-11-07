@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds, signs, installs and launches Buntu (CND IPTV) on a Samsung Tizen Smart TV.
 #
-#   scripts/run-tizen.sh [IP]             build, install & launch (IP is remembered for next time)
+#   scripts/run-tizen.sh [IP]             build, install & launch (IP is remembered in ~/.cache/cnd-iptv)
 #   scripts/run-tizen.sh --ip IP          same with explicit flag (or TV_IP=IP env var)
 #   scripts/run-tizen.sh --no-build       install the existing build/tizen/cnd-iptv-tizen.wgt
 #   scripts/run-tizen.sh --no-launch      build and install only
@@ -16,7 +16,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 WGT_PATH="${ROOT_DIR}/build/tizen/cnd-iptv-tizen.wgt"
-LAST_IP_FILE="${ROOT_DIR}/build/tizen/.last-tv-ip"
+LAST_IP_FILE="${XDG_CACHE_HOME:-${HOME}/.cache}/cnd-iptv/last-tv-ip"
 APP_ID="cnd001iptv.CndIptv"
 SDB_PORT=26101
 INSPECTOR_PORT=9222

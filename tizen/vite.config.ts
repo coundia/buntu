@@ -2,6 +2,9 @@ import { defineConfig } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
 import legacy from '@vitejs/plugin-legacy';
 import path from 'path';
+import { createRequire } from 'module';
+
+const clampFallback = createRequire(import.meta.url)('./build-plugins/clampFallback.cjs');
 
 export default defineConfig({
   // Relative paths: the TV opens the app from its package folder (file://), not from a web server root.
@@ -28,6 +31,10 @@ export default defineConfig({
       ],
     }),
   ],
+  css: {
+    // Chromium 56-76 (Tizen 5/6) ignores clamp(): emit a plain fallback before each one.
+    postcss: { plugins: [clampFallback()] },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
