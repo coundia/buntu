@@ -13,6 +13,7 @@ import com.pcoundia.buntu.core.data.repository.RustEpgRepository
 import com.pcoundia.buntu.core.data.repository.RustProfilesRepository
 import com.pcoundia.buntu.core.data.repository.RustRecommendationsRepository
 import com.pcoundia.buntu.core.data.repository.RustSearchRepository
+import com.pcoundia.buntu.core.data.repository.RustPairingRepository
 import com.pcoundia.buntu.core.data.repository.RustSourcesRepository
 import com.pcoundia.buntu.core.domain.repository.CatalogRepository
 import com.pcoundia.buntu.core.domain.repository.DownloadsRepository
@@ -22,6 +23,7 @@ import com.pcoundia.buntu.core.domain.repository.ProfilesRepository
 import com.pcoundia.buntu.core.domain.repository.RecommendationsRepository
 import com.pcoundia.buntu.core.domain.repository.SearchRepository
 import com.pcoundia.buntu.core.domain.repository.SettingsRepository
+import com.pcoundia.buntu.core.domain.repository.PairingRepository
 import com.pcoundia.buntu.core.domain.repository.SourcesRepository
 import dagger.Binds
 import dagger.Module
@@ -41,6 +43,10 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindSourcesRepository(impl: RustSourcesRepository): SourcesRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindPairingRepository(impl: RustPairingRepository): PairingRepository
 
     @Binds
     @Singleton

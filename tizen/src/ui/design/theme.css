@@ -181,3 +181,21 @@ body {
   border-radius: 4px;
 }
 
+
+/* Text fields on the TV: the remote's OK opens the TV keyboard on the focused field. */
+.tv-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px 20px;
+  font-size: 26px;
+  color: var(--buntu-text, #F5F7FA);
+  background: var(--buntu-slate, #161B26);
+  border: 2px solid var(--buntu-border, #202737);
+  border-radius: 12px;
+  outline: none;
+}
+.tv-input.focused,
+.tv-input:focus {
+  border-color: var(--buntu-gold, #FF9F0A);
+  box-shadow: 0 0 0 4px rgba(255, 159, 10, 0.35);
+}

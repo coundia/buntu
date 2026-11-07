@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
     lateinit var videoEngine: VideoEngine
 
     private var pendingDeepLinkPlayId by mutableStateOf<Long?>(null)
+    private var pendingDeepLinkPairUri by mutableStateOf<String?>(null)
 
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,7 +58,7 @@ class MainActivity : ComponentActivity() {
         if (!deviceCapabilities.isTelevision) {
             enableEdgeToEdge()
         }
-        extractPlayDeepLink(intent)
+        extractDeepLinks(intent)
 
         setContent {
             val prefs by settingsRepository.preferencesFlow.collectAsStateWithLifecycle(
@@ -106,6 +107,14 @@ class MainActivity : ComponentActivity() {
                 navController.navigate(BuntuRoutes.player(itemId = targetId))
             }
 
+            LaunchedEffect(pendingDeepLinkPairUri) {
+                val pairUri = pendingDeepLinkPairUri ?: return@LaunchedEffect
+                pendingDeepLinkPairUri = null
+                navController.navigate(BuntuRoutes.sources(pairLink = pairUri)) {
+                    popUpTo(BuntuRoutes.SOURCES_PATTERN) { inclusive = true }
+                }
+            }
+
             BuntuTheme(metrics = metrics) {
                 if (deviceCapabilities.isTelevision) {
                     TvShell(
@@ -130,7 +139,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        extractPlayDeepLink(intent)
+        extractDeepLinks(intent)
     }
 
     override fun onStop() {
@@ -141,12 +150,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun extractPlayDeepLink(intent: Intent?) {
+    private fun extractDeepLinks(intent: Intent?) {
         val data = intent?.data ?: return
-        if (data.scheme == "buntu" && data.host == "play") {
-            val id = data.lastPathSegment?.toLongOrNull()
-            if (id != null && id > 0L) {
-                pendingDeepLinkPlayId = id
+        if (data.scheme != "buntu") return
+        when (data.host) {
+            "play" -> {
+                val id = data.lastPathSegment?.toLongOrNull()
+                if (id != null && id > 0L) {
+                    pendingDeepLinkPlayId = id
+                }
+            }
+            "pair" -> {
+                if (!deviceCapabilities.isTelevision) {
+                    pendingDeepLinkPairUri = data.toString()
+                }
             }
         }
     }

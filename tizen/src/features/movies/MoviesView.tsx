@@ -1,7 +1,7 @@
 import { Component, createSignal, onMount, For } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
-import { spatialNav } from '../../ui/design/SpatialNav';
+import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 
 export interface MoviesViewProps {
   onSelectMovie: (movie: ItemRecord) => void;
@@ -17,17 +17,26 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
   onMount(async () => {
     const cats = await engine.getCategories('movie');
     setCategories(cats);
-    await loadMovies(cats[0]);
+    await loadMovies(cats[0], cats);
   });
 
-  const loadMovies = async (category?: string) => {
+  const loadMovies = async (category?: string, cats = categories()) => {
     setSelectedCat(category || '');
     const list = await engine.getCatalog('movie', category, 0, 60);
     setMovies(list);
 
-    // Build 5-column grid for spatial navigation
+    const grid: FocusableItem[][] = [];
+    const visibleCats = cats.slice(0, 8);
+    if (visibleCats.length > 0) {
+      grid.push(
+        visibleCats.map((cat, idx) => ({
+          id: `movie-cat-${idx}`,
+          onSelect: () => void loadMovies(cat, cats),
+        }))
+      );
+    }
+
     const COLS = 5;
-    const grid = [];
     for (let i = 0; i < list.length; i += COLS) {
       const row = list.slice(i, i + COLS).map((m) => ({
         id: `movie-${m.id}`,
@@ -35,7 +44,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       }));
       grid.push(row);
     }
-    spatialNav.setGrid(grid);
+    spatialNav.setGrid(grid, list.length > 0 && visibleCats.length > 0 ? 1 : 0, 0);
   };
 
   return (
@@ -44,10 +53,10 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
         <h2 style={{ "font-size": "32px", color: "var(--buntu-gold)" }}>Films & VOD</h2>
         <div style={{ display: "flex", gap: "12px", "overflow-x": "auto", "max-width": "1000px" }}>
           <For each={categories().slice(0, 8)}>
-            {(cat) => (
+            {(cat, idx) => (
               <button
-                class={`tv-nav-item ${selectedCat() === cat ? 'active' : ''}`}
-                onClick={() => loadMovies(cat)}
+                class={`tv-nav-item ${selectedCat() === cat ? 'active' : ''} ${focusId() === `movie-cat-${idx()}` ? 'focused' : ''}`}
+                onClick={() => void loadMovies(cat)}
               >
                 {cat}
               </button>
@@ -100,4 +109,3 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     </div>
   );
 };
-

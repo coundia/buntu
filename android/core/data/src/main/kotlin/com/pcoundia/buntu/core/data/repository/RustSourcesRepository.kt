@@ -1,6 +1,7 @@
 package com.pcoundia.buntu.core.data.repository
 
 import com.pcoundia.buntu.core.data.mapper.EngineMappers.toDomain
+import com.pcoundia.buntu.core.domain.model.SourceKind
 import com.pcoundia.buntu.core.domain.model.SourceSummary
 import com.pcoundia.buntu.core.domain.model.SyncReport
 import com.pcoundia.buntu.core.domain.repository.SecretStore
@@ -8,6 +9,7 @@ import com.pcoundia.buntu.core.domain.repository.SourcesRepository
 import com.pcoundia.buntu.core.engine.EngineProvider
 import com.pcoundia.buntu.core.engine.ffi.ShareDecision
 import com.pcoundia.buntu.core.engine.ffi.ShareImportAction
+import com.pcoundia.buntu.core.engine.ffi.ShareSourceOption
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -135,5 +137,37 @@ class RustSourcesRepository @Inject constructor(
             refreshSourcesList()
             result.imported.size
         }
+
+    override suspend fun exportShareJson(
+        sourceIds: Set<Long>,
+        includeCredentials: Set<Long>,
+        senderName: String,
+        validForSeconds: Int,
+    ): String = withContext(Dispatchers.IO) {
+        val engine = engineProvider.awaitEngine()
+        val currentSources = _sourcesFlow.value.ifEmpty { refreshSourcesList() }
+        val options = currentSources
+            .filter { it.id in sourceIds }
+            .map { src ->
+                val withCredentials = src.id in includeCredentials
+                val pwd = if (withCredentials && src.kind == SourceKind.XTREAM) {
+                    src.passwordRef?.let { secretStore.getSecret(it) }
+                        ?: secretStore.getSecret("cnd.xtream.${src.uuid}")
+                } else {
+                    null
+                }
+                ShareSourceOption(
+                    sourceId = src.id,
+                    includeCredentials = withCredentials,
+                    password = pwd,
+                    includePlaylist = false,
+                )
+            }
+        engine.exportShareDocument(
+            options = options,
+            from = senderName,
+            validForSeconds = validForSeconds.coerceAtLeast(60).toUInt(),
+        ).json
+    }
 }
 

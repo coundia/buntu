@@ -59,7 +59,20 @@
                     android:host="play"
                     android:scheme="buntu" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="pair"
+                    android:scheme="buntu" />
+            </intent-filter>
         </activity>
+
+        <!-- Google Play Services zero-permission QR code scanner module (PRD-39 § 5.5) -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode_ui" />
 
         <!-- Media3 background audio / PiP media session service -->
         <service

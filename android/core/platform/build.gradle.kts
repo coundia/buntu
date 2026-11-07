@@ -17,7 +17,12 @@ dependencies {
     implementation(libs.androidx.tv.provider)
     implementation(libs.androidx.media3.session)
     implementation(libs.zxing.core)
+    implementation(libs.play.services.code.scanner)
+    implementation(libs.kotlinx.serialization.json)
     api(libs.androidx.metrics.performance)
     api(libs.androidx.window)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 

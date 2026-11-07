@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { RemoteKeyHandler } from '../src/core/input/RemoteKeyHandler';
+import { spatialNav } from '../src/ui/design/SpatialNav';
 
 describe('RemoteKeyHandler - Tizen Key Normalization', () => {
   const handler = RemoteKeyHandler.getInstance();
@@ -36,5 +37,46 @@ describe('RemoteKeyHandler - Tizen Key Normalization', () => {
       expect(handler.normalizeKey(new KeyboardEvent('keydown', { keyCode: 48 + i }))).toBe(`NUM_${i}`);
     }
   });
-});
 
+  it('routes D-Pad and Enter keydown events to SpatialNav automatically (grid + top header bar)', () => {
+    handler.init();
+    spatialNav.init();
+
+    const selected: string[] = [];
+    spatialNav.setHeader(
+      [
+        { id: 'nav-live', onSelect: () => selected.push('nav-live') },
+        { id: 'nav-sources', onSelect: () => selected.push('nav-sources') },
+      ],
+      0,
+    );
+    spatialNav.setGrid([
+      [
+        { id: 'btn-manual', onSelect: () => selected.push('btn-manual') },
+        { id: 'btn-skip', onSelect: () => selected.push('btn-skip') },
+      ],
+    ]);
+
+    expect(spatialNav.getCurrentFocusId()).toBe('btn-manual');
+
+    // RIGHT -> btn-skip
+    window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 39, key: 'ArrowRight' }));
+    expect(spatialNav.getCurrentFocusId()).toBe('btn-skip');
+
+    // ENTER -> activates btn-skip
+    window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 13, key: 'Enter' }));
+    expect(selected).toEqual(['btn-skip']);
+
+    // UP from row 0 -> enters Top Navigation Bar (nav-live)
+    window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 38, key: 'ArrowUp' }));
+    expect(spatialNav.getCurrentFocusId()).toBe('nav-live');
+
+    // RIGHT in Top Navigation Bar -> nav-sources
+    window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 39, key: 'ArrowRight' }));
+    expect(spatialNav.getCurrentFocusId()).toBe('nav-sources');
+
+    // DOWN -> returns to screen grid
+    window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 40, key: 'ArrowDown' }));
+    expect(spatialNav.getCurrentFocusId()).toBe('btn-skip');
+  });
+});

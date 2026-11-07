@@ -9,9 +9,9 @@ import com.pcoundia.buntu.core.domain.repository.ProfilesRepository
 import com.pcoundia.buntu.core.domain.repository.SettingsRepository
 import com.pcoundia.buntu.core.domain.usecase.SyncSourceUseCase
 import com.pcoundia.buntu.core.platform.device.DeviceCapabilities
-import com.pcoundia.buntu.core.platform.tv.PairedSourcePayload
+import com.pcoundia.buntu.core.platform.tv.IncomingPairingUi
+import com.pcoundia.buntu.core.platform.tv.TvPairingCoordinator
 import com.pcoundia.buntu.core.platform.tv.QrMatrix
-import com.pcoundia.buntu.core.platform.tv.QrPairingServer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
@@ -33,6 +33,7 @@ data class OnboardingUiState(
     val password: String = "",
     val pairingUrl: String? = null,
     val qrMatrix: QrMatrix? = null,
+    val incomingPairing: IncomingPairingUi? = null,
     val isSyncing: Boolean = false,
     val errorMessage: String? = null,
     val profiles: ImmutableList<ProfileSummary> = persistentListOf(),
@@ -44,7 +45,7 @@ class OnboardingViewModel @Inject constructor(
     private val syncSourceUseCase: SyncSourceUseCase,
     private val profilesRepository: ProfilesRepository,
     private val settingsRepository: SettingsRepository,
-    private val qrPairingServer: QrPairingServer,
+    private val pairing: TvPairingCoordinator,
     deviceCapabilities: DeviceCapabilities,
 ) : ViewModel() {
 
@@ -106,7 +107,7 @@ class OnboardingViewModel @Inject constructor(
                     )
                 }
             }.onSuccess {
-                qrPairingServer.stop()
+                pairing.stop()
                 val profiles = profilesRepository.refreshProfiles()
                 _uiState.update {
                     it.copy(
@@ -140,35 +141,32 @@ class OnboardingViewModel @Inject constructor(
         }
     }
 
+    fun confirmIncomingPairing() = pairing.confirm()
+
+    fun refuseIncomingPairing() = pairing.refuse()
+
     private fun startTvQrPairing() {
-        val url = qrPairingServer.startPairingEndpoint(viewModelScope) { payload ->
-            _uiState.update { it.copy(isSyncing = true, errorMessage = null) }
-            runCatching {
-                when (payload) {
-                    is PairedSourcePayload.M3u -> syncSourceUseCase.addAndSyncM3u(payload.name, payload.url)
-                    is PairedSourcePayload.Xtream -> syncSourceUseCase.addAndSyncXtream(
-                        name = payload.name,
-                        server = payload.server,
-                        username = payload.username,
-                        password = payload.password,
-                    )
-                    is PairedSourcePayload.ShareJson -> Unit
-                }
-            }.onSuccess {
-                val profiles = profilesRepository.refreshProfiles()
-                _uiState.update { it.copy(isSyncing = false, step = 2, profiles = profiles) }
-            }.onFailure { err ->
-                _uiState.update { it.copy(isSyncing = false, errorMessage = err.message) }
-            }
+        pairing.start(viewModelScope) {
+            val profiles = profilesRepository.refreshProfiles()
+            _uiState.update { it.copy(step = 2, profiles = profiles) }
         }
-        if (url != null) {
-            val matrix = qrPairingServer.encodeQrMatrix(url, sizePx = 220)
-            _uiState.update { it.copy(pairingUrl = url, qrMatrix = matrix) }
+        viewModelScope.launch {
+            pairing.state.collect { p ->
+                _uiState.update {
+                    it.copy(
+                        pairingUrl = p.session?.link,
+                        qrMatrix = p.session?.qr,
+                        incomingPairing = p.incoming,
+                        isSyncing = if (p.incoming != null || p.isSyncing) p.isSyncing else it.isSyncing,
+                        errorMessage = p.error ?: it.errorMessage,
+                    )
+                }
+            }
         }
     }
 
     override fun onCleared() {
-        qrPairingServer.stop()
+        pairing.stop()
         super.onCleared()
     }
 }

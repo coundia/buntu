@@ -1,7 +1,7 @@
 import { Component, createSignal, onMount, For } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
-import { spatialNav } from '../../ui/design/SpatialNav';
+import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 
 export interface SeriesViewProps {
   onSelectSeries: (series: ItemRecord) => void;
@@ -17,16 +17,26 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
   onMount(async () => {
     const cats = await engine.getCategories('series');
     setCategories(cats);
-    await loadSeries(cats[0]);
+    await loadSeries(cats[0], cats);
   });
 
-  const loadSeries = async (category?: string) => {
+  const loadSeries = async (category?: string, cats = categories()) => {
     setSelectedCat(category || '');
     const list = await engine.getCatalog('series', category, 0, 60);
     setSeriesList(list);
 
+    const grid: FocusableItem[][] = [];
+    const visibleCats = cats.slice(0, 8);
+    if (visibleCats.length > 0) {
+      grid.push(
+        visibleCats.map((cat, idx) => ({
+          id: `series-cat-${idx}`,
+          onSelect: () => void loadSeries(cat, cats),
+        }))
+      );
+    }
+
     const COLS = 5;
-    const grid = [];
     for (let i = 0; i < list.length; i += COLS) {
       const row = list.slice(i, i + COLS).map((s) => ({
         id: `series-${s.id}`,
@@ -34,7 +44,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
       }));
       grid.push(row);
     }
-    spatialNav.setGrid(grid);
+    spatialNav.setGrid(grid, list.length > 0 && visibleCats.length > 0 ? 1 : 0, 0);
   };
 
   return (
@@ -43,10 +53,10 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
         <h2 style={{ "font-size": "32px", color: "var(--buntu-gold)" }}>Séries TV</h2>
         <div style={{ display: "flex", gap: "12px", "overflow-x": "auto", "max-width": "1000px" }}>
           <For each={categories().slice(0, 8)}>
-            {(cat) => (
+            {(cat, idx) => (
               <button
-                class={`tv-nav-item ${selectedCat() === cat ? 'active' : ''}`}
-                onClick={() => loadSeries(cat)}
+                class={`tv-nav-item ${selectedCat() === cat ? 'active' : ''} ${focusId() === `series-cat-${idx()}` ? 'focused' : ''}`}
+                onClick={() => void loadSeries(cat)}
               >
                 {cat}
               </button>
@@ -99,4 +109,3 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     </div>
   );
 };
-

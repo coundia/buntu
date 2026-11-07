@@ -1389,6 +1389,12 @@ private struct LoadedShellView: View {
     /// A share arrives as a link or a `.cndshare` file: show the import sheet on the Sources tab.
     @discardableResult
     private func openShare(_ url: URL) -> Bool {
+        // A TV's QR code (PRD 39): the camera opens the app on « Envoyer vers une TV ».
+        if url.scheme == "buntu", url.host == "pair" {
+            selectedTabRaw = AppTab.sources.rawValue
+            sourcesModel.incomingPairLink = url.absoluteString
+            return true
+        }
         guard let incoming = IncomingShare.from(url: url) else { return false }
         selectedTabRaw = AppTab.sources.rawValue
         sourcesModel.incomingShare = incoming

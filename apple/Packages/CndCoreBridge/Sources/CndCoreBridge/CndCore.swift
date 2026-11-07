@@ -6556,6 +6556,622 @@ public func FfiConverterTypeNewRecordingRequest_lower(_ value: NewRecordingReque
 }
 
 
+public struct PairingLink {
+    public var session: String
+    public var tvName: String
+    /**
+     * `msf` (Samsung channel), `http` (Android TV) or `tls` (Apple TV).
+     */
+    public var transport: String
+    public var host: String
+    public var port: UInt16
+    public var expiresAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(session: String, tvName: String, 
+        /**
+         * `msf` (Samsung channel), `http` (Android TV) or `tls` (Apple TV).
+         */transport: String, host: String, port: UInt16, expiresAt: Int64) {
+        self.session = session
+        self.tvName = tvName
+        self.transport = transport
+        self.host = host
+        self.port = port
+        self.expiresAt = expiresAt
+    }
+}
+
+#if compiler(>=6)
+extension PairingLink: Sendable {}
+#endif
+
+
+extension PairingLink: Equatable, Hashable {
+    public static func ==(lhs: PairingLink, rhs: PairingLink) -> Bool {
+        if lhs.session != rhs.session {
+            return false
+        }
+        if lhs.tvName != rhs.tvName {
+            return false
+        }
+        if lhs.transport != rhs.transport {
+            return false
+        }
+        if lhs.host != rhs.host {
+            return false
+        }
+        if lhs.port != rhs.port {
+            return false
+        }
+        if lhs.expiresAt != rhs.expiresAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(session)
+        hasher.combine(tvName)
+        hasher.combine(transport)
+        hasher.combine(host)
+        hasher.combine(port)
+        hasher.combine(expiresAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePairingLink: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PairingLink {
+        return
+            try PairingLink(
+                session: FfiConverterString.read(from: &buf), 
+                tvName: FfiConverterString.read(from: &buf), 
+                transport: FfiConverterString.read(from: &buf), 
+                host: FfiConverterString.read(from: &buf), 
+                port: FfiConverterUInt16.read(from: &buf), 
+                expiresAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PairingLink, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.session, into: &buf)
+        FfiConverterString.write(value.tvName, into: &buf)
+        FfiConverterString.write(value.transport, into: &buf)
+        FfiConverterString.write(value.host, into: &buf)
+        FfiConverterUInt16.write(value.port, into: &buf)
+        FfiConverterInt64.write(value.expiresAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingLink_lift(_ buf: RustBuffer) throws -> PairingLink {
+    return try FfiConverterTypePairingLink.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingLink_lower(_ value: PairingLink) -> RustBuffer {
+    return FfiConverterTypePairingLink.lower(value)
+}
+
+
+public struct PairingOffer {
+    public var session: String
+    /**
+     * What the QR code encodes.
+     */
+    public var link: String
+    /**
+     * Opaque state the TV keeps (it holds the one-time private key); pass it back to `pairing_open`.
+     */
+    public var state: String
+    public var expiresAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(session: String, 
+        /**
+         * What the QR code encodes.
+         */link: String, 
+        /**
+         * Opaque state the TV keeps (it holds the one-time private key); pass it back to `pairing_open`.
+         */state: String, expiresAt: Int64) {
+        self.session = session
+        self.link = link
+        self.state = state
+        self.expiresAt = expiresAt
+    }
+}
+
+#if compiler(>=6)
+extension PairingOffer: Sendable {}
+#endif
+
+
+extension PairingOffer: Equatable, Hashable {
+    public static func ==(lhs: PairingOffer, rhs: PairingOffer) -> Bool {
+        if lhs.session != rhs.session {
+            return false
+        }
+        if lhs.link != rhs.link {
+            return false
+        }
+        if lhs.state != rhs.state {
+            return false
+        }
+        if lhs.expiresAt != rhs.expiresAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(session)
+        hasher.combine(link)
+        hasher.combine(state)
+        hasher.combine(expiresAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePairingOffer: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PairingOffer {
+        return
+            try PairingOffer(
+                session: FfiConverterString.read(from: &buf), 
+                link: FfiConverterString.read(from: &buf), 
+                state: FfiConverterString.read(from: &buf), 
+                expiresAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PairingOffer, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.session, into: &buf)
+        FfiConverterString.write(value.link, into: &buf)
+        FfiConverterString.write(value.state, into: &buf)
+        FfiConverterInt64.write(value.expiresAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingOffer_lift(_ buf: RustBuffer) throws -> PairingOffer {
+    return try FfiConverterTypePairingOffer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingOffer_lower(_ value: PairingOffer) -> RustBuffer {
+    return FfiConverterTypePairingOffer.lower(value)
+}
+
+
+public struct PairingOpenResult {
+    public var opened: PairingOpened?
+    public var rejected: PairingRejected?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(opened: PairingOpened?, rejected: PairingRejected?) {
+        self.opened = opened
+        self.rejected = rejected
+    }
+}
+
+#if compiler(>=6)
+extension PairingOpenResult: Sendable {}
+#endif
+
+
+extension PairingOpenResult: Equatable, Hashable {
+    public static func ==(lhs: PairingOpenResult, rhs: PairingOpenResult) -> Bool {
+        if lhs.opened != rhs.opened {
+            return false
+        }
+        if lhs.rejected != rhs.rejected {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(opened)
+        hasher.combine(rejected)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePairingOpenResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PairingOpenResult {
+        return
+            try PairingOpenResult(
+                opened: FfiConverterOptionTypePairingOpened.read(from: &buf), 
+                rejected: FfiConverterOptionTypePairingRejected.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PairingOpenResult, into buf: inout [UInt8]) {
+        FfiConverterOptionTypePairingOpened.write(value.opened, into: &buf)
+        FfiConverterOptionTypePairingRejected.write(value.rejected, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingOpenResult_lift(_ buf: RustBuffer) throws -> PairingOpenResult {
+    return try FfiConverterTypePairingOpenResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingOpenResult_lower(_ value: PairingOpenResult) -> RustBuffer {
+    return FfiConverterTypePairingOpenResult.lower(value)
+}
+
+
+public struct PairingOpened {
+    /**
+     * The sources document in clear: preview it and ask the user before importing.
+     */
+    public var shareJson: String
+    public var from: String
+    public var replyKey: String
+    /**
+     * Replaces the TV's session state (the session served its one message).
+     */
+    public var state: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The sources document in clear: preview it and ask the user before importing.
+         */shareJson: String, from: String, replyKey: String, 
+        /**
+         * Replaces the TV's session state (the session served its one message).
+         */state: String) {
+        self.shareJson = shareJson
+        self.from = from
+        self.replyKey = replyKey
+        self.state = state
+    }
+}
+
+#if compiler(>=6)
+extension PairingOpened: Sendable {}
+#endif
+
+
+extension PairingOpened: Equatable, Hashable {
+    public static func ==(lhs: PairingOpened, rhs: PairingOpened) -> Bool {
+        if lhs.shareJson != rhs.shareJson {
+            return false
+        }
+        if lhs.from != rhs.from {
+            return false
+        }
+        if lhs.replyKey != rhs.replyKey {
+            return false
+        }
+        if lhs.state != rhs.state {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(shareJson)
+        hasher.combine(from)
+        hasher.combine(replyKey)
+        hasher.combine(state)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePairingOpened: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PairingOpened {
+        return
+            try PairingOpened(
+                shareJson: FfiConverterString.read(from: &buf), 
+                from: FfiConverterString.read(from: &buf), 
+                replyKey: FfiConverterString.read(from: &buf), 
+                state: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PairingOpened, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.shareJson, into: &buf)
+        FfiConverterString.write(value.from, into: &buf)
+        FfiConverterString.write(value.replyKey, into: &buf)
+        FfiConverterString.write(value.state, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingOpened_lift(_ buf: RustBuffer) throws -> PairingOpened {
+    return try FfiConverterTypePairingOpened.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingOpened_lower(_ value: PairingOpened) -> RustBuffer {
+    return FfiConverterTypePairingOpened.lower(value)
+}
+
+
+public struct PairingRejected {
+    public var error: String
+    public var state: String
+    /**
+     * The session is over: show a new QR code.
+     */
+    public var closed: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(error: String, state: String, 
+        /**
+         * The session is over: show a new QR code.
+         */closed: Bool) {
+        self.error = error
+        self.state = state
+        self.closed = closed
+    }
+}
+
+#if compiler(>=6)
+extension PairingRejected: Sendable {}
+#endif
+
+
+extension PairingRejected: Equatable, Hashable {
+    public static func ==(lhs: PairingRejected, rhs: PairingRejected) -> Bool {
+        if lhs.error != rhs.error {
+            return false
+        }
+        if lhs.state != rhs.state {
+            return false
+        }
+        if lhs.closed != rhs.closed {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(error)
+        hasher.combine(state)
+        hasher.combine(closed)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePairingRejected: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PairingRejected {
+        return
+            try PairingRejected(
+                error: FfiConverterString.read(from: &buf), 
+                state: FfiConverterString.read(from: &buf), 
+                closed: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PairingRejected, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.error, into: &buf)
+        FfiConverterString.write(value.state, into: &buf)
+        FfiConverterBool.write(value.closed, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingRejected_lift(_ buf: RustBuffer) throws -> PairingRejected {
+    return try FfiConverterTypePairingRejected.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingRejected_lower(_ value: PairingRejected) -> RustBuffer {
+    return FfiConverterTypePairingRejected.lower(value)
+}
+
+
+public struct PairingReply {
+    /**
+     * `added`, `refused` or `error`.
+     */
+    public var result: String
+    public var count: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `added`, `refused` or `error`.
+         */result: String, count: UInt32) {
+        self.result = result
+        self.count = count
+    }
+}
+
+#if compiler(>=6)
+extension PairingReply: Sendable {}
+#endif
+
+
+extension PairingReply: Equatable, Hashable {
+    public static func ==(lhs: PairingReply, rhs: PairingReply) -> Bool {
+        if lhs.result != rhs.result {
+            return false
+        }
+        if lhs.count != rhs.count {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(result)
+        hasher.combine(count)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePairingReply: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PairingReply {
+        return
+            try PairingReply(
+                result: FfiConverterString.read(from: &buf), 
+                count: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PairingReply, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.result, into: &buf)
+        FfiConverterUInt32.write(value.count, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingReply_lift(_ buf: RustBuffer) throws -> PairingReply {
+    return try FfiConverterTypePairingReply.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingReply_lower(_ value: PairingReply) -> RustBuffer {
+    return FfiConverterTypePairingReply.lower(value)
+}
+
+
+public struct PairingSealed {
+    /**
+     * JSON to send to the TV.
+     */
+    public var message: String
+    /**
+     * Keeps until the TV answers: needed by `pairing_open_reply`.
+     */
+    public var replyKey: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * JSON to send to the TV.
+         */message: String, 
+        /**
+         * Keeps until the TV answers: needed by `pairing_open_reply`.
+         */replyKey: String) {
+        self.message = message
+        self.replyKey = replyKey
+    }
+}
+
+#if compiler(>=6)
+extension PairingSealed: Sendable {}
+#endif
+
+
+extension PairingSealed: Equatable, Hashable {
+    public static func ==(lhs: PairingSealed, rhs: PairingSealed) -> Bool {
+        if lhs.message != rhs.message {
+            return false
+        }
+        if lhs.replyKey != rhs.replyKey {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(message)
+        hasher.combine(replyKey)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePairingSealed: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PairingSealed {
+        return
+            try PairingSealed(
+                message: FfiConverterString.read(from: &buf), 
+                replyKey: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PairingSealed, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.message, into: &buf)
+        FfiConverterString.write(value.replyKey, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingSealed_lift(_ buf: RustBuffer) throws -> PairingSealed {
+    return try FfiConverterTypePairingSealed.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePairingSealed_lower(_ value: PairingSealed) -> RustBuffer {
+    return FfiConverterTypePairingSealed.lower(value)
+}
+
+
 public struct ProbeResultRecord {
     public var isSuccess: Bool
     public var status: String
@@ -12071,6 +12687,54 @@ fileprivate struct FfiConverterOptionTypeMediaMetadata: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypePairingOpened: FfiConverterRustBuffer {
+    typealias SwiftType = PairingOpened?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePairingOpened.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePairingOpened.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypePairingRejected: FfiConverterRustBuffer {
+    typealias SwiftType = PairingRejected?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePairingRejected.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePairingRejected.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeProfileRecord: FfiConverterRustBuffer {
     typealias SwiftType = ProfileRecord?
 
@@ -13363,6 +14027,66 @@ public func cndCoreVersion() -> String  {
     )
 })
 }
+public func pairingCreateOffer(entropy: Data, tvName: String, transport: String, host: String, port: UInt16, now: Int64)throws  -> PairingOffer  {
+    return try  FfiConverterTypePairingOffer_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_func_pairing_create_offer(
+        FfiConverterData.lower(entropy),
+        FfiConverterString.lower(tvName),
+        FfiConverterString.lower(transport),
+        FfiConverterString.lower(host),
+        FfiConverterUInt16.lower(port),
+        FfiConverterInt64.lower(now),$0
+    )
+})
+}
+public func pairingOpen(state: String, message: String, now: Int64) -> PairingOpenResult  {
+    return try!  FfiConverterTypePairingOpenResult_lift(try! rustCall() {
+    uniffi_cnd_core_fn_func_pairing_open(
+        FfiConverterString.lower(state),
+        FfiConverterString.lower(message),
+        FfiConverterInt64.lower(now),$0
+    )
+})
+}
+public func pairingOpenReply(replyKey: String, session: String, reply: String)throws  -> PairingReply  {
+    return try  FfiConverterTypePairingReply_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_func_pairing_open_reply(
+        FfiConverterString.lower(replyKey),
+        FfiConverterString.lower(session),
+        FfiConverterString.lower(reply),$0
+    )
+})
+}
+public func pairingParseLink(link: String, now: Int64)throws  -> PairingLink  {
+    return try  FfiConverterTypePairingLink_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_func_pairing_parse_link(
+        FfiConverterString.lower(link),
+        FfiConverterInt64.lower(now),$0
+    )
+})
+}
+public func pairingSeal(link: String, entropy: Data, shareJson: String, phoneName: String, now: Int64)throws  -> PairingSealed  {
+    return try  FfiConverterTypePairingSealed_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_func_pairing_seal(
+        FfiConverterString.lower(link),
+        FfiConverterData.lower(entropy),
+        FfiConverterString.lower(shareJson),
+        FfiConverterString.lower(phoneName),
+        FfiConverterInt64.lower(now),$0
+    )
+})
+}
+public func pairingSealReply(replyKey: String, session: String, entropy: Data, result: String, count: UInt32)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_func_pairing_seal_reply(
+        FfiConverterString.lower(replyKey),
+        FfiConverterString.lower(session),
+        FfiConverterData.lower(entropy),
+        FfiConverterString.lower(result),
+        FfiConverterUInt32.lower(count),$0
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -13380,6 +14104,24 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.contractVersionMismatch
     }
     if (uniffi_cnd_core_checksum_func_cnd_core_version() != 1641) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_pairing_create_offer() != 36898) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_pairing_open() != 3538) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_pairing_open_reply() != 23689) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_pairing_parse_link() != 58334) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_pairing_seal() != 58500) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_pairing_seal_reply() != 43626) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_active_profile_id() != 12118) {

@@ -45,6 +45,7 @@
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>cndiptv</string>
+                <string>buntu</string>
             </array>
         </dict>
     </array>

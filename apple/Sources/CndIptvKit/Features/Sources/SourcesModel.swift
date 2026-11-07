@@ -84,6 +84,8 @@ final class SourcesModel {
     var pendingAction: SourcesAction?
     /// A share received by link or file (opened from outside the list); the list shows the import sheet.
     var incomingShare: IncomingShare?
+    /// A `buntu://pair?…` link opened from the camera or a message: the « Envoyer vers une TV » sheet.
+    var incomingPairLink: String?
 
     init(
         engine: CndEngine,

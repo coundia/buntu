@@ -68,6 +68,27 @@ export class CndEngine {
    * Source Synchronization.
    */
   public async syncM3uSource(name: string, url: string, onProgress?: (msg: string) => void): Promise<number> {
+    return this.syncPlaylist({ name, url, sourceType: 'm3u' }, onProgress);
+  }
+
+  /**
+   * An Xtream account: its playlist is the provider's standard `get.php`, read like any M3U. The account
+   * (server, user, password) is kept with the source for the status and the next synchronisation.
+   */
+  public async syncXtreamSource(
+    name: string, server: string, username: string, password: string, epgUrl?: string,
+    onProgress?: (msg: string) => void
+  ): Promise<number> {
+    const base = server.trim().replace(/\/+$/, '');
+    const url = `${base}/get.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&type=m3u_plus&output=ts`;
+    return this.syncPlaylist({ name, url, sourceType: 'xtream', server: base, username, password, epgUrl }, onProgress);
+  }
+
+  private async syncPlaylist(
+    src: { name: string; url: string; sourceType: 'm3u' | 'xtream'; server?: string; username?: string; password?: string; epgUrl?: string },
+    onProgress?: (msg: string) => void
+  ): Promise<number> {
+    const { name, url } = src;
     onProgress?.('Téléchargement de la liste M3U...');
     const resp = await this.net.get<string>(url, {}, 'text');
 
@@ -79,9 +100,12 @@ export class CndEngine {
     const sourceId = await this.db.insertSource({
       uuid,
       name,
-      source_type: 'm3u',
-      url,
-      epg_url: header.epg_url,
+      source_type: src.sourceType,
+      url: src.sourceType === 'xtream' ? undefined : url,
+      server: src.server,
+      username: src.username,
+      password: src.password,
+      epg_url: src.epgUrl || header.epg_url,
       item_count: items.length,
       last_sync_at: Date.now(),
     });

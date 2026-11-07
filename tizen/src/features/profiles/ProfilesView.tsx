@@ -1,5 +1,6 @@
-import { Component, createSignal } from 'solid-js';
+import { Component, createSignal, onMount } from 'solid-js';
 import { CndEngine, ProfileState } from '../../core/engine/CndEngine';
+import { spatialNav } from '../../ui/design/SpatialNav';
 
 export interface ProfilesViewProps {
   onProfileChanged: () => void;
@@ -10,6 +11,7 @@ export const ProfilesView: Component<ProfilesViewProps> = (props) => {
   const [activeProfile, setActiveProfile] = createSignal<ProfileState>(engine.getActiveProfile());
   const [pinInput, setPinInput] = createSignal('');
   const [unlockedMsg, setUnlockedMsg] = createSignal('');
+  const [focusId] = spatialNav.getFocusSignal();
 
   const profiles: ProfileState[] = [
     { id: 1, name: 'Principal (Adultes)', isKids: false, avatar: '👤' },
@@ -31,6 +33,29 @@ export const ProfilesView: Component<ProfilesViewProps> = (props) => {
     setPinInput('');
   };
 
+  onMount(() => {
+    spatialNav.setGrid([
+      profiles.map((p) => ({
+        id: `profile-${p.id}`,
+        onSelect: () => selectProfile(p),
+      })),
+      [
+        {
+          id: 'field-pin',
+          onSelect: () => {
+            const el = document.getElementById('field-pin') as HTMLInputElement | null;
+            el?.focus();
+            el?.click();
+          },
+        },
+        {
+          id: 'btn-unlock-pin',
+          onSelect: verifyPin,
+        },
+      ],
+    ]);
+  });
+
   return (
     <div class="tv-container" style={{ "justify-content": "center", "align-items": "center" }}>
       <div style={{ "text-align": "center", "max-width": "700px" }}>
@@ -41,7 +66,7 @@ export const ProfilesView: Component<ProfilesViewProps> = (props) => {
         <div style={{ display: "flex", gap: "32px", "justify-content": "center", "margin-bottom": "48px" }}>
           {profiles.map((p) => (
             <div
-              class={`tv-card ${activeProfile().id === p.id ? 'focused' : ''}`}
+              class={`tv-card ${focusId() === `profile-${p.id}` || activeProfile().id === p.id ? 'focused' : ''}`}
               style={{
                 width: "240px",
                 padding: "32px 16px",
@@ -72,23 +97,24 @@ export const ProfilesView: Component<ProfilesViewProps> = (props) => {
           </p>
           <div style={{ display: "flex", gap: "16px", "justify-content": "center" }}>
             <input
+              id="field-pin"
+              class={`tv-input ${focusId() === 'field-pin' ? 'focused' : ''}`}
               type="password"
               maxlength="4"
               value={pinInput()}
               onInput={(e) => setPinInput(e.currentTarget.value)}
               placeholder="PIN (défaut 0000)"
               style={{
-                padding: "12px 16px",
-                "font-size": "20px",
-                "border-radius": "8px",
-                border: "2px solid var(--buntu-border)",
-                background: "var(--buntu-midnight)",
-                color: "#FFFFFF",
                 width: "200px",
                 "text-align": "center"
               }}
             />
-            <button class="tv-btn" onClick={verifyPin}>Déverrouiller</button>
+            <button
+              class={`tv-btn ${focusId() === 'btn-unlock-pin' ? 'focused' : ''}`}
+              onClick={verifyPin}
+            >
+              Déverrouiller
+            </button>
           </div>
           {unlockedMsg() && (
             <div style={{ "margin-top": "12px", color: "var(--buntu-cyan)", "font-weight": "600" }}>
@@ -100,4 +126,3 @@ export const ProfilesView: Component<ProfilesViewProps> = (props) => {
     </div>
   );
 };
-

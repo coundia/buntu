@@ -1037,6 +1037,18 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1053,6 +1065,18 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_cnd_core_checksum_func_cnd_core_version(
+): Short
+fun uniffi_cnd_core_checksum_func_pairing_create_offer(
+): Short
+fun uniffi_cnd_core_checksum_func_pairing_open(
+): Short
+fun uniffi_cnd_core_checksum_func_pairing_open_reply(
+): Short
+fun uniffi_cnd_core_checksum_func_pairing_parse_link(
+): Short
+fun uniffi_cnd_core_checksum_func_pairing_seal(
+): Short
+fun uniffi_cnd_core_checksum_func_pairing_seal_reply(
 ): Short
 fun uniffi_cnd_core_checksum_method_cndengine_active_profile_id(
 ): Short
@@ -1737,6 +1761,18 @@ fun uniffi_cnd_core_fn_method_cndengine_version(`ptr`: Pointer,uniffi_out_err: U
 ): RustBuffer.ByValue
 fun uniffi_cnd_core_fn_func_cnd_core_version(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_pairing_create_offer(`entropy`: RustBuffer.ByValue,`tvName`: RustBuffer.ByValue,`transport`: RustBuffer.ByValue,`host`: RustBuffer.ByValue,`port`: Short,`now`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_pairing_open(`state`: RustBuffer.ByValue,`message`: RustBuffer.ByValue,`now`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_pairing_open_reply(`replyKey`: RustBuffer.ByValue,`session`: RustBuffer.ByValue,`reply`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_pairing_parse_link(`link`: RustBuffer.ByValue,`now`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_pairing_seal(`link`: RustBuffer.ByValue,`entropy`: RustBuffer.ByValue,`shareJson`: RustBuffer.ByValue,`phoneName`: RustBuffer.ByValue,`now`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_pairing_seal_reply(`replyKey`: RustBuffer.ByValue,`session`: RustBuffer.ByValue,`entropy`: RustBuffer.ByValue,`result`: RustBuffer.ByValue,`count`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun ffi_cnd_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun ffi_cnd_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1864,6 +1900,24 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_cnd_core_checksum_func_cnd_core_version() != 1641.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_pairing_create_offer() != 36898.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_pairing_open() != 3538.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_pairing_open_reply() != 23689.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_pairing_parse_link() != 58334.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_pairing_seal() != 58500.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_pairing_seal_reply() != 43626.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cnd_core_checksum_method_cndengine_active_profile_id() != 12118.toShort()) {
@@ -7491,6 +7545,293 @@ public object FfiConverterTypeNewRecordingRequest: FfiConverterRustBuffer<NewRec
 
 
 
+data class PairingLink (
+    var `session`: kotlin.String, 
+    var `tvName`: kotlin.String, 
+    /**
+     * `msf` (Samsung channel), `http` (Android TV) or `tls` (Apple TV).
+     */
+    var `transport`: kotlin.String, 
+    var `host`: kotlin.String, 
+    var `port`: kotlin.UShort, 
+    var `expiresAt`: kotlin.Long
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePairingLink: FfiConverterRustBuffer<PairingLink> {
+    override fun read(buf: ByteBuffer): PairingLink {
+        return PairingLink(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUShort.read(buf),
+            FfiConverterLong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PairingLink) = (
+            FfiConverterString.allocationSize(value.`session`) +
+            FfiConverterString.allocationSize(value.`tvName`) +
+            FfiConverterString.allocationSize(value.`transport`) +
+            FfiConverterString.allocationSize(value.`host`) +
+            FfiConverterUShort.allocationSize(value.`port`) +
+            FfiConverterLong.allocationSize(value.`expiresAt`)
+    )
+
+    override fun write(value: PairingLink, buf: ByteBuffer) {
+            FfiConverterString.write(value.`session`, buf)
+            FfiConverterString.write(value.`tvName`, buf)
+            FfiConverterString.write(value.`transport`, buf)
+            FfiConverterString.write(value.`host`, buf)
+            FfiConverterUShort.write(value.`port`, buf)
+            FfiConverterLong.write(value.`expiresAt`, buf)
+    }
+}
+
+
+
+data class PairingOffer (
+    var `session`: kotlin.String, 
+    /**
+     * What the QR code encodes.
+     */
+    var `link`: kotlin.String, 
+    /**
+     * Opaque state the TV keeps (it holds the one-time private key); pass it back to `pairing_open`.
+     */
+    var `state`: kotlin.String, 
+    var `expiresAt`: kotlin.Long
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePairingOffer: FfiConverterRustBuffer<PairingOffer> {
+    override fun read(buf: ByteBuffer): PairingOffer {
+        return PairingOffer(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterLong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PairingOffer) = (
+            FfiConverterString.allocationSize(value.`session`) +
+            FfiConverterString.allocationSize(value.`link`) +
+            FfiConverterString.allocationSize(value.`state`) +
+            FfiConverterLong.allocationSize(value.`expiresAt`)
+    )
+
+    override fun write(value: PairingOffer, buf: ByteBuffer) {
+            FfiConverterString.write(value.`session`, buf)
+            FfiConverterString.write(value.`link`, buf)
+            FfiConverterString.write(value.`state`, buf)
+            FfiConverterLong.write(value.`expiresAt`, buf)
+    }
+}
+
+
+
+data class PairingOpenResult (
+    var `opened`: PairingOpened?, 
+    var `rejected`: PairingRejected?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePairingOpenResult: FfiConverterRustBuffer<PairingOpenResult> {
+    override fun read(buf: ByteBuffer): PairingOpenResult {
+        return PairingOpenResult(
+            FfiConverterOptionalTypePairingOpened.read(buf),
+            FfiConverterOptionalTypePairingRejected.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PairingOpenResult) = (
+            FfiConverterOptionalTypePairingOpened.allocationSize(value.`opened`) +
+            FfiConverterOptionalTypePairingRejected.allocationSize(value.`rejected`)
+    )
+
+    override fun write(value: PairingOpenResult, buf: ByteBuffer) {
+            FfiConverterOptionalTypePairingOpened.write(value.`opened`, buf)
+            FfiConverterOptionalTypePairingRejected.write(value.`rejected`, buf)
+    }
+}
+
+
+
+data class PairingOpened (
+    /**
+     * The sources document in clear: preview it and ask the user before importing.
+     */
+    var `shareJson`: kotlin.String, 
+    var `from`: kotlin.String, 
+    var `replyKey`: kotlin.String, 
+    /**
+     * Replaces the TV's session state (the session served its one message).
+     */
+    var `state`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePairingOpened: FfiConverterRustBuffer<PairingOpened> {
+    override fun read(buf: ByteBuffer): PairingOpened {
+        return PairingOpened(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PairingOpened) = (
+            FfiConverterString.allocationSize(value.`shareJson`) +
+            FfiConverterString.allocationSize(value.`from`) +
+            FfiConverterString.allocationSize(value.`replyKey`) +
+            FfiConverterString.allocationSize(value.`state`)
+    )
+
+    override fun write(value: PairingOpened, buf: ByteBuffer) {
+            FfiConverterString.write(value.`shareJson`, buf)
+            FfiConverterString.write(value.`from`, buf)
+            FfiConverterString.write(value.`replyKey`, buf)
+            FfiConverterString.write(value.`state`, buf)
+    }
+}
+
+
+
+data class PairingRejected (
+    var `error`: kotlin.String, 
+    var `state`: kotlin.String, 
+    /**
+     * The session is over: show a new QR code.
+     */
+    var `closed`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePairingRejected: FfiConverterRustBuffer<PairingRejected> {
+    override fun read(buf: ByteBuffer): PairingRejected {
+        return PairingRejected(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PairingRejected) = (
+            FfiConverterString.allocationSize(value.`error`) +
+            FfiConverterString.allocationSize(value.`state`) +
+            FfiConverterBoolean.allocationSize(value.`closed`)
+    )
+
+    override fun write(value: PairingRejected, buf: ByteBuffer) {
+            FfiConverterString.write(value.`error`, buf)
+            FfiConverterString.write(value.`state`, buf)
+            FfiConverterBoolean.write(value.`closed`, buf)
+    }
+}
+
+
+
+data class PairingReply (
+    /**
+     * `added`, `refused` or `error`.
+     */
+    var `result`: kotlin.String, 
+    var `count`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePairingReply: FfiConverterRustBuffer<PairingReply> {
+    override fun read(buf: ByteBuffer): PairingReply {
+        return PairingReply(
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PairingReply) = (
+            FfiConverterString.allocationSize(value.`result`) +
+            FfiConverterUInt.allocationSize(value.`count`)
+    )
+
+    override fun write(value: PairingReply, buf: ByteBuffer) {
+            FfiConverterString.write(value.`result`, buf)
+            FfiConverterUInt.write(value.`count`, buf)
+    }
+}
+
+
+
+data class PairingSealed (
+    /**
+     * JSON to send to the TV.
+     */
+    var `message`: kotlin.String, 
+    /**
+     * Keeps until the TV answers: needed by `pairing_open_reply`.
+     */
+    var `replyKey`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePairingSealed: FfiConverterRustBuffer<PairingSealed> {
+    override fun read(buf: ByteBuffer): PairingSealed {
+        return PairingSealed(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PairingSealed) = (
+            FfiConverterString.allocationSize(value.`message`) +
+            FfiConverterString.allocationSize(value.`replyKey`)
+    )
+
+    override fun write(value: PairingSealed, buf: ByteBuffer) {
+            FfiConverterString.write(value.`message`, buf)
+            FfiConverterString.write(value.`replyKey`, buf)
+    }
+}
+
+
+
 data class ProbeResultRecord (
     var `isSuccess`: kotlin.Boolean, 
     var `status`: kotlin.String, 
@@ -10534,6 +10875,70 @@ public object FfiConverterOptionalTypeMediaMetadata: FfiConverterRustBuffer<Medi
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypePairingOpened: FfiConverterRustBuffer<PairingOpened?> {
+    override fun read(buf: ByteBuffer): PairingOpened? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypePairingOpened.read(buf)
+    }
+
+    override fun allocationSize(value: PairingOpened?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypePairingOpened.allocationSize(value)
+        }
+    }
+
+    override fun write(value: PairingOpened?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypePairingOpened.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypePairingRejected: FfiConverterRustBuffer<PairingRejected?> {
+    override fun read(buf: ByteBuffer): PairingRejected? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypePairingRejected.read(buf)
+    }
+
+    override fun allocationSize(value: PairingRejected?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypePairingRejected.allocationSize(value)
+        }
+    }
+
+    override fun write(value: PairingRejected?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypePairingRejected.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeProfileRecord: FfiConverterRustBuffer<ProfileRecord?> {
     override fun read(buf: ByteBuffer): ProfileRecord? {
         if (buf.get().toInt() == 0) {
@@ -11978,6 +12383,65 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_cnd_core_version(
         _status)
+}
+    )
+    }
+    
+
+    @Throws(CndException::class) fun `pairingCreateOffer`(`entropy`: kotlin.ByteArray, `tvName`: kotlin.String, `transport`: kotlin.String, `host`: kotlin.String, `port`: kotlin.UShort, `now`: kotlin.Long): PairingOffer {
+            return FfiConverterTypePairingOffer.lift(
+    uniffiRustCallWithError(CndException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_pairing_create_offer(
+        FfiConverterByteArray.lower(`entropy`),FfiConverterString.lower(`tvName`),FfiConverterString.lower(`transport`),FfiConverterString.lower(`host`),FfiConverterUShort.lower(`port`),FfiConverterLong.lower(`now`),_status)
+}
+    )
+    }
+    
+ fun `pairingOpen`(`state`: kotlin.String, `message`: kotlin.String, `now`: kotlin.Long): PairingOpenResult {
+            return FfiConverterTypePairingOpenResult.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_pairing_open(
+        FfiConverterString.lower(`state`),FfiConverterString.lower(`message`),FfiConverterLong.lower(`now`),_status)
+}
+    )
+    }
+    
+
+    @Throws(CndException::class) fun `pairingOpenReply`(`replyKey`: kotlin.String, `session`: kotlin.String, `reply`: kotlin.String): PairingReply {
+            return FfiConverterTypePairingReply.lift(
+    uniffiRustCallWithError(CndException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_pairing_open_reply(
+        FfiConverterString.lower(`replyKey`),FfiConverterString.lower(`session`),FfiConverterString.lower(`reply`),_status)
+}
+    )
+    }
+    
+
+    @Throws(CndException::class) fun `pairingParseLink`(`link`: kotlin.String, `now`: kotlin.Long): PairingLink {
+            return FfiConverterTypePairingLink.lift(
+    uniffiRustCallWithError(CndException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_pairing_parse_link(
+        FfiConverterString.lower(`link`),FfiConverterLong.lower(`now`),_status)
+}
+    )
+    }
+    
+
+    @Throws(CndException::class) fun `pairingSeal`(`link`: kotlin.String, `entropy`: kotlin.ByteArray, `shareJson`: kotlin.String, `phoneName`: kotlin.String, `now`: kotlin.Long): PairingSealed {
+            return FfiConverterTypePairingSealed.lift(
+    uniffiRustCallWithError(CndException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_pairing_seal(
+        FfiConverterString.lower(`link`),FfiConverterByteArray.lower(`entropy`),FfiConverterString.lower(`shareJson`),FfiConverterString.lower(`phoneName`),FfiConverterLong.lower(`now`),_status)
+}
+    )
+    }
+    
+
+    @Throws(CndException::class) fun `pairingSealReply`(`replyKey`: kotlin.String, `session`: kotlin.String, `entropy`: kotlin.ByteArray, `result`: kotlin.String, `count`: kotlin.UInt): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(CndException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_pairing_seal_reply(
+        FfiConverterString.lower(`replyKey`),FfiConverterString.lower(`session`),FfiConverterByteArray.lower(`entropy`),FfiConverterString.lower(`result`),FfiConverterUInt.lower(`count`),_status)
 }
     )
     }

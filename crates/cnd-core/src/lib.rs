@@ -1629,6 +1629,123 @@ pub fn cnd_core_version() -> String {
     "1.0.0-native-rust".to_string()
 }
 
+// ----------------------------------------------------------------------------
+// Pairing a phone with a TV by QR code (PRD-39): the protocol lives in `cnd-domain::pairing`, the same
+// code the TV's WebAssembly runs. These are thin wrappers for Swift and Kotlin; `entropy` and `now` come
+// from the caller (SecRandomCopyBytes / SecureRandom, and its clock).
+// ----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PairingOffer {
+    pub session: String,
+    /// What the QR code encodes.
+    pub link: String,
+    /// Opaque state the TV keeps (it holds the one-time private key); pass it back to `pairing_open`.
+    pub state: String,
+    pub expires_at: i64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PairingLink {
+    pub session: String,
+    pub tv_name: String,
+    /// `msf` (Samsung channel), `http` (Android TV) or `tls` (Apple TV).
+    pub transport: String,
+    pub host: String,
+    pub port: u16,
+    pub expires_at: i64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PairingSealed {
+    /// JSON to send to the TV.
+    pub message: String,
+    /// Keeps until the TV answers: needed by `pairing_open_reply`.
+    pub reply_key: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PairingOpened {
+    /// The sources document in clear: preview it and ask the user before importing.
+    pub share_json: String,
+    pub from: String,
+    pub reply_key: String,
+    /// Replaces the TV's session state (the session served its one message).
+    pub state: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PairingRejected {
+    pub error: String,
+    pub state: String,
+    /// The session is over: show a new QR code.
+    pub closed: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PairingOpenResult {
+    pub opened: Option<PairingOpened>,
+    pub rejected: Option<PairingRejected>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PairingReply {
+    /// `added`, `refused` or `error`.
+    pub result: String,
+    pub count: u32,
+}
+
+fn pairing_error(e: cnd_domain::pairing::PairingError) -> CndError {
+    CndError::Internal { message: e.to_string() }
+}
+
+#[uniffi::export]
+pub fn pairing_create_offer(
+    entropy: Vec<u8>,
+    tv_name: String,
+    transport: String,
+    host: String,
+    port: u16,
+    now: i64,
+) -> Result<PairingOffer, CndError> {
+    let o = cnd_domain::pairing::create_offer(&entropy, &tv_name, &transport, &host, port, now).map_err(pairing_error)?;
+    Ok(PairingOffer { session: o.session, link: o.link, state: o.state, expires_at: o.expires_at })
+}
+
+#[uniffi::export]
+pub fn pairing_parse_link(link: String, now: i64) -> Result<PairingLink, CndError> {
+    let p = cnd_domain::pairing::parse_link(&link, now).map_err(pairing_error)?;
+    Ok(PairingLink { session: p.session, tv_name: p.tv_name, transport: p.transport, host: p.host, port: p.port, expires_at: p.expires_at })
+}
+
+#[uniffi::export]
+pub fn pairing_seal(link: String, entropy: Vec<u8>, share_json: String, phone_name: String, now: i64) -> Result<PairingSealed, CndError> {
+    let s = cnd_domain::pairing::seal(&link, &entropy, &share_json, &phone_name, now).map_err(pairing_error)?;
+    Ok(PairingSealed { message: s.message, reply_key: s.reply_key })
+}
+
+#[uniffi::export]
+pub fn pairing_open(state: String, message: String, now: i64) -> PairingOpenResult {
+    match cnd_domain::pairing::open(&state, &message, now) {
+        Ok(o) => PairingOpenResult {
+            opened: Some(PairingOpened { share_json: o.share_json, from: o.from, reply_key: o.reply_key, state: o.state }),
+            rejected: None,
+        },
+        Err(r) => PairingOpenResult { opened: None, rejected: Some(PairingRejected { error: r.error, state: r.state, closed: r.closed }) },
+    }
+}
+
+#[uniffi::export]
+pub fn pairing_seal_reply(reply_key: String, session: String, entropy: Vec<u8>, result: String, count: u32) -> Result<String, CndError> {
+    cnd_domain::pairing::seal_reply(&reply_key, &session, &entropy, &result, count).map_err(pairing_error)
+}
+
+#[uniffi::export]
+pub fn pairing_open_reply(reply_key: String, session: String, reply: String) -> Result<PairingReply, CndError> {
+    let b = cnd_domain::pairing::open_reply(&reply_key, &session, &reply).map_err(pairing_error)?;
+    Ok(PairingReply { result: b.result, count: b.count })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,7 +1,7 @@
-import { Component, createSignal, For } from 'solid-js';
+import { Component, createSignal, For, onMount } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
-import { spatialNav } from '../../ui/design/SpatialNav';
+import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 
 export interface SearchViewProps {
   onSelectResult: (item: ItemRecord) => void;
@@ -20,6 +20,30 @@ export const SearchView: Component<SearchViewProps> = (props) => {
     ['S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0'],
     ['ESPACE', 'EFFACER', 'RECHERCHER'],
   ];
+
+  const rebuildGrid = (resList: any[]) => {
+    const prevFocus = spatialNav.getCurrentFocusId();
+    const kbRows: FocusableItem[][] = KEYBOARD_ROWS.map((row) =>
+      row.map((k) => ({
+        id: `key-${k}`,
+        onSelect: () => void handleKeyClick(k),
+      }))
+    );
+    const resRows: FocusableItem[][] = resList.map((res, idx) => [
+      {
+        id: `search-res-${idx}`,
+        onSelect: () => props.onSelectResult(res.candidate as any),
+      },
+    ]);
+    spatialNav.setGrid([...kbRows, ...resRows]);
+    if (prevFocus.startsWith('key-')) {
+      spatialNav.setFocusById(prevFocus);
+    }
+  };
+
+  onMount(() => {
+    rebuildGrid([]);
+  });
 
   const handleKeyClick = async (char: string) => {
     let next = query();
@@ -41,10 +65,12 @@ export const SearchView: Component<SearchViewProps> = (props) => {
     const q = query().trim();
     if (!q) {
       setResults([]);
+      rebuildGrid([]);
       return;
     }
     const res = await engine.search(q);
     setResults(res);
+    rebuildGrid(res);
   };
 
   return (
@@ -72,13 +98,13 @@ export const SearchView: Component<SearchViewProps> = (props) => {
                 <For each={row}>
                   {(k) => (
                     <button
-                      class="tv-btn"
+                      class={`tv-btn ${focusId() === `key-${k}` ? 'focused' : ''}`}
                       style={{
                         padding: k.length > 1 ? "12px 24px" : "12px 20px",
                         "font-size": "18px",
                         "min-width": k.length === 1 ? "56px" : "auto"
                       }}
-                      onClick={() => handleKeyClick(k)}
+                      onClick={() => void handleKeyClick(k)}
                     >
                       {k}
                     </button>
@@ -92,9 +118,9 @@ export const SearchView: Component<SearchViewProps> = (props) => {
         {/* Search Results */}
         <div style={{ flex: 1, display: "flex", "flex-direction": "column", gap: "12px", "overflow-y": "auto" }}>
           <For each={results()}>
-            {(res) => (
+            {(res, idx) => (
               <div
-                class="tv-card"
+                class={`tv-card ${focusId() === `search-res-${idx()}` ? 'focused' : ''}`}
                 style={{
                   padding: "16px 24px",
                   display: "flex",
@@ -128,4 +154,3 @@ export const SearchView: Component<SearchViewProps> = (props) => {
     </div>
   );
 };
-
