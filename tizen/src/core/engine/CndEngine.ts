@@ -18,12 +18,25 @@ export interface ProfileState {
   avatar: string;
 }
 
+export type SyncProgressCallback = (msg: string, percent?: number) => void;
+
+function cleanYearFromTitle(rawName: string): { clean: string; year?: number } {
+  const m = rawName.match(/[\(\[\s]((?:19|20)\d{2})[\)\]]?\s*$/);
+  if (m) {
+    const yr = parseInt(m[1], 10);
+    const stripped = rawName.slice(0, m.index).replace(/[-–—\s]+$/, '').trim();
+    return { clean: stripped || rawName.trim(), year: yr };
+  }
+  return { clean: rawName.trim() };
+}
+
 export class CndEngine {
   private static instance: CndEngine;
   private db = Database.getInstance();
   private net = HttpClient.getInstance();
   private player = AVPlayerService.getInstance();
   private worker = WorkerBridge.getInstance();
+  private adultCategoryCache = new Map<string, boolean>();
 
   private activeProfile: ProfileState = {
     id: 1,
@@ -67,36 +80,235 @@ export class CndEngine {
   /**
    * Source Synchronization.
    */
-  public async syncM3uSource(name: string, url: string, onProgress?: (msg: string) => void): Promise<number> {
+  public async syncM3uSource(name: string, url: string, onProgress?: SyncProgressCallback): Promise<number> {
     return this.syncPlaylist({ name, url, sourceType: 'm3u' }, onProgress);
   }
 
   /**
-   * An Xtream account: its playlist is the provider's standard `get.php`, read like any M3U. The account
-   * (server, user, password) is kept with the source for the status and the next synchronisation.
+   * Synchronises an Xtream Codes account via the fast JSON API (`/player_api.php`) sequentially
+   * (strictly 1 connection at a time), falling back to `/get.php` M3U only if the JSON API is absent.
    */
   public async syncXtreamSource(
-    name: string, server: string, username: string, password: string, epgUrl?: string,
-    onProgress?: (msg: string) => void
+    name: string,
+    server: string,
+    username: string,
+    password: string,
+    epgUrl?: string,
+    onProgress?: SyncProgressCallback
   ): Promise<number> {
     const base = server.trim().replace(/\/+$/, '');
-    const url = `${base}/get.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&type=m3u_plus&output=ts`;
-    return this.syncPlaylist({ name, url, sourceType: 'xtream', server: base, username, password, epgUrl }, onProgress);
+    const u = encodeURIComponent(username.trim());
+    const p = encodeURIComponent(password);
+    const apiBase = `${base}/player_api.php?username=${u}&password=${p}`;
+
+    onProgress?.('Vérification du compte Xtream…', 5);
+    let authData: any = null;
+    try {
+      const authResp = await this.net.get<any>(apiBase, {}, 'json');
+      authData = authResp.data;
+    } catch (err: any) {
+      const msg = String(err?.message || '');
+      if (msg.includes('401') || msg.includes('403') || msg.includes('Identifiants')) {
+        throw err;
+      }
+      // Provider may only expose M3U `/get.php`
+      const fallbackUrl = `${base}/get.php?username=${u}&password=${p}&type=m3u_plus&output=ts`;
+      return this.syncPlaylist(
+        { name, url: fallbackUrl, sourceType: 'xtream', server: base, username: username.trim(), password, epgUrl },
+        onProgress
+      );
+    }
+
+    const userInfo = authData?.user_info;
+    if (userInfo && (userInfo.auth === 0 || userInfo.auth === '0' || String(userInfo.status || '').toLowerCase() === 'expired')) {
+      throw new Error('Identifiants Xtream invalides ou abonnement expiré.');
+    }
+
+    const fetchCategoryMap = async (action: string): Promise<Map<string, string>> => {
+      const map = new Map<string, string>();
+      try {
+        const res = await this.net.get<any[]>(`${apiBase}&action=${action}`, {}, 'json');
+        if (Array.isArray(res.data)) {
+          for (const c of res.data) {
+            if (c?.category_id != null && c?.category_name) {
+              map.set(String(c.category_id), String(c.category_name).trim());
+            }
+          }
+        }
+      } catch {
+        /* non-fatal if categories endpoint is empty */
+      }
+      return map;
+    };
+
+    const fetchList = async (action: string): Promise<any[]> => {
+      try {
+        const res = await this.net.get<any[]>(`${apiBase}&action=${action}`, {}, 'json');
+        return Array.isArray(res.data) ? res.data : [];
+      } catch {
+        return [];
+      }
+    };
+
+    onProgress?.('Téléchargement des chaînes en direct…', 18);
+    const liveCats = await fetchCategoryMap('get_live_categories');
+    const liveStreams = await fetchList('get_live_streams');
+
+    onProgress?.(`Téléchargement des films VOD (${liveStreams.length} chaînes reçues)…`, 42);
+    const vodCats = await fetchCategoryMap('get_vod_categories');
+    const vodStreams = await fetchList('get_vod_streams');
+
+    onProgress?.(`Téléchargement des séries (${vodStreams.length} films reçus)…`, 64);
+    const seriesCats = await fetchCategoryMap('get_series_categories');
+    const seriesEntries = await fetchList('get_series');
+
+    const totalCount = liveStreams.length + vodStreams.length + seriesEntries.length;
+    if (totalCount === 0) {
+      // Fallback to /get.php in case JSON lists were disabled on panel
+      const fallbackUrl = `${base}/get.php?username=${u}&password=${p}&type=m3u_plus&output=ts`;
+      return this.syncPlaylist(
+        { name, url: fallbackUrl, sourceType: 'xtream', server: base, username: username.trim(), password, epgUrl },
+        onProgress
+      );
+    }
+
+    onProgress?.(`Préparation de ${totalCount} contenus…`, 76);
+    const uuid = 'src_' + Date.now();
+    const resolvedEpgUrl = epgUrl || `${base}/xmltv.php?username=${u}&password=${p}`;
+    const expDate = userInfo?.exp_date ? Number(userInfo.exp_date) || undefined : undefined;
+    const maxConnections = userInfo?.max_connections ? Number(userInfo.max_connections) || undefined : undefined;
+    const activeCons = userInfo?.active_cons != null ? Number(userInfo.active_cons) || 0 : undefined;
+
+    const sourceId = await this.db.insertSource({
+      uuid,
+      name,
+      source_type: 'xtream',
+      server: base,
+      username: username.trim(),
+      password,
+      epg_url: resolvedEpgUrl,
+      exp_date: expDate,
+      max_connections: maxConnections,
+      active_cons: activeCons,
+      item_count: totalCount,
+      last_sync_at: Date.now(),
+    });
+
+    const itemRecords: Omit<ItemRecord, 'id'>[] = [];
+
+    for (let i = 0; i < liveStreams.length; i++) {
+      const s = liveStreams[i];
+      const streamId = String(s?.stream_id ?? '').trim();
+      if (!streamId) continue;
+      const rawName = String(s?.name || `Chaîne ${i + 1}`).trim();
+      const catName = liveCats.get(String(s?.category_id ?? '')) || 'Direct';
+      const archiveDays = Number(s?.tv_archive) > 0 ? Number(s?.tv_archive_duration) || undefined : undefined;
+      itemRecords.push({
+        source_id: sourceId,
+        stable_hash: `live_${streamId}`,
+        kind: 'live',
+        name: rawName,
+        name_clean: rawName,
+        group_title: catName,
+        tvg_id: s?.epg_channel_id ? String(s.epg_channel_id) : undefined,
+        tvg_name: rawName,
+        logo_url: s?.stream_icon ? String(s.stream_icon) : undefined,
+        chno: s?.num ? Number(s.num) || undefined : i + 1,
+        catchup_type: archiveDays ? 'xtream' : undefined,
+        catchup_days: archiveDays,
+        stream_url: `${base}/live/${u}/${p}/${streamId}.ts`,
+        container_ext: 'ts',
+        is_favorite: 0,
+        playback_position_ms: 0,
+        duration_ms: 0,
+      });
+    }
+
+    for (let i = 0; i < vodStreams.length; i++) {
+      const s = vodStreams[i];
+      const streamId = String(s?.stream_id ?? '').trim();
+      if (!streamId) continue;
+      const rawName = String(s?.name || `Film ${i + 1}`).trim();
+      const { clean, year } = cleanYearFromTitle(rawName);
+      const catName = vodCats.get(String(s?.category_id ?? '')) || 'Films';
+      const ext = String(s?.container_extension || 'mp4').replace(/^\.+/, '') || 'mp4';
+      const ratingRaw = s?.rating != null ? Number(s.rating) : s?.rating_5based != null ? Number(s.rating_5based) * 2 : NaN;
+      itemRecords.push({
+        source_id: sourceId,
+        stable_hash: `vod_${streamId}`,
+        kind: 'movie',
+        name: rawName,
+        name_clean: clean,
+        year,
+        group_title: catName,
+        logo_url: s?.stream_icon ? String(s.stream_icon) : undefined,
+        stream_url: `${base}/movie/${u}/${p}/${streamId}.${ext}`,
+        container_ext: ext,
+        is_favorite: 0,
+        playback_position_ms: 0,
+        duration_ms: 0,
+        imdb_rating: Number.isFinite(ratingRaw) && ratingRaw > 0 ? ratingRaw : undefined,
+      });
+    }
+
+    for (let i = 0; i < seriesEntries.length; i++) {
+      const s = seriesEntries[i];
+      const seriesId = String(s?.series_id ?? '').trim();
+      if (!seriesId) continue;
+      const rawName = String(s?.name || `Série ${i + 1}`).trim();
+      const { clean, year } = cleanYearFromTitle(rawName);
+      const catName = seriesCats.get(String(s?.category_id ?? '')) || 'Séries';
+      const ratingRaw = s?.rating != null ? Number(s.rating) : s?.rating_5based != null ? Number(s.rating_5based) * 2 : NaN;
+      itemRecords.push({
+        source_id: sourceId,
+        stable_hash: `series_${seriesId}`,
+        kind: 'series',
+        name: rawName,
+        name_clean: clean,
+        year,
+        group_title: catName,
+        logo_url: s?.cover ? String(s.cover) : undefined,
+        stream_url: `xtream-series://${encodeURIComponent(base)}|${u}|${p}|${seriesId}`,
+        is_favorite: 0,
+        season_num: 1,
+        episode_num: 1,
+        playback_position_ms: 0,
+        duration_ms: 0,
+        imdb_rating: Number.isFinite(ratingRaw) && ratingRaw > 0 ? ratingRaw : undefined,
+        plot: s?.plot ? String(s.plot) : undefined,
+      });
+    }
+
+    await this.db.insertItemsBatch(itemRecords, (saved, total) => {
+      const pct = 80 + Math.round((saved / Math.max(1, total)) * 20);
+      onProgress?.(`Enregistrement sur la TV : ${saved} / ${total} contenus…`, pct);
+    });
+
+    onProgress?.(`${itemRecords.length} contenus importés avec succès !`, 100);
+    return itemRecords.length;
   }
 
   private async syncPlaylist(
     src: { name: string; url: string; sourceType: 'm3u' | 'xtream'; server?: string; username?: string; password?: string; epgUrl?: string },
-    onProgress?: (msg: string) => void
+    onProgress?: SyncProgressCallback
   ): Promise<number> {
     const { name, url } = src;
-    onProgress?.('Téléchargement de la liste M3U...');
+    onProgress?.('Téléchargement de la liste M3U…', 12);
     const resp = await this.net.get<string>(url, {}, 'text');
 
-    onProgress?.('Analyse WebAssembly ultra-rapide...');
+    if (!resp.data || typeof resp.data !== 'string' || resp.data.trim().length === 0) {
+      throw new Error('La liste reçue du fournisseur IPTV est vide.');
+    }
+
+    onProgress?.('Analyse WebAssembly des chaînes et films…', 45);
     const uuid = 'src_' + Date.now();
     const { header, items } = await this.worker.parseM3uChunk(resp.data, uuid);
 
-    onProgress?.(`Enregistrement de ${items.length} éléments en base...`);
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('Aucune chaîne ou vidéo trouvée dans cette playlist.');
+    }
+
+    onProgress?.(`Enregistrement de ${items.length} contenus…`, 75);
     const sourceId = await this.db.insertSource({
       uuid,
       name,
@@ -137,9 +349,21 @@ export class CndEngine {
       plot: it.plot,
     }));
 
-    await this.db.insertItemsBatch(itemRecords);
-    onProgress?.('Synchronisation terminée !');
+    await this.db.insertItemsBatch(itemRecords, (saved, total) => {
+      const pct = 78 + Math.round((saved / Math.max(1, total)) * 22);
+      onProgress?.(`Enregistrement sur la TV : ${saved} / ${total} contenus…`, pct);
+    });
+    onProgress?.(`${items.length} contenus importés avec succès !`, 100);
     return items.length;
+  }
+
+  private async checkAdultCategory(group: string): Promise<boolean> {
+    if (!group) return false;
+    const cached = this.adultCategoryCache.get(group);
+    if (cached !== undefined) return cached;
+    const isAdult = await this.worker.isAdultCategory(group);
+    this.adultCategoryCache.set(group, isAdult);
+    return isAdult;
   }
 
   /**
@@ -156,12 +380,8 @@ export class CndEngine {
     // Apply adult & kids filter
     const filtered: ItemRecord[] = [];
     for (const item of items) {
-      if (this.activeProfile.isKids) {
-        // Only youth categories in kids profile
-        const isAdult = await this.worker.isAdultCategory(item.group_title || '');
-        if (isAdult) continue;
-      } else if (!this.isAdultUnlocked) {
-        const isAdult = await this.worker.isAdultCategory(item.group_title || '');
+      if (this.activeProfile.isKids || !this.isAdultUnlocked) {
+        const isAdult = await this.checkAdultCategory(item.group_title || '');
         if (isAdult) continue;
       }
       filtered.push(item);
@@ -173,9 +393,8 @@ export class CndEngine {
     const rawCategories = await this.db.getCategories(kind);
     const result: string[] = [];
     for (const cat of rawCategories) {
-      const isAdult = await this.worker.isAdultCategory(cat);
-      if (this.activeProfile.isKids && isAdult) continue;
-      if (!this.isAdultUnlocked && isAdult) continue;
+      const isAdult = await this.checkAdultCategory(cat);
+      if ((this.activeProfile.isKids || !this.isAdultUnlocked) && isAdult) continue;
       result.push(cat);
     }
     return result;
@@ -196,11 +415,15 @@ export class CndEngine {
     this.currentPlayingItem = item;
     const isLive = item.kind === 'live';
 
-    // 1-conn rule: resolve final address once to stay in the same supplier session
     let streamUrl = item.stream_url;
+    if (streamUrl.startsWith('xtream-series://')) {
+      streamUrl = await this.resolveXtreamSeriesFirstEpisode(streamUrl);
+    }
+
+    // 1-conn rule: resolve final address once to stay in the same supplier session
     if (!isLive) {
       try {
-        streamUrl = await this.net.resolveFinalUrl(item.stream_url);
+        streamUrl = await this.net.resolveFinalUrl(streamUrl);
       } catch (err) {
         console.warn('Final URL resolution fallback to raw:', err);
       }
@@ -208,6 +431,33 @@ export class CndEngine {
 
     await this.player.open(streamUrl, isLive);
     this.player.play();
+  }
+
+  private async resolveXtreamSeriesFirstEpisode(descriptor: string): Promise<string> {
+    const raw = descriptor.slice('xtream-series://'.length);
+    const [encBase, u, p, seriesId] = raw.split('|');
+    const base = decodeURIComponent(encBase || '');
+    const resp = await this.net.get<any>(
+      `${base}/player_api.php?username=${u}&password=${p}&action=get_series_info&series_id=${encodeURIComponent(seriesId)}`,
+      {},
+      'json'
+    );
+    const episodesObj = resp.data?.episodes;
+    if (episodesObj && typeof episodesObj === 'object') {
+      const seasonKeys = Object.keys(episodesObj).sort((a, b) => Number(a) - Number(b));
+      for (const sk of seasonKeys) {
+        const list = episodesObj[sk];
+        if (Array.isArray(list) && list.length > 0) {
+          const ep = list[0];
+          const epId = String(ep?.id ?? '').trim();
+          const ext = String(ep?.container_extension || 'mp4').replace(/^\.+/, '') || 'mp4';
+          if (epId) {
+            return `${base}/series/${u}/${p}/${epId}.${ext}`;
+          }
+        }
+      }
+    }
+    throw new Error('Aucun épisode disponible pour cette série.');
   }
 
   public getCurrentPlayingItem(): ItemRecord | null {

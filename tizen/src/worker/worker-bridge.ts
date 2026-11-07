@@ -5,7 +5,7 @@
  */
 
 /** Seconds a request may wait on the worker before the app stops trusting it and works in-process. */
-const WORKER_TIMEOUT_MS = 12_000;
+const WORKER_TIMEOUT_MS = 45_000;
 
 type Pending = {
   type: string;

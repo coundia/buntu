@@ -63,8 +63,9 @@ export class MsfChannel {
           resolve();
           return;
         }
-        if (msg.event === 'buntu.pair' && typeof msg.data === 'string') {
-          this.onMessage({ data: msg.data, from: String(msg.from ?? '') });
+        if (msg.event === 'buntu.pair' && msg.data != null) {
+          const payload = typeof msg.data === 'string' ? msg.data : JSON.stringify(msg.data);
+          this.onMessage({ data: payload, from: String(msg.from ?? '') });
         }
       };
       ws.onerror = () => {
@@ -87,12 +88,17 @@ export class MsfChannel {
     });
   }
 
-  /** Answers one client (or everybody when `to` is unknown). */
-  reply(to: string, data: string) {
+  /**
+   * Sends the encrypted reply on the channel.
+   * Note: On Samsung Tizen MSF 2.0 (`ws://<tv>:8001/api/v2/channels/...`), passing a client UUID string in `to`
+   * silently drops the frame on Tizen 6+; `'broadcast'` delivers reliably while AES-256-GCM (`replyKey`) ensures
+   * only the paired phone can decrypt the reply.
+   */
+  reply(_to: string, data: string) {
     this.socket?.send(
       JSON.stringify({
         method: 'ms.channel.emit',
-        params: { event: 'buntu.pair.reply', to: to || 'broadcast', data },
+        params: { event: 'buntu.pair.reply', to: 'broadcast', data },
       })
     );
   }
@@ -100,10 +106,14 @@ export class MsfChannel {
   close() {
     const ws = this.socket;
     this.socket = null;
-    try {
-      ws?.close();
-    } catch {
-      /* already closed */
-    }
+    if (!ws) return;
+    // Allow any queued outgoing reply frame to flush to the local Samsung MSF daemon before closing TCP.
+    setTimeout(() => {
+      try {
+        ws.close();
+      } catch {
+        /* already closed */
+      }
+    }, 120);
   }
 }

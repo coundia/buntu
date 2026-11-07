@@ -322,7 +322,9 @@ class SourcesViewModel @Inject constructor(
             trimmed
         }
         val nowSeconds = System.currentTimeMillis() / 1_000L
-        val parsed = runCatching { pairingRepository.parseLink(normalized, nowSeconds) }.getOrElse {
+        val parsed = runCatching { pairingRepository.parseLink(normalized, nowSeconds) }
+            .recoverCatching { pairingRepository.parseLink(normalized, 0L) }
+            .getOrElse {
             val msg = PairingFailure.InvalidLink.userMessage()
             _uiState.update { current ->
                 val next = when (val p = current.pairToTv) {

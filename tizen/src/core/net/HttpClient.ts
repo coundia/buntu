@@ -122,39 +122,124 @@ export class HttpClient {
 
     const release = await this.acquireConnectionSlot();
     try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers,
-      });
-
-      if (response.status === 429) {
-        this.handleRateLimit(response);
-        throw new Error(`Fournisseur saturé (HTTP 429). Pause de ${this.getRateLimitSecondsRemaining()}s...`);
-      }
-
+      let status = 0;
       let data: any;
-      if (responseType === 'json') {
-        data = await response.json();
-      } else if (responseType === 'text') {
-        data = await response.text();
-      } else {
-        data = await response.arrayBuffer();
-      }
-
+      let finalUrl = url;
       const headerMap: Record<string, string> = {};
-      response.headers.forEach((value, key) => {
-        headerMap[key.toLowerCase()] = value;
-      });
+
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers,
+        });
+        status = response.status;
+        finalUrl = response.url || url;
+        response.headers.forEach((value, key) => {
+          headerMap[key.toLowerCase()] = value;
+        });
+
+        if (status === 429) {
+          this.handleRateLimit(response);
+          throw new Error(`Fournisseur saturé (HTTP 429). Pause de ${this.getRateLimitSecondsRemaining()}s...`);
+        }
+        if (status === 401 || status === 403) {
+          throw new Error(`Identifiants IPTV refusés par le serveur (HTTP ${status}).`);
+        }
+        if (status >= 400) {
+          throw new Error(`Erreur du serveur IPTV (HTTP ${status}).`);
+        }
+
+        if (responseType === 'json') {
+          const rawText = await response.text();
+          data = JSON.parse(rawText);
+        } else if (responseType === 'text') {
+          data = await response.text();
+        } else {
+          data = await response.arrayBuffer();
+        }
+      } catch (fetchErr: any) {
+        // Re-throw explicit HTTP status errors (401/403/429/5xx) or JSON parse errors immediately
+        if (status >= 400 || fetchErr instanceof SyntaxError) {
+          throw fetchErr;
+        }
+        // Fallback to XMLHttpRequest for Tizen file:// origin when providers send malformed CORS headers
+        const xhrRes = await this.xhrGet<T>(url, headers, responseType);
+        status = xhrRes.status;
+        data = xhrRes.data;
+        finalUrl = xhrRes.finalUrl;
+      }
 
       return {
-        status: response.status,
+        status,
         data,
         headers: headerMap,
-        finalUrl: response.url || url,
+        finalUrl,
       };
     } finally {
       release();
     }
+  }
+
+  private xhrGet<T>(
+    url: string,
+    headers: Record<string, string>,
+    responseType: 'json' | 'text' | 'arraybuffer'
+  ): Promise<HttpResponse<T>> {
+    return new Promise((resolve, reject) => {
+      if (typeof XMLHttpRequest === 'undefined') {
+        reject(new Error(' Serveur IPTV injoignable.'));
+        return;
+      }
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.timeout = 60_000;
+      if (responseType === 'arraybuffer') {
+        xhr.responseType = 'arraybuffer';
+      }
+      Object.entries(headers).forEach(([k, v]) => {
+        try {
+          xhr.setRequestHeader(k, v);
+        } catch {
+          /* ignore restricted headers */
+        }
+      });
+      xhr.onload = () => {
+        if (xhr.status === 429) {
+          this.rateLimitUntil = Date.now() + 20_000;
+          reject(new Error('Fournisseur saturé (HTTP 429). Pause de 20s...'));
+          return;
+        }
+        if (xhr.status === 401 || xhr.status === 403) {
+          reject(new Error(`Identifiants IPTV refusés par le serveur (HTTP ${xhr.status}).`));
+          return;
+        }
+        if (xhr.status >= 400) {
+          reject(new Error(`Erreur du serveur IPTV (HTTP ${xhr.status}).`));
+          return;
+        }
+        try {
+          let parsed: any;
+          if (responseType === 'json') {
+            parsed = JSON.parse(xhr.responseText);
+          } else if (responseType === 'text') {
+            parsed = xhr.responseText;
+          } else {
+            parsed = xhr.response;
+          }
+          resolve({
+            status: xhr.status || 200,
+            data: parsed,
+            headers: {},
+            finalUrl: xhr.responseURL || url,
+          });
+        } catch (err) {
+          reject(err);
+        }
+      };
+      xhr.onerror = () => reject(new Error('Serveur IPTV injoignable : vérifiez la connexion réseau de la TV.'));
+      xhr.ontimeout = () => reject(new Error('Délai dépassé lors du téléchargement auprès du fournisseur IPTV.'));
+      xhr.send();
+    });
   }
 
   private handleRateLimit(response: Response) {
