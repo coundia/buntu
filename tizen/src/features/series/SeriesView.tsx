@@ -53,6 +53,8 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
       rebuildGrid(cats, scroller.items(), false);
       if (scroller.items().length > 0) {
         spatialNav.setFocusById(`series-${scroller.items()[0].id}`);
+      } else {
+        spatialNav.setFocusById('series-cat-0');
       }
     } else {
       rebuildGrid([], [], false);
@@ -224,8 +226,12 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
         <Show
           when={activeSeries().length > 0}
           fallback={
-            <div style={{ width: "100%", padding: "48px 0", "text-align": "center", color: "var(--buntu-text-muted)", "font-size": "20px" }}>
-              Aucune série ne correspond à "{searchQuery()}".
+            <div style={{ width: "100%", padding: "48px 20px", "text-align": "center", color: "var(--buntu-text-muted)", "font-size": "20px" }}>
+              {isSearchMode()
+                ? `Aucune série ne correspond à "${searchQuery()}".`
+                : selectedCat().includes('Favoris')
+                ? 'Aucune série dans vos favoris. Appuyez sur ☆ Favori pour ajouter vos séries préférées !'
+                : 'Aucune série dans cette catégorie.'}
             </div>
           }
         >
