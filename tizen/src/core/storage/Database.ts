@@ -29,7 +29,7 @@ export interface ItemRecord {
   source_id: number;
   series_id?: number;
   stable_hash: string;
-  kind: 'live' | 'movie' | 'episode';
+  kind: 'live' | 'movie' | 'episode' | 'series';
   name: string;
   name_clean: string;
   year?: number;
@@ -163,17 +163,46 @@ export class Database {
   }
 
   // Items CRUD & Queries
-  public async insertItemsBatch(items: Omit<ItemRecord, 'id'>[]): Promise<void> {
+  public async insertItemsBatch(
+    items: Omit<ItemRecord, 'id'>[],
+    onBatchProgress?: (saved: number, total: number) => void
+  ): Promise<void> {
     if (!this.db || items.length === 0) return;
-    return new Promise((resolve, reject) => {
-      const tx = this.db!.transaction(['items'], 'readwrite');
-      const store = tx.objectStore('items');
-      for (const item of items) {
-        store.put(item);
+
+    // Ensure unique stable_hash within batch so a provider's duplicate streams never abort the IndexedDB transaction
+    const seenHashes = new Set<string>();
+    const prepared = items.map((item, idx) => {
+      let hash = `${item.source_id}_${item.stable_hash}`;
+      if (seenHashes.has(hash)) {
+        hash = `${hash}_dup_${idx}`;
       }
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+      seenHashes.add(hash);
+      return { ...item, stable_hash: hash };
     });
+
+    const CHUNK_SIZE = 2500;
+    for (let offset = 0; offset < prepared.length; offset += CHUNK_SIZE) {
+      const slice = prepared.slice(offset, offset + CHUNK_SIZE);
+      await new Promise<void>((resolve, reject) => {
+        const tx = this.db!.transaction(['items'], 'readwrite');
+        const store = tx.objectStore('items');
+        for (const item of slice) {
+          const req = store.put(item);
+          // Prevent any single ConstraintError from aborting the entire batch transaction
+          req.onerror = (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+          };
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      onBatchProgress?.(Math.min(offset + slice.length, prepared.length), prepared.length);
+    }
+  }
+
+  private kindsFor(kind: 'live' | 'movie' | 'series'): string[] {
+    return kind === 'series' ? ['series', 'episode'] : [kind];
   }
 
   public async getItemsByKindAndGroup(
@@ -182,23 +211,65 @@ export class Database {
     offset = 0,
     limit = 60
   ): Promise<ItemRecord[]> {
-    const all = await this.getAll<ItemRecord>('items');
-    return all
-      .filter((item) => {
-        if (item.kind !== kind) return false;
-        if (groupTitle && item.group_title !== groupTitle) return false;
-        return true;
-      })
-      .slice(offset, offset + limit);
+    if (!this.db) return [];
+    const targetKinds = this.kindsFor(kind);
+    const results: ItemRecord[] = [];
+    let skipped = 0;
+
+    for (const k of targetKinds) {
+      if (results.length >= limit) break;
+      await new Promise<void>((resolve, reject) => {
+        const tx = this.db!.transaction(['items'], 'readonly');
+        const store = tx.objectStore('items');
+        const req = groupTitle
+          ? store.index('kind_group').openCursor(IDBKeyRange.only([k, groupTitle]))
+          : store.index('kind').openCursor(IDBKeyRange.only(k));
+
+        req.onsuccess = (ev: any) => {
+          const cursor: IDBCursorWithValue | null = ev.target.result;
+          if (!cursor || results.length >= limit) {
+            resolve();
+            return;
+          }
+          if (skipped < offset) {
+            skipped++;
+            cursor.continue();
+            return;
+          }
+          results.push(cursor.value as ItemRecord);
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    return results;
   }
 
   public async getCategories(kind: 'live' | 'movie' | 'series'): Promise<string[]> {
-    const all = await this.getAll<ItemRecord>('items');
+    if (!this.db) return [];
+    const targetKinds = this.kindsFor(kind);
     const set = new Set<string>();
-    for (const item of all) {
-      if (item.kind === kind && item.group_title) {
-        set.add(item.group_title);
-      }
+
+    for (const k of targetKinds) {
+      await new Promise<void>((resolve, reject) => {
+        const tx = this.db!.transaction(['items'], 'readonly');
+        const store = tx.objectStore('items');
+        const req = store.index('kind').openCursor(IDBKeyRange.only(k));
+        req.onsuccess = (ev: any) => {
+          const cursor: IDBCursorWithValue | null = ev.target.result;
+          if (!cursor) {
+            resolve();
+            return;
+          }
+          const item = cursor.value as ItemRecord;
+          if (item.group_title) {
+            set.add(item.group_title);
+          }
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+      });
     }
     return Array.from(set).sort();
   }

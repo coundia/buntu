@@ -58,10 +58,17 @@ class PairingSender @Inject constructor(
         nowSeconds: Long = System.currentTimeMillis() / 1000,
         waitSeconds: Int = 330,
     ): PairingSendResult = withContext(Dispatchers.IO) {
-        val parsed = runCatching { pairing.parseLink(link, nowSeconds) }.getOrNull()
+        // Try local clock first; fall back to 0L if the TV's RTC clock is behind the phone's clock
+        // (the TV itself strictly enforces its 300s session lifetime against its own clock in `open`).
+        val parsed = runCatching { pairing.parseLink(link, nowSeconds) }
+            .recoverCatching { pairing.parseLink(link, 0L) }
+            .getOrNull()
             ?: return@withContext PairingSendResult.Failed(PairingFailure.InvalidLink)
+        val entropy = ByteArray(SEAL_ENTROPY).also(random::nextBytes)
         val sealed = runCatching {
-            pairing.seal(link, ByteArray(SEAL_ENTROPY).also(random::nextBytes), shareJson, phoneName, nowSeconds)
+            pairing.seal(link, entropy, shareJson, phoneName, nowSeconds)
+        }.recoverCatching {
+            pairing.seal(link, entropy, shareJson, phoneName, 0L)
         }.getOrNull() ?: return@withContext PairingSendResult.Failed(PairingFailure.InvalidLink)
 
         val answer = try {

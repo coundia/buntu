@@ -18,23 +18,32 @@ export const OnboardingView: Component<OnboardingProps> = (props) => {
   const [pairingError, setPairingError] = createSignal('');
   const [request, setRequest] = createSignal<PairingRequest | null>(null);
   const [busy, setBusy] = createSignal(false);
+  const [importStep, setImportStep] = createSignal('Préparation de l’importation…');
+  const [importPercent, setImportPercent] = createSignal(5);
   const [result, setResult] = createSignal('');
+  const [isErrorResult, setIsErrorResult] = createSignal(false);
   const [secondsLeft, setSecondsLeft] = createSignal(0);
 
   let ticker: ReturnType<typeof setInterval> | null = null;
 
   const service = new PairingService({
     onRequest: (r) => {
+      setResult('');
+      setIsErrorResult(false);
       setRequest(r);
       updateGrid();
     },
     onClosed: (reason) => {
+      if (busy()) return;
       setRequest(null);
       if (reason === 'done') return;
       // Expired, closed after errors, or the channel dropped: a new code, nothing to do for the user.
       void startPairing();
     },
-    onError: (message) => setResult(message),
+    onError: (message) => {
+      setIsErrorResult(true);
+      setResult(message);
+    },
   });
 
   const startPairing = async () => {
@@ -68,13 +77,33 @@ export const OnboardingView: Component<OnboardingProps> = (props) => {
     const r = request();
     if (!r || busy()) return;
     setBusy(true);
-    const count = await r.accept();
+    setResult('');
+    setIsErrorResult(false);
+    setImportStep('Connexion au fournisseur IPTV…');
+    setImportPercent(5);
+    spatialNav.setGrid([]);
+
+    const count = await r.accept((stepMsg, pct) => {
+      setImportStep(stepMsg);
+      if (pct !== undefined) {
+        setImportPercent(Math.max(5, Math.min(100, pct)));
+      }
+    });
+
     setBusy(false);
     setRequest(null);
-    setResult(count > 0 ? `${count} compte${count > 1 ? 's' : ''} ajouté${count > 1 ? 's' : ''}` : 'Aucun compte ajouté');
-    if (count > 0) setTimeout(() => props.onComplete(), 2500);
-    else void startPairing();
-    updateGrid();
+    if (count > 0) {
+      setIsErrorResult(false);
+      setResult(`${count} compte${count > 1 ? 's' : ''} importé${count > 1 ? 's' : ''} avec succès ! Ouverture du Direct TV…`);
+      setTimeout(() => props.onComplete(), 1500);
+    } else {
+      if (!result()) {
+        setIsErrorResult(true);
+        setResult('Aucun compte ajouté (déjà présent ou mot de passe non inclus).');
+      }
+      void startPairing();
+      updateGrid();
+    }
   };
 
   const refuse = async () => {
@@ -82,12 +111,17 @@ export const OnboardingView: Component<OnboardingProps> = (props) => {
     if (!r || busy()) return;
     await r.refuse();
     setRequest(null);
+    setIsErrorResult(false);
     setResult('Envoi refusé');
     void startPairing();
     updateGrid();
   };
 
   const updateGrid = () => {
+    if (busy()) {
+      spatialNav.setGrid([]);
+      return;
+    }
     if (request()) {
       spatialNav.setGrid([[
         { id: 'btn-pair-accept', onSelect: () => void accept() },
@@ -123,12 +157,29 @@ export const OnboardingView: Component<OnboardingProps> = (props) => {
           Ajoutez votre abonnement depuis votre smartphone en scannant le QR code.
         </p>
 
+        <Show when={!busy()} fallback={
+          <div class="tv-loader-card" style={{ "margin-bottom": "40px" }}>
+            <div class="tv-spinner" role="status" aria-label="Importation en cours" />
+            <h2 style={{ "font-size": "32px", color: "var(--buntu-gold)", margin: 0 }}>
+              Importation du compte en cours…
+            </h2>
+            <p style={{ "font-size": "24px", color: "var(--buntu-cyan)", margin: 0 }}>
+              {importStep()}
+            </p>
+            <div class="tv-progress-track">
+              <div class="tv-progress-bar" style={{ width: `${importPercent()}%` }} />
+            </div>
+            <p style={{ "font-size": "18px", color: "var(--buntu-text-muted)", margin: 0 }}>
+              Veuillez patienter sans fermer l’application ({importPercent()}%)
+            </p>
+          </div>
+        }>
         <Show when={!request()} fallback={
           <div style={{
             background: "var(--buntu-slate)", padding: "32px", "border-radius": "16px",
-            "margin-bottom": "40px", border: "1px solid var(--buntu-border)", "text-align": "left"
+            "margin-bottom": "40px", border: "2px solid var(--buntu-gold)", "text-align": "left"
           }}>
-            <h2 style={{ "font-size": "32px", "margin-bottom": "8px" }}>
+            <h2 style={{ "font-size": "32px", "margin-bottom": "8px", color: "var(--buntu-gold)" }}>
               {request()!.from || 'Un téléphone'} veut ajouter {request()!.preview.sources.length} compte{request()!.preview.sources.length > 1 ? 's' : ''}
             </h2>
             <div style={{ display: "flex", "flex-direction": "column", gap: "12px", margin: "20px 0 28px" }}>
@@ -148,7 +199,7 @@ export const OnboardingView: Component<OnboardingProps> = (props) => {
             </div>
             <div style={{ display: "flex", gap: "24px", "justify-content": "center" }}>
               <button class={`tv-btn ${focusId() === 'btn-pair-accept' ? 'focused' : ''}`} onClick={() => void accept()}>
-                {busy() ? 'Ajout…' : 'Ajouter'}
+                Ajouter sur cette TV
               </button>
               <button class={`tv-btn ${focusId() === 'btn-pair-refuse' ? 'focused' : ''}`} onClick={() => void refuse()}>
                 Refuser
@@ -189,12 +240,18 @@ export const OnboardingView: Component<OnboardingProps> = (props) => {
             </div>
           </div>
         </Show>
-
-        <Show when={result()}>
-          <p style={{ "font-size": "24px", color: "var(--buntu-cyan)", "margin-bottom": "24px" }}>{result()}</p>
         </Show>
 
-        <Show when={!request()}>
+        <Show when={result()}>
+          <p style={{
+            "font-size": "24px",
+            color: isErrorResult() ? "var(--buntu-danger)" : "var(--buntu-cyan)",
+            "margin-bottom": "24px",
+            "font-weight": "600",
+          }}>{result()}</p>
+        </Show>
+
+        <Show when={!request() && !busy()}>
           <div style={{ display: "flex", gap: "24px", "justify-content": "center" }}>
             <button
               class={`tv-btn ${focusId() === 'btn-manual' ? 'focused' : ''}`}

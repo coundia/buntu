@@ -74,7 +74,9 @@ class TvPairingCoordinator @Inject constructor(
     }
 
     private suspend fun decide(incoming: IncomingPairing, onAdded: suspend (Int) -> Unit): PairingDecision {
-        val sources = runCatching { SharedSources.parse(incoming.shareJson) }.getOrElse { err ->
+        // Session expiry was already verified against the TV's own clock by `pairing.open`;
+        // pass nowSeconds = 0L so wall-clock skew between Phone and TV never drops the request.
+        val sources = runCatching { SharedSources.parse(incoming.shareJson, nowSeconds = 0L) }.getOrElse { err ->
             _state.update { it.copy(error = err.message) }
             return PairingDecision.Failed
         }

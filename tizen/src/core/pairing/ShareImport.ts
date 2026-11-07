@@ -50,8 +50,20 @@ export function hostOf(address: string): string {
 const normalizeServer = (s: string) => s.trim().toLowerCase().replace(/\/+$/, '');
 const normalizeUrl = (s: string) => s.trim().toLowerCase().replace(/\/+$/, '');
 
+export interface ParseShareOptions {
+  /**
+   * Check `doc.expires_at` against local `Date.now()`.
+   * Defaults to `true` for standalone files/links; set to `false` inside a live QR pairing session
+   * whose 5-minute freshness was already verified against the TV's own monotonic clock, avoiding
+   * false expiry errors when the TV's wall clock differs from the phone's wall clock.
+   */
+  checkExpiry?: boolean;
+}
+
+export type ImportProgressCallback = (message: string, percent?: number) => void;
+
 /** Throws a short French message when the document is not one we understand. */
-export function parseShareDocument(json: string): SharedSource[] {
+export function parseShareDocument(json: string, options: ParseShareOptions = {}): SharedSource[] {
   let doc: any;
   try {
     doc = JSON.parse(json);
@@ -61,7 +73,7 @@ export function parseShareDocument(json: string): SharedSource[] {
   if (doc?.format !== 'cnd-source-share' || doc?.version !== 1 || !Array.isArray(doc.sources)) {
     throw new Error('Ce n’est pas un partage de sources Buntu');
   }
-  if (typeof doc.expires_at === 'number' && doc.expires_at * 1000 < Date.now()) {
+  if (options.checkExpiry !== false && typeof doc.expires_at === 'number' && doc.expires_at * 1000 < Date.now()) {
     throw new Error('Ce partage a expiré');
   }
   const out: SharedSource[] = [];
@@ -99,8 +111,8 @@ export function isDuplicate(candidate: SharedSource, existing: SourceRecord[]): 
 }
 
 /** What the confirmation shows. A duplicate is listed but not added again. */
-export function previewShare(json: string, existing: SourceRecord[]): SharePreview {
-  const all = parseShareDocument(json);
+export function previewShare(json: string, existing: SourceRecord[], options: ParseShareOptions = {}): SharePreview {
+  const all = parseShareDocument(json, options);
   const sources: PreviewSource[] = [];
   const pending: SharedSource[] = [];
   for (const s of all) {
@@ -121,18 +133,28 @@ export function previewShare(json: string, existing: SourceRecord[]): SharePrevi
 export async function applyShare(
   preview: SharePreview,
   engine: CndEngine = CndEngine.getInstance(),
-  onProgress?: (msg: string) => void
+  onProgress?: ImportProgressCallback
 ): Promise<number> {
   let added = 0;
-  for (let i = 0; i < preview.sources.length; i++) {
-    if (preview.sources[i].duplicate) continue;
-    const s = preview.pending[i];
+  const actionable = preview.sources
+    .map((meta, i) => ({ meta, source: preview.pending[i] }))
+    .filter(({ meta, source }) => !meta.duplicate && (source.type !== 'xtream' || !!source.password));
+
+  for (let idx = 0; idx < actionable.length; idx++) {
+    const { source: s } = actionable[idx];
+    const prefix = actionable.length > 1 ? `[${idx + 1}/${actionable.length}] ` : '';
+    const forwardProgress: ImportProgressCallback = (msg, pct) => {
+      const overallPct =
+        pct !== undefined
+          ? Math.round(((idx + pct / 100) / actionable.length) * 100)
+          : undefined;
+      onProgress?.(`${prefix}${msg}`, overallPct);
+    };
     // One source after the other: a one-connection subscription cannot download two playlists at once.
     if (s.type === 'xtream') {
-      if (!s.password) continue;
-      await engine.syncXtreamSource(s.name, s.server!, s.username!, s.password, s.epgUrl, onProgress);
+      await engine.syncXtreamSource(s.name, s.server!, s.username!, s.password!, s.epgUrl, forwardProgress);
     } else {
-      await engine.syncM3uSource(s.name, s.url!, onProgress);
+      await engine.syncM3uSource(s.name, s.url!, forwardProgress);
     }
     added += 1;
   }

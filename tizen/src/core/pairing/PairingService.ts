@@ -11,7 +11,7 @@
 import { WorkerBridge } from '../../worker/worker-bridge';
 import { MsfChannel } from './MsfChannel';
 import { SourceRecord } from '../storage/Database';
-import { SharePreview, applyShare, existingSources, previewShare } from './ShareImport';
+import { ImportProgressCallback, SharePreview, applyShare, existingSources, previewShare } from './ShareImport';
 
 export interface PairingOffer {
   link: string;
@@ -26,7 +26,7 @@ export interface PairingOffer {
 export interface PairingRequest {
   from: string;
   preview: SharePreview;
-  accept(): Promise<number>;
+  accept(onProgress?: ImportProgressCallback): Promise<number>;
   refuse(): Promise<void>;
 }
 
@@ -76,13 +76,13 @@ const CHANNEL_PORT = 8001;
 export interface PairingDeps {
   channel(name: string): Pick<MsfChannel, 'setHandlers' | 'connect' | 'reply' | 'close'>;
   existingSources(): Promise<SourceRecord[]>;
-  apply(preview: SharePreview): Promise<number>;
+  apply(preview: SharePreview, onProgress?: ImportProgressCallback): Promise<number>;
 }
 
 export const defaultDeps: PairingDeps = {
   channel: (name) => new MsfChannel(name, [CHANNEL_PORT]),
   existingSources,
-  apply: (preview) => applyShare(preview),
+  apply: (preview, onProgress) => applyShare(preview, undefined, onProgress),
 };
 
 export class PairingService {
@@ -162,26 +162,28 @@ export class PairingService {
     this.state = opened.state; // the session served its one message
     let preview: SharePreview;
     try {
-      preview = previewShare(opened.share_json, await this.deps.existingSources());
+      // Session expiry was already verified against the TV's own clock by `pairingOpen`;
+      // skip `doc.expires_at` check so wall-clock skew between Phone and TV never drops the request.
+      preview = previewShare(opened.share_json, await this.deps.existingSources(), { checkExpiry: false });
     } catch (e: any) {
       await this.answer(opened.reply_key, from, 'error', 0);
       this.events.onError(e?.message ?? 'Partage illisible');
-      this.finish('done');
+      this.finish('closed');
       return;
     }
     this.events.onRequest({
       from: opened.from,
       preview,
-      accept: async () => {
+      accept: async (onProgress?: ImportProgressCallback) => {
         try {
-          const count = await this.deps.apply(preview);
-          await this.answer(opened.reply_key, from, 'added', count);
-          this.finish('done');
+          const count = await this.deps.apply(preview, onProgress);
+          await this.answer(opened.reply_key, from, count > 0 ? 'added' : 'error', count);
+          this.finish(count > 0 ? 'done' : 'closed');
           return count;
         } catch (e: any) {
           await this.answer(opened.reply_key, from, 'error', 0);
           this.events.onError(e?.message ?? 'Ajout impossible');
-          this.finish('done');
+          this.finish('closed');
           return 0;
         }
       },

@@ -2,7 +2,7 @@ import { Component, createEffect, createSignal, onMount, onCleanup, Switch, Matc
 import { CndEngine } from '../core/engine/CndEngine';
 import { AVPlayerService } from '../core/player/AVPlayerService';
 import { RemoteKey, RemoteKeyHandler } from '../core/input/RemoteKeyHandler';
-import { ItemRecord } from '../core/storage/Database';
+import { Database, ItemRecord } from '../core/storage/Database';
 import { spatialNav } from '../ui/design/SpatialNav';
 
 import { LiveView } from '../features/live/LiveView';
@@ -80,10 +80,12 @@ export const App: Component = () => {
 
     try {
       await engine.init();
-      const sources = await engine.getCatalog('live', undefined, 0, 1);
-      if (sources.length === 0) {
+      const storedSources = await Database.getInstance().getSources();
+      if (storedSources.length === 0) {
         setHasSources(false);
         setCurrentRoute('onboarding');
+      } else {
+        setHasSources(true);
       }
     } catch (err) {
       console.warn('[App] Engine init fallback to onboarding:', err);
@@ -196,9 +198,12 @@ export const App: Component = () => {
         <Switch>
           <Match when={currentRoute() === 'onboarding'}>
             <OnboardingView
-              onComplete={() => setCurrentRoute('live')}
-              onAddM3u={(url) => {
-                engine.syncM3uSource('Ma Source', url);
+              onComplete={() => {
+                setHasSources(true);
+                setCurrentRoute('live');
+              }}
+              onAddM3u={async (url) => {
+                await engine.syncM3uSource('Ma Source', url);
                 setHasSources(true);
                 setCurrentRoute('live');
               }}

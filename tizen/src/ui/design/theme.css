@@ -199,3 +199,54 @@ body {
   border-color: var(--buntu-gold, #FF9F0A);
   box-shadow: 0 0 0 4px rgba(255, 159, 10, 0.35);
 }
+
+/* Account Import & Sync Loader */
+@keyframes buntu-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tv-spinner {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 6px solid rgba(255, 255, 255, 0.14);
+  border-top-color: var(--buntu-gold);
+  border-right-color: var(--buntu-cyan);
+  animation: buntu-spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+
+.tv-loader-card {
+  background: var(--buntu-slate);
+  border: 2px solid var(--buntu-gold);
+  border-radius: 16px;
+  padding: 40px 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  text-align: center;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+
+.tv-progress-track {
+  width: 100%;
+  max-width: 640px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tv-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--buntu-gold), var(--buntu-cyan));
+  border-radius: 6px;
+  transition: width 0.25s ease;
+}
+

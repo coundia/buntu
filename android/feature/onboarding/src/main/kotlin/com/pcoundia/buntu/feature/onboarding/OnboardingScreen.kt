@@ -86,6 +86,44 @@ fun OnboardingScreen(
         return
     }
 
+    if (state.isSyncing) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BuntuPalette.Midnight)
+                .padding(metrics.horizontalScreenPadding),
+            contentAlignment = Alignment.Center,
+        ) {
+            Surface(
+                color = BuntuPalette.Slate,
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Column(
+                    modifier = Modifier.padding(metrics.spacingXL),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(metrics.spacingM),
+                ) {
+                    CircularProgressIndicator(
+                        color = BuntuPalette.TerangaGold,
+                        modifier = Modifier.size(48.dp),
+                    )
+                    Text(
+                        text = "Importation du compte en cours…",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = BuntuPalette.TerangaGold,
+                    )
+                    Text(
+                        text = "Téléchargement et synchronisation des chaînes, films et séries…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = BuntuPalette.LeerCyan,
+                    )
+                }
+            }
+        }
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
