@@ -1,8 +1,9 @@
-import { Component, createSignal, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { Component, createEffect, createSignal, onMount, onCleanup, Switch, Match } from 'solid-js';
 import { CndEngine } from '../core/engine/CndEngine';
 import { AVPlayerService } from '../core/player/AVPlayerService';
 import { RemoteKey, RemoteKeyHandler } from '../core/input/RemoteKeyHandler';
 import { ItemRecord } from '../core/storage/Database';
+import { spatialNav } from '../ui/design/SpatialNav';
 
 import { LiveView } from '../features/live/LiveView';
 import { GuideView } from '../features/guide/GuideView';
@@ -37,25 +38,58 @@ export const App: Component = () => {
   const [currentRoute, setCurrentRoute] = createSignal<ScreenRoute>('live');
   const [selectedItem, setSelectedItem] = createSignal<ItemRecord | null>(null);
   const [hasSources, setHasSources] = createSignal(true);
+  const [focusId] = spatialNav.getFocusSignal();
 
   let keyUnsub: (() => void) | null = null;
 
-  onMount(async () => {
-    await engine.init();
-    RemoteKeyHandler.getInstance().init();
+  const NAV_ITEMS: { route: ScreenRoute; label: string }[] = [
+    { route: 'live', label: 'Direct' },
+    { route: 'guide', label: 'Guide' },
+    { route: 'movies', label: 'Films' },
+    { route: 'series', label: 'Séries' },
+    { route: 'recommendations', label: 'Pour vous' },
+    { route: 'search', label: 'Recherche' },
+    { route: 'sources', label: 'Sources' },
+    { route: 'profiles', label: 'Profils' },
+    { route: 'settings', label: 'Paramètres' },
+  ];
 
-    // Check if initial onboarding is needed
-    const sources = await engine.getCatalog('live', undefined, 0, 1);
-    if (sources.length === 0) {
+  // Keep Top Navigation Bar registered with SpatialNav whenever visible
+  createEffect(() => {
+    const route = currentRoute();
+    if (route === 'player') {
+      spatialNav.setHeader([]);
+      return;
+    }
+    const activeIdx = Math.max(0, NAV_ITEMS.findIndex((n) => n.route === route));
+    spatialNav.setHeader(
+      NAV_ITEMS.map((nav) => ({
+        id: `nav-${nav.route}`,
+        onSelect: () => setCurrentRoute(nav.route),
+      })),
+      activeIdx,
+    );
+  });
+
+  onMount(async () => {
+    // Initialize remote control & spatial navigation immediately (before any async work)
+    RemoteKeyHandler.getInstance().init();
+    spatialNav.init();
+    keyUnsub = RemoteKeyHandler.getInstance().addListener(handleGlobalKey);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    try {
+      await engine.init();
+      const sources = await engine.getCatalog('live', undefined, 0, 1);
+      if (sources.length === 0) {
+        setHasSources(false);
+        setCurrentRoute('onboarding');
+      }
+    } catch (err) {
+      console.warn('[App] Engine init fallback to onboarding:', err);
       setHasSources(false);
       setCurrentRoute('onboarding');
     }
-
-    // Register remote key shortcuts (Color buttons)
-    keyUnsub = RemoteKeyHandler.getInstance().addListener(handleGlobalKey);
-
-    // TV Lifecycle (standby / smart hub switch)
-    document.addEventListener('visibilitychange', handleVisibilityChange);
   });
 
   onCleanup(() => {
@@ -95,9 +129,15 @@ export const App: Component = () => {
       return true;
     }
 
-    if (key === 'BACK' && currentRoute() !== 'player' && currentRoute() !== 'live') {
-      setCurrentRoute('live');
-      return true;
+    if (key === 'BACK' && currentRoute() !== 'player' && currentRoute() !== 'onboarding') {
+      if (currentRoute() !== 'live') {
+        setCurrentRoute('live');
+        return true;
+      }
+      if (!hasSources()) {
+        setCurrentRoute('onboarding');
+        return true;
+      }
     }
 
     return false;
@@ -113,18 +153,6 @@ export const App: Component = () => {
     setSelectedItem(item);
     setCurrentRoute('details');
   };
-
-  const NAV_ITEMS: { route: ScreenRoute; label: string }[] = [
-    { route: 'live', label: 'Direct' },
-    { route: 'guide', label: 'Guide' },
-    { route: 'movies', label: 'Films' },
-    { route: 'series', label: 'Séries' },
-    { route: 'recommendations', label: 'Pour vous' },
-    { route: 'search', label: 'Recherche' },
-    { route: 'sources', label: 'Sources' },
-    { route: 'profiles', label: 'Profils' },
-    { route: 'settings', label: 'Paramètres' },
-  ];
 
   return (
     <div style={{ width: "1920px", height: "1080px", position: "relative" }}>
@@ -153,7 +181,7 @@ export const App: Component = () => {
           <div style={{ display: "flex", gap: "12px" }}>
             {NAV_ITEMS.map((nav) => (
               <button
-                class={`tv-nav-item ${currentRoute() === nav.route ? 'active' : ''}`}
+                class={`tv-nav-item ${currentRoute() === nav.route ? 'active' : ''} ${focusId() === `nav-${nav.route}` ? 'focused' : ''}`}
                 onClick={() => setCurrentRoute(nav.route)}
               >
                 {nav.label}
@@ -171,13 +199,17 @@ export const App: Component = () => {
               onComplete={() => setCurrentRoute('live')}
               onAddM3u={(url) => {
                 engine.syncM3uSource('Ma Source', url);
+                setHasSources(true);
                 setCurrentRoute('live');
               }}
             />
           </Match>
 
           <Match when={currentRoute() === 'live'}>
-            <LiveView onPlayChannel={handlePlayItem} />
+            <LiveView
+              onPlayChannel={handlePlayItem}
+              onAddSource={() => setCurrentRoute('onboarding')}
+            />
           </Match>
 
           <Match when={currentRoute() === 'guide'}>

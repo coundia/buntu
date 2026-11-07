@@ -4,6 +4,8 @@ import legacy from '@vitejs/plugin-legacy';
 import path from 'path';
 
 export default defineConfig({
+  // Relative paths: the TV opens the app from its package folder (file://), not from a web server root.
+  base: './',
   plugins: [
     solidPlugin(),
     legacy({
@@ -32,7 +34,8 @@ export default defineConfig({
     },
   },
   worker: {
-    format: 'es',
+    // Classic (iife) worker: a TV on Tizen 5 or 6 cannot start a module worker.
+    format: 'iife',
   },
   server: {
     port: 3000,

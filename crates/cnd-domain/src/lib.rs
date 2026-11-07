@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod m3u;
 pub mod normalizer;
+pub mod pairing;
 pub mod profiles;
 pub mod recommend;
 pub mod schema;

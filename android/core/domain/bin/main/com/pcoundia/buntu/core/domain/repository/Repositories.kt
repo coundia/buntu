@@ -40,6 +40,12 @@ interface SourcesRepository {
     suspend fun syncXtreamSource(sourceId: Long, password: String): SyncReport
     suspend fun syncSourceEpg(sourceId: Long, password: String?): Int
     suspend fun importShareJson(decryptedJson: String): Int
+    suspend fun exportShareJson(
+        sourceIds: Set<Long>,
+        includeCredentials: Set<Long>,
+        senderName: String,
+        validForSeconds: Int = 3600,
+    ): String
 }
 
 interface CatalogRepository {

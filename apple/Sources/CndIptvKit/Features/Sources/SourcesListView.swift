@@ -58,6 +58,9 @@ struct SourcesListView: View {
     @State private var shareImport: ShareImportModel?
     @State private var nearbySend: NearbySendModel?
     @State private var nearbyReceive: NearbyReceiveModel?
+    #if !os(tvOS)
+    @State private var pairToTV: PairToTVModel?
+    #endif
 
     private var visibleSources: [IptvSourceRecord] {
         SourceFilter.apply(filter, query: query, to: sources)
@@ -107,6 +110,10 @@ struct SourcesListView: View {
                     Button("Partager des sources…", systemImage: "square.and.arrow.up") { startSharing() }
                         .disabled(sources.isEmpty)
                     Button("Recevoir depuis un autre appareil…", systemImage: "antenna.radiowaves.left.and.right") { startNearbyReceive() }
+                    #if !os(tvOS)
+                    Button("Envoyer vers une TV (QR code)…", systemImage: "qrcode.viewfinder") { startPairToTV() }
+                        .disabled(sources.isEmpty)
+                    #endif
                 } label: {
                     Label("Ajouter", systemImage: "plus")
                 }
@@ -115,6 +122,7 @@ struct SourcesListView: View {
         .onAppear { consumePendingAction() }
         .onChange(of: model.pendingAction) { _, _ in consumePendingAction() }
         .onChange(of: model.incomingShare) { _, _ in consumePendingAction() }
+        .onChange(of: model.incomingPairLink) { _, _ in consumePendingAction() }
         .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) {
             if let sharing { ShareSourcesSheet(model: sharing) { self.sharing = nil } }
         }
@@ -124,6 +132,11 @@ struct SourcesListView: View {
         .sheet(isPresented: Binding(get: { nearbySend != nil }, set: { if !$0 { nearbySend = nil } })) {
             if let nearbySend { SendToDeviceSheet(model: nearbySend) { self.nearbySend = nil } }
         }
+        #if !os(tvOS)
+        .sheet(isPresented: Binding(get: { pairToTV != nil }, set: { if !$0 { pairToTV = nil } })) {
+            if let pairToTV { PairToTVSheet(model: pairToTV) { self.pairToTV = nil } }
+        }
+        #endif
         .sheet(isPresented: Binding(get: { nearbyReceive != nil }, set: { if !$0 { nearbyReceive = nil } })) {
             if let nearbyReceive { ReceiveFromDeviceSheet(model: nearbyReceive) { self.nearbyReceive = nil } }
         }
@@ -163,6 +176,12 @@ struct SourcesListView: View {
     }
 
     private func consumePendingAction() {
+        if let link = model.incomingPairLink {
+            model.incomingPairLink = nil
+            #if !os(tvOS)
+            startPairToTV(link: link)
+            #endif
+        }
         if let incoming = model.incomingShare {
             model.incomingShare = nil
             startShareImport(incoming)
@@ -179,6 +198,16 @@ struct SourcesListView: View {
     private func startSharing(preselected: Set<Int64> = []) {
         sharing = ShareSourcesModel(engine: engine, keychain: model.keychain, sources: sources, preselected: preselected)
     }
+
+    #if !os(tvOS)
+    /// Scan (or open from a link) the QR code a TV shows, then send it the chosen accounts.
+    private func startPairToTV(link: String? = nil) {
+        let choices = ShareSourcesModel(engine: engine, keychain: model.keychain, sources: sources, preselected: Set(sources.map(\.id)))
+        let pairing = PairToTVModel(share: choices)
+        if let link { pairing.accept(scanned: link) }
+        pairToTV = pairing
+    }
+    #endif
 
     private func startNearbySend() {
         let choices = ShareSourcesModel(engine: engine, keychain: model.keychain, sources: sources, preselected: Set(sources.map(\.id)))

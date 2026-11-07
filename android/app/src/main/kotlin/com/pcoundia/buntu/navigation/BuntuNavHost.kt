@@ -142,7 +142,16 @@ fun BuntuNavHost(
             )
         }
 
-        composable(BuntuRoutes.SOURCES) {
+        composable(
+            route = BuntuRoutes.SOURCES_PATTERN,
+            arguments = listOf(
+                navArgument("pairLink") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) {
             SourcesRoute()
         }
 

@@ -2,15 +2,8 @@
 <widget xmlns="http://www.w3.org/ns/widgets" 
         xmlns:tizen="http://tizen.org/ns/widgets" 
         id="http://cnd.iptv.tizen/CndIptv" 
-        version="1.0.0" 
-        viewmodes="fullscreen">
-    <tizen:application id="cnd001iptv.CndIptv" 
-                       exec="index.html" 
-                       entry="index.html" 
-                       type="web" 
-                       package="cnd001iptv" 
-                       auto-restart="false" 
-                       ambient-support="disable"/>
+        version="1.0.0">
+    <tizen:application id="cnd001iptv.CndIptv" package="cnd001iptv" required_version="3.0"/>
     <tizen:profile name="tv-samsung"/>
     <name>CND IPTV</name>
     <description>CND IPTV Samsung Smart TV Player</description>

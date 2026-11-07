@@ -4,7 +4,7 @@
  * Implements:
  * 1. Samsung TV Remote special keys registration via tizen.tvinputdevice.registerKey.
  * 2. Unified key event normalization for D-Pad, OK, Back, Ch+/Ch-, Media, Numbers, and Color buttons.
- * 3. Spatial focus event dispatching.
+ * 3. Spatial focus event dispatching and Tizen IME (virtual keyboard) key handling.
  */
 
 export type RemoteKey =
@@ -56,17 +56,24 @@ export class RemoteKeyHandler {
     if (this.isInitialized) return;
     this.isInitialized = true;
 
+    try {
+      window.focus();
+    } catch {
+      // Ignore in test environments
+    }
     this.registerTizenHardwareKeys();
-    window.addEventListener('keydown', this.handleKeyDown);
+    window.addEventListener('keydown', this.handleKeyDown, true);
   }
 
   public destroy() {
-    window.removeEventListener('keydown', this.handleKeyDown);
+    window.removeEventListener('keydown', this.handleKeyDown, true);
     this.isInitialized = false;
   }
 
   public addListener(handler: KeyHandler): () => void {
-    this.handlers.push(handler);
+    if (!this.handlers.includes(handler)) {
+      this.handlers.push(handler);
+    }
     return () => {
       this.handlers = this.handlers.filter((h) => h !== handler);
     };
@@ -103,8 +110,40 @@ export class RemoteKeyHandler {
   }
 
   private handleKeyDown = (event: KeyboardEvent) => {
+    const active = document.activeElement;
+    const isInputFocused = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+
+    // Samsung Tizen virtual keyboard Done (65376) / Cancel (65385)
+    if (event.keyCode === 65376 || event.keyCode === 65385) {
+      if (isInputFocused && typeof (active as HTMLElement).blur === 'function') {
+        (active as HTMLElement).blur();
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     const key = this.normalizeKey(event);
     if (!key) return;
+
+    // When an input field has active DOM focus:
+    // - BACK exits the input field (closes virtual keyboard) without leaving the screen
+    // - UP / DOWN blurs the input field and moves spatial focus to the adjacent row
+    // - LEFT / RIGHT / numbers are left to the input cursor while editing
+    if (isInputFocused) {
+      if (key === 'BACK') {
+        (active as HTMLElement).blur();
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (key === 'LEFT' || key === 'RIGHT' || key.startsWith('NUM_')) {
+        return;
+      }
+      if (key === 'UP' || key === 'DOWN') {
+        (active as HTMLElement).blur();
+      }
+    }
 
     // Dispatch from top/latest handler to first
     for (let i = this.handlers.length - 1; i >= 0; i--) {
@@ -118,7 +157,7 @@ export class RemoteKeyHandler {
   };
 
   public normalizeKey(event: KeyboardEvent): RemoteKey | null {
-    const code = event.keyCode;
+    const code = event.keyCode || event.which;
     const keyName = event.key;
 
     // D-Pad & Action
@@ -129,7 +168,9 @@ export class RemoteKeyHandler {
     if (code === 13 || keyName === 'Enter') return 'ENTER';
 
     // Back / Return
-    if (code === 10009 || code === 27 || keyName === 'Escape' || keyName === 'GoBack') return 'BACK';
+    if (code === 10009 || code === 27 || keyName === 'Escape' || keyName === 'GoBack' || keyName === 'XF86Back') {
+      return 'BACK';
+    }
 
     // Media
     if (code === 415 || keyName === 'MediaPlay') return 'PLAY';
@@ -141,7 +182,7 @@ export class RemoteKeyHandler {
 
     // Channels
     if (code === 427 || keyName === 'ChannelUp') return 'CHANNEL_UP';
-    if (code === 428 || keyName === 'ChannelDown') return 'CHANNEL_DOWN';
+    if (code === 428 || keyName === 'ChannelDown') return 'ChannelDown' as any === 'ChannelDown' ? 'CHANNEL_DOWN' : 'CHANNEL_DOWN';
 
     // Color buttons
     if (code === 403 || keyName === 'ColorF0Red') return 'RED';
@@ -160,4 +201,3 @@ export class RemoteKeyHandler {
     return null;
   }
 }
-

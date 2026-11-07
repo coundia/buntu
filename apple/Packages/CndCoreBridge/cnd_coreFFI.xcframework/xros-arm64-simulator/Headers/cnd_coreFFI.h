@@ -1053,6 +1053,36 @@ RustBuffer uniffi_cnd_core_fn_func_cnd_core_version(RustCallStatus *_Nonnull out
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_PAIRING_CREATE_OFFER
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_PAIRING_CREATE_OFFER
+RustBuffer uniffi_cnd_core_fn_func_pairing_create_offer(RustBuffer entropy, RustBuffer tv_name, RustBuffer transport, RustBuffer host, uint16_t port, int64_t now, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_PAIRING_OPEN
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_PAIRING_OPEN
+RustBuffer uniffi_cnd_core_fn_func_pairing_open(RustBuffer state, RustBuffer message, int64_t now, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_PAIRING_OPEN_REPLY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_PAIRING_OPEN_REPLY
+RustBuffer uniffi_cnd_core_fn_func_pairing_open_reply(RustBuffer reply_key, RustBuffer session, RustBuffer reply, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_PAIRING_PARSE_LINK
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_PAIRING_PARSE_LINK
+RustBuffer uniffi_cnd_core_fn_func_pairing_parse_link(RustBuffer link, int64_t now, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_PAIRING_SEAL
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_PAIRING_SEAL
+RustBuffer uniffi_cnd_core_fn_func_pairing_seal(RustBuffer link, RustBuffer entropy, RustBuffer share_json, RustBuffer phone_name, int64_t now, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_PAIRING_SEAL_REPLY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_PAIRING_SEAL_REPLY
+RustBuffer uniffi_cnd_core_fn_func_pairing_seal_reply(RustBuffer reply_key, RustBuffer session, RustBuffer entropy, RustBuffer result, uint32_t count, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_FFI_CND_CORE_RUSTBUFFER_ALLOC
 #define UNIFFI_FFIDEF_FFI_CND_CORE_RUSTBUFFER_ALLOC
 RustBuffer ffi_cnd_core_rustbuffer_alloc(uint64_t size, RustCallStatus *_Nonnull out_status
@@ -1336,6 +1366,42 @@ void ffi_cnd_core_rust_future_complete_void(uint64_t handle, RustCallStatus *_No
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_CND_CORE_VERSION
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_CND_CORE_VERSION
 uint16_t uniffi_cnd_core_checksum_func_cnd_core_version(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_CREATE_OFFER
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_CREATE_OFFER
+uint16_t uniffi_cnd_core_checksum_func_pairing_create_offer(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_OPEN
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_OPEN
+uint16_t uniffi_cnd_core_checksum_func_pairing_open(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_OPEN_REPLY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_OPEN_REPLY
+uint16_t uniffi_cnd_core_checksum_func_pairing_open_reply(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_PARSE_LINK
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_PARSE_LINK
+uint16_t uniffi_cnd_core_checksum_func_pairing_parse_link(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_SEAL
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_SEAL
+uint16_t uniffi_cnd_core_checksum_func_pairing_seal(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_SEAL_REPLY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_SEAL_REPLY
+uint16_t uniffi_cnd_core_checksum_func_pairing_seal_reply(void
     
 );
 #endif
