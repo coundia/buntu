@@ -1987,3 +1987,557 @@ html, body {
 
 
 
+
+/* ==============================================================================
+   MINIMALIST TV DESIGN SYSTEM (Reference Image UI)
+   ============================================================================== */
+
+.tv-app-shell {
+  width: 1920px;
+  height: 1080px;
+  position: relative;
+  background-color: #0A0D14;
+  background-image: radial-gradient(ellipse at 85% 15%, rgba(25, 34, 52, 0.45) 0%, #0A0D14 70%);
+  color: #FFFFFF;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Left Vertical Navigation Rail */
+.tv-nav-rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 76px;
+  background: rgba(12, 15, 23, 0.95);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 0;
+  z-index: 100;
+  box-sizing: border-box;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.tv-rail-top,
+.tv-rail-mid,
+.tv-rail-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.tv-rail-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.55);
+  background: transparent;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+
+.tv-rail-btn.active {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.tv-rail-btn.focused {
+  color: #000000 !important;
+  background: var(--buntu-gold) !important;
+  border-color: #FFFFFF !important;
+  transform: scale(1.18);
+  box-shadow: 0 0 20px rgba(245, 166, 35, 0.7);
+  z-index: 10;
+}
+
+.tv-rail-btn.tv-rail-exit.focused {
+  background: var(--buntu-danger) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 0 20px rgba(255, 59, 48, 0.7);
+}
+
+/* Top Right Status Bar (Clock, Weather, Search, Avatar) */
+.tv-top-status-bar {
+  position: absolute;
+  top: 24px;
+  right: 48px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  z-index: 80;
+}
+
+.tv-status-clock {
+  font-size: 22px;
+  font-weight: 700;
+  color: #FFFFFF;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+
+.tv-status-weather {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.tv-status-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #FFFFFF;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tv-status-btn.focused {
+  background: var(--buntu-gold);
+  color: #000;
+  transform: scale(1.12);
+}
+
+.tv-status-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #E50914 0%, #B81D24 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 800;
+  color: #FFFFFF;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 12px rgba(229, 9, 20, 0.35);
+}
+
+/* Minimalist Screen Main Container */
+.tv-screen-content {
+  position: absolute;
+  left: 76px;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tv-minimal-3col {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  padding: 24px 40px 24px 24px;
+  box-sizing: border-box;
+  gap: 22px;
+  overflow: hidden;
+}
+
+/* Column 1: Categories Sidebar */
+.tv-min-col-categories {
+  width: 290px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tv-min-col-title {
+  font-size: 28px;
+  font-weight: 800;
+  color: #FFFFFF;
+  margin: 0 0 16px 4px;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tv-min-cat-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 6px;
+  box-sizing: border-box;
+}
+
+.tv-min-cat-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: transparent;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.tv-min-cat-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.tv-min-cat-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tv-min-cat-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv-min-cat-count {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 2px;
+}
+
+.tv-min-cat-item.active .tv-min-cat-badge {
+  background: rgba(245, 166, 35, 0.18);
+  border-color: var(--buntu-gold);
+  box-shadow: 0 0 14px rgba(245, 166, 35, 0.4);
+}
+
+.tv-min-cat-item.active .tv-min-cat-name {
+  color: #FFFFFF;
+  font-weight: 800;
+}
+
+.tv-min-cat-item.focused {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: var(--buntu-gold) !important;
+  transform: translateX(8px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.tv-min-cat-item.focused .tv-min-cat-name {
+  color: #FFFFFF !important;
+}
+
+/* Column 2: Cards List */
+.tv-min-col-cards {
+  width: 480px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tv-min-cards-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 8px 30px 4px;
+  box-sizing: border-box;
+}
+
+.tv-min-media-card {
+  display: flex;
+  align-items: center;
+  min-height: 106px;
+  height: 106px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: rgba(21, 25, 36, 0.85);
+  border: 2px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.tv-min-card-thumb {
+  width: 76px;
+  height: 76px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  margin-right: 16px;
+}
+
+.tv-min-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.tv-min-card-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.tv-min-card-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+
+.tv-min-card-views {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 4px 0 6px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv-min-card-tags {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.tv-min-tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tv-min-card-fav {
+  font-size: 20px;
+  color: #FFA000;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+.tv-min-media-card.active {
+  background: rgba(28, 34, 50, 0.9);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.tv-min-media-card.focused {
+  background: rgba(38, 46, 68, 0.95) !important;
+  border-color: rgba(255, 255, 255, 0.6) !important;
+  border-left: 6px solid #FFFFFF !important;
+  transform: scale(1.02);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), 0 0 16px rgba(255, 255, 255, 0.15);
+  z-index: 10;
+}
+
+/* Column 3: Hero Panel (Video Viewport + Now Playing + Synopsis + Timeline) */
+.tv-min-col-hero {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: 56px;
+  box-sizing: border-box;
+}
+
+.tv-min-hero-viewport {
+  width: 100%;
+  height: 480px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8);
+  box-sizing: border-box;
+}
+
+.tv-min-hero-info {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tv-min-now-label {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.tv-min-hero-title {
+  font-size: 30px;
+  font-weight: 800;
+  color: #FFFFFF;
+  line-height: 1.2;
+  margin: 0;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv-min-hero-desc {
+  font-size: 15px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.7);
+  max-height: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.tv-min-hero-progress {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.tv-min-time {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.tv-min-track {
+  flex: 1;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  position: relative;
+}
+
+.tv-min-fill {
+  height: 100%;
+  background: #FFFFFF;
+  border-radius: 3px;
+  position: relative;
+}
+
+.tv-min-knob {
+  position: absolute;
+  right: -5px;
+  top: -4px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+}
+
+.tv-min-hero-actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.tv-min-btn-play {
+  padding: 10px 24px;
+  border-radius: 24px;
+  background: #FFFFFF;
+  color: #000000;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tv-min-btn-play.focused {
+  background: var(--buntu-gold);
+  color: #000;
+  border-color: #FFFFFF;
+  transform: scale(1.08);
+  box-shadow: 0 0 18px rgba(245, 166, 35, 0.6);
+}
+
+.tv-min-btn-secondary {
+  padding: 10px 20px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tv-min-btn-secondary.focused {
+  background: var(--buntu-gold);
+  color: #000;
+  border-color: #FFFFFF;
+  transform: scale(1.08);
+  box-shadow: 0 0 18px rgba(245, 166, 35, 0.6);
+}

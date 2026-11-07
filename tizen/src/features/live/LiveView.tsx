@@ -6,6 +6,7 @@ import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
 import { TvSearchBar } from '../../ui/components/TvSearchBar';
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
+import { getCategoryMeta, formatViewCount } from '../../core/utils/categoryMeta';
 import { announce } from '../../ui/design/a11y';
 
 export interface LiveViewProps {
@@ -66,7 +67,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
   onMount(async () => {
     // 1. Configure AVPlay display area for the mini player window on Samsung TV
-    player.setDisplayArea({ x: 1084, y: 192, width: 756, height: 425 });
+    player.setDisplayArea({ x: 918, y: 84, width: 880, height: 495 });
     document.querySelector('.app-root')?.classList.add('preview-mode');
 
     // 2. Load categories & initial channels
@@ -337,36 +338,21 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     return `${sStr} - ${eStr}`;
   };
 
+  const formatTimestamp = (ts?: number, fallback = '00:00:00') => {
+    if (!ts) return fallback;
+    const d = new Date(ts * 1000);
+    const h = String(d.getHours()).padStart(2, '0');
+    const m = String(d.getMinutes()).padStart(2, '0');
+    const s = String(d.getSeconds()).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  };
+
   return (
-    <div class="tv-container">
-      {/* Header with Title, In-Screen Search Bar & Counter */}
-      <div class="tv-live-header">
-        <h1 class="tv-live-title">
-          <span>Direct TV</span>
-        </h1>
-
-        <TvSearchBar
-          id="live-search-input"
-          placeholder="🔍 Rechercher une chaîne ou numéro..."
-          value={searchQuery()}
-          onInput={handleSearch}
-          onClear={handleClearSearch}
-          focusId={focusId()}
-        />
-
-        <div class="tv-live-badge">
-          <span>
-            {isSearchMode()
-              ? `${searchResults().length} résultats`
-              : `${scroller.items().length} / ${scroller.total()} chaînes`}
-          </span>
-        </div>
-      </div>
-
+    <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
       <Show
         when={activeChannels().length > 0 || categories().length > 0 || isSearchMode()}
         fallback={
-          <div style={{ flex: 1, display: "flex", "flex-direction": "column", "align-items": "center", "justify-content": "center", padding: "40px" }}>
+          <div style={{ flex: 1, display: "flex", "flex-direction": "column", "align-items": "center", "justify-content": "center", height: "100%", padding: "40px" }}>
             <p style={{ "font-size": "24px", color: "var(--buntu-text-muted)", "margin-bottom": "24px" }}>
               Aucune chaîne en direct disponible. Ajoutez un abonnement IPTV pour commencer.
             </p>
@@ -381,275 +367,222 @@ export const LiveView: Component<LiveViewProps> = (props) => {
           </div>
         }
       >
-        <div class={`tv-live-layout ${isSearchMode() ? 'search-active' : ''}`}>
-          {/* Column 1: Categories Sidebar (Hidden in search mode) */}
-          <Show when={!isSearchMode()}>
-            <div class="tv-live-sidebar" role="tablist" aria-label="Catégories de chaînes">
-              <For each={categories()}>
-                {(cat, idx) => (
-                  <div
-                    id={`cat-${idx()}`}
-                    role="tab"
-                    tabindex="-1"
-                    aria-selected={selectedCategory() === cat}
-                    aria-label={`Catégorie ${cat}`}
-                    class={`tv-category-item ${selectedCategory() === cat ? 'active' : ''} ${focusId() === `cat-${idx()}` ? 'focused' : ''}`}
-                    onClick={() => void handleSelectCategory(cat)}
-                  >
-                    {cat}
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
+        <div class="tv-minimal-3col">
+          {/* Column 1: Categories Sidebar */}
+          <div class="tv-min-col-categories" role="tablist" aria-label="Catégories de chaînes">
+            <h1 class="tv-min-col-title">
+              <span>Live TV's</span>
+            </h1>
 
-          {/* Column 2: Channels List with Infinite Scroll */}
-          <div
-            class="tv-live-channels"
-            role="list"
-            aria-label="Liste des chaînes en direct"
-            onScroll={handleChannelsScroll}
-          >
-            <Show
-              when={activeChannels().length > 0}
-              fallback={
-                <div style={{ padding: "48px 24px", "text-align": "center", color: "var(--buntu-text-muted)", "font-size": "20px" }}>
-                  {isSearchMode()
-                    ? `Aucune chaîne ne correspond à "${searchQuery()}".`
-                    : selectedCategory().includes('Favoris')
-                    ? 'Aucune chaîne dans vos favoris. Appuyez sur ☆ Favori pour ajouter vos chaînes préférées !'
-                    : 'Aucune chaîne dans cette catégorie.'}
-                </div>
-              }
-            >
-              <For each={activeChannels()}>
-                {(ch) => {
-                  const chName = ch.name_clean && ch.name_clean !== ch.name
-                    ? ch.name_clean
-                    : cleanMediaTitle(ch.name).clean;
-                  const isSelected = () => activePreviewChannel()?.id === ch.id;
+            <div style={{ "margin-bottom": "14px" }}>
+              <TvSearchBar
+                id="live-search-input"
+                placeholder="Rechercher chaîne..."
+                value={searchQuery()}
+                onInput={handleSearch}
+                onClear={handleClearSearch}
+                focusId={focusId()}
+              />
+            </div>
+
+            <div class="tv-min-cat-list">
+              <For each={categories()}>
+                {(cat, idx) => {
+                  const meta = getCategoryMeta(cat);
+                  const isSelected = () => selectedCategory() === cat;
                   return (
                     <div
-                      id={`channel-${ch.id}`}
-                      role="button"
+                      id={`cat-${idx()}`}
+                      role="tab"
                       tabindex="-1"
-                      aria-label={`Chaîne numéro ${ch.chno || ''} : ${chName}, catégorie ${ch.group_title || 'Général'}.`}
-                      class={`tv-channel-row ${focusId() === `channel-${ch.id}` ? 'focused' : ''} ${isSelected() ? 'active' : ''}`}
-                      onClick={() => handleChannelSelect(ch)}
+                      aria-selected={isSelected()}
+                      aria-label={`Catégorie ${cat}`}
+                      class={`tv-min-cat-item ${isSelected() ? 'active' : ''} ${focusId() === `cat-${idx()}` ? 'focused' : ''}`}
+                      onClick={() => void handleSelectCategory(cat)}
                     >
-                      {/* Channel Number Badge */}
-                      <div class="tv-channel-num">
-                        {ch.chno || '•'}
-                      </div>
-
-                      {/* Channel Logo / Fallback */}
-                      <div class="tv-channel-logo">
-                        <Show
-                          when={ch.logo_url}
-                          fallback={<span class="tv-channel-logo-fallback">📺</span>}
-                        >
-                          <img
-                            src={ch.logo_url}
-                            alt=""
-                            loading="lazy"
-                            referrerpolicy="no-referrer"
-                            crossOrigin="anonymous"
-                            onError={(e) => {
-                              const target = e.currentTarget as HTMLElement;
-                              target.style.display = 'none';
-                              if (target.parentElement) {
-                                const fallback = document.createElement('span');
-                                fallback.className = 'tv-channel-logo-fallback';
-                                fallback.textContent = '📺';
-                                target.parentElement.appendChild(fallback);
-                              }
-                            }}
-                          />
-                        </Show>
-                      </div>
-
-                      {/* Channel Name & Category Subtitle */}
-                      <div class="tv-channel-info">
-                        <div class="tv-channel-name">{chName}</div>
-                        <div class="tv-channel-meta">
-                          {ch.group_title || 'Général'}
+                      <div class="tv-min-cat-badge">{meta.icon}</div>
+                      <div class="tv-min-cat-info">
+                        <div class="tv-min-cat-name">{cat}</div>
+                        <div class="tv-min-cat-count">
+                          {isSelected() ? `${scroller.total()} Chaînes` : 'Chaînes'}
                         </div>
-                      </div>
-
-                      {/* Channel Badges & Action Pill */}
-                      <div class="tv-channel-actions">
-                        <Show when={ch.catchup_days}>
-                          <div class="tv-channel-catchup">
-                            Replay {ch.catchup_days}j
-                          </div>
-                        </Show>
-
-                        <Show when={focusId() === `channel-${ch.id}`}>
-                          <div class="tv-watch-pill">
-                            <span>▶</span>
-                            <span>REGARDER</span>
-                          </div>
-                        </Show>
                       </div>
                     </div>
                   );
                 }}
               </For>
-            </Show>
-
-            {/* Infinite Scroll Loader & End Status */}
-            <Show when={!isSearchMode() && scroller.isLoading()}>
-              <div class="tv-infinite-loader">
-                <span class="tv-spinner-small" />
-                <span>Chargement des chaînes...</span>
-              </div>
-            </Show>
-
-            <Show when={!isSearchMode() && !scroller.hasMore() && scroller.items().length > 0}>
-              <div class="tv-infinite-end">
-                • Fin de la catégorie ({scroller.total()} chaînes) •
-              </div>
-            </Show>
+            </div>
           </div>
 
-          {/* Column 3: Mini Player Preview on the Right */}
-          <div class="tv-live-preview" role="region" aria-label="Aperçu et mini lecteur de la chaîne">
-            <div class="tv-mini-player-card">
-              {/* 16:9 Video Viewport */}
-              <div id="tv-mini-viewport" class="tv-live-preview-viewport">
-                {/* Real TV hardware AVPlay cutout / Web Mock */}
-                <Show
-                  when={!(window as any).webapis?.avplay}
-                  fallback={
-                    <div class="tv-mini-tv-overlay">
-                      <div class="tv-mini-live-tag">
-                        <span class="tv-live-pulse-dot" />
-                        <span>DIRECT</span>
+          {/* Column 2: Cards List with Infinite Scroll */}
+          <div
+            class="tv-min-col-cards"
+            role="list"
+            aria-label="Liste des chaînes"
+            onScroll={handleChannelsScroll}
+          >
+            <div class="tv-min-cards-scroll">
+              <Show
+                when={activeChannels().length > 0}
+                fallback={
+                  <div style={{ padding: "48px 20px", "text-align": "center", color: "var(--buntu-text-muted)", "font-size": "18px" }}>
+                    {isSearchMode()
+                      ? `Aucune chaîne ne correspond à "${searchQuery()}".`
+                      : selectedCategory().includes('Favoris')
+                      ? 'Aucune chaîne dans vos favoris. Appuyez sur ☆ Favori pour ajouter vos chaînes préférées !'
+                      : 'Aucune chaîne dans cette catégorie.'}
+                  </div>
+                }
+              >
+                <For each={activeChannels()}>
+                  {(ch) => {
+                    const chName = ch.name_clean && ch.name_clean !== ch.name
+                      ? ch.name_clean
+                      : cleanMediaTitle(ch.name).clean;
+                    const isSelected = () => activePreviewChannel()?.id === ch.id;
+                    return (
+                      <div
+                        id={`channel-${ch.id}`}
+                        role="button"
+                        tabindex="-1"
+                        aria-label={`Chaîne ${chName}`}
+                        class={`tv-min-media-card ${focusId() === `channel-${ch.id}` ? 'focused' : ''} ${isSelected() ? 'active' : ''}`}
+                        onClick={() => handleChannelSelect(ch)}
+                      >
+                        <div class="tv-min-card-thumb">
+                          <Show
+                            when={ch.logo_url}
+                            fallback={<span style={{ "font-size": "32px" }}>📺</span>}
+                          >
+                            <img
+                              src={ch.logo_url}
+                              alt=""
+                              loading="lazy"
+                              referrerpolicy="no-referrer"
+                              crossOrigin="anonymous"
+                              onError={(e) => {
+                                const target = e.currentTarget as HTMLElement;
+                                target.style.display = 'none';
+                                if (target.parentElement) {
+                                  target.parentElement.innerHTML = '<span style="font-size:32px;">📺</span>';
+                                }
+                              }}
+                            />
+                          </Show>
+                        </div>
+
+                        <div class="tv-min-card-meta">
+                          <div class="tv-min-card-title">{chName}</div>
+                          <div class="tv-min-card-views">{formatViewCount(ch.id)}</div>
+                          <div class="tv-min-card-tags">
+                            <span class="tv-min-tag">HD</span>
+                            <Show when={ch.tvg_id}><span class="tv-min-tag">EPG</span></Show>
+                            <Show when={ch.catchup_days}><span class="tv-min-tag">REPLAY</span></Show>
+                          </div>
+                        </div>
+
+                        <Show when={ch.is_favorite === 1}>
+                          <div class="tv-min-card-fav">★</div>
+                        </Show>
                       </div>
-                      <div class="tv-mini-hd-badge">1080p FHD</div>
-                    </div>
-                  }
-                >
-                  {/* Browser / Mock Preview Mode */}
-                  <div class="tv-mini-mock-screen">
+                    );
+                  }}
+                </For>
+              </Show>
+
+              {/* Infinite Scroll Loader */}
+              <Show when={!isSearchMode() && scroller.isLoading()}>
+                <div style={{ "text-align": "center", padding: "16px", color: "var(--buntu-text-muted)" }}>
+                  Chargement...
+                </div>
+              </Show>
+            </div>
+          </div>
+
+          {/* Column 3: Hero Panel (16:9 Viewport + Now Playing + Synopsis + Timeline + Actions) */}
+          <div class="tv-min-col-hero" role="region" aria-label="Aperçu et mini lecteur">
+            <div id="tv-mini-viewport" class="tv-min-hero-viewport">
+              {/* Hardware AVPlay or Web Mock */}
+              <Show
+                when={!(window as any).webapis?.avplay}
+                fallback={
+                  <div class="tv-mini-tv-overlay">
                     <div class="tv-mini-live-tag">
                       <span class="tv-live-pulse-dot" />
                       <span>DIRECT</span>
                     </div>
                     <div class="tv-mini-hd-badge">1080p FHD</div>
-
-                    {/* Centered Channel Icon / Art */}
-                    <div class="tv-mini-mock-art">
-                      <Show
-                        when={activePreviewChannel()?.logo_url}
-                        fallback={<span style={{ "font-size": "48px" }}>📺</span>}
-                      >
-                        <img
-                          src={activePreviewChannel()!.logo_url}
-                          alt=""
-                          referrerpolicy="no-referrer"
-                          crossOrigin="anonymous"
-                          style={{ "max-width": "80px", "max-height": "80px", "object-fit": "contain" }}
-                        />
-                      </Show>
-                    </div>
-
-                    {/* Equalizer Soundwave Animation */}
-                    <div class="tv-mini-equalizer">
-                      <span class="eq-bar eq-1" />
-                      <span class="eq-bar eq-2" />
-                      <span class="eq-bar eq-3" />
-                      <span class="eq-bar eq-4" />
-                      <span class="eq-bar eq-5" />
-                    </div>
-
-                    <div class="tv-mini-mock-title">
-                      {previewTitle()}
-                    </div>
                   </div>
-                </Show>
+                }
+              >
+                <div class="tv-mini-mock-screen">
+                  <div class="tv-mini-live-tag">
+                    <span class="tv-live-pulse-dot" />
+                    <span>DIRECT</span>
+                  </div>
+                  <div class="tv-mini-hd-badge">1080p FHD</div>
 
-                {/* Quick Play / Fullscreen overlay button */}
-                <button
-                  id="btn-mini-fullscreen"
-                  role="button"
-                  tabindex="-1"
-                  aria-label={`Regarder ${previewTitle()} en plein écran`}
-                  class={`tv-mini-fs-btn ${focusId() === 'btn-mini-fullscreen' ? 'focused' : ''}`}
-                  onClick={handleFullscreen}
-                >
-                  <span>⛶</span>
-                  <span>Plein écran (OK)</span>
-                </button>
-              </div>
+                  <div class="tv-mini-mock-art">
+                    <Show
+                      when={activePreviewChannel()?.logo_url}
+                      fallback={<span style={{ "font-size": "48px" }}>📺</span>}
+                    >
+                      <img
+                        src={activePreviewChannel()!.logo_url}
+                        alt=""
+                        referrerpolicy="no-referrer"
+                        crossOrigin="anonymous"
+                        style={{ "max-width": "80px", "max-height": "80px", "object-fit": "contain" }}
+                      />
+                    </Show>
+                  </div>
 
-              {/* Channel Info Row */}
-              <div class="tv-mini-channel-row">
-                <div class="tv-channel-num" style={{ "font-size": "17px", "min-width": "58px", height: "38px" }}>
-                  {activePreviewChannel()?.chno || '•'}
+                  <div class="tv-mini-equalizer">
+                    <span class="eq-bar eq-1" />
+                    <span class="eq-bar eq-2" />
+                    <span class="eq-bar eq-3" />
+                    <span class="eq-bar eq-4" />
+                    <span class="eq-bar eq-5" />
+                  </div>
+
+                  <div class="tv-mini-mock-title">{previewTitle()}</div>
                 </div>
-                <div class="tv-mini-logo-box">
-                  <Show
-                    when={activePreviewChannel()?.logo_url}
-                    fallback={<span style={{ "font-size": "24px" }}>📺</span>}
-                  >
-                    <img
-                      src={activePreviewChannel()!.logo_url}
-                      alt=""
-                      referrerpolicy="no-referrer"
-                      crossOrigin="anonymous"
-                    />
-                  </Show>
-                </div>
-                <div class="tv-mini-name-col">
-                  <div class="tv-mini-channel-name">{previewTitle()}</div>
-                  <div class="tv-mini-channel-cat">
-                    {activePreviewChannel()?.group_title || selectedCategory() || 'Direct TV'}
+              </Show>
+            </div>
+
+            {/* Now Playing Metadata Section */}
+            <div class="tv-min-hero-info">
+              <div class="tv-min-now-label">NOW PLAYING...</div>
+              <h2 class="tv-min-hero-title">
+                {currentEpg()?.now?.title || previewTitle()}
+              </h2>
+              <p class="tv-min-hero-desc">
+                {currentEpg()?.now?.desc || (activePreviewChannel()?.group_title ? `Diffusion en continu dans le bouquet ${activePreviewChannel()!.group_title}. Flux haute définition optimisé Smart TV.` : 'Programme en cours de diffusion.')}
+              </p>
+
+              {/* Progress Bar Timeline */}
+              <div class="tv-min-hero-progress">
+                <span class="tv-min-time">
+                  {formatTimestamp(currentEpg()?.now?.start_ts, '01:52:37')}
+                </span>
+                <div class="tv-min-track">
+                  <div class="tv-min-fill" style={{ width: `${Math.max(5, progressPercent())}%` }}>
+                    <div class="tv-min-knob" />
                   </div>
                 </div>
-                <Show when={activePreviewChannel()?.catchup_days}>
-                  <div class="tv-channel-catchup" style={{ "margin-left": "auto" }}>
-                    Replay {activePreviewChannel()!.catchup_days}j
-                  </div>
-                </Show>
+                <span class="tv-min-time">
+                  {formatTimestamp(currentEpg()?.now?.end_ts, '02:10:46')}
+                </span>
               </div>
 
-              {/* EPG Widget */}
-              <div class="tv-mini-epg-box">
-                <div class="tv-mini-epg-header">
-                  <span class="tv-mini-now-tag">EN CE MOMENT</span>
-                  <span class="tv-mini-epg-time">
-                    {formatTimeRange(currentEpg()?.now?.start_ts, currentEpg()?.now?.end_ts)}
-                  </span>
-                </div>
-                <div class="tv-mini-epg-title">
-                  {currentEpg()?.now?.title || 'Programme en cours de diffusion'}
-                </div>
-
-                {/* Progress Bar */}
-                <div class="tv-mini-epg-bar">
-                  <div
-                    class="tv-mini-epg-fill"
-                    style={{ width: `${progressPercent()}%` }}
-                  />
-                </div>
-
-                <div class="tv-mini-epg-next">
-                  <span class="tv-mini-next-label">À SUIVRE :</span>
-                  <span class="tv-mini-next-title">
-                    {currentEpg()?.next?.title || 'Programme suivant'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Action Bar */}
-              <div class="tv-mini-actions-row">
+              {/* Hero Action Buttons */}
+              <div class="tv-min-hero-actions">
                 <button
                   id="btn-mini-play"
                   role="button"
                   tabindex="-1"
                   aria-label={`Lancer ${previewTitle()}`}
-                  class={`tv-btn tv-mini-action-btn ${focusId() === 'btn-mini-play' ? 'focused' : ''}`}
+                  class={`tv-min-btn-play ${focusId() === 'btn-mini-play' ? 'focused' : ''}`}
                   onClick={handleFullscreen}
                 >
                   ▶ Regarder
@@ -660,10 +593,21 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                   role="button"
                   tabindex="-1"
                   aria-label="Basculer favori"
-                  class={`tv-btn tv-mini-action-btn ${focusId() === 'btn-mini-fav' ? 'focused' : ''}`}
+                  class={`tv-min-btn-secondary ${focusId() === 'btn-mini-fav' ? 'focused' : ''}`}
                   onClick={() => void handleToggleFav()}
                 >
-                  {isFav() ? '★ Favori' : '☆ Favori'}
+                  {isFav() ? '★ Retirer Favori' : '☆ Favori'}
+                </button>
+
+                <button
+                  id="btn-mini-fullscreen"
+                  role="button"
+                  tabindex="-1"
+                  aria-label="Plein écran"
+                  class={`tv-min-btn-secondary ${focusId() === 'btn-mini-fullscreen' ? 'focused' : ''}`}
+                  onClick={handleFullscreen}
+                >
+                  ⛶ Plein écran
                 </button>
               </div>
             </div>

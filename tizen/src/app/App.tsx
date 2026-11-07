@@ -44,19 +44,20 @@ export const App: Component = () => {
   const [hasSources, setHasSources] = createSignal(true);
   const [showExitDialog, setShowExitDialog] = createSignal(false);
   const [focusId] = spatialNav.getFocusSignal();
+  const [clock, setClock] = createSignal('');
 
   let keyUnsub: (() => void) | null = null;
 
-  const NAV_ITEMS: { route: ScreenRoute; label: string }[] = [
-    { route: 'live', label: 'Direct' },
-    { route: 'guide', label: 'Guide' },
-    { route: 'movies', label: 'Films' },
-    { route: 'series', label: 'Séries' },
-    { route: 'recommendations', label: 'Pour vous' },
-    { route: 'search', label: 'Recherche' },
-    { route: 'sources', label: 'Sources' },
-    { route: 'profiles', label: 'Profils' },
-    { route: 'settings', label: 'Paramètres' },
+  const NAV_ITEMS: { route: ScreenRoute; label: string; icon: string }[] = [
+    { route: 'live', label: 'Direct', icon: '📺' },
+    { route: 'movies', label: 'Films', icon: '🎬' },
+    { route: 'series', label: 'Séries', icon: '🍿' },
+    { route: 'guide', label: 'Guide', icon: '📅' },
+    { route: 'recommendations', label: 'Pour vous', icon: '✨' },
+    { route: 'search', label: 'Recherche', icon: '🔍' },
+    { route: 'sources', label: 'Sources', icon: '📡' },
+    { route: 'profiles', label: 'Profils', icon: '👤' },
+    { route: 'settings', label: 'Paramètres', icon: '⚙️' },
   ];
 
   const openExitDialog = () => {
@@ -108,7 +109,19 @@ export const App: Component = () => {
     spatialNav.setHeader(headerItems, activeIdx);
   });
 
+  let clockTimer: any = null;
+
   onMount(async () => {
+    // Clock updater for top right status bar
+    const updateClock = () => {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      setClock(`${h}:${m}`);
+    };
+    updateClock();
+    clockTimer = setInterval(updateClock, 10000);
+
     // Initialize remote control & spatial navigation immediately (before any async work)
     RemoteKeyHandler.getInstance().init();
     spatialNav.init();
@@ -132,6 +145,7 @@ export const App: Component = () => {
   });
 
   onCleanup(() => {
+    if (clockTimer) clearInterval(clockTimer);
     if (keyUnsub) keyUnsub();
     document.removeEventListener('visibilitychange', handleVisibilityChange);
   });
@@ -242,62 +256,81 @@ export const App: Component = () => {
       class={`app-root ${currentRoute() === 'player' ? 'video-mode' : ''}`}
       style={{ width: "1920px", height: "1080px", position: "relative" }}
     >
-      {/* Top TV Navigation Bar (hidden in player) */}
+      {/* Left Vertical Navigation Rail & Top Status Bar (hidden in player) */}
       {currentRoute() !== 'player' && (
-        <header
-          style={{
-            position: "absolute",
-            top: "48px",
-            left: "80px",
-            right: "80px",
-            height: "64px",
-            display: "flex",
-            "align-items": "center",
-            "justify-content": "space-between",
-            "z-index": 40
-          }}
-          role="banner"
-        >
-          <div style={{
-            "font-size": "32px",
-            "font-weight": "800",
-            color: "var(--buntu-gold)",
-            "letter-spacing": "2px"
-          }} aria-label="CND IPTV">
-            CND IPTV
-          </div>
-
-          <nav style={{ display: "flex", gap: "12px", "align-items": "center" }} role="tablist" aria-label="Sections principales">
-            {NAV_ITEMS.map((nav) => (
+        <>
+          <aside class="tv-nav-rail" role="navigation" aria-label="Menu principal">
+            <div class="tv-rail-top">
               <button
-                id={`nav-${nav.route}`}
-                role="tab"
+                id="nav-back"
+                role="button"
                 tabindex="-1"
-                aria-selected={currentRoute() === nav.route}
-                aria-label={`Onglet ${nav.label}`}
-                class={`tv-nav-item ${currentRoute() === nav.route ? 'active' : ''} ${focusId() === `nav-${nav.route}` ? 'focused' : ''}`}
-                onClick={() => navigateTo(nav.route)}
+                aria-label="Retour"
+                class={`tv-rail-btn ${focusId() === 'nav-back' ? 'focused' : ''}`}
+                onClick={() => {
+                  if (currentRoute() !== 'live') navigateTo('live');
+                }}
               >
-                {nav.label}
+                ‹
               </button>
-            ))}
+            </div>
 
+            <nav class="tv-rail-mid" role="tablist" aria-label="Sections">
+              {NAV_ITEMS.map((nav) => (
+                <button
+                  id={`nav-${nav.route}`}
+                  role="tab"
+                  tabindex="-1"
+                  aria-selected={currentRoute() === nav.route}
+                  aria-label={nav.label}
+                  class={`tv-rail-btn ${currentRoute() === nav.route ? 'active' : ''} ${focusId() === `nav-${nav.route}` ? 'focused' : ''}`}
+                  onClick={() => navigateTo(nav.route)}
+                >
+                  {nav.icon}
+                </button>
+              ))}
+            </nav>
+
+            <div class="tv-rail-bottom">
+              <button
+                id="nav-exit"
+                role="button"
+                tabindex="-1"
+                aria-label="Quitter l'application"
+                class={`tv-rail-btn tv-rail-exit ${focusId() === 'nav-exit' ? 'focused' : ''}`}
+                onClick={openExitDialog}
+              >
+                ⏻
+              </button>
+            </div>
+          </aside>
+
+          {/* Top Right Status Bar (Clock, Weather, Search, Avatar) */}
+          <div class="tv-top-status-bar" role="region" aria-label="Statut système">
+            <div class="tv-status-clock">{clock()}</div>
+            <div class="tv-status-weather">⛅ 24°</div>
             <button
-              id="nav-exit"
+              id="btn-status-search"
               role="button"
               tabindex="-1"
-              aria-label="Fermer et quitter l'application CND IPTV"
-              class={`tv-nav-item tv-nav-exit ${focusId() === 'nav-exit' ? 'focused' : ''}`}
-              onClick={openExitDialog}
+              aria-label="Recherche rapide"
+              class={`tv-status-btn ${focusId() === 'btn-status-search' ? 'focused' : ''}`}
+              onClick={() => navigateTo('search')}
             >
-              ⏻ Quitter
+              🔍
             </button>
-          </nav>
-        </header>
+            <div
+              class="tv-status-avatar"
+              aria-label="Profil utilisateur"
+            >
+              👤
+            </div>
+          </div>
+        </>
       )}
 
       {/* Main Content Router */}
-      <main style={{ "padding-top": currentRoute() !== 'player' ? "120px" : "0", width: "100%", height: "100%", "box-sizing": "border-box", overflow: "hidden" }} role="main">
+      <main class="tv-screen-content" role="main">
         <Switch>
           <Match when={currentRoute() === 'onboarding'}>
             <OnboardingView
