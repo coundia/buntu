@@ -14,6 +14,18 @@
   --tv-safe-pad-h: 80px;
 }
 
+/* Universal Smart TV Scrollbar suppression */
+*, *::before, *::after {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+*::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+  background: transparent !important;
+}
+
 html, body {
   background-color: transparent !important;
   background: transparent !important;
@@ -752,6 +764,468 @@ html, body {
   align-items: center;
   gap: 6px;
   white-space: nowrap;
+}
+
+/* ==========================================================================
+   Horizontal Category Tabs (Movies & Series)
+   ========================================================================== */
+
+.tv-category-tabs {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 0 10px 0;
+  margin-left: 28px;
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.tv-category-pill {
+  padding: 10px 22px;
+  margin-right: 12px;
+  border-radius: 20px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--buntu-text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.tv-category-pill.active {
+  color: #000000;
+  background: var(--buntu-gold);
+  border-color: var(--buntu-gold);
+  font-weight: 800;
+}
+
+.tv-category-pill.focused {
+  color: #FFFFFF;
+  background: rgba(245, 166, 35, 0.22);
+  border-color: var(--buntu-gold);
+  box-shadow: 0 0 16px rgba(245, 166, 35, 0.5);
+  transform: scale(1.05);
+}
+
+.tv-category-pill.active.focused {
+  background: var(--buntu-gold) !important;
+  color: #000000 !important;
+  box-shadow: 0 0 24px rgba(245, 166, 35, 0.65) !important;
+  transform: scale(1.08) !important;
+}
+
+/* ==========================================================================
+   Movie & Series Poster Grid (5-Column Pixel-Perfect Layout)
+   ========================================================================== */
+
+.tv-poster-grid {
+  display: flex;
+  flex-wrap: wrap;
+  margin: -10px;
+  padding: 8px 0 24px 0;
+  width: calc(100% + 20px);
+  box-sizing: border-box;
+}
+
+.tv-poster-cell {
+  width: 20%;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.tv-card.tv-poster-card {
+  width: 100%;
+  height: 380px;
+  background: var(--buntu-slate);
+  border-radius: 14px;
+  border: 2px solid transparent;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.tv-card.tv-poster-card.focused {
+  transform: scale(1.06);
+  border-color: var(--buntu-gold);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.85), 0 0 24px rgba(245, 166, 35, 0.45);
+  z-index: 50;
+}
+
+.tv-poster-art {
+  width: 100%;
+  height: 290px;
+  position: relative;
+  background: linear-gradient(135deg, #161D2B 0%, #0F1420 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tv-poster-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: absolute;
+  inset: 0;
+}
+
+.tv-poster-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--buntu-text-muted);
+  padding: 20px;
+  text-align: center;
+  z-index: 1;
+}
+
+.tv-poster-fallback-icon {
+  font-size: 46px;
+  opacity: 0.65;
+}
+
+.tv-poster-fallback-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #FFFFFF;
+  opacity: 0.85;
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.tv-poster-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--buntu-gold);
+  letter-spacing: 0.5px;
+  z-index: 5;
+}
+
+.tv-poster-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1;
+  min-height: 0;
+  background: var(--buntu-slate);
+  box-sizing: border-box;
+}
+
+.tv-poster-body .tv-poster-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+  padding: 0;
+}
+
+.tv-poster-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  color: var(--buntu-text-muted);
+  margin-top: 4px;
+}
+
+/* ==========================================================================
+   Guide des Programmes (EPG Screen UX)
+   ========================================================================== */
+
+.tv-guide-row {
+  display: flex;
+  align-items: center;
+  min-height: 80px;
+  height: 80px;
+  margin-bottom: 10px;
+  padding: 0 20px;
+  background: var(--buntu-slate);
+  border: 2px solid transparent;
+  border-radius: 14px;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.tv-guide-row:last-child {
+  margin-bottom: 24px;
+}
+
+.tv-guide-row.focused {
+  background: rgba(245, 166, 35, 0.16) !important;
+  border-color: rgba(245, 166, 35, 0.6) !important;
+  border-left: 8px solid var(--buntu-gold) !important;
+  transform: translateX(10px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(245, 166, 35, 0.25);
+  z-index: 10;
+}
+
+.tv-guide-channel-col {
+  width: 280px;
+  margin-right: 20px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tv-guide-num {
+  min-width: 60px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 229, 255, 0.1);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  border-radius: 8px;
+  color: var(--buntu-cyan);
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  margin-right: 14px;
+  flex-shrink: 0;
+}
+
+.tv-guide-channel-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tv-guide-channel-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+
+.tv-guide-channel-cat {
+  font-size: 14px;
+  color: var(--buntu-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.tv-guide-now-box {
+  flex: 1;
+  min-width: 0;
+  margin-right: 18px;
+  background: rgba(26, 34, 52, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 58px;
+  box-sizing: border-box;
+}
+
+.tv-guide-now-header {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.tv-guide-live-pill {
+  background: #FF3B30;
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.tv-guide-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #FFFFFF;
+}
+
+.tv-guide-now-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--buntu-cyan);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-left: 10px;
+}
+
+.tv-guide-now-desc {
+  font-size: 14px;
+  color: var(--buntu-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 3px;
+}
+
+.tv-guide-next-box {
+  width: 320px;
+  margin-right: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 58px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.tv-guide-next-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--buntu-text-muted);
+  letter-spacing: 0.5px;
+}
+
+.tv-guide-next-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #E2E8F0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+/* ==========================================================================
+   Details Screen UX (VOD & Series Details)
+   ========================================================================== */
+
+.tv-details-card {
+  display: flex;
+  background: var(--buntu-slate);
+  padding: 48px;
+  border-radius: 20px;
+  border: 1px solid var(--buntu-border);
+  box-sizing: border-box;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.tv-details-poster-box {
+  width: 300px;
+  height: 450px;
+  margin-right: 48px;
+  border-radius: 14px;
+  overflow: hidden;
+  position: relative;
+  background: linear-gradient(135deg, #161D2B 0%, #0F1420 100%);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.9);
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-sizing: border-box;
+}
+
+.tv-details-poster-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tv-details-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.tv-details-title {
+  font-size: 44px;
+  font-weight: 800;
+  color: #FFFFFF;
+  margin: 0 0 16px 0;
+  line-height: 1.2;
+}
+
+.tv-details-meta-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.tv-details-badge {
+  font-size: 18px;
+  font-weight: 700;
+  margin-right: 20px;
+}
+
+.tv-details-pill {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #FFFFFF;
+  margin-right: 18px;
+}
+
+.tv-details-synopsis {
+  font-size: 20px;
+  line-height: 1.6;
+  color: var(--buntu-text-muted);
+  margin: 0 0 36px 0;
+  max-height: 140px;
+  overflow: hidden;
+}
+
+.tv-details-actions {
+  display: flex;
+  align-items: center;
+}
+
+.tv-details-actions .tv-btn {
+  margin-right: 20px;
 }
 
 

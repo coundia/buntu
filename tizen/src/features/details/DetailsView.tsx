@@ -1,4 +1,4 @@
-import { Component, createSignal, onMount } from 'solid-js';
+import { Component, createSignal, onMount, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
 import { spatialNav } from '../../ui/design/SpatialNav';
@@ -36,72 +36,86 @@ export const DetailsView: Component<DetailsViewProps> = (props) => {
     ]);
   });
 
+  const title = () => props.item.name_clean || props.item.name;
+
   return (
     <div class="tv-container" style={{ "justify-content": "center" }}>
-      <div style={{
-        display: "flex",
-        gap: "48px",
-        background: "var(--buntu-slate)",
-        padding: "48px",
-        "border-radius": "16px",
-        border: "1px solid var(--buntu-border)",
-      }}>
-        {/* Poster */}
-        <div style={{
-          width: "300px",
-          height: "450px",
-          "background-image": props.item.logo_url ? `url(${props.item.logo_url})` : 'none',
-          "background-size": "cover",
-          "background-position": "center",
-          "border-radius": "12px",
-          "box-shadow": "0 10px 30px rgba(0,0,0,0.8)",
-          "background-color": "var(--buntu-slate-light)",
-        }} />
+      <div class="tv-details-card">
+        {/* Left: Poster Box with Image & Fallback */}
+        <div class="tv-details-poster-box">
+          <Show
+            when={props.item.logo_url}
+            fallback={
+              <div class="tv-poster-fallback" style={{ height: "100%", "justify-content": "center" }}>
+                <span style={{ "font-size": "64px", opacity: "0.6" }}>
+                  {props.item.kind === 'series' ? '📺' : '🎬'}
+                </span>
+                <span class="tv-poster-fallback-title">{title()}</span>
+              </div>
+            }
+          >
+            <img
+              src={props.item.logo_url}
+              alt=""
+              onError={(e) => {
+                const target = e.currentTarget as HTMLElement;
+                target.style.display = 'none';
+                const parent = target.parentElement;
+                if (parent && !parent.querySelector('.tv-poster-fallback')) {
+                  const fb = document.createElement('div');
+                  fb.className = 'tv-poster-fallback';
+                  fb.style.height = '100%';
+                  fb.style.justifyContent = 'center';
+                  fb.innerHTML = `<span style="font-size: 64px; opacity: 0.6">${props.item.kind === 'series' ? '📺' : '🎬'}</span><span class="tv-poster-fallback-title">${title()}</span>`;
+                  parent.appendChild(fb);
+                }
+              }}
+            />
+          </Show>
+        </div>
 
-        {/* Info & Metadata */}
-        <div style={{ flex: 1, display: "flex", "flex-direction": "column", "justify-content": "center" }}>
-          <h1 style={{ "font-size": "44px", "font-weight": "800", "margin-bottom": "12px" }}>
-            {props.item.name_clean || props.item.name}
+        {/* Right: Info, Synopsis & Action Buttons */}
+        <div class="tv-details-content">
+          <h1 class="tv-details-title">
+            {title()}
           </h1>
 
-          <div style={{ display: "flex", gap: "24px", "margin-bottom": "24px", "font-size": "20px" }}>
-            <span style={{ color: "var(--buntu-gold)", "font-weight": "700" }}>
-              {props.item.imdb_rating ? `★ ${props.item.imdb_rating.toFixed(1)} / 10` : 'Non noté'}
+          <div class="tv-details-meta-bar">
+            <Show when={props.item.imdb_rating}>
+              <span class="tv-details-badge" style={{ color: "var(--buntu-gold)" }}>
+                ★ {props.item.imdb_rating!.toFixed(1)} / 10
+              </span>
+            </Show>
+
+            <span class="tv-details-badge" style={{ color: "var(--buntu-text-muted)" }}>
+              {props.item.year || '2024'}
             </span>
-            <span style={{ color: "var(--buntu-text-muted)" }}>{props.item.year || '2024'}</span>
-            <span style={{ color: "var(--buntu-cyan)" }}>{props.item.group_title || 'Général'}</span>
-            <span style={{
-              background: "rgba(255,255,255,0.1)",
-              padding: "2px 8px",
-              "border-radius": "4px",
-              "font-size": "16px"
-            }}>
+
+            <span class="tv-details-badge" style={{ color: "var(--buntu-cyan)" }}>
+              {props.item.group_title || (props.item.kind === 'series' ? 'Série TV' : 'Film & VOD')}
+            </span>
+
+            <span class="tv-details-pill">
               {props.item.container_ext?.toUpperCase() || 'MKV'}
             </span>
           </div>
 
-          <p style={{
-            "font-size": "20px",
-            "line-height": "1.6",
-            color: "var(--buntu-text-muted)",
-            "margin-bottom": "40px",
-            "max-height": "160px",
-            "overflow-y": "hidden"
-          }}>
-            {props.item.plot || "Aucun résumé disponible pour ce média. Appuyez sur Lecture pour lancer la diffusion en décodage matériel AVPlay."}
+          <p class="tv-details-synopsis">
+            {props.item.plot || "Aucun résumé disponible pour ce média. Appuyez sur 'Lancer la lecture' pour démarrer la lecture instantanée avec décodage matériel Samsung AVPlay."}
           </p>
 
-          {/* Action buttons */}
-          <div style={{ display: "flex", gap: "24px" }} role="toolbar" aria-label="Actions du média">
+          {/* Action Buttons with explicit margins */}
+          <div class="tv-details-actions" role="toolbar" aria-label="Actions du média">
             <button
               id="btn-play-now"
               tabindex="-1"
-              aria-label={`Lancer la lecture de ${props.item.name_clean || props.item.name}`}
+              aria-label={`Lancer la lecture de ${title()}`}
               class={`tv-btn ${focusId() === 'btn-play-now' ? 'focused' : ''}`}
               onClick={() => props.onPlay(props.item)}
             >
               ▶ Lancer la lecture
             </button>
+
             <button
               id="btn-toggle-fav"
               tabindex="-1"
@@ -112,8 +126,9 @@ export const DetailsView: Component<DetailsViewProps> = (props) => {
                 setIsFav(next);
               }}
             >
-              {isFav() ? '★ Retirer des favoris' : '☆ Ajouter aux favoris'}
+              {isFav() ? '★ Retirer des favoris' : '☆ Favoris'}
             </button>
+
             <button
               id="btn-back"
               tabindex="-1"
@@ -129,4 +144,3 @@ export const DetailsView: Component<DetailsViewProps> = (props) => {
     </div>
   );
 };
-
