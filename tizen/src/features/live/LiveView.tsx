@@ -3,7 +3,7 @@ import { CndEngine } from '../../core/engine/CndEngine';
 import { Database, EpgProgramRecord, ItemRecord, FAVORITES_CATEGORY } from '../../core/storage/Database';
 import { AVPlayerService } from '../../core/player/AVPlayerService';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
-import { screenState, isContentFocusId, revealItem } from '../../core/navigation/ScreenState';
+import { screenState, isContentFocusId, revealItem, BrowseSnapshot } from '../../core/navigation/ScreenState';
 import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { detectChannelQuality, formatBuntuCount } from '../../core/utils/categoryMeta';
@@ -45,6 +45,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
   // Last card focused in the content area: restored when BACK returns here from details/player.
   let lastContentFocus = '';
+  let lastScrollTop = 0;
   createEffect(() => {
     const f = focusId();
     if (isContentFocusId(f)) lastContentFocus = f;
@@ -142,12 +143,37 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     };
     window.addEventListener('resize', resizeHandler);
 
+    // BACK from the player/details: same category, view mode and focused card as before.
+    const restored = screenState.restore('live');
+    const snap = restored?.snapshot as BrowseSnapshot<ItemRecord> | undefined;
+    if (restored && snap) {
+      // Instant return: show what was on screen, then refresh counts and shelves behind.
+      setSelectedCategory(restored.category);
+      setViewMode(restored.viewMode);
+      setCategories(snap.categories);
+      setCatCounts(snap.catCounts);
+      setFavCount(snap.favCount);
+      setRecentChannels(snap.recent);
+      setFavChannels(snap.favs);
+      setEpgMap((snap.epg || {}) as Record<string, EpgProgramRecord | undefined>);
+      setTotalCount(snap.totalCount);
+      scroller.setItems(snap.items, snap.total);
+      rebuildGrid(false);
+      if (restored.focusId && document.getElementById(restored.focusId)) {
+        spatialNav.setFocusById(restored.focusId);
+      }
+      const scrollArea = document.querySelector('.buntu-content-scroll') as HTMLElement | null;
+      if (scrollArea) scrollArea.scrollTop = snap.scrollTop;
+      document.querySelector('.buntu-cat-row.active')?.scrollIntoView({ block: 'nearest' });
+      void refreshShelvesAndCounts().then(() => scheduleRebuildGrid(true));
+      return;
+    }
+
     const cats = await engine.getCategories('live');
     setCategories(cats);
     await refreshShelvesAndCounts();
 
-    // BACK from the player/details: same category, view mode and focused channel as before.
-    const restored = screenState.restore('live');
+    // (restored state read at the top of onMount)
     if (restored) {
       setSelectedCategory(restored.category);
       setViewMode(restored.viewMode);
@@ -184,7 +210,23 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   });
 
   onCleanup(() => {
-    screenState.save('live', { category: selectedCategory(), viewMode: viewMode(), focusId: lastContentFocus });
+    screenState.save('live', {
+      category: selectedCategory(),
+      viewMode: viewMode(),
+      focusId: lastContentFocus,
+      snapshot: {
+        categories: categories(),
+        catCounts: catCounts(),
+        totalCount: totalCount(),
+        favCount: favCount(),
+        recent: recentChannels(),
+        favs: favChannels(),
+        items: scroller.items(),
+        total: scroller.total(),
+        scrollTop: lastScrollTop,
+          epg: epgMap(),
+      },
+    });
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
     document.querySelector('.app-root')?.classList.remove('preview-mode');
   });
@@ -693,6 +735,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
         <section
           class="buntu-content-scroll"
           onScroll={(e) => {
+            lastScrollTop = (e.currentTarget as HTMLElement).scrollTop;
             if (isSearchMode()) return;
             const el = e.currentTarget as HTMLElement;
             if (el.scrollTop + el.clientHeight >= el.scrollHeight - 360) {

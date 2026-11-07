@@ -6,12 +6,28 @@
  * the menu starts clean, as before.
  */
 
+/** What the screen displayed, so BACK can show it again instantly while a refresh runs behind. */
+export interface BrowseSnapshot<T = unknown> {
+  categories: string[];
+  catCounts: Record<string, number>;
+  totalCount: number;
+  favCount: number;
+  recent: T[];
+  favs: T[];
+  items: T[];
+  total: number;
+  scrollTop: number;
+  /** Program lines already loaded (live only). */
+  epg?: Record<string, unknown>;
+}
+
 export interface BrowseState {
   /** Selected category ('' = all items). */
   category: string;
   viewMode: 'grid' | 'list';
   /** DOM id of the card that had the focus (e.g. `channel-42`). */
   focusId: string;
+  snapshot?: BrowseSnapshot;
 }
 
 /** A card of the content area, not a category row, toolbar button or menu entry. */
