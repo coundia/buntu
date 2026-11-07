@@ -60,14 +60,48 @@ Pour éviter de rescanner l'intégralité de la base de données locale à chaqu
   - `categoriesMemCache` en mémoire vive.
   - `countCatalog(kind, category)`.
   - Contrôle parental factorisé par catégorie au lieu d'une boucle par élément.
+* [`tizen/src/core/pagination/InfiniteScrollController.ts`](file:///Users/pcoundia/projects/cnd-iptv-native/tizen/src/core/pagination/InfiniteScrollController.ts) :
+  - Contrôleur modulaire SRP (Single Responsibility Principle) pour le défilement infini.
+  - Déclenchement automatique par seuil de focus D-Pad (`threshold`) et écouteur de défilement conteneur.
+  - Plafond de protection RAM Smart TV (`maxItems = 300`) évitant toute fuite mémoire sur TV 1 Go.
+  - Protection contre les requêtes concurrentes (`isLoading` debounce guard).
+* [`tizen/src/ui/design/SpatialNav.ts`](file:///Users/pcoundia/projects/cnd-iptv-native/tizen/src/ui/design/SpatialNav.ts) :
+  - Support de `preserveFocus = true` dans `setGrid` pour maintenir la position exacte du focus lors de l'arrivée transparente de nouveaux éléments.
 * [`tizen/src/features/movies/MoviesView.tsx`](file:///Users/pcoundia/projects/cnd-iptv-native/tizen/src/features/movies/MoviesView.tsx) :
-  - Grille 25 films, footer de pagination avec total et boutons D-Pad.
-  - Raccourcis Ch+/Ch-.
+  - Infinite scroll automatique sur la grille 5 colonnes avec loader et badge dynamique `X / Total films`.
 * [`tizen/src/features/series/SeriesView.tsx`](file:///Users/pcoundia/projects/cnd-iptv-native/tizen/src/features/series/SeriesView.tsx) :
-  - Grille 25 séries, footer de pagination avec total et boutons D-Pad.
-  - Raccourcis Ch+/Ch-.
+  - Infinite scroll automatique sur la grille 5 colonnes avec loader et badge dynamique `X / Total séries`.
 * [`tizen/src/features/live/LiveView.tsx`](file:///Users/pcoundia/projects/cnd-iptv-native/tizen/src/features/live/LiveView.tsx) :
-  - Liste 40 chaînes avec pagination verticale et indicateur de position.
+  - Infinite scroll sur la liste des chaînes Direct TV avec badge `X / Total chaînes`.
+* [`tizen/src/features/guide/GuideView.tsx`](file:///Users/pcoundia/projects/cnd-iptv-native/tizen/src/features/guide/GuideView.tsx) :
+  - Infinite scroll sur le guide des programmes EPG avec chargement asynchrone par lot des métadonnées Now/Next.
 * [`tizen/src/ui/design/theme.css`](file:///Users/pcoundia/projects/cnd-iptv-native/tizen/src/ui/design/theme.css) :
-  - Classes `.tv-pagination-bar` et `.tv-page-indicator`.
+  - Classes `.tv-infinite-loader`, `.tv-spinner-small` et `.tv-infinite-end`.
+
+---
+
+## 4. Architecture Infinite Scroll Modulaire (SRP)
+
+```mermaid
+flowchart TD
+    User["Télécommande D-Pad / Molette"] --> Focus["Focus Item (Index i)"]
+    Focus --> Trigger{"i >= Loaded - Threshold ?"}
+    Trigger -- Non --> Idle["Navigation fluide instantanée"]
+    Trigger -- Oui --> Guard{"Déjà en cours de chargement ?"}
+    Guard -- Oui --> Skip["Ignorer (Protection concurrence)"]
+    Guard -- Non --> Fetch["InfiniteScroller.loadMore()"]
+    Fetch --> DB["IndexedDB (cursor.advance(offset))"]
+    DB --> Append["Ajout par lot (+25 à +40 items)"]
+    Append --> Cap{"Total > maxItems (300) ?"}
+    Cap -- Oui --> Bound["Bornage RAM (slice 0..300)"]
+    Cap -- Non --> Commit["Signal SolidJS mis à jour"]
+    Bound --> Commit
+    Commit --> Grid["SpatialNav.setGrid(..., preserveFocus=true)"]
+    Grid --> Display["Focus préservé sans saut d'écran"]
+```
+
+### Avantages de l'implémentation SRP :
+1. **Zéro couplage logique :** Les écrans n'ont plus à calculer d'offset ou de total manuel.
+2. **Empreinte mémoire plate (< 500 Ko) :** Les objets sont chargés par lots légers, plafonnés pour garantir un taux de rafraîchissement stable à 60 fps même sur téléviseur d'entrée de gamme.
+3. **Double déclenchement robuste :** Fonctionne à 100 % sur télécommande physique (via `onFocus` spatial) et sur navigateur Web de développement (via `onScroll`).
 

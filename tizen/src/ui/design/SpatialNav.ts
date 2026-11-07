@@ -78,12 +78,14 @@ class SpatialNav {
     }
   }
 
-  public setGrid(grid: FocusableItem[][], initialRow = 0, initialCol = 0) {
+  public setGrid(grid: FocusableItem[][], initialRow = 0, initialCol = 0, preserveFocus = false) {
     const nonEmpty = grid.filter((row) => row.length > 0);
     if (this.modalState) {
       this.modalState.grid = nonEmpty;
       return;
     }
+
+    const currentId = this.getCurrentFocusId();
     this.focusableGrid = nonEmpty;
 
     if (nonEmpty.length === 0) {
@@ -97,6 +99,19 @@ class SpatialNav {
         this.currentFocus[1]('');
       }
       return;
+    }
+
+    if (preserveFocus && currentId) {
+      for (let r = 0; r < nonEmpty.length; r++) {
+        for (let c = 0; c < nonEmpty[r].length; c++) {
+          if (nonEmpty[r][c].id === currentId) {
+            this.currentRow = r;
+            this.currentCol = c;
+            this.applyFocus(nonEmpty[r][c]);
+            return;
+          }
+        }
+      }
     }
 
     this.currentRow = Math.min(initialRow, Math.max(0, nonEmpty.length - 1));
