@@ -37,3 +37,4 @@ export const TvSearchBar: Component<TvSearchBarProps> = (props) => {
     </div>
   );
 };
+
