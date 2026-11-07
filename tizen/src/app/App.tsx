@@ -12,6 +12,7 @@ import { GuideView } from '../features/guide/GuideView';
 import { MoviesView } from '../features/movies/MoviesView';
 import { SeriesView } from '../features/series/SeriesView';
 import { DetailsView } from '../features/details/DetailsView';
+import { SeriesDetailsView } from '../features/series/SeriesDetailsView';
 import { PlayerView } from '../features/player/PlayerView';
 import { SearchView } from '../features/search/SearchView';
 import { RecommendationsView } from '../features/recommendations/RecommendationsView';
@@ -38,6 +39,7 @@ export const App: Component = () => {
   const engine = CndEngine.getInstance();
   const player = AVPlayerService.getInstance();
   const [currentRoute, setCurrentRoute] = createSignal<ScreenRoute>('live');
+  const [previousRoute, setPreviousRoute] = createSignal<ScreenRoute>('live');
   const [selectedItem, setSelectedItem] = createSignal<ItemRecord | null>(null);
   const [hasSources, setHasSources] = createSignal(true);
   const [showExitDialog, setShowExitDialog] = createSignal(false);
@@ -147,6 +149,9 @@ export const App: Component = () => {
   const navigateTo = (route: ScreenRoute) => {
     if (currentRoute() === 'player' && route !== 'player') {
       engine.stopPlayback();
+    }
+    if (route !== currentRoute()) {
+      setPreviousRoute(currentRoute());
     }
     setCurrentRoute(route);
   };
@@ -327,11 +332,19 @@ export const App: Component = () => {
             <SeriesView onSelectSeries={handleSelectDetails} />
           </Match>
 
+          <Match when={currentRoute() === 'details' && selectedItem()?.kind === 'series'}>
+            <SeriesDetailsView
+              item={selectedItem()!}
+              onPlay={handlePlayItem}
+              onBack={() => navigateTo('series')}
+            />
+          </Match>
+
           <Match when={currentRoute() === 'details' && selectedItem()}>
             <DetailsView
               item={selectedItem()!}
               onPlay={handlePlayItem}
-              onBack={() => navigateTo('movies')}
+              onBack={() => navigateTo(previousRoute() === 'details' ? 'movies' : previousRoute())}
             />
           </Match>
 
