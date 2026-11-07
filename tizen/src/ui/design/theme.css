@@ -2025,14 +2025,14 @@ html, body, #root {
 
 /* 1. Left Navigation Sidebar (with Icon + Label + Counter Badges) */
 .buntu-sidebar {
-  width: clamp(188px, 13.2vw, 238px);
+  width: clamp(280px, 17.5vw, 340px);
   height: 100%;
   flex-shrink: 0;
   background: var(--buntu-sidebar-bg);
   border-right: 1px solid var(--buntu-hairline);
   display: flex;
   flex-direction: column;
-  padding: clamp(10px, 1.4vh, 18px) 10px;
+  padding: clamp(14px, 1.8vh, 22px) 14px;
   box-sizing: border-box;
   z-index: 100;
   user-select: none;
@@ -2040,43 +2040,43 @@ html, body, #root {
 }
 
 .buntu-sidebar.collapsed {
-  width: 68px;
-  padding-left: 8px;
-  padding-right: 8px;
+  width: 86px;
+  padding-left: 10px;
+  padding-right: 10px;
 }
 
 .buntu-brand-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px 14px 8px;
-  gap: 10px;
+  padding: 6px 10px 18px 10px;
+  gap: 12px;
   flex-shrink: 0;
 }
 
 .buntu-brand-identity {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
 .buntu-brand-logo {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
   object-fit: cover;
   flex-shrink: 0;
   background: #141416;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
 }
 
 .buntu-brand-text {
-  font-size: clamp(16px, 1.15vw, 20px);
-  font-weight: 700;
+  font-size: clamp(22px, 1.5vw, 26px);
+  font-weight: 800;
   color: #FFFFFF;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2096,16 +2096,16 @@ html, body, #root {
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .buntu-nav-group-label {
-  font-size: 11px;
+  font-size: 13.5px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: rgba(255, 255, 255, 0.42);
-  padding: 12px 10px 5px 10px;
+  letter-spacing: 0.8px;
+  color: rgba(255, 255, 255, 0.45);
+  padding: 16px 12px 6px 12px;
   flex-shrink: 0;
 }
 
@@ -2113,14 +2113,14 @@ html, body, #root {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: clamp(8px, 0.9vh, 11px) 10px;
-  border-radius: 8px;
+  gap: 12px;
+  padding: clamp(11px, 1.2vh, 15px) 14px;
+  border-radius: 11px;
   border: 2px solid transparent;
   background: transparent;
   color: rgba(255, 255, 255, 0.88);
-  font-size: clamp(13.5px, 0.95vw, 16.5px);
-  font-weight: 500;
+  font-size: clamp(18px, 1.2vw, 21px);
+  font-weight: 600;
   cursor: pointer;
   text-align: left;
   box-sizing: border-box;
@@ -2130,16 +2130,16 @@ html, body, #root {
 
 .buntu-sidebar.collapsed .buntu-nav-btn {
   justify-content: center;
-  padding: 10px 0;
+  padding: 12px 0;
 }
 
 .buntu-nav-icon {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: clamp(15px, 1.05vw, 18px);
+  font-size: clamp(20px, 1.4vw, 24px);
   flex-shrink: 0;
   color: var(--buntu-accent);
 }
@@ -2153,20 +2153,20 @@ html, body, #root {
 }
 
 .buntu-nav-count {
-  font-size: clamp(11px, 0.78vw, 13px);
-  font-weight: 600;
+  font-size: clamp(13px, 0.9vw, 15px);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.48);
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.55);
+  padding: 3px 9px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
 }
 
 .buntu-nav-btn.active {
   background: var(--buntu-accent);
   color: #FFFFFF;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .buntu-nav-btn.active .buntu-nav-icon {
@@ -2175,30 +2175,30 @@ html, body, #root {
 
 .buntu-nav-btn.active .buntu-nav-count {
   color: #FFFFFF;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .buntu-nav-btn.focused {
-  background: rgba(10, 132, 255, 0.32) !important;
+  background: rgba(10, 132, 255, 0.35) !important;
   border-color: #FFFFFF !important;
   color: #FFFFFF !important;
-  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.65), 0 4px 14px rgba(0, 0, 0, 0.5);
   z-index: 5;
 }
 
 .buntu-nav-btn.active.focused {
   background: var(--buntu-accent) !important;
   border-color: #FFFFFF !important;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.45), 0 4px 16px rgba(10, 132, 255, 0.65);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6), 0 6px 20px rgba(10, 132, 255, 0.7);
 }
 
 .buntu-sidebar-footer {
-  padding-top: 10px;
-  margin-top: 8px;
+  padding-top: 14px;
+  margin-top: 10px;
   border-top: 1px solid var(--buntu-hairline);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -2210,7 +2210,7 @@ html, body, #root {
   background: #FF453A !important;
   border-color: #FFFFFF !important;
   color: #FFFFFF !important;
-  box-shadow: 0 0 0 3px rgba(255, 69, 58, 0.5);
+  box-shadow: 0 0 0 3px rgba(255, 69, 58, 0.6), 0 6px 18px rgba(255, 69, 58, 0.4);
 }
 
 .buntu-nav-btn.exit-btn.focused .buntu-nav-icon {
@@ -2427,7 +2427,7 @@ html, body, #root {
 
 /* Category Column */
 .buntu-cat-pane {
-  width: clamp(205px, 15vw, 272px);
+  width: clamp(250px, 16vw, 310px);
   flex-shrink: 0;
   height: 100%;
   background: var(--buntu-cat-bg);
@@ -2441,20 +2441,20 @@ html, body, #root {
 .buntu-cat-filter-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 8px 6px 8px;
+  gap: 8px;
+  padding: 10px 10px 8px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
 }
 
 .buntu-cat-home-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   border: 2px solid transparent;
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.75);
-  font-size: 14px;
+  font-size: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2471,13 +2471,13 @@ html, body, #root {
 .buntu-cat-filter-input {
   flex: 1;
   min-width: 0;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
   border: 2px solid rgba(255, 255, 255, 0.08);
   background: #151517;
   color: #FFFFFF;
-  font-size: clamp(12px, 0.82vw, 14px);
+  font-size: clamp(14px, 0.95vw, 16px);
   outline: none;
   box-sizing: border-box;
 }
@@ -2496,10 +2496,10 @@ html, body, #root {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 6px 8px 24px 8px;
+  padding: 8px 10px 24px 10px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   box-sizing: border-box;
 }
 
@@ -2507,14 +2507,14 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: clamp(7px, 0.8vh, 10px) 10px;
-  border-radius: 7px;
+  gap: 10px;
+  padding: clamp(9px, 1vh, 12px) 12px;
+  border-radius: 9px;
   border: 2px solid transparent;
   background: transparent;
   color: rgba(255, 255, 255, 0.86);
-  font-size: clamp(12.5px, 0.88vw, 15px);
-  font-weight: 500;
+  font-size: clamp(15px, 1.05vw, 18px);
+  font-weight: 600;
   cursor: pointer;
   flex-shrink: 0;
   box-sizing: border-box;
@@ -2524,13 +2524,13 @@ html, body, #root {
 .buntu-cat-row-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
   flex: 1;
 }
 
 .buntu-cat-row-icon {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--buntu-accent);
   flex-shrink: 0;
 }
@@ -2547,12 +2547,12 @@ html, body, #root {
 }
 
 .buntu-cat-count {
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.65);
-  font-size: clamp(10.5px, 0.74vw, 12.5px);
-  font-weight: 600;
+  font-size: clamp(12px, 0.85vw, 14px);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
@@ -3082,10 +3082,10 @@ html, body, #root {
 /* Responsive Breakpoints for Compact TVs (720p) & 4K UHD Panels */
 @media (max-width: 1366px) {
   .buntu-sidebar {
-    width: 184px;
+    width: 250px;
   }
   .buntu-cat-pane {
-    width: 200px;
+    width: 240px;
   }
   .buntu-channel-grid {
     grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
@@ -3094,19 +3094,19 @@ html, body, #root {
 
 @media (max-width: 960px) {
   .buntu-cat-pane {
-    width: 175px;
+    width: 200px;
   }
   .buntu-sidebar {
-    width: 165px;
+    width: 210px;
   }
 }
 
 @media (min-width: 2400px) {
   .buntu-sidebar {
-    width: 340px;
+    width: 440px;
   }
   .buntu-cat-pane {
-    width: 390px;
+    width: 460px;
   }
   .buntu-toolbar {
     height: 82px;
