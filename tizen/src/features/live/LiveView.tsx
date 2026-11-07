@@ -3,6 +3,7 @@ import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
+import { TvSearchBar } from '../../ui/components/TvSearchBar';
 import { announce } from '../../ui/design/a11y';
 
 export interface LiveViewProps {
@@ -16,7 +17,12 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
   const [categories, setCategories] = createSignal<string[]>([]);
   const [selectedCategory, setSelectedCategory] = createSignal<string>('');
+  const [searchQuery, setSearchQuery] = createSignal<string>('');
+  const [searchResults, setSearchResults] = createSignal<ItemRecord[]>([]);
   const [focusId] = spatialNav.getFocusSignal();
+
+  const isSearchMode = () => searchQuery().trim().length > 0;
+  const activeChannels = () => isSearchMode() ? searchResults() : scroller.items();
 
   const scroller = createInfiniteScroller<ItemRecord>({
     pageSize: PAGE_SIZE,
@@ -31,8 +37,10 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       return { items: list, total: count };
     },
     onBatchLoaded: (list, total) => {
-      announce(`Direct, ${list.length} chaînes affichées sur ${total}`);
-      rebuildGrid(categories(), list, true);
+      if (!isSearchMode()) {
+        announce(`Direct, ${list.length} chaînes affichées sur ${total}`);
+        rebuildGrid(categories(), list, true);
+      }
     },
   });
 
@@ -51,6 +59,55 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     }
   });
 
+  const focusInput = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) (el as HTMLInputElement).focus();
+  };
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults([]);
+      rebuildGrid(categories(), scroller.items(), false);
+      return;
+    }
+    const results = await engine.searchCatalog(query, 'live', 80);
+    setSearchResults(results);
+    announce(`${results.length} résultats pour la recherche ${query}`);
+    rebuildSearchGrid(results);
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    rebuildGrid(categories(), scroller.items(), false);
+  };
+
+  const rebuildSearchGrid = (results: ItemRecord[]) => {
+    const grid: FocusableItem[][] = [];
+
+    // Search bar row
+    const searchRow: FocusableItem[] = [
+      { id: 'live-search-input', onSelect: () => focusInput('live-search-input') },
+    ];
+    if (searchQuery().trim()) {
+      searchRow.push({ id: 'live-search-input-clear', onSelect: handleClearSearch });
+    }
+    grid.push(searchRow);
+
+    // Results rows
+    for (const ch of results) {
+      grid.push([
+        {
+          id: `channel-${ch.id}`,
+          onSelect: () => props.onPlayChannel(ch),
+        },
+      ]);
+    }
+
+    spatialNav.setGrid(grid, 0, 0, false);
+  };
+
   const rebuildGrid = (cats: string[], list: ItemRecord[], preserveFocus = false) => {
     if (cats.length === 0 && list.length === 0) {
       if (props.onAddSource) {
@@ -61,8 +118,18 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       return;
     }
 
-    const maxRows = Math.max(cats.length, list.length);
     const grid: FocusableItem[][] = [];
+
+    // Row 0: Search Bar
+    const searchRow: FocusableItem[] = [
+      { id: 'live-search-input', onSelect: () => focusInput('live-search-input') },
+    ];
+    if (searchQuery().trim()) {
+      searchRow.push({ id: 'live-search-input-clear', onSelect: handleClearSearch });
+    }
+    grid.push(searchRow);
+
+    const maxRows = Math.max(cats.length, list.length);
 
     for (let i = 0; i < maxRows; i++) {
       const row: FocusableItem[] = [];
@@ -108,11 +175,13 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       }
     }
 
-    spatialNav.setGrid(grid, 0, list.length > 0 && cats.length > 0 ? 1 : 0, preserveFocus);
+    spatialNav.setGrid(grid, list.length > 0 ? 1 : 0, cats.length > 0 ? 1 : 0, preserveFocus);
   };
 
   const handleSelectCategory = async (cat: string) => {
     if (cat === selectedCategory()) return;
+    setSearchQuery('');
+    setSearchResults([]);
     setSelectedCategory(cat);
     await scroller.reset();
     rebuildGrid(categories(), scroller.items(), false);
@@ -122,6 +191,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   };
 
   const handleChannelsScroll = (e: Event) => {
+    if (isSearchMode()) return;
     const el = e.currentTarget as HTMLElement;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 300) {
       void scroller.loadMore();
@@ -130,18 +200,32 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
   return (
     <div class="tv-container">
-      {/* Header */}
+      {/* Header with Title, In-Screen Search Bar & Counter */}
       <div class="tv-live-header">
         <h1 class="tv-live-title">
           <span>Direct TV</span>
         </h1>
+
+        <TvSearchBar
+          id="live-search-input"
+          placeholder="🔍 Rechercher une chaîne ou numéro..."
+          value={searchQuery()}
+          onInput={handleSearch}
+          onClear={handleClearSearch}
+          focusId={focusId()}
+        />
+
         <div class="tv-live-badge">
-          <span>{scroller.items().length} / {scroller.total()} chaînes</span>
+          <span>
+            {isSearchMode()
+              ? `${searchResults().length} résultats`
+              : `${scroller.items().length} / ${scroller.total()} chaînes`}
+          </span>
         </div>
       </div>
 
       <Show
-        when={scroller.items().length > 0 || categories().length > 0}
+        when={activeChannels().length > 0 || categories().length > 0 || isSearchMode()}
         fallback={
           <div style={{ flex: 1, display: "flex", "flex-direction": "column", "align-items": "center", "justify-content": "center", padding: "40px" }}>
             <p style={{ "font-size": "24px", color: "var(--buntu-text-muted)", "margin-bottom": "24px" }}>
@@ -159,107 +243,118 @@ export const LiveView: Component<LiveViewProps> = (props) => {
         }
       >
         <div class="tv-live-layout">
-          {/* Categories Sidebar */}
-          <div class="tv-live-sidebar" role="tablist" aria-label="Catégories de chaînes">
-            <For each={categories()}>
-              {(cat, idx) => (
-                <div
-                  id={`cat-${idx()}`}
-                  role="tab"
-                  tabindex="-1"
-                  aria-selected={selectedCategory() === cat}
-                  aria-label={`Catégorie ${cat}`}
-                  class={`tv-category-item ${selectedCategory() === cat ? 'active' : ''} ${focusId() === `cat-${idx()}` ? 'focused' : ''}`}
-                  onClick={() => void handleSelectCategory(cat)}
-                >
-                  {cat}
-                </div>
-              )}
-            </For>
-          </div>
+          {/* Categories Sidebar (Hidden in search mode to give full width to results) */}
+          <Show when={!isSearchMode()}>
+            <div class="tv-live-sidebar" role="tablist" aria-label="Catégories de chaînes">
+              <For each={categories()}>
+                {(cat, idx) => (
+                  <div
+                    id={`cat-${idx()}`}
+                    role="tab"
+                    tabindex="-1"
+                    aria-selected={selectedCategory() === cat}
+                    aria-label={`Catégorie ${cat}`}
+                    class={`tv-category-item ${selectedCategory() === cat ? 'active' : ''} ${focusId() === `cat-${idx()}` ? 'focused' : ''}`}
+                    onClick={() => void handleSelectCategory(cat)}
+                  >
+                    {cat}
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
 
-          {/* Channels List with Infinite Scroll */}
+          {/* Channels List with Infinite Scroll or Search Results */}
           <div
             class="tv-live-channels"
             role="list"
             aria-label="Liste des chaînes en direct"
             onScroll={handleChannelsScroll}
           >
-            <For each={scroller.items()}>
-              {(ch) => (
-                <div
-                  id={`channel-${ch.id}`}
-                  role="button"
-                  tabindex="-1"
-                  aria-label={`Chaîne numéro ${ch.chno || ''} : ${ch.name}, catégorie ${ch.group_title || 'Général'}. Appuyez sur OK pour regarder en plein écran.`}
-                  class={`tv-channel-row ${focusId() === `channel-${ch.id}` ? 'focused' : ''}`}
-                  onClick={() => props.onPlayChannel(ch)}
-                >
-                  {/* Channel Number Badge */}
-                  <div class="tv-channel-num">
-                    {ch.chno || '•'}
-                  </div>
+            <Show
+              when={activeChannels().length > 0}
+              fallback={
+                <div style={{ padding: "48px 0", "text-align": "center", color: "var(--buntu-text-muted)", "font-size": "20px" }}>
+                  Aucune chaîne ne correspond à "{searchQuery()}".
+                </div>
+              }
+            >
+              <For each={activeChannels()}>
+                {(ch) => (
+                  <div
+                    id={`channel-${ch.id}`}
+                    role="button"
+                    tabindex="-1"
+                    aria-label={`Chaîne numéro ${ch.chno || ''} : ${ch.name}, catégorie ${ch.group_title || 'Général'}. Appuyez sur OK pour regarder en plein écran.`}
+                    class={`tv-channel-row ${focusId() === `channel-${ch.id}` ? 'focused' : ''}`}
+                    onClick={() => props.onPlayChannel(ch)}
+                  >
+                    {/* Channel Number Badge */}
+                    <div class="tv-channel-num">
+                      {ch.chno || '•'}
+                    </div>
 
-                  {/* Channel Logo / Fallback */}
-                  <div class="tv-channel-logo">
-                    <Show
-                      when={ch.logo_url}
-                      fallback={<span class="tv-channel-logo-fallback">📺</span>}
-                    >
-                      <img
-                        src={ch.logo_url}
-                        alt=""
-                        loading="lazy"
-                        onError={(e) => {
-                          const target = e.currentTarget as HTMLElement;
-                          target.style.display = 'none';
-                          if (target.parentElement) {
-                            const fallback = document.createElement('span');
-                            fallback.className = 'tv-channel-logo-fallback';
-                            fallback.textContent = '📺';
-                            target.parentElement.appendChild(fallback);
-                          }
-                        }}
-                      />
-                    </Show>
-                  </div>
+                    {/* Channel Logo / Fallback */}
+                    <div class="tv-channel-logo">
+                      <Show
+                        when={ch.logo_url}
+                        fallback={<span class="tv-channel-logo-fallback">📺</span>}
+                      >
+                        <img
+                          src={ch.logo_url}
+                          alt=""
+                          loading="lazy"
+                          onError={(e) => {
+                            const target = e.currentTarget as HTMLElement;
+                            target.style.display = 'none';
+                            if (target.parentElement) {
+                              const fallback = document.createElement('span');
+                              fallback.className = 'tv-channel-logo-fallback';
+                              fallback.textContent = '📺';
+                              target.parentElement.appendChild(fallback);
+                            }
+                          }}
+                        />
+                      </Show>
+                    </div>
 
-                  {/* Channel Name & Category Subtitle */}
-                  <div class="tv-channel-info">
-                    <div class="tv-channel-name">{ch.name}</div>
-                    <div class="tv-channel-meta">
-                      {ch.group_title || 'Général'}
+                    {/* Channel Name & Category Subtitle */}
+                    <div class="tv-channel-info">
+                      <div class="tv-channel-name">{ch.name}</div>
+                      <div class="tv-channel-meta">
+                        {ch.group_title || 'Général'}
+                      </div>
+                    </div>
+
+                    {/* Channel Badges & Action Pill */}
+                    <div class="tv-channel-actions">
+                      <Show when={ch.catchup_days}>
+                        <div class="tv-channel-catchup">
+                          Replay {ch.catchup_days}j
+                        </div>
+                      </Show>
+
+                      <Show when={focusId() === `channel-${ch.id}`}>
+                        <div class="tv-watch-pill">
+                          <span>▶</span>
+                          <span>REGARDER</span>
+                        </div>
+                      </Show>
                     </div>
                   </div>
+                )}
+              </For>
+            </Show>
 
-                  {/* Channel Badges & Action Pill */}
-                  <div class="tv-channel-actions">
-                    <Show when={ch.catchup_days}>
-                      <div class="tv-channel-catchup">
-                        Replay {ch.catchup_days}j
-                      </div>
-                    </Show>
-
-                    <Show when={focusId() === `channel-${ch.id}`}>
-                      <div class="tv-watch-pill">
-                        <span>▶</span>
-                        <span>REGARDER</span>
-                      </div>
-                    </Show>
-                  </div>
-                </div>
-              )}
-            </For>
-
-            {/* Infinite Scroll Loader / End Status */}
-            <Show when={scroller.isLoading()}>
+            {/* Infinite Scroll Loader & End Status (Only in standard mode) */}
+            <Show when={!isSearchMode() && scroller.isLoading()}>
               <div class="tv-infinite-loader">
                 <span class="tv-spinner-small" />
                 <span>Chargement des chaînes suivantes...</span>
               </div>
             </Show>
 
-            <Show when={!scroller.hasMore() && scroller.items().length > 0}>
+            <Show when={!isSearchMode() && !scroller.hasMore() && scroller.items().length > 0}>
               <div class="tv-infinite-end">
                 • Fin de la catégorie ({scroller.total()} chaînes) •
               </div>

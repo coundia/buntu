@@ -1,4 +1,4 @@
-import { Component, createSignal, For, onMount } from 'solid-js';
+import { Component, createSignal, For, Show, onMount } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
@@ -10,8 +10,16 @@ export interface SearchViewProps {
 export const SearchView: Component<SearchViewProps> = (props) => {
   const engine = CndEngine.getInstance();
   const [query, setQuery] = createSignal('');
+  const [selectedKind, setSelectedKind] = createSignal<'all' | 'live' | 'movie' | 'series'>('all');
   const [results, setResults] = createSignal<any[]>([]);
   const [focusId] = spatialNav.getFocusSignal();
+
+  const FILTER_TABS: { key: 'all' | 'live' | 'movie' | 'series'; label: string }[] = [
+    { key: 'all', label: 'Tout' },
+    { key: 'live', label: 'Direct TV' },
+    { key: 'movie', label: 'Films & VOD' },
+    { key: 'series', label: 'Séries TV' },
+  ];
 
   const KEYBOARD_ROWS = [
     ['A', 'B', 'C', 'D', 'E', 'F', '1', '2', '3'],
@@ -23,20 +31,34 @@ export const SearchView: Component<SearchViewProps> = (props) => {
 
   const rebuildGrid = (resList: any[]) => {
     const prevFocus = spatialNav.getCurrentFocusId();
+
+    // Row 0: Filter Tabs
+    const tabRow: FocusableItem[] = FILTER_TABS.map((tab) => ({
+      id: `search-tab-${tab.key}`,
+      onSelect: () => {
+        setSelectedKind(tab.key);
+        void performSearch();
+      },
+    }));
+
+    // Keyboard Rows
     const kbRows: FocusableItem[][] = KEYBOARD_ROWS.map((row) =>
       row.map((k) => ({
         id: `key-${k}`,
         onSelect: () => void handleKeyClick(k),
       }))
     );
+
+    // Results Rows
     const resRows: FocusableItem[][] = resList.map((res, idx) => [
       {
         id: `search-res-${idx}`,
         onSelect: () => props.onSelectResult(res.candidate as any),
       },
     ]);
-    spatialNav.setGrid([...kbRows, ...resRows]);
-    if (prevFocus.startsWith('key-')) {
+
+    spatialNav.setGrid([tabRow, ...kbRows, ...resRows]);
+    if (prevFocus.startsWith('key-') || prevFocus.startsWith('search-tab-')) {
       spatialNav.setFocusById(prevFocus);
     }
   };
@@ -68,33 +90,66 @@ export const SearchView: Component<SearchViewProps> = (props) => {
       rebuildGrid([]);
       return;
     }
-    const res = await engine.search(q);
+    const kindFilter = selectedKind() === 'all' ? undefined : selectedKind();
+    const res = await engine.search(q, kindFilter);
     setResults(res);
     rebuildGrid(res);
   };
 
   return (
     <div class="tv-container">
-      <div class="tv-header">
-        <h2 style={{ "font-size": "32px", color: "var(--buntu-gold)" }}>Recherche Instantanée</h2>
-        <div style={{
-          background: "var(--buntu-slate)",
-          padding: "12px 24px",
-          "border-radius": "8px",
-          "min-width": "400px",
-          "font-size": "24px",
-          border: "2px solid var(--buntu-border)"
-        }}>
-          {query() || 'Saisissez votre recherche...'}
+      {/* Header */}
+      <div class="tv-live-header">
+        <h1 class="tv-live-title">
+          <span>Recherche Globale IPTV</span>
+        </h1>
+
+        {/* Filter Pills */}
+        <div style={{ display: "flex", "margin-left": "24px" }} role="tablist" aria-label="Filtres de recherche">
+          <For each={FILTER_TABS}>
+            {(tab) => (
+              <button
+                id={`search-tab-${tab.key}`}
+                role="tab"
+                tabindex="-1"
+                aria-selected={selectedKind() === tab.key}
+                class={`tv-category-pill ${selectedKind() === tab.key ? 'active' : ''} ${focusId() === `search-tab-${tab.key}` ? 'focused' : ''}`}
+                onClick={() => {
+                  setSelectedKind(tab.key);
+                  void performSearch();
+                }}
+              >
+                {tab.label}
+              </button>
+            )}
+          </For>
+        </div>
+
+        <div class="tv-live-badge">
+          <span>{results().length} résultats</span>
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: "48px", flex: 1, "overflow-y": "hidden" }}>
+      <div style={{ display: "flex", flex: 1, "overflow-y": "hidden" }}>
         {/* On-Screen Keyboard */}
-        <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }} role="group" aria-label="Clavier virtuel">
+        <div style={{ width: "620px", "margin-right": "32px", "flex-shrink": 0 }} role="group" aria-label="Clavier virtuel">
+          {/* Query input display */}
+          <div style={{
+            background: "var(--buntu-slate)",
+            padding: "14px 24px",
+            "border-radius": "12px",
+            "font-size": "24px",
+            "font-weight": "700",
+            border: "2px solid var(--buntu-border)",
+            "margin-bottom": "20px",
+            color: query() ? "#FFFFFF" : "var(--buntu-text-muted)"
+          }}>
+            {query() || 'Saisissez votre recherche...'}
+          </div>
+
           <For each={KEYBOARD_ROWS}>
             {(row) => (
-              <div style={{ display: "flex", gap: "8px" }}>
+              <div style={{ display: "flex", "margin-bottom": "8px" }}>
                 <For each={row}>
                   {(k) => (
                     <button
@@ -105,7 +160,8 @@ export const SearchView: Component<SearchViewProps> = (props) => {
                       style={{
                         padding: k.length > 1 ? "12px 24px" : "12px 20px",
                         "font-size": "18px",
-                        "min-width": k.length === 1 ? "56px" : "auto"
+                        "min-width": k.length === 1 ? "54px" : "auto",
+                        "margin-right": "8px",
                       }}
                       onClick={() => void handleKeyClick(k)}
                     >
@@ -118,11 +174,11 @@ export const SearchView: Component<SearchViewProps> = (props) => {
           </For>
         </div>
 
-        {/* Search Results */}
+        {/* Search Results List */}
         <div
           role="list"
           aria-label="Résultats de recherche"
-          style={{ flex: 1, display: "flex", "flex-direction": "column", gap: "12px", "overflow-y": "auto" }}
+          class="tv-live-channels"
         >
           <For each={results()}>
             {(res, idx) => (
@@ -131,35 +187,40 @@ export const SearchView: Component<SearchViewProps> = (props) => {
                 role="button"
                 tabindex="-1"
                 aria-label={`Résultat: ${res.candidate.name_clean || res.candidate.name}, catégorie ${res.candidate.group_title || 'générale'}, type ${res.candidate.kind}`}
-                class={`tv-card ${focusId() === `search-res-${idx()}` ? 'focused' : ''}`}
-                style={{
-                  padding: "16px 24px",
-                  display: "flex",
-                  "justify-content": "space-between",
-                  "align-items": "center",
-                  cursor: "pointer"
-                }}
+                class={`tv-channel-row ${focusId() === `search-res-${idx()}` ? 'focused' : ''}`}
                 onClick={() => props.onSelectResult(res.candidate as any)}
               >
-                <div>
-                  <div style={{ "font-size": "22px", "font-weight": "700" }}>
+                {/* Kind Badge */}
+                <div class="tv-channel-num" style={{ "font-size": "14px", "min-width": "80px" }}>
+                  {res.candidate.kind === 'live' ? 'DIRECT' : res.candidate.kind === 'series' ? 'SÉRIE' : 'FILM'}
+                </div>
+
+                {/* Candidate Info */}
+                <div class="tv-channel-info">
+                  <div class="tv-channel-name">
                     {res.candidate.name_clean || res.candidate.name}
                   </div>
-                  <div style={{ "font-size": "14px", color: "var(--buntu-text-muted)" }}>
-                    {res.candidate.kind.toUpperCase()} • {res.candidate.year || ''} • {res.candidate.group_title || ''}
+                  <div class="tv-channel-meta">
+                    {res.candidate.group_title || 'Général'} • {res.candidate.year || '2024'}
                   </div>
                 </div>
-                <div style={{ color: "var(--buntu-gold)", "font-weight": "800" }}>
-                  Score: {res.score.toFixed(1)}
-                </div>
+
+                {/* Action Pill */}
+                <Show when={focusId() === `search-res-${idx()}`}>
+                  <div class="tv-watch-pill">
+                    <span>▶</span>
+                    <span>VOIR</span>
+                  </div>
+                </Show>
               </div>
             )}
           </For>
-          {results().length === 0 && query().trim().length > 0 && (
-            <div style={{ "text-align": "center", color: "var(--buntu-text-muted)", padding: "48px" }}>
-              Aucun résultat trouvé pour "{query()}"
+
+          <Show when={results().length === 0 && query().trim().length > 0}>
+            <div style={{ "text-align": "center", color: "var(--buntu-text-muted)", padding: "48px 0", "font-size": "20px" }}>
+              Aucun résultat trouvé pour "{query()}" dans {selectedKind() === 'all' ? 'le catalogue' : selectedKind()}.
             </div>
-          )}
+          </Show>
         </div>
       </div>
     </div>
