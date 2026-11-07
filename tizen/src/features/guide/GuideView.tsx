@@ -4,6 +4,7 @@ import { Database, EpgProgramRecord, ItemRecord } from '../../core/storage/Datab
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
 import { TvSearchBar } from '../../ui/components/TvSearchBar';
+import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 
 export interface GuideViewProps {
   onPlayChannel: (channel: ItemRecord) => void;
@@ -214,6 +215,9 @@ export const GuideView: Component<GuideViewProps> = (props) => {
         >
           <For each={activeChannels()}>
             {(ch) => {
+              const chName = ch.name_clean && ch.name_clean !== ch.name
+                ? ch.name_clean
+                : cleanMediaTitle(ch.name).clean;
               const epg = ch.tvg_id ? epgMap()[ch.tvg_id] : undefined;
               const nowTitle = epg?.now?.title || 'Programme en cours';
               const nextTitle = epg?.next?.title || 'À suivre';
@@ -222,7 +226,7 @@ export const GuideView: Component<GuideViewProps> = (props) => {
                   id={`guide-channel-${ch.id}`}
                   role="button"
                   tabindex="-1"
-                  aria-label={`Chaîne ${ch.name}. En ce moment: ${nowTitle}. Suivant: ${nextTitle}. Appuyez pour regarder.`}
+                  aria-label={`Chaîne ${chName}. En ce moment: ${nowTitle}. Suivant: ${nextTitle}. Appuyez pour regarder.`}
                   class={`tv-guide-row ${focusId() === `guide-channel-${ch.id}` ? 'focused' : ''}`}
                   onClick={() => props.onPlayChannel(ch)}
                 >
@@ -232,7 +236,7 @@ export const GuideView: Component<GuideViewProps> = (props) => {
                       {ch.chno || '•'}
                     </div>
                     <div class="tv-guide-channel-text">
-                      <div class="tv-guide-channel-name">{ch.name}</div>
+                      <div class="tv-guide-channel-name">{chName}</div>
                       <div class="tv-guide-channel-cat">{ch.group_title || 'Direct TV'}</div>
                     </div>
                   </div>

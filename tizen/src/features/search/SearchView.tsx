@@ -2,6 +2,7 @@ import { Component, createSignal, For, Show, onMount } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
+import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 
 export interface SearchViewProps {
   onSelectResult: (item: ItemRecord) => void;
@@ -90,7 +91,7 @@ export const SearchView: Component<SearchViewProps> = (props) => {
       rebuildGrid([]);
       return;
     }
-    const kindFilter = selectedKind() === 'all' ? undefined : selectedKind();
+    const kindFilter = selectedKind() === 'all' ? undefined : (selectedKind() as 'live' | 'movie' | 'series');
     const res = await engine.search(q, kindFilter);
     setResults(res);
     rebuildGrid(res);
@@ -181,39 +182,44 @@ export const SearchView: Component<SearchViewProps> = (props) => {
           class="tv-live-channels"
         >
           <For each={results()}>
-            {(res, idx) => (
-              <div
-                id={`search-res-${idx()}`}
-                role="button"
-                tabindex="-1"
-                aria-label={`Résultat: ${res.candidate.name_clean || res.candidate.name}, catégorie ${res.candidate.group_title || 'générale'}, type ${res.candidate.kind}`}
-                class={`tv-channel-row ${focusId() === `search-res-${idx()}` ? 'focused' : ''}`}
-                onClick={() => props.onSelectResult(res.candidate as any)}
-              >
-                {/* Kind Badge */}
-                <div class="tv-channel-num" style={{ "font-size": "14px", "min-width": "80px" }}>
-                  {res.candidate.kind === 'live' ? 'DIRECT' : res.candidate.kind === 'series' ? 'SÉRIE' : 'FILM'}
-                </div>
+            {(res, idx) => {
+              const candName = res.candidate.name_clean && res.candidate.name_clean !== res.candidate.name
+                ? res.candidate.name_clean
+                : cleanMediaTitle(res.candidate.name).clean;
+              return (
+                <div
+                  id={`search-res-${idx()}`}
+                  role="button"
+                  tabindex="-1"
+                  aria-label={`Résultat: ${candName}, catégorie ${res.candidate.group_title || 'générale'}, type ${res.candidate.kind}`}
+                  class={`tv-channel-row ${focusId() === `search-res-${idx()}` ? 'focused' : ''}`}
+                  onClick={() => props.onSelectResult(res.candidate as any)}
+                >
+                  {/* Kind Badge */}
+                  <div class="tv-channel-num" style={{ "font-size": "14px", "min-width": "80px" }}>
+                    {res.candidate.kind === 'live' ? 'DIRECT' : res.candidate.kind === 'series' ? 'SÉRIE' : 'FILM'}
+                  </div>
 
-                {/* Candidate Info */}
-                <div class="tv-channel-info">
-                  <div class="tv-channel-name">
-                    {res.candidate.name_clean || res.candidate.name}
+                  {/* Candidate Info */}
+                  <div class="tv-channel-info">
+                    <div class="tv-channel-name">
+                      {candName}
+                    </div>
+                    <div class="tv-channel-meta">
+                      {res.candidate.group_title || 'Général'} • {res.candidate.year || '2024'}
+                    </div>
                   </div>
-                  <div class="tv-channel-meta">
-                    {res.candidate.group_title || 'Général'} • {res.candidate.year || '2024'}
-                  </div>
-                </div>
 
-                {/* Action Pill */}
-                <Show when={focusId() === `search-res-${idx()}`}>
-                  <div class="tv-watch-pill">
-                    <span>▶</span>
-                    <span>VOIR</span>
-                  </div>
-                </Show>
-              </div>
-            )}
+                  {/* Action Pill */}
+                  <Show when={focusId() === `search-res-${idx()}`}>
+                    <div class="tv-watch-pill">
+                      <span>▶</span>
+                      <span>VOIR</span>
+                    </div>
+                  </Show>
+                </div>
+              );
+            }}
           </For>
 
           <Show when={results().length === 0 && query().trim().length > 0}>

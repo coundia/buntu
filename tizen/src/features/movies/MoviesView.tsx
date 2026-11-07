@@ -4,6 +4,7 @@ import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
 import { TvSearchBar } from '../../ui/components/TvSearchBar';
+import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { announce } from '../../ui/design/a11y';
 
 export interface MoviesViewProps {
@@ -230,7 +231,9 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
         >
           <For each={activeMovies()}>
             {(movie) => {
-              const title = movie.name_clean || movie.name;
+              const title = movie.name_clean && movie.name_clean !== movie.name
+                ? movie.name_clean
+                : cleanMediaTitle(movie.name).clean;
               const is4k = title.toLowerCase().includes('4k') || title.toLowerCase().includes('uhd');
               return (
                 <div class="tv-poster-cell">
@@ -257,6 +260,8 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
                           src={movie.logo_url}
                           alt=""
                           loading="lazy"
+                          referrerpolicy="no-referrer"
+                          crossOrigin="anonymous"
                           onError={(e) => {
                             const target = e.currentTarget as HTMLElement;
                             target.style.display = 'none';

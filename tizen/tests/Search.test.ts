@@ -24,6 +24,7 @@ describe('Full-Screen & In-Screen IPTV Search Architecture', () => {
       stream_url: 'http://example.com/live/tf1.ts',
       is_favorite: 0,
       playback_position_ms: 0,
+      duration_ms: 0,
     },
     {
       id: 2,
@@ -37,6 +38,7 @@ describe('Full-Screen & In-Screen IPTV Search Architecture', () => {
       stream_url: 'http://example.com/live/canal.ts',
       is_favorite: 0,
       playback_position_ms: 0,
+      duration_ms: 0,
     },
     {
       id: 3,
@@ -50,6 +52,7 @@ describe('Full-Screen & In-Screen IPTV Search Architecture', () => {
       stream_url: 'http://example.com/movie/gladiator.mkv',
       is_favorite: 0,
       playback_position_ms: 0,
+      duration_ms: 0,
     },
     {
       id: 4,
@@ -65,6 +68,7 @@ describe('Full-Screen & In-Screen IPTV Search Architecture', () => {
       stream_url: 'http://example.com/series/shogun_s01e01.mkv',
       is_favorite: 0,
       playback_position_ms: 0,
+      duration_ms: 0,
     },
   ];
 
