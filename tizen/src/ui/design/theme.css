@@ -2025,14 +2025,15 @@ html, body, #root {
 
 /* 1. Left Navigation Sidebar (with Icon + Label + Counter Badges) */
 .buntu-sidebar {
-  width: clamp(280px, 17.5vw, 340px);
+  /* 10-foot UI: every size scales with the screen width (1920 px wide -> 403 px sidebar, 31 px labels) */
+  width: clamp(220px, 21vw, 560px);
   height: 100%;
   flex-shrink: 0;
   background: var(--buntu-sidebar-bg);
   border-right: 1px solid var(--buntu-hairline);
   display: flex;
   flex-direction: column;
-  padding: clamp(14px, 1.8vh, 22px) 14px;
+  padding: clamp(10px, 1.8vh, 26px) clamp(10px, 0.9vw, 24px);
   box-sizing: border-box;
   z-index: 100;
   user-select: none;
@@ -2040,7 +2041,7 @@ html, body, #root {
 }
 
 .buntu-sidebar.collapsed {
-  width: 86px;
+  width: clamp(80px, 6.4vw, 160px);
   padding-left: 10px;
   padding-right: 10px;
 }
@@ -2049,7 +2050,7 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px 18px 10px;
+  padding: 6px 10px clamp(8px, 1.6vh, 24px) 10px;
   gap: 12px;
   flex-shrink: 0;
 }
@@ -2062,9 +2063,9 @@ html, body, #root {
 }
 
 .buntu-brand-logo {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
+  width: clamp(36px, 3vw, 76px);
+  height: clamp(36px, 3vw, 76px);
+  border-radius: 12px;
   object-fit: cover;
   flex-shrink: 0;
   background: #141416;
@@ -2073,7 +2074,7 @@ html, body, #root {
 }
 
 .buntu-brand-text {
-  font-size: clamp(22px, 1.5vw, 26px);
+  font-size: clamp(22px, 2vw, 52px);
   font-weight: 800;
   color: #FFFFFF;
   letter-spacing: -0.3px;
@@ -2100,12 +2101,12 @@ html, body, #root {
 }
 
 .buntu-nav-group-label {
-  font-size: 13.5px;
+  font-size: clamp(13px, 1.05vw, 28px);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: rgba(255, 255, 255, 0.45);
-  padding: 16px 12px 6px 12px;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.62);
+  padding: clamp(8px, 1.8vh, 24px) 14px 6px 14px;
   flex-shrink: 0;
 }
 
@@ -2113,13 +2114,12 @@ html, body, #root {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: clamp(11px, 1.2vh, 15px) 14px;
-  border-radius: 11px;
-  border: 2px solid transparent;
+  padding: clamp(6px, 1.05vh, 18px) clamp(10px, 0.9vw, 24px);
+  border-radius: 14px;
+  border: 3px solid transparent;
   background: transparent;
-  color: rgba(255, 255, 255, 0.88);
-  font-size: clamp(18px, 1.2vw, 21px);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: clamp(17px, 1.6vw, 42px);
   font-weight: 600;
   cursor: pointer;
   text-align: left;
@@ -2128,18 +2128,23 @@ html, body, #root {
   flex-shrink: 0;
 }
 
+.buntu-sidebar.collapsed .buntu-nav-icon {
+  margin-right: 0;
+}
+
 .buntu-sidebar.collapsed .buntu-nav-btn {
   justify-content: center;
-  padding: 12px 0;
+  padding: clamp(7px, 1.3vh, 20px) 0;
 }
 
 .buntu-nav-icon {
-  width: 28px;
-  height: 28px;
+  margin-right: 0.45em; /* flex gap is unsupported on Chromium < 84 (older Tizen TVs) */
+  width: clamp(26px, 2.2vw, 58px);
+  height: clamp(26px, 2.2vw, 58px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: clamp(20px, 1.4vw, 24px);
+  font-size: clamp(20px, 1.9vw, 48px);
   flex-shrink: 0;
   color: var(--buntu-accent);
 }
@@ -2153,12 +2158,12 @@ html, body, #root {
 }
 
 .buntu-nav-count {
-  font-size: clamp(13px, 0.9vw, 15px);
+  font-size: clamp(14px, 1.2vw, 32px);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.55);
-  padding: 3px 9px;
-  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.78);
+  padding: 3px 12px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
 }
@@ -2182,7 +2187,7 @@ html, body, #root {
   background: rgba(10, 132, 255, 0.35) !important;
   border-color: #FFFFFF !important;
   color: #FFFFFF !important;
-  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.65), 0 4px 14px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.75), 0 6px 18px rgba(0, 0, 0, 0.55);
   z-index: 5;
 }
 
@@ -3081,9 +3086,6 @@ html, body, #root {
 
 /* Responsive Breakpoints for Compact TVs (720p) & 4K UHD Panels */
 @media (max-width: 1366px) {
-  .buntu-sidebar {
-    width: 250px;
-  }
   .buntu-cat-pane {
     width: 240px;
   }
@@ -3096,15 +3098,9 @@ html, body, #root {
   .buntu-cat-pane {
     width: 200px;
   }
-  .buntu-sidebar {
-    width: 210px;
-  }
 }
 
 @media (min-width: 2400px) {
-  .buntu-sidebar {
-    width: 440px;
-  }
   .buntu-cat-pane {
     width: 460px;
   }
@@ -3115,4 +3111,99 @@ html, body, #root {
     min-height: 140px;
     padding: 18px 22px;
   }
+}
+
+/* ==============================================================================
+   10-FOOT TV READABILITY (Live TV / catalog screens)
+   Every size follows the screen width: at 1920 px wide, channel names are ~28 px,
+   the program line ~22 px, category rows ~28 px. clamp() gets a plain fallback at build
+   time for older TV browsers (see build-plugins/clampFallback.cjs).
+   Keep this block last so it wins over the compact defaults above.
+   ============================================================================== */
+
+.buntu-toolbar {
+  height: clamp(52px, 7.2vh, 110px);
+  padding: 0 clamp(14px, 1.5vw, 40px);
+}
+.buntu-toolbar-title { font-size: clamp(20px, 1.8vw, 46px); }
+.buntu-toolbar-subtitle { font-size: clamp(15px, 1.2vw, 30px); color: rgba(255, 255, 255, 0.65); }
+.buntu-tool-btn {
+  height: clamp(36px, 3.4vw, 80px);
+  min-width: clamp(36px, 3.4vw, 80px);
+  font-size: clamp(18px, 1.6vw, 40px);
+}
+.buntu-seg-btn {
+  height: clamp(32px, 3vw, 72px);
+  min-width: clamp(36px, 3.2vw, 76px);
+  font-size: clamp(17px, 1.5vw, 38px);
+}
+.buntu-search-wrap { width: clamp(220px, 22vw, 520px); }
+.buntu-search-field {
+  height: clamp(36px, 3.4vw, 80px);
+  font-size: clamp(16px, 1.3vw, 34px);
+  padding-left: clamp(34px, 2.8vw, 70px);
+}
+.buntu-search-icon { font-size: clamp(16px, 1.3vw, 34px); }
+.buntu-search-field::placeholder { color: rgba(255, 255, 255, 0.55); }
+
+/* Category column */
+.buntu-cat-pane { width: clamp(220px, 19vw, 480px); }
+.buntu-cat-home-btn {
+  width: clamp(36px, 3vw, 72px);
+  height: clamp(36px, 3vw, 72px);
+  font-size: clamp(18px, 1.6vw, 40px);
+}
+.buntu-cat-filter-input {
+  height: clamp(36px, 3vw, 72px);
+  font-size: clamp(15px, 1.2vw, 32px);
+}
+.buntu-cat-list { padding: 8px 10px 24px 10px; }
+.buntu-cat-row {
+  padding: clamp(8px, 1.25vh, 18px) clamp(10px, 0.8vw, 20px);
+  border-radius: 12px;
+  border-width: 3px;
+  font-size: clamp(16px, 1.45vw, 38px);
+  color: rgba(255, 255, 255, 0.95);
+}
+.buntu-cat-row-icon { font-size: clamp(16px, 1.45vw, 38px); margin-right: 0.4em; }
+.buntu-cat-count {
+  font-size: clamp(13px, 1.1vw, 28px);
+  padding: 2px 10px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Content area and section titles */
+.buntu-content-scroll { padding: clamp(14px, 1.4vw, 40px); }
+.buntu-section-title { font-size: clamp(18px, 1.6vw, 42px); }
+.buntu-section-meta { font-size: clamp(14px, 1.15vw, 30px); color: rgba(255, 255, 255, 0.65); }
+
+/* Channel grid: ~2 comfortable columns beside the sidebars on a 1080p TV */
+.buntu-channel-grid { grid-template-columns: repeat(auto-fill, minmax(clamp(240px, 24vw, 560px), 1fr)); }
+.buntu-shelf-scroll { grid-auto-columns: minmax(clamp(240px, 24vw, 560px), 1fr); }
+
+/* Channel card */
+.buntu-ch-card {
+  min-height: clamp(96px, 9.5vw, 230px);
+  padding: clamp(10px, 0.9vw, 24px) clamp(12px, 1vw, 26px);
+  border-radius: 14px;
+  border-width: 3px;
+}
+.buntu-channel-grid.list-mode .buntu-ch-card { min-height: clamp(64px, 5.8vw, 140px); }
+.buntu-ch-logo {
+  width: clamp(44px, 3.8vw, 96px);
+  height: clamp(44px, 3.8vw, 96px);
+  margin-right: 0.9vw;
+}
+.buntu-ch-logo-fallback { font-size: clamp(22px, 1.9vw, 48px); }
+.buntu-ch-num { font-size: clamp(14px, 1.15vw, 30px); margin-right: 0.5vw; color: rgba(255, 255, 255, 0.7); }
+.buntu-ch-name { font-size: clamp(17px, 1.5vw, 38px); }
+.buntu-q-badge { font-size: clamp(11px, 0.9vw, 24px); padding: 2px 7px; margin-left: 0.5vw; }
+.buntu-ch-group { font-size: clamp(12px, 1vw, 26px); color: rgba(255, 255, 255, 0.62); }
+.buntu-ch-star { font-size: clamp(20px, 1.8vw, 46px); color: rgba(255, 255, 255, 0.4); }
+.buntu-ch-star.fav { color: var(--buntu-star); }
+.buntu-epg-title { font-size: clamp(14px, 1.2vw, 32px); color: rgba(255, 255, 255, 0.9); }
+.buntu-epg-empty { font-size: clamp(13px, 1.05vw, 28px); color: rgba(255, 255, 255, 0.5); }
+.buntu-epg-bar { height: clamp(4px, 0.4vw, 10px); }
+.buntu-ch-card.focused {
+  box-shadow: 0 0 0 4px #FFFFFF, 0 10px 28px rgba(0, 0, 0, 0.7);
 }
