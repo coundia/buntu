@@ -3207,3 +3207,143 @@ html, body, #root {
 .buntu-ch-card.focused {
   box-shadow: 0 0 0 4px #FFFFFF, 0 10px 28px rgba(0, 0, 0, 0.7);
 }
+
+/* ==============================================================================
+   LIVE TV RIGHT PANEL: preview, details, actions (always visible, 10-foot sizes)
+   ============================================================================== */
+.buntu-inspector-pane {
+  width: clamp(300px, 27vw, 700px);
+  padding: clamp(12px, 1.1vw, 30px);
+  gap: clamp(8px, 0.8vw, 22px);
+}
+.buntu-inspector-viewport {
+  border-width: 3px;
+  border-color: rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+}
+.buntu-inspector-viewport.focused {
+  border-color: #FFFFFF;
+  box-shadow: 0 0 0 4px var(--buntu-accent), 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+/* Opaque poster while nothing plays; removed when the stream shows through the transparent area */
+.buntu-insp-poster {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: #15151A;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.buntu-insp-poster-art {
+  width: 38%;
+  height: 52%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.buntu-insp-poster-art img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.buntu-insp-poster-fallback { font-size: clamp(34px, 4vw, 100px); opacity: 0.7; }
+.buntu-insp-poster-hint {
+  margin-top: 4%;
+  font-size: clamp(14px, 1.2vw, 32px);
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+}
+.buntu-insp-live {
+  position: absolute;
+  top: 8px; left: 8px;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: rgba(255, 59, 48, 0.92);
+  color: #FFFFFF;
+  font-size: clamp(12px, 0.95vw, 26px);
+  font-weight: 800;
+}
+.buntu-insp-heading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.buntu-insp-heading .buntu-q-badge { margin-left: 0.6vw; }
+.buntu-inspector-title { font-size: clamp(20px, 1.8vw, 48px); }
+.buntu-inspector-desc { font-size: clamp(14px, 1.1vw, 30px); color: rgba(255, 255, 255, 0.75); }
+.buntu-insp-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.buntu-insp-epg { display: flex; flex-direction: column; gap: clamp(4px, 0.4vw, 12px); }
+.buntu-insp-epg-label {
+  font-size: clamp(12px, 0.95vw, 26px);
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--buntu-accent);
+}
+.buntu-insp-epg-title { font-size: clamp(16px, 1.45vw, 38px); font-weight: 700; color: #FFFFFF; }
+.buntu-insp-next {
+  font-size: clamp(13px, 1.05vw, 28px);
+  color: rgba(255, 255, 255, 0.7);
+}
+.buntu-insp-next b { color: #FFFFFF; }
+.buntu-inspector-actions { flex-direction: column; margin-top: auto; gap: clamp(8px, 0.7vw, 18px); }
+.buntu-action-primary,
+.buntu-action-secondary {
+  min-height: clamp(40px, 3.6vw, 90px);
+  font-size: clamp(16px, 1.4vw, 36px);
+  border-width: 3px;
+  border-radius: 12px;
+}
+.buntu-action-primary.focused,
+.buntu-action-secondary.focused {
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.55);
+}
+/* Channel cards: with the panel open the list is a comfortable single column */
+.buntu-page .buntu-channel-grid { grid-template-columns: repeat(auto-fill, minmax(clamp(240px, 22vw, 560px), 1fr)); }
+
+/* 16:9 preview without aspect-ratio (unsupported before Chromium 88): height from the width via padding. */
+.buntu-inspector-viewport {
+  box-sizing: border-box;
+  height: 0;
+  padding-top: 56.25%;
+}
+
+/* Live TV panel: the video shows through the preview area, so nothing may paint behind it.
+   The preview sits flush at the top of the panel with no background around it; only the details
+   below get a solid background. (A translucent panel background used to dim the video.) */
+.buntu-inspector-pane.live-panel {
+  padding: 0;
+  gap: 0;
+  background: transparent;
+  border-left: 0;
+  overflow: hidden;
+}
+.live-panel .buntu-inspector-viewport {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+}
+.live-panel .buntu-inspector-viewport.focused {
+  box-shadow: inset 0 0 0 5px #FFFFFF, inset 0 0 0 9px var(--buntu-accent);
+}
+.buntu-insp-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(8px, 0.8vw, 22px);
+  padding: clamp(12px, 1.1vw, 30px);
+  background: #1C1C1E;
+  border-left: 1px solid var(--buntu-hairline);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.buntu-insp-poster-hint.error { color: #FF6961; }
+.buntu-insp-poster-detail {
+  margin-top: 1%;
+  padding: 0 6%;
+  font-size: clamp(12px, 0.95vw, 26px);
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+}

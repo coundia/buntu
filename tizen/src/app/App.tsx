@@ -258,7 +258,8 @@ export const App: Component = () => {
     }
     setSelectedItem(item);
     setCurrentRoute('player');
-    await engine.play(item, { force: true });
+    // A live channel already playing in the Live TV panel keeps running (not reopened).
+    await engine.play(item, { force: item.kind !== 'live' });
   };
 
   const handleNextChannel = async () => {
