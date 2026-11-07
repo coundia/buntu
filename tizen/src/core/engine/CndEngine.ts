@@ -20,6 +20,41 @@ export interface ProfileState {
   avatar: string;
 }
 
+export interface EpisodeItem {
+  id: string;
+  episode_num: number;
+  season_num: number;
+  title: string;
+  container_ext: string;
+  stream_url: string;
+  duration?: string;
+  plot?: string;
+  cover?: string;
+  rating?: number;
+}
+
+export interface SeasonInfo {
+  season_num: number;
+  name: string;
+  overview?: string;
+  episodes: EpisodeItem[];
+}
+
+export interface SeriesDetails {
+  info: {
+    title: string;
+    plot?: string;
+    cover?: string;
+    backdrop?: string;
+    genre?: string;
+    rating?: number;
+    year?: number;
+    cast?: string;
+    director?: string;
+  };
+  seasons: SeasonInfo[];
+}
+
 export type SyncProgressCallback = (msg: string, percent?: number) => void;
 
 export class CndEngine {
@@ -40,6 +75,7 @@ export class CndEngine {
   private currentPlayingItem: ItemRecord | null = null;
   private playToken = 0;
   private categoriesMemCache = new Map<string, string[]>();
+  private seriesDetailsCache = new Map<string, SeriesDetails>();
 
   public static getInstance(): CndEngine {
     if (!CndEngine.instance) {
@@ -472,29 +508,160 @@ export class CndEngine {
     this.player.stop();
   }
 
-  private async resolveXtreamSeriesFirstEpisode(descriptor: string): Promise<string> {
-    const raw = descriptor.slice('xtream-series://'.length);
-    const [encBase, u, p, seriesId] = raw.split('|');
-    const base = decodeURIComponent(encBase || '');
-    const resp = await this.net.get<any>(
-      `${base}/player_api.php?username=${u}&password=${p}&action=get_series_info&series_id=${encodeURIComponent(seriesId)}`,
-      {},
-      'json'
-    );
-    const episodesObj = resp.data?.episodes;
-    if (episodesObj && typeof episodesObj === 'object') {
-      const seasonKeys = Object.keys(episodesObj).sort((a, b) => Number(a) - Number(b));
-      for (const sk of seasonKeys) {
-        const list = episodesObj[sk];
-        if (Array.isArray(list) && list.length > 0) {
-          const ep = list[0];
-          const epId = String(ep?.id ?? '').trim();
-          const ext = String(ep?.container_extension || 'mp4').replace(/^\.+/, '') || 'mp4';
-          if (epId) {
-            return `${base}/series/${u}/${p}/${epId}.${ext}`;
-          }
+  /**
+   * Fetches full series details, seasons, and episodes from Xtream Codes API or DB.
+   */
+  public async getSeriesDetails(item: ItemRecord): Promise<SeriesDetails> {
+    const cacheKey = item.stream_url;
+    if (this.seriesDetailsCache.has(cacheKey)) {
+      return this.seriesDetailsCache.get(cacheKey)!;
+    }
+
+    if (item.stream_url.startsWith('xtream-series://')) {
+      const raw = item.stream_url.slice('xtream-series://'.length);
+      const [encBase, u, p, seriesId] = raw.split('|');
+      const base = decodeURIComponent(encBase || '');
+      const resp = await this.net.get<any>(
+        `${base}/player_api.php?username=${u}&password=${p}&action=get_series_info&series_id=${encodeURIComponent(seriesId)}`,
+        {},
+        'json'
+      );
+
+      const d = resp.data || {};
+      const episodesObj = d.episodes || {};
+      const seasonsArr: SeasonInfo[] = [];
+
+      // Season metadata if provided
+      const metaSeasonsMap = new Map<number, any>();
+      if (Array.isArray(d.seasons)) {
+        for (const s of d.seasons) {
+          const num = Number(s?.season_number);
+          if (!isNaN(num)) metaSeasonsMap.set(num, s);
         }
       }
+
+      const seasonKeys = Object.keys(episodesObj).sort((a, b) => Number(a) - Number(b));
+      for (const sk of seasonKeys) {
+        const sNum = Number(sk) || 1;
+        const metaSeason = metaSeasonsMap.get(sNum);
+        const rawEps = episodesObj[sk];
+        const epList: EpisodeItem[] = (Array.isArray(rawEps) ? rawEps : []).map((ep: any, idx: number) => {
+          const epId = String(ep?.id ?? '').trim();
+          const ext = String(ep?.container_extension || 'mp4').replace(/^\.+/, '') || 'mp4';
+          const epNum = Number(ep?.episode_num) || idx + 1;
+          const epTitle = ep?.title ? String(ep.title).trim() : `Épisode ${epNum}`;
+          const epInfo = ep?.info || {};
+          const durationSec = Number(epInfo.duration_secs) || 0;
+          const durationStr = epInfo.duration
+            ? String(epInfo.duration)
+            : durationSec > 0
+            ? `${Math.round(durationSec / 60)} min`
+            : undefined;
+
+          return {
+            id: epId,
+            episode_num: epNum,
+            season_num: sNum,
+            title: cleanMediaTitle(epTitle).clean || epTitle,
+            container_ext: ext,
+            stream_url: `${base}/series/${u}/${p}/${epId}.${ext}`,
+            duration: durationStr,
+            plot: epInfo.plot ? String(epInfo.plot) : undefined,
+            cover: epInfo.movie_image ? String(epInfo.movie_image) : undefined,
+            rating: epInfo.rating ? Number(epInfo.rating) : undefined,
+          };
+        });
+
+        if (epList.length > 0) {
+          seasonsArr.push({
+            season_num: sNum,
+            name: metaSeason?.name || `Saison ${sNum}`,
+            overview: metaSeason?.overview || undefined,
+            episodes: epList,
+          });
+        }
+      }
+
+      const infoObj = d.info || {};
+      const ratingRaw =
+        infoObj.rating != null
+          ? Number(infoObj.rating)
+          : infoObj.rating_5based != null
+          ? Number(infoObj.rating_5based) * 2
+          : item.imdb_rating;
+
+      const result: SeriesDetails = {
+        info: {
+          title: cleanMediaTitle(infoObj.name || item.name_clean || item.name).clean,
+          plot: infoObj.plot || item.plot,
+          cover: infoObj.cover || item.logo_url,
+          backdrop:
+            Array.isArray(infoObj.backdrop_path) && infoObj.backdrop_path.length > 0
+              ? infoObj.backdrop_path[0]
+              : undefined,
+          genre: infoObj.genre || item.group_title,
+          rating: typeof ratingRaw === 'number' && Number.isFinite(ratingRaw) && ratingRaw > 0 ? ratingRaw : undefined,
+          year: infoObj.releaseDate
+            ? parseInt(infoObj.releaseDate.slice(0, 4), 10) || item.year
+            : item.year,
+          cast: infoObj.cast || undefined,
+          director: infoObj.director || undefined,
+        },
+        seasons: seasonsArr,
+      };
+
+      this.seriesDetailsCache.set(cacheKey, result);
+      return result;
+    }
+
+    // Fallback for non-Xtream series
+    const fallbackResult: SeriesDetails = {
+      info: {
+        title: cleanMediaTitle(item.name_clean || item.name).clean,
+        plot: item.plot,
+        cover: item.logo_url,
+        genre: item.group_title,
+        year: item.year,
+        rating: item.imdb_rating,
+      },
+      seasons: [
+        {
+          season_num: item.season_num || 1,
+          name: `Saison ${item.season_num || 1}`,
+          episodes: [
+            {
+              id: String(item.id),
+              episode_num: item.episode_num || 1,
+              season_num: item.season_num || 1,
+              title: cleanMediaTitle(item.name_clean || item.name).clean,
+              container_ext: item.container_ext || 'mp4',
+              stream_url: item.stream_url,
+              plot: item.plot,
+              cover: item.logo_url,
+            },
+          ],
+        },
+      ],
+    };
+    return fallbackResult;
+  }
+
+  private async resolveXtreamSeriesFirstEpisode(descriptor: string): Promise<string> {
+    const dummyItem: ItemRecord = {
+      id: 0,
+      source_id: 0,
+      stable_hash: '',
+      kind: 'series',
+      name: '',
+      name_clean: '',
+      stream_url: descriptor,
+      is_favorite: 0,
+      playback_position_ms: 0,
+      duration_ms: 0,
+    };
+    const details = await this.getSeriesDetails(dummyItem);
+    if (details.seasons.length > 0 && details.seasons[0].episodes.length > 0) {
+      return details.seasons[0].episodes[0].stream_url;
     }
     throw new Error('Aucun épisode disponible pour cette série.');
   }
