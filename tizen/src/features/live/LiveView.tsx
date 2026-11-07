@@ -1,8 +1,9 @@
-import { Component, createSignal, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
+import { Component, createSignal, createMemo, createEffect, onMount, onCleanup, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { Database, EpgProgramRecord, ItemRecord, FAVORITES_CATEGORY } from '../../core/storage/Database';
 import { AVPlayerService } from '../../core/player/AVPlayerService';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
+import { screenState, isContentFocusId, revealItem } from '../../core/navigation/ScreenState';
 import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { detectChannelQuality, formatBuntuCount } from '../../core/utils/categoryMeta';
@@ -24,7 +25,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   const [totalCount, setTotalCount] = createSignal(0);
   const [favCount, setFavCount] = createSignal(0);
 
-  // '' means "Toutes les chaînes"
+  // '' means "Toutes les chaînes"; the default is FAVORITES_CATEGORY (set on mount when favorites exist)
   const [selectedCategory, setSelectedCategory] = createSignal<string>('');
   const [catFilter, setCatFilter] = createSignal<string>('');
   const [showCats, setShowCats] = createSignal(true);
@@ -41,6 +42,13 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   const [previewChannel, setPreviewChannel] = createSignal<ItemRecord | null>(null);
   const [previewEpg, setPreviewEpg] = createSignal<{ now?: EpgProgramRecord; next?: EpgProgramRecord } | null>(null);
   const [focusId] = spatialNav.getFocusSignal();
+
+  // Last card focused in the content area: restored when BACK returns here from details/player.
+  let lastContentFocus = '';
+  createEffect(() => {
+    const f = focusId();
+    if (isContentFocusId(f)) lastContentFocus = f;
+  });
 
   let gridRef: HTMLDivElement | undefined;
   let viewportRef: HTMLDivElement | undefined;
@@ -138,25 +146,45 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     setCategories(cats);
     await refreshShelvesAndCounts();
 
+    // BACK from the player/details: same category, view mode and focused channel as before.
+    const restored = screenState.restore('live');
+    if (restored) {
+      setSelectedCategory(restored.category);
+      setViewMode(restored.viewMode);
+    } else if (favCount() > 0) {
+      // Favorites are the default view; fall back to all channels when there are none yet.
+      setSelectedCategory(FAVORITES_CATEGORY);
+    }
+
     await scroller.reset();
     const items = scroller.items();
     if (items.length > 0) {
       await selectForPreview(items[0], false);
     }
+    if (restored && restored.focusId) {
+      await revealItem(scroller, restored.focusId);
+      rebuildGrid(false);
+      if (document.getElementById(restored.focusId)) {
+        spatialNav.setFocusById(restored.focusId);
+        document.querySelector('.buntu-cat-row.active')?.scrollIntoView({ block: 'nearest' });
+        return;
+      }
+    }
     scheduleRebuildGrid(false);
     if (items.length > 0) {
-      const firstId = recentChannels().length > 0
+      const firstId = showsShelves() && recentChannels().length > 0
         ? `recent-ch-${recentChannels()[0].id}`
-        : favChannels().length > 0
+        : showsShelves() && favChannels().length > 0
           ? `fav-ch-${favChannels()[0].id}`
           : `channel-${items[0].id}`;
       spatialNav.setFocusById(firstId);
     } else if (cats.length > 0) {
-      spatialNav.setFocusById('cat-all');
+      spatialNav.setFocusById('cat-fav');
     }
   });
 
   onCleanup(() => {
+    screenState.save('live', { category: selectedCategory(), viewMode: viewMode(), focusId: lastContentFocus });
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
     document.querySelector('.app-root')?.classList.remove('preview-mode');
   });
@@ -328,12 +356,12 @@ export const LiveView: Component<LiveViewProps> = (props) => {
         onSelect: () => focusDomInput('live-cat-filter'),
       });
       catColItems.push({
-        id: 'cat-all',
-        onSelect: () => void handleSelectCategory(''),
-      });
-      catColItems.push({
         id: 'cat-fav',
         onSelect: () => void handleSelectCategory(FAVORITES_CATEGORY),
+      });
+      catColItems.push({
+        id: 'cat-all',
+        onSelect: () => void handleSelectCategory(''),
       });
       cats.forEach((cat, idx) => {
         catColItems.push({
@@ -610,21 +638,6 @@ export const LiveView: Component<LiveViewProps> = (props) => {
             </div>
 
             <div class="buntu-cat-list">
-              {/* Toutes les chaînes */}
-              <div
-                id="cat-all"
-                role="button"
-                tabindex="-1"
-                class={`buntu-cat-row ${selectedCategory() === '' && !isSearchMode() ? 'active' : ''} ${focusId() === 'cat-all' ? 'focused' : ''}`}
-                onClick={() => void handleSelectCategory('')}
-              >
-                <div class="buntu-cat-row-left">
-                  <span class="buntu-cat-row-icon">⊞</span>
-                  <span class="buntu-cat-row-title">Toutes les chaînes</span>
-                </div>
-                <span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span>
-              </div>
-
               {/* Favoris */}
               <div
                 id="cat-fav"
@@ -638,6 +651,21 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                   <span class="buntu-cat-row-title">Favoris</span>
                 </div>
                 <span class="buntu-cat-count">{formatBuntuCount(favCount())}</span>
+              </div>
+
+              {/* Toutes les chaînes */}
+              <div
+                id="cat-all"
+                role="button"
+                tabindex="-1"
+                class={`buntu-cat-row ${selectedCategory() === '' && !isSearchMode() ? 'active' : ''} ${focusId() === 'cat-all' ? 'focused' : ''}`}
+                onClick={() => void handleSelectCategory('')}
+              >
+                <div class="buntu-cat-row-left">
+                  <span class="buntu-cat-row-icon">⊞</span>
+                  <span class="buntu-cat-row-title">Toutes</span>
+                </div>
+                <span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span>
               </div>
 
               {/* Provider Categories with Exact Counts */}

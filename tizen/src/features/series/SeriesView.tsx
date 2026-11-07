@@ -1,8 +1,9 @@
-import { Component, createSignal, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
+import { Component, createSignal, createMemo, createEffect, onMount, onCleanup, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord, FAVORITES_CATEGORY } from '../../core/storage/Database';
 import { AVPlayerService } from '../../core/player/AVPlayerService';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
+import { screenState, isContentFocusId, revealItem } from '../../core/navigation/ScreenState';
 import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { detectChannelQuality, formatBuntuCount } from '../../core/utils/categoryMeta';
@@ -35,6 +36,13 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
   const [favSeries, setFavSeries] = createSignal<ItemRecord[]>([]);
   const [previewSeries, setPreviewSeries] = createSignal<ItemRecord | null>(null);
   const [focusId] = spatialNav.getFocusSignal();
+
+  // Last card focused in the content area: restored when BACK returns here from details/player.
+  let lastContentFocus = '';
+  createEffect(() => {
+    const f = focusId();
+    if (isContentFocusId(f)) lastContentFocus = f;
+  });
 
   let gridRef: HTMLDivElement | undefined;
   let viewportRef: HTMLDivElement | undefined;
@@ -111,10 +119,26 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     setCategories(cats);
     await refreshShelvesAndCounts();
 
+    // BACK from details/player: same category, view mode and focused series as before.
+    const restored = screenState.restore('series');
+    if (restored) {
+      setSelectedCat(restored.category);
+      setViewMode(restored.viewMode);
+    }
+
     await scroller.reset();
     const items = scroller.items();
     if (items.length > 0) {
       setPreviewSeries(items[0]);
+    }
+    if (restored && restored.focusId) {
+      await revealItem(scroller, restored.focusId);
+      rebuildGrid(false);
+      if (document.getElementById(restored.focusId)) {
+        spatialNav.setFocusById(restored.focusId);
+        document.querySelector('.buntu-cat-row.active')?.scrollIntoView({ block: 'nearest' });
+        return;
+      }
     }
     scheduleRebuildGrid(false);
     if (items.length > 0) {
@@ -130,6 +154,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
   });
 
   onCleanup(() => {
+    screenState.save('series', { category: selectedCat(), viewMode: viewMode(), focusId: lastContentFocus });
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
     document.querySelector('.app-root')?.classList.remove('preview-mode');
   });
