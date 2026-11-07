@@ -1916,6 +1916,74 @@ html, body {
   flex-shrink: 0;
 }
 
+/* ==========================================================================
+   Movie View 3-Column Split with Right Mini Player Preview
+   ========================================================================== */
+
+.tv-movie-split-layout {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tv-movie-catalog-col {
+  width: 980px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 14px;
+  margin-right: 24px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-sizing: border-box;
+}
+
+.tv-movie-3col-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
+  padding-bottom: 30px;
+}
+
+.tv-movie-3col-cell {
+  width: calc((100% - 32px) / 3);
+  box-sizing: border-box;
+}
+
+.tv-movie-3col-cell .tv-poster-art {
+  height: 240px;
+}
+
+.tv-movie-preview-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.tv-movie-synopsis-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 14px 18px;
+  color: var(--buntu-text-muted);
+  font-size: 15px;
+  line-height: 1.45;
+  max-height: 120px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
 
 
 
