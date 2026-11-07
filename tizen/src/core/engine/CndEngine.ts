@@ -46,6 +46,7 @@ export class CndEngine {
   };
   private isAdultUnlocked = false;
   private currentPlayingItem: ItemRecord | null = null;
+  private playToken = 0;
 
   public static getInstance(): CndEngine {
     if (!CndEngine.instance) {
@@ -409,11 +410,19 @@ export class CndEngine {
   }
 
   /**
-   * Playback.
+   * Playback. Several calls may overlap (zapping in the Live TV list): only the last one opens its stream.
+   * The same live channel already playing (preview → full screen) is not reopened unless `force`.
    */
-  public async play(item: ItemRecord): Promise<void> {
-    this.currentPlayingItem = item;
+  public async play(item: ItemRecord, options: { force?: boolean } = {}): Promise<void> {
+    const token = ++this.playToken;
     const isLive = item.kind === 'live';
+    const alreadyPlaying =
+      !options.force &&
+      isLive &&
+      this.currentPlayingItem?.id === item.id &&
+      this.player.isActive();
+    this.currentPlayingItem = item;
+    if (alreadyPlaying) return;
 
     let streamUrl = item.stream_url;
     if (streamUrl.startsWith('xtream-series://')) {
@@ -428,9 +437,18 @@ export class CndEngine {
         console.warn('Final URL resolution fallback to raw:', err);
       }
     }
+    if (token !== this.playToken) return; // the user already chose something else
 
     await this.player.open(streamUrl, isLive);
+    if (token !== this.playToken) return;
     this.player.play();
+  }
+
+  /** Stops the video and frees the provider's connection. */
+  public stopPlayback() {
+    this.playToken++;
+    this.currentPlayingItem = null;
+    this.player.stop();
   }
 
   private async resolveXtreamSeriesFirstEpisode(descriptor: string): Promise<string> {

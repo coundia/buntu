@@ -62,6 +62,9 @@ export const SettingsView: Component = () => {
             automatiquement toute requête parallèle pour éviter le bannissement ou l'erreur 429.
           </p>
           <button
+            id="btn-single-conn"
+            tabindex="-1"
+            aria-label={`Mode 1 Connexion Stricte : ${singleConn() ? 'Actif' : 'Désactivé'}. Appuyez pour basculer.`}
             class={`tv-btn ${focusId() === 'btn-single-conn' ? 'focused' : ''}`}
             onClick={toggleSingleConnection}
           >
@@ -94,6 +97,9 @@ export const SettingsView: Component = () => {
             Libère l'espace disque IndexedDB en conservant vos favoris et vos sources.
           </p>
           <button
+            id="btn-purge-cache"
+            tabindex="-1"
+            aria-label="Purger le cache des miniatures et instantanés"
             class={`tv-btn ${focusId() === 'btn-purge-cache' ? 'focused' : ''}`}
             onClick={purgeCache}
           >
