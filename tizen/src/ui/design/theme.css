@@ -372,4 +372,86 @@ html, body {
   outline-offset: 2px;
 }
 
+/* Exit Button in Top Navigation */
+.tv-nav-exit {
+  color: #F87171 !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  background: rgba(239, 68, 68, 0.08) !important;
+  margin-left: 12px;
+}
+
+.tv-nav-exit.focused {
+  background: var(--buntu-danger) !important;
+  color: #FFFFFF !important;
+  border-color: var(--buntu-danger) !important;
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.4), 0 8px 24px rgba(255, 59, 48, 0.6) !important;
+  transform: scale(1.08);
+}
+
+/* Modal Dialog Overlay for Exit Confirmation */
+.tv-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 9, 14, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeInModal 0.2s ease-out;
+}
+
+@keyframes fadeInModal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tv-modal-card {
+  background: var(--buntu-slate);
+  border: 2px solid var(--buntu-border);
+  border-radius: 20px;
+  padding: 48px 64px;
+  max-width: 680px;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  transform: translateY(0);
+  animation: scaleUpModal 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes scaleUpModal {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Red Danger Button Variant */
+.tv-btn-danger {
+  background: rgba(239, 68, 68, 0.2);
+  border: 2px solid rgba(239, 68, 68, 0.5);
+  color: #FCA5A5;
+}
+
+.tv-btn-danger.focused {
+  background: var(--buntu-danger);
+  color: #FFFFFF;
+  border-color: var(--buntu-danger);
+  transform: scale(1.06);
+  box-shadow: 0 8px 24px rgba(255, 59, 48, 0.5);
+}
+
+
 

@@ -24,6 +24,13 @@ class SpatialNav {
   private currentCol = 0;
   private headerCol = 0;
   private isInitialized = false;
+  private modalState: {
+    grid: FocusableItem[][];
+    header: FocusableItem[];
+    row: number;
+    col: number;
+    headerCol: number;
+  } | null = null;
 
   private constructor() {
     this.init();
@@ -51,7 +58,18 @@ class SpatialNav {
     return this.currentFocus[0]();
   }
 
+  public isModalOpen(): boolean {
+    return this.modalState !== null;
+  }
+
   public setHeader(items: FocusableItem[], activeIndex = 0) {
+    if (this.modalState) {
+      this.modalState.header = items;
+      if (items.length > 0) {
+        this.modalState.headerCol = Math.min(Math.max(0, activeIndex), items.length - 1);
+      }
+      return;
+    }
     this.headerItems = items;
     if (items.length > 0) {
       this.headerCol = Math.min(Math.max(0, activeIndex), items.length - 1);
@@ -62,6 +80,10 @@ class SpatialNav {
 
   public setGrid(grid: FocusableItem[][], initialRow = 0, initialCol = 0) {
     const nonEmpty = grid.filter((row) => row.length > 0);
+    if (this.modalState) {
+      this.modalState.grid = nonEmpty;
+      return;
+    }
     this.focusableGrid = nonEmpty;
 
     if (nonEmpty.length === 0) {
@@ -83,6 +105,53 @@ class SpatialNav {
     const item = this.focusableGrid[this.currentRow]?.[this.currentCol];
     if (item) {
       this.applyFocus(item);
+    }
+  }
+
+  public openModal(grid: FocusableItem[][], initialRow = 0, initialCol = 0) {
+    if (!this.modalState) {
+      this.modalState = {
+        grid: this.focusableGrid,
+        header: this.headerItems,
+        row: this.currentRow,
+        col: this.currentCol,
+        headerCol: this.headerCol,
+      };
+    }
+    this.headerItems = [];
+    const nonEmpty = grid.filter((row) => row.length > 0);
+    this.focusableGrid = nonEmpty;
+
+    if (nonEmpty.length === 0) {
+      this.currentFocus[1]('');
+      return;
+    }
+
+    this.currentRow = Math.min(initialRow, Math.max(0, nonEmpty.length - 1));
+    this.currentCol = Math.min(initialCol, Math.max(0, (nonEmpty[this.currentRow]?.length || 1) - 1));
+
+    const item = this.focusableGrid[this.currentRow]?.[this.currentCol];
+    if (item) {
+      this.applyFocus(item);
+    }
+  }
+
+  public closeModal() {
+    if (!this.modalState) return;
+    const prev = this.modalState;
+    this.modalState = null;
+    this.headerItems = prev.header;
+    this.focusableGrid = prev.grid;
+    this.currentRow = prev.row;
+    this.currentCol = prev.col;
+    this.headerCol = prev.headerCol;
+
+    if (this.currentRow === -1) {
+      const item = this.headerItems[this.headerCol];
+      if (item) this.applyFocus(item);
+    } else {
+      const item = this.focusableGrid[this.currentRow]?.[this.currentCol];
+      if (item) this.applyFocus(item);
     }
   }
 
