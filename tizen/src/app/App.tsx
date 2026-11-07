@@ -1,9 +1,11 @@
-import { Component, createEffect, createSignal, onMount, onCleanup, Switch, Match } from 'solid-js';
+import { Component, createEffect, createSignal, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
 import { CndEngine } from '../core/engine/CndEngine';
 import { AVPlayerService } from '../core/player/AVPlayerService';
 import { RemoteKey, RemoteKeyHandler } from '../core/input/RemoteKeyHandler';
 import { Database, ItemRecord } from '../core/storage/Database';
 import { spatialNav } from '../ui/design/SpatialNav';
+import { PlatformService } from '../core/platform/PlatformService';
+import { announce } from '../ui/design/a11y';
 
 import { LiveView } from '../features/live/LiveView';
 import { GuideView } from '../features/guide/GuideView';
@@ -38,6 +40,7 @@ export const App: Component = () => {
   const [currentRoute, setCurrentRoute] = createSignal<ScreenRoute>('live');
   const [selectedItem, setSelectedItem] = createSignal<ItemRecord | null>(null);
   const [hasSources, setHasSources] = createSignal(true);
+  const [showExitDialog, setShowExitDialog] = createSignal(false);
   const [focusId] = spatialNav.getFocusSignal();
 
   let keyUnsub: (() => void) | null = null;
@@ -54,21 +57,53 @@ export const App: Component = () => {
     { route: 'settings', label: 'Paramètres' },
   ];
 
+  const openExitDialog = () => {
+    setShowExitDialog(true);
+    announce("Voulez-vous quitter l'application CND IPTV ?");
+    spatialNav.openModal([
+      [
+        {
+          id: 'btn-exit-confirm',
+          onSelect: confirmExit,
+        },
+        {
+          id: 'btn-exit-cancel',
+          onSelect: closeExitDialog,
+        },
+      ],
+    ], 0, 0);
+  };
+
+  const closeExitDialog = () => {
+    setShowExitDialog(false);
+    spatialNav.closeModal();
+    announce("Annulation. Retour à l'application.");
+  };
+
+  const confirmExit = () => {
+    announce("Fermeture de l'application.");
+    PlatformService.exitApp();
+  };
+
   // Keep Top Navigation Bar registered with SpatialNav whenever visible
   createEffect(() => {
     const route = currentRoute();
-    if (route === 'player') {
+    if (route === 'player' || showExitDialog()) {
       spatialNav.setHeader([]);
       return;
     }
     const activeIdx = Math.max(0, NAV_ITEMS.findIndex((n) => n.route === route));
-    spatialNav.setHeader(
-      NAV_ITEMS.map((nav) => ({
+    const headerItems = [
+      ...NAV_ITEMS.map((nav) => ({
         id: `nav-${nav.route}`,
         onSelect: () => navigateTo(nav.route),
       })),
-      activeIdx,
-    );
+      {
+        id: 'nav-exit',
+        onSelect: openExitDialog,
+      },
+    ];
+    spatialNav.setHeader(headerItems, activeIdx);
   });
 
   onMount(async () => {
@@ -138,13 +173,25 @@ export const App: Component = () => {
       return true;
     }
 
-    if (key === 'BACK' && currentRoute() !== 'player' && currentRoute() !== 'onboarding') {
-      if (currentRoute() !== 'live') {
-        navigateTo('live');
+    if (key === 'BACK') {
+      if (showExitDialog()) {
+        closeExitDialog();
         return true;
       }
-      if (!hasSources()) {
-        navigateTo('onboarding');
+      if (currentRoute() === 'player') {
+        return false;
+      }
+      if (currentRoute() !== 'onboarding') {
+        if (currentRoute() !== 'live') {
+          navigateTo('live');
+          return true;
+        }
+        if (!hasSources()) {
+          navigateTo('onboarding');
+          return true;
+        }
+        // When on home screen 'live', pressing BACK asks to exit
+        openExitDialog();
         return true;
       }
     }
@@ -215,7 +262,7 @@ export const App: Component = () => {
             CND IPTV
           </div>
 
-          <nav style={{ display: "flex", gap: "12px" }} role="tablist" aria-label="Sections principales">
+          <nav style={{ display: "flex", gap: "12px", "align-items": "center" }} role="tablist" aria-label="Sections principales">
             {NAV_ITEMS.map((nav) => (
               <button
                 id={`nav-${nav.route}`}
@@ -229,6 +276,17 @@ export const App: Component = () => {
                 {nav.label}
               </button>
             ))}
+
+            <button
+              id="nav-exit"
+              role="button"
+              tabindex="-1"
+              aria-label="Fermer et quitter l'application CND IPTV"
+              class={`tv-nav-item tv-nav-exit ${focusId() === 'nav-exit' ? 'focused' : ''}`}
+              onClick={openExitDialog}
+            >
+              ⏻ Quitter
+            </button>
           </nav>
         </header>
       )}
@@ -306,10 +364,47 @@ export const App: Component = () => {
           </Match>
 
           <Match when={currentRoute() === 'settings'}>
-            <SettingsView />
+            <SettingsView onRequestExit={openExitDialog} />
           </Match>
         </Switch>
       </main>
+
+      {/* Exit Confirmation Modal */}
+      <Show when={showExitDialog()}>
+        <div class="tv-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="exit-modal-title">
+          <div class="tv-modal-card">
+            <div style={{ "font-size": "56px", color: "var(--buntu-danger)" }}>⏻</div>
+            <h2 id="exit-modal-title" style={{ "font-size": "36px", "font-weight": "800", color: "var(--buntu-gold)", margin: 0 }}>
+              Quitter CND IPTV
+            </h2>
+            <p style={{ "font-size": "22px", color: "var(--buntu-text-muted)", margin: 0, "max-width": "500px" }}>
+              Voulez-vous vraiment fermer l'application et retourner au téléviseur ?
+            </p>
+            <div style={{ display: "flex", gap: "24px", "margin-top": "16px" }}>
+              <button
+                id="btn-exit-confirm"
+                role="button"
+                tabindex="-1"
+                aria-label="Confirmer pour fermer et quitter l'application"
+                class={`tv-btn tv-btn-danger ${focusId() === 'btn-exit-confirm' ? 'focused' : ''}`}
+                onClick={confirmExit}
+              >
+                ⏻ Oui, quitter
+              </button>
+              <button
+                id="btn-exit-cancel"
+                role="button"
+                tabindex="-1"
+                aria-label="Annuler et continuer d'utiliser l'application"
+                class={`tv-btn ${focusId() === 'btn-exit-cancel' ? 'focused' : ''}`}
+                onClick={closeExitDialog}
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
     </div>
   );
 };

@@ -2,8 +2,13 @@ import { Component, createSignal, onMount } from 'solid-js';
 import { HttpClient } from '../../core/net/HttpClient';
 import { WorkerBridge } from '../../worker/worker-bridge';
 import { spatialNav } from '../../ui/design/SpatialNav';
+import { PlatformService } from '../../core/platform/PlatformService';
 
-export const SettingsView: Component = () => {
+export interface SettingsViewProps {
+  onRequestExit?: () => void;
+}
+
+export const SettingsView: Component<SettingsViewProps> = (props) => {
   const net = HttpClient.getInstance();
   const worker = WorkerBridge.getInstance();
 
@@ -24,10 +29,19 @@ export const SettingsView: Component = () => {
     setPurgeMsg('Cache des miniatures et instantanés purgé.');
   };
 
+  const handleExit = () => {
+    if (props.onRequestExit) {
+      props.onRequestExit();
+    } else {
+      PlatformService.exitApp();
+    }
+  };
+
   onMount(async () => {
     spatialNav.setGrid([
       [{ id: 'btn-single-conn', onSelect: toggleSingleConnection }],
       [{ id: 'btn-purge-cache', onSelect: purgeCache }],
+      [{ id: 'btn-exit-app', onSelect: handleExit }],
     ]);
 
     try {
@@ -108,6 +122,30 @@ export const SettingsView: Component = () => {
           {purgeMsg() && (
             <div style={{ "margin-top": "12px", color: "var(--buntu-cyan)" }}>{purgeMsg()}</div>
           )}
+        </div>
+
+        {/* Application Termination */}
+        <div style={{
+          background: "var(--buntu-slate)",
+          padding: "24px",
+          "border-radius": "12px",
+          border: "1px solid rgba(239, 68, 68, 0.3)"
+        }}>
+          <h3 style={{ "font-size": "22px", "margin-bottom": "8px", color: "#F87171" }}>
+            Fermer l'application
+          </h3>
+          <p style={{ color: "var(--buntu-text-muted)", "margin-bottom": "16px" }}>
+            Quitte complètement l'application CND IPTV et libère la mémoire et les décodeurs matériels de la télévision.
+          </p>
+          <button
+            id="btn-exit-app"
+            tabindex="-1"
+            aria-label="Quitter complètement l'application"
+            class={`tv-btn tv-btn-danger ${focusId() === 'btn-exit-app' ? 'focused' : ''}`}
+            onClick={handleExit}
+          >
+            ⏻ Fermer CND IPTV
+          </button>
         </div>
       </div>
     </div>
