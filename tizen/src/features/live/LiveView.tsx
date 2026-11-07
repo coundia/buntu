@@ -1,7 +1,9 @@
-import { Component, createSignal, onMount, For, Show } from 'solid-js';
+import { Component, createSignal, onMount, onCleanup, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
+import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
+import { announce } from '../../ui/design/a11y';
 
 export interface LiveViewProps {
   onPlayChannel: (channel: ItemRecord) => void;
@@ -10,23 +12,47 @@ export interface LiveViewProps {
 
 export const LiveView: Component<LiveViewProps> = (props) => {
   const engine = CndEngine.getInstance();
+  const PAGE_SIZE = 40;
+
   const [categories, setCategories] = createSignal<string[]>([]);
   const [selectedCategory, setSelectedCategory] = createSignal<string>('');
   const [channels, setChannels] = createSignal<ItemRecord[]>([]);
+  const [currentPage, setCurrentPage] = createSignal(1);
+  const [totalCount, setTotalCount] = createSignal(0);
   const [focusId] = spatialNav.getFocusSignal();
+
+  const totalPages = () => Math.max(1, Math.ceil(totalCount() / PAGE_SIZE));
+
+  let keyUnsub: (() => void) | null = null;
 
   onMount(async () => {
     const cats = await engine.getCategories('live');
     setCategories(cats);
     if (cats.length > 0) {
       setSelectedCategory(cats[0]);
-      await loadChannels(cats[0], cats);
+      await loadChannels(cats[0], cats, 1);
     } else {
-      rebuildGrid([], []);
+      rebuildGrid([], [], 1, 1);
     }
+
+    keyUnsub = RemoteKeyHandler.getInstance().addListener((key) => {
+      if (key === 'CHANNEL_UP' && currentPage() < totalPages()) {
+        void loadChannels(selectedCategory(), categories(), currentPage() + 1);
+        return true;
+      }
+      if (key === 'CHANNEL_DOWN' && currentPage() > 1) {
+        void loadChannels(selectedCategory(), categories(), currentPage() - 1);
+        return true;
+      }
+      return false;
+    });
   });
 
-  const rebuildGrid = (cats: string[], list: ItemRecord[]) => {
+  onCleanup(() => {
+    if (keyUnsub) keyUnsub();
+  });
+
+  const rebuildGrid = (cats: string[], list: ItemRecord[], page: number, pages: number) => {
     if (cats.length === 0 && list.length === 0) {
       if (props.onAddSource) {
         spatialNav.setGrid([[{ id: 'btn-live-add-source', onSelect: () => props.onAddSource?.() }]]);
@@ -36,8 +62,9 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       return;
     }
 
-    const maxRows = Math.max(cats.length, list.length);
+    const maxRows = Math.max(cats.length, list.length + (pages > 1 ? 1 : 0));
     const grid: FocusableItem[][] = [];
+
     for (let i = 0; i < maxRows; i++) {
       const row: FocusableItem[] = [];
       if (i < cats.length) {
@@ -46,17 +73,33 @@ export const LiveView: Component<LiveViewProps> = (props) => {
           id: `cat-${i}`,
           onSelect: () => {
             setSelectedCategory(cat);
-            void loadChannels(cat, cats);
+            void loadChannels(cat, cats, 1);
           },
         });
       }
+
       if (i < list.length) {
         const ch = list[i];
         row.push({
           id: `channel-${ch.id}`,
           onSelect: () => props.onPlayChannel(ch),
         });
+      } else if (i === list.length && pages > 1) {
+        // Pagination buttons row on the channels column
+        if (page > 1) {
+          row.push({
+            id: 'btn-live-prev',
+            onSelect: () => void loadChannels(selectedCategory(), cats, page - 1),
+          });
+        }
+        if (page < pages) {
+          row.push({
+            id: 'btn-live-next',
+            onSelect: () => void loadChannels(selectedCategory(), cats, page + 1),
+          });
+        }
       }
+
       if (row.length > 0) {
         grid.push(row);
       }
@@ -64,10 +107,31 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     spatialNav.setGrid(grid, 0, list.length > 0 && cats.length > 0 ? 1 : 0);
   };
 
-  const loadChannels = async (category: string, cats = categories()) => {
-    const list = await engine.getCatalog('live', category, 0, 50);
+  const loadChannels = async (category: string, cats = categories(), page = 1) => {
+    const isNewCat = category !== selectedCategory();
+    const targetPage = isNewCat ? 1 : page;
+    setSelectedCategory(category);
+    setCurrentPage(targetPage);
+
+    const offset = (targetPage - 1) * PAGE_SIZE;
+
+    // Parallel execution: fetch channel slice + instant count
+    const [list, count] = await Promise.all([
+      engine.getCatalog('live', category, offset, PAGE_SIZE),
+      engine.countCatalog('live', category),
+    ]);
+
     setChannels(list);
-    rebuildGrid(cats, list);
+    setTotalCount(count);
+
+    const pages = Math.max(1, Math.ceil(count / PAGE_SIZE));
+    announce(`Direct, catégorie ${category}, page ${targetPage} sur ${pages}, ${count} chaînes`);
+
+    rebuildGrid(cats, list, targetPage, pages);
+
+    if (!isNewCat && list.length > 0) {
+      spatialNav.setFocusById(`channel-${list[0].id}`);
+    }
   };
 
   return (
@@ -75,7 +139,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       <div class="tv-header">
         <h2 style={{ "font-size": "32px", color: "var(--buntu-gold)" }}>Direct TV</h2>
         <div style={{ color: "var(--buntu-cyan)", "font-weight": "700" }}>
-          {channels().length} chaînes disponibles
+          {totalCount()} chaînes au total
         </div>
       </div>
 
@@ -119,7 +183,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                   class={`tv-nav-item ${selectedCategory() === cat ? 'active' : ''} ${focusId() === `cat-${idx()}` ? 'focused' : ''}`}
                   onClick={() => {
                     setSelectedCategory(cat);
-                    void loadChannels(cat);
+                    void loadChannels(cat, categories(), 1);
                   }}
                   style={{ cursor: "pointer" }}
                 >
@@ -181,6 +245,37 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                 </div>
               )}
             </For>
+
+            {/* Pagination Controls in Channel Column */}
+            <Show when={totalPages() > 1}>
+              <div class="tv-pagination-bar" style={{ padding: "16px 0", "justify-content": "flex-start" }} role="navigation" aria-label="Pagination des chaînes">
+                <button
+                  id="btn-live-prev"
+                  role="button"
+                  tabindex="-1"
+                  aria-label="Page précédente de chaînes"
+                  class={`tv-btn ${currentPage() <= 1 ? 'disabled' : ''} ${focusId() === 'btn-live-prev' ? 'focused' : ''}`}
+                  onClick={() => void loadChannels(selectedCategory(), categories(), currentPage() - 1)}
+                >
+                  ◀ Précédent
+                </button>
+
+                <div class="tv-page-indicator" style={{ "font-size": "18px", padding: "8px 20px" }}>
+                  Page {currentPage()} sur {totalPages()} ({totalCount()} chaînes)
+                </div>
+
+                <button
+                  id="btn-live-next"
+                  role="button"
+                  tabindex="-1"
+                  aria-label="Page suivante de chaînes"
+                  class={`tv-btn ${currentPage() >= totalPages() ? 'disabled' : ''} ${focusId() === 'btn-live-next' ? 'focused' : ''}`}
+                  onClick={() => void loadChannels(selectedCategory(), categories(), currentPage() + 1)}
+                >
+                  Suivant ▶
+                </button>
+              </div>
+            </Show>
           </div>
         </div>
       </Show>
