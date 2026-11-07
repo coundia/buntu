@@ -453,5 +453,33 @@ html, body {
   box-shadow: 0 8px 24px rgba(255, 59, 48, 0.5);
 }
 
+/* High-performance TV Pagination Controls */
+.tv-pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 24px 0 40px;
+  width: 100%;
+}
+
+.tv-page-indicator {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--buntu-gold);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 12px 28px;
+  border-radius: 10px;
+  border: 1px solid var(--buntu-border);
+  letter-spacing: 0.5px;
+}
+
+.tv-btn.disabled,
+.tv-btn:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+
 
 
