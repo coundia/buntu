@@ -1,8 +1,8 @@
-import { Component, createSignal, onMount, onCleanup, For, Show } from 'solid-js';
+import { Component, createSignal, onMount, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
-import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
+import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
 import { announce } from '../../ui/design/a11y';
 
 export interface SeriesViewProps {
@@ -13,109 +13,97 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
   const engine = CndEngine.getInstance();
   const PAGE_SIZE = 25; // 5 columns x 5 rows
 
-  const [seriesList, setSeriesList] = createSignal<ItemRecord[]>([]);
   const [categories, setCategories] = createSignal<string[]>([]);
   const [selectedCat, setSelectedCat] = createSignal<string>('');
-  const [currentPage, setCurrentPage] = createSignal(1);
-  const [totalCount, setTotalCount] = createSignal(0);
   const [focusId] = spatialNav.getFocusSignal();
 
-  const totalPages = () => Math.max(1, Math.ceil(totalCount() / PAGE_SIZE));
-
-  let keyUnsub: (() => void) | null = null;
+  const scroller = createInfiniteScroller<ItemRecord>({
+    pageSize: PAGE_SIZE,
+    threshold: 10,
+    maxItems: 300,
+    fetchBatch: async (offset, limit) => {
+      const cat = selectedCat();
+      const [list, count] = await Promise.all([
+        engine.getCatalog('series', cat, offset, limit),
+        engine.countCatalog('series', cat),
+      ]);
+      return { items: list, total: count };
+    },
+    onBatchLoaded: (list, total) => {
+      announce(`Séries, ${list.length} séries affichées sur ${total}`);
+      rebuildGrid(categories(), list, true);
+    },
+  });
 
   onMount(async () => {
     const cats = await engine.getCategories('series');
     setCategories(cats);
     if (cats.length > 0) {
-      await loadSeries(cats[0], cats, 1);
+      setSelectedCat(cats[0]);
+      await scroller.reset();
+      rebuildGrid(cats, scroller.items(), false);
+      if (scroller.items().length > 0) {
+        spatialNav.setFocusById(`series-${scroller.items()[0].id}`);
+      }
+    } else {
+      rebuildGrid([], [], false);
     }
-
-    keyUnsub = RemoteKeyHandler.getInstance().addListener((key) => {
-      if (key === 'CHANNEL_UP' && currentPage() < totalPages()) {
-        void loadSeries(selectedCat(), categories(), currentPage() + 1);
-        return true;
-      }
-      if (key === 'CHANNEL_DOWN' && currentPage() > 1) {
-        void loadSeries(selectedCat(), categories(), currentPage() - 1);
-        return true;
-      }
-      return false;
-    });
   });
 
-  onCleanup(() => {
-    if (keyUnsub) keyUnsub();
-  });
-
-  const loadSeries = async (category?: string, cats = categories(), page = 1) => {
-    const isNewCategory = category !== selectedCat();
-    const targetPage = isNewCategory ? 1 : page;
-    setSelectedCat(category || '');
-    setCurrentPage(targetPage);
-
-    const offset = (targetPage - 1) * PAGE_SIZE;
-
-    // Parallel execution: fetch page slice + instant count (< 15ms total)
-    const [list, count] = await Promise.all([
-      engine.getCatalog('series', category, offset, PAGE_SIZE),
-      engine.countCatalog('series', category),
-    ]);
-
-    setSeriesList(list);
-    setTotalCount(count);
-
-    const pages = Math.max(1, Math.ceil(count / PAGE_SIZE));
-    announce(`Séries, catégorie ${category || 'toutes'}, page ${targetPage} sur ${pages}`);
-
+  const rebuildGrid = (cats: string[], list: ItemRecord[], preserveFocus = false) => {
     const grid: FocusableItem[][] = [];
     const visibleCats = cats.slice(0, 16);
+
+    // Row 0: Category Tabs
     if (visibleCats.length > 0) {
       grid.push(
         visibleCats.map((cat, idx) => ({
           id: `series-cat-${idx}`,
-          onSelect: () => void loadSeries(cat, cats, 1),
+          onSelect: () => void handleSelectCategory(cat),
         }))
       );
     }
 
+    // Subsequent Rows: 5 Series Cards per Row
     const COLS = 5;
     for (let i = 0; i < list.length; i += COLS) {
-      const row = list.slice(i, i + COLS).map((s) => ({
-        id: `series-${s.id}`,
-        onSelect: () => props.onSelectSeries(s),
-      }));
+      const row = list.slice(i, i + COLS).map((s, colIdx) => {
+        const itemIdx = i + colIdx;
+        return {
+          id: `series-${s.id}`,
+          onFocus: () => void scroller.checkTrigger(itemIdx),
+          onSelect: () => props.onSelectSeries(s),
+        };
+      });
       grid.push(row);
     }
 
-    // Pagination row
-    const paginationRow: FocusableItem[] = [];
-    if (targetPage > 1) {
-      paginationRow.push({
-        id: 'btn-page-prev',
-        onSelect: () => void loadSeries(category, cats, targetPage - 1),
-      });
-    }
-    if (targetPage < pages) {
-      paginationRow.push({
-        id: 'btn-page-next',
-        onSelect: () => void loadSeries(category, cats, targetPage + 1),
-      });
-    }
-    if (paginationRow.length > 0) {
-      grid.push(paginationRow);
-    }
+    spatialNav.setGrid(grid, list.length > 0 && visibleCats.length > 0 ? 1 : 0, 0, preserveFocus);
+  };
 
-    spatialNav.setGrid(grid, list.length > 0 && visibleCats.length > 0 ? 1 : 0, 0);
+  const handleSelectCategory = async (cat: string) => {
+    if (cat === selectedCat()) return;
+    setSelectedCat(cat);
+    await scroller.reset();
+    rebuildGrid(categories(), scroller.items(), false);
+    if (scroller.items().length > 0) {
+      spatialNav.setFocusById(`series-${scroller.items()[0].id}`);
+    }
+  };
 
-    // If moving between pages, smoothly refocus on first series card
-    if (!isNewCategory && list.length > 0) {
-      spatialNav.setFocusById(`series-${list[0].id}`);
+  const handleContainerScroll = (e: Event) => {
+    const el = e.currentTarget as HTMLElement;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 400) {
+      void scroller.loadMore();
     }
   };
 
   return (
-    <div class="tv-container" style={{ "overflow-y": "auto" }}>
+    <div
+      class="tv-container"
+      style={{ "overflow-y": "auto" }}
+      onScroll={handleContainerScroll}
+    >
       {/* Header with Title & Horizontal Category Tabs */}
       <div class="tv-live-header">
         <h1 class="tv-live-title">
@@ -132,7 +120,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
                 aria-selected={selectedCat() === cat}
                 aria-label={`Catégorie ${cat}`}
                 class={`tv-category-pill ${selectedCat() === cat ? 'active' : ''} ${focusId() === `series-cat-${idx()}` ? 'focused' : ''}`}
-                onClick={() => void loadSeries(cat, categories(), 1)}
+                onClick={() => void handleSelectCategory(cat)}
               >
                 {cat}
               </button>
@@ -141,13 +129,13 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
         </div>
 
         <div class="tv-live-badge" style={{ "margin-left": "16px", "flex-shrink": 0 }}>
-          <span>{totalCount()} séries</span>
+          <span>{scroller.items().length} / {scroller.total()} séries</span>
         </div>
       </div>
 
       {/* 5-Column Pixel-Perfect Series Poster Grid */}
       <div class="tv-poster-grid" role="list" aria-label="Catalogue des séries">
-        <For each={seriesList()}>
+        <For each={scroller.items()}>
           {(series) => {
             const title = series.name_clean || series.name;
             const is4k = title.toLowerCase().includes('4k') || title.toLowerCase().includes('uhd');
@@ -215,34 +203,17 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
         </For>
       </div>
 
-      {/* Pagination Footer Controls */}
-      <Show when={totalPages() > 1}>
-        <div class="tv-pagination-bar" role="navigation" aria-label="Pagination des séries">
-          <button
-            id="btn-page-prev"
-            role="button"
-            tabindex="-1"
-            aria-label="Aller à la page précédente"
-            class={`tv-btn ${currentPage() <= 1 ? 'disabled' : ''} ${focusId() === 'btn-page-prev' ? 'focused' : ''}`}
-            onClick={() => void loadSeries(selectedCat(), categories(), currentPage() - 1)}
-          >
-            ◀ Page précédente
-          </button>
+      {/* Infinite Scroll Loader & End Status */}
+      <Show when={scroller.isLoading()}>
+        <div class="tv-infinite-loader">
+          <span class="tv-spinner-small" />
+          <span>Chargement des séries suivantes...</span>
+        </div>
+      </Show>
 
-          <div class="tv-page-indicator" aria-live="polite">
-            Page {currentPage()} sur {totalPages()} ({totalCount()} séries)
-          </div>
-
-          <button
-            id="btn-page-next"
-            role="button"
-            tabindex="-1"
-            aria-label="Aller à la page suivante"
-            class={`tv-btn ${currentPage() >= totalPages() ? 'disabled' : ''} ${focusId() === 'btn-page-next' ? 'focused' : ''}`}
-            onClick={() => void loadSeries(selectedCat(), categories(), currentPage() + 1)}
-          >
-            Page suivante ▶
-          </button>
+      <Show when={!scroller.hasMore() && scroller.items().length > 0}>
+        <div class="tv-infinite-end">
+          • Fin du catalogue ({scroller.total()} séries) •
         </div>
       </Show>
     </div>
