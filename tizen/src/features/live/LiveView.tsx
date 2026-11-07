@@ -55,9 +55,6 @@ export const LiveView: Component<LiveViewProps> = (props) => {
         row.push({
           id: `channel-${ch.id}`,
           onSelect: () => props.onPlayChannel(ch),
-          onFocus: () => {
-            engine.play(ch);
-          },
         });
       }
       if (row.length > 0) {
@@ -114,6 +111,11 @@ export const LiveView: Component<LiveViewProps> = (props) => {
             <For each={categories()}>
               {(cat, idx) => (
                 <div
+                  id={`cat-${idx()}`}
+                  role="tab"
+                  tabindex="-1"
+                  aria-selected={selectedCategory() === cat}
+                  aria-label={`Catégorie ${cat}`}
                   class={`tv-nav-item ${selectedCategory() === cat ? 'active' : ''} ${focusId() === `cat-${idx()}` ? 'focused' : ''}`}
                   onClick={() => {
                     setSelectedCategory(cat);
@@ -128,16 +130,21 @@ export const LiveView: Component<LiveViewProps> = (props) => {
           </div>
 
           {/* Channels List */}
-          <div style={{ flex: 1, display: "flex", "flex-direction": "column", gap: "12px", "overflow-y": "auto" }}>
+          <div style={{ flex: 1, display: "flex", "flex-direction": "column", gap: "12px", "overflow-y": "auto" }} role="list" aria-label="Liste des chaînes en direct">
             <For each={channels()}>
               {(ch) => (
                 <div
+                  id={`channel-${ch.id}`}
+                  role="button"
+                  tabindex="-1"
+                  aria-label={`Chaîne numéro ${ch.chno || ''} : ${ch.name}, catégorie ${ch.group_title || 'Général'}. Appuyez sur OK pour regarder en plein écran.`}
                   class={`tv-card ${focusId() === `channel-${ch.id}` ? 'focused' : ''}`}
                   style={{
                     padding: "16px 24px",
                     display: "flex",
                     "align-items": "center",
                     gap: "24px",
+                    cursor: "pointer",
                   }}
                   onClick={() => props.onPlayChannel(ch)}
                 >
@@ -150,12 +157,25 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                     {ch.chno || '•'}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ "font-size": "22px", "font-weight": "700" }}>{ch.name}</div>
-                    <div style={{ "font-size": "16px", color: "var(--buntu-text-muted)" }}>
+                    <div style={{ "font-size": "24px", "font-weight": "700" }}>{ch.name}</div>
+                    <div style={{ "font-size": "18px", color: "var(--buntu-text-muted)", "margin-top": "4px" }}>
                       {ch.group_title || 'Général'}
                     </div>
                   </div>
-                  <div style={{ "font-size": "14px", color: "var(--buntu-gold)" }}>
+                  <Show when={focusId() === `channel-${ch.id}`}>
+                    <div style={{
+                      background: "var(--buntu-gold)",
+                      color: "#000000",
+                      "font-weight": "800",
+                      "font-size": "16px",
+                      padding: "6px 16px",
+                      "border-radius": "6px",
+                      "letter-spacing": "1px",
+                    }}>
+                      ▶ REGARDER
+                    </div>
+                  </Show>
+                  <div style={{ "font-size": "16px", color: "var(--buntu-gold)" }}>
                     {ch.catchup_days ? `Replay ${ch.catchup_days}j` : ''}
                   </div>
                 </div>

@@ -14,11 +14,16 @@
             user-select: none;
             -webkit-user-select: none;
         }
+        /*
+         * AVPlay draws the video on a hardware plane BEHIND the web page: html/body must stay transparent,
+         * otherwise the sound plays but the picture is hidden. The app root paints the background instead
+         * and turns transparent while a video is shown (.app-root.video-mode).
+         */
         html, body {
             width: 1920px;
             height: 1080px;
             overflow: hidden;
-            background-color: #07090E;
+            background: transparent;
             color: #FFFFFF;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
@@ -32,6 +37,13 @@
             background: transparent;
             pointer-events: none;
         }
+        #av-player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1920px;
+            height: 1080px;
+        }
         #app {
             position: absolute;
             top: 0;
@@ -44,8 +56,13 @@
     </style>
 </head>
 <body>
-    <div id="avplay-container"></div>
+    <!-- Samsung AVPlay video plane: required for the picture to be displayed (audio plays without it). -->
+    <div id="avplay-container" aria-hidden="true">
+        <object id="av-player" type="application/avplayer"></object>
+    </div>
     <div id="app"></div>
+    <!-- Screen reader / Samsung Voice Guide announcements (status, errors, progress). -->
+    <div id="a11y-announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <script type="module" src="/src/index.tsx"></script>
 </body>
 </html>

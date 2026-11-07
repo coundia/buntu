@@ -171,11 +171,27 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
       >
       <h2 style={{ 'font-size': '36px', color: 'var(--buntu-gold)', 'margin-bottom': '20px' }}>Ajouter un compte avec la télécommande</h2>
 
-      <div style={{ display: 'flex', gap: '16px', 'margin-bottom': '20px' }}>
-        <button class={`tv-btn ${focusId() === 'kind-xtream' ? 'focused' : ''}`} onClick={() => setKind('xtream')}>
+      <div style={{ display: 'flex', gap: '16px', 'margin-bottom': '20px' }} role="radiogroup" aria-label="Type de source">
+        <button
+          id="kind-xtream"
+          role="radio"
+          tabindex="-1"
+          aria-checked={kind() === 'xtream'}
+          aria-label="Type Xtream Codes"
+          class={`tv-btn ${focusId() === 'kind-xtream' ? 'focused' : ''}`}
+          onClick={() => setKind('xtream')}
+        >
           {kind() === 'xtream' ? '● ' : '○ '}Xtream Codes
         </button>
-        <button class={`tv-btn ${focusId() === 'kind-m3u' ? 'focused' : ''}`} onClick={() => setKind('m3u')}>
+        <button
+          id="kind-m3u"
+          role="radio"
+          tabindex="-1"
+          aria-checked={kind() === 'm3u'}
+          aria-label="Type Playlist M3U"
+          class={`tv-btn ${focusId() === 'kind-m3u' ? 'focused' : ''}`}
+          onClick={() => setKind('m3u')}
+        >
           {kind() === 'm3u' ? '● ' : '○ '}Playlist M3U
         </button>
       </div>
@@ -195,10 +211,22 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
       </Show>
 
       <div style={{ display: 'flex', gap: '24px', 'justify-content': 'center' }}>
-        <button class={`tv-btn ${focusId() === 'btn-submit' ? 'focused' : ''}`} onClick={() => void submit()}>
+        <button
+          id="btn-submit"
+          tabindex="-1"
+          aria-label="Ajouter et synchroniser la source"
+          class={`tv-btn ${focusId() === 'btn-submit' ? 'focused' : ''}`}
+          onClick={() => void submit()}
+        >
           Ajouter
         </button>
-        <button class={`tv-btn ${focusId() === 'btn-cancel' ? 'focused' : ''}`} onClick={() => props.onCancel()}>
+        <button
+          id="btn-cancel"
+          tabindex="-1"
+          aria-label="Annuler et retourner à l'écran précédent"
+          class={`tv-btn ${focusId() === 'btn-cancel' ? 'focused' : ''}`}
+          onClick={() => props.onCancel()}
+        >
           Retour
         </button>
       </div>

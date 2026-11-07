@@ -63,9 +63,13 @@ export const ProfilesView: Component<ProfilesViewProps> = (props) => {
           Qui regarde la télévision ?
         </h1>
 
-        <div style={{ display: "flex", gap: "32px", "justify-content": "center", "margin-bottom": "48px" }}>
+        <div style={{ display: "flex", gap: "32px", "justify-content": "center", "margin-bottom": "48px" }} role="list" aria-label="Liste des profils">
           {profiles.map((p) => (
             <div
+              id={`profile-${p.id}`}
+              role="button"
+              tabindex="-1"
+              aria-label={`Profil ${p.name}`}
               class={`tv-card ${focusId() === `profile-${p.id}` || activeProfile().id === p.id ? 'focused' : ''}`}
               style={{
                 width: "240px",
@@ -104,12 +108,16 @@ export const ProfilesView: Component<ProfilesViewProps> = (props) => {
               value={pinInput()}
               onInput={(e) => setPinInput(e.currentTarget.value)}
               placeholder="PIN (défaut 0000)"
+              aria-label="Code PIN parental à 4 chiffres"
               style={{
                 width: "200px",
                 "text-align": "center"
               }}
             />
             <button
+              id="btn-unlock-pin"
+              tabindex="-1"
+              aria-label="Déverrouiller avec le code PIN saisi"
               class={`tv-btn ${focusId() === 'btn-unlock-pin' ? 'focused' : ''}`}
               onClick={verifyPin}
             >

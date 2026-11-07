@@ -7,18 +7,30 @@
  * 3. Stall watchdog and bandwidth detection.
  * 4. Suspend / restore lifecycle on TV sleep and HDMI source switch.
  * 5. Mock fallback for emulator and browser test environments.
+ *
+ * Picture: AVPlay renders on a hardware plane BEHIND the web page. Three things are needed to see it:
+ * an `<object type="application/avplayer">` in the page, a transparent page where the video is, and
+ * `setDisplayRect` set to that area. Without them the sound plays and the screen stays black.
  */
 
 export type PlayerState = 'NONE' | 'IDLE' | 'READY' | 'PLAYING' | 'PAUSED' | 'BUFFERING';
 
 export interface TrackInfo {
   index: number;
-  type: 'AUDIO' | 'TEXT';
+  type: 'AUDIO' | 'TEXT' | 'VIDEO';
   extra_info: {
     language?: string;
     track_num?: number;
     fourCC?: string;
+    channels?: number | string;
   };
+}
+
+export interface DisplayArea {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface AVPlayerListener {
@@ -27,10 +39,50 @@ export interface AVPlayerListener {
   onBufferingComplete?: () => void;
   onCurrentPlayTime?: (ms: number) => void;
   onError?: (error: string) => void;
-  onSubtitleChange?: (text: string) => void;
+  onSubtitleChange?: (text: string, durationMs: number) => void;
   onStreamCompleted?: () => void;
   onStallDetected?: () => void;
   onStateChange?: (state: PlayerState) => void;
+}
+
+export const FULL_SCREEN: DisplayArea = { x: 0, y: 0, width: 1920, height: 1080 };
+
+/** AVPlay error codes, in words a viewer understands. */
+const ERROR_MESSAGES: Record<string, string> = {
+  PLAYER_ERROR_CONNECTION_FAILED: 'Connexion au flux impossible : le serveur ne répond pas.',
+  PLAYER_ERROR_INVALID_URI: 'Adresse du flux invalide.',
+  PLAYER_ERROR_NOT_SUPPORTED_FILE: 'Format vidéo non pris en charge par cette TV.',
+  PLAYER_ERROR_NOT_SUPPORTED_FORMAT: 'Format vidéo non pris en charge par cette TV.',
+  PLAYER_ERROR_NOT_SUPPORTED_AUDIO_CODEC: 'Codec audio non pris en charge par cette TV.',
+  PLAYER_ERROR_NOT_SUPPORTED_VIDEO_CODEC: 'Codec vidéo non pris en charge par cette TV.',
+  PLAYER_ERROR_INVALID_OPERATION: 'Lecture interrompue : réessayez.',
+  PLAYER_ERROR_SEEK_FAILED: 'Déplacement dans la vidéo impossible.',
+  PLAYER_ERROR_GENEREIC: 'Erreur de lecture.',
+  PLAYER_ERROR_GENERIC: 'Erreur de lecture.',
+  PLAYER_ERROR_NONE: 'Erreur de lecture.',
+  PLAYER_ERROR_NO_SUCH_FILE: 'Vidéo introuvable sur le serveur.',
+  PLAYER_ERROR_DRM_INFO: 'Contenu protégé non lisible.',
+};
+
+export function describePlayerError(raw: unknown): string {
+  const text = typeof raw === 'string' ? raw : (raw as any)?.name || (raw as any)?.message || JSON.stringify(raw);
+  for (const code of Object.keys(ERROR_MESSAGES)) {
+    if (String(text).includes(code)) return ERROR_MESSAGES[code];
+  }
+  if (/401|403/.test(String(text))) return 'Accès refusé par le fournisseur (identifiants ou connexions simultanées).';
+  return 'Lecture impossible. Vérifiez votre connexion ou essayez une autre chaîne.';
+}
+
+function parseExtraInfo(raw: unknown): TrackInfo['extra_info'] {
+  if (raw && typeof raw === 'object') return raw as TrackInfo['extra_info'];
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+  return {};
 }
 
 export class AVPlayerService {
@@ -46,6 +98,10 @@ export class AVPlayerService {
   private lastTickTimestamp = 0;
   private isSuspended = false;
   private resumeTimeMs = 0;
+  private displayArea: DisplayArea = { ...FULL_SCREEN };
+  /** Increases on every open/stop: callbacks of an older stream are ignored (fast zapping). */
+  private openToken = 0;
+  private mockTimer: any = null;
 
   public static getInstance(): AVPlayerService {
     if (!AVPlayerService.instance) {
@@ -66,6 +122,10 @@ export class AVPlayerService {
     return this.state;
   }
 
+  public isActive(): boolean {
+    return this.state === 'PLAYING' || this.state === 'BUFFERING' || this.state === 'READY' || this.state === 'PAUSED';
+  }
+
   public getDuration(): number {
     return this.durationMs;
   }
@@ -74,21 +134,65 @@ export class AVPlayerService {
     return this.currentTimeMs;
   }
 
+  public getIsLive(): boolean {
+    return this.isLive;
+  }
+
   private setState(newState: PlayerState) {
     this.state = newState;
     this.listener.onStateChange?.(newState);
   }
 
+  /** The `<object>` AVPlay needs to show the picture; created if the page does not have it. */
+  private videoPlane(): HTMLElement | null {
+    if (typeof document === 'undefined') return null;
+    let el = document.querySelector('object[type="application/avplayer"]') as HTMLElement | null;
+    if (!el) {
+      el = document.createElement('object');
+      el.id = 'av-player';
+      el.setAttribute('type', 'application/avplayer');
+      el.setAttribute('aria-hidden', 'true');
+      (document.getElementById('avplay-container') || document.body).appendChild(el);
+    }
+    return el;
+  }
+
   /**
-   * Initializes display rectangle for video.
+   * Where the video shows, in the page's 1920×1080 coordinates: full screen in the player, a small window
+   * in the Live TV preview. Applied at once when a stream is open, and to every next stream.
    */
+  public setDisplayArea(area: DisplayArea) {
+    this.displayArea = {
+      x: Math.max(0, Math.round(area.x)),
+      y: Math.max(0, Math.round(area.y)),
+      width: Math.max(2, Math.round(area.width)),
+      height: Math.max(2, Math.round(area.height)),
+    };
+    this.applyDisplayArea();
+  }
+
+  /** Kept for callers of the first version. */
   public initDisplayRect(x = 0, y = 0, width = 1920, height = 1080) {
-    if (this.avplay) {
-      try {
-        this.avplay.setDisplayRect(x, y, width, height);
-      } catch (err) {
-        console.warn('AVPlay setDisplayRect failed:', err);
-      }
+    this.setDisplayArea({ x, y, width, height });
+  }
+
+  private applyDisplayArea() {
+    const { x, y, width, height } = this.displayArea;
+    const plane = this.videoPlane();
+    if (plane) {
+      plane.style.position = 'absolute';
+      plane.style.left = `${x}px`;
+      plane.style.top = `${y}px`;
+      plane.style.width = `${width}px`;
+      plane.style.height = `${height}px`;
+    }
+    if (!this.avplay) return;
+    try {
+      const st = this.avplay.getState();
+      if (st === 'NONE') return;
+      this.avplay.setDisplayRect(x, y, width, height);
+    } catch (err) {
+      console.warn('AVPlay setDisplayRect failed:', err);
     }
   }
 
@@ -96,7 +200,8 @@ export class AVPlayerService {
    * Opens stream and sets up buffering and callbacks.
    */
   public async open(url: string, isLive: boolean): Promise<void> {
-    this.stop();
+    this.closeCurrent();
+    const token = ++this.openToken;
     this.currentUrl = url;
     this.isLive = isLive;
     this.durationMs = 0;
@@ -110,28 +215,37 @@ export class AVPlayerService {
     }
 
     try {
+      this.videoPlane();
       this.avplay.open(url);
-      this.initDisplayRect(0, 0, 1920, 1080);
       this.setState('IDLE');
+      try {
+        this.avplay.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX');
+      } catch {
+        /* older firmware: default display mode */
+      }
+      this.applyDisplayArea();
 
-      // Set buffering parameters
-      // Direct: rapid startup (small initial buffer)
-      // Movies: longer buffer for stability
-      if (isLive) {
-        this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', 1);
-        this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', 2);
-      } else {
-        this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', 3);
-        this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', 5);
+      // Direct: rapid startup (small initial buffer). Movies: longer buffer for stability.
+      try {
+        if (isLive) {
+          this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', 2);
+          this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', 3);
+        } else {
+          this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', 4);
+          this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', 6);
+        }
+      } catch {
+        /* not supported for this stream type */
       }
 
-      this.registerCallbacks();
+      this.registerCallbacks(token);
 
-      // Asynchronous preparation
       return new Promise<void>((resolve, reject) => {
         this.avplay.prepareAsync(
           () => {
+            if (token !== this.openToken) return resolve(); // a newer stream replaced this one
             this.setState('READY');
+            this.applyDisplayArea();
             try {
               this.durationMs = this.avplay.getDuration();
             } catch {
@@ -140,16 +254,17 @@ export class AVPlayerService {
             resolve();
           },
           (err: any) => {
-            const msg = typeof err === 'object' ? JSON.stringify(err) : String(err);
-            this.listener.onError?.(`Erreur de préparation vidéo: ${msg}`);
+            if (token !== this.openToken) return resolve();
+            const msg = describePlayerError(err);
+            this.listener.onError?.(msg);
             reject(new Error(msg));
           }
         );
       });
     } catch (e: any) {
-      const msg = e?.message || String(e);
-      this.listener.onError?.(`Impossible d'ouvrir le flux: ${msg}`);
-      throw e;
+      const msg = describePlayerError(e);
+      this.listener.onError?.(msg);
+      throw new Error(msg);
     }
   }
 
@@ -163,7 +278,7 @@ export class AVPlayerService {
       this.setState('PLAYING');
       this.startStallWatchdog();
     } catch (err: any) {
-      this.listener.onError?.(`Erreur lecture: ${err?.message}`);
+      this.listener.onError?.(describePlayerError(err));
     }
   }
 
@@ -184,16 +299,17 @@ export class AVPlayerService {
 
   public seekTo(ms: number) {
     if (this.isLive) return;
-    this.currentTimeMs = ms;
+    const target = this.durationMs > 0 ? Math.min(ms, Math.max(0, this.durationMs - 1000)) : ms;
+    this.currentTimeMs = target;
     if (!this.avplay) {
-      this.listener.onCurrentPlayTime?.(ms);
+      this.listener.onCurrentPlayTime?.(target);
       return;
     }
     try {
       this.avplay.seekTo(
-        ms,
+        target,
         () => {
-          this.listener.onCurrentPlayTime?.(ms);
+          this.listener.onCurrentPlayTime?.(target);
         },
         (err: any) => {
           console.warn('AVPlay seekTo failed:', err);
@@ -204,10 +320,20 @@ export class AVPlayerService {
     }
   }
 
+  /** Stops and closes the current stream; pending callbacks of that stream are ignored. */
   public stop() {
+    this.openToken++;
+    this.closeCurrent();
+  }
+
+  private closeCurrent() {
     this.stopStallWatchdog();
+    if (this.mockTimer) {
+      clearInterval(this.mockTimer);
+      this.mockTimer = null;
+    }
     if (!this.avplay) {
-      this.setState('NONE');
+      if (this.state !== 'NONE') this.setState('NONE');
       return;
     }
     try {
@@ -215,11 +341,11 @@ export class AVPlayerService {
       if (state !== 'NONE' && state !== 'IDLE') {
         this.avplay.stop();
       }
-      this.avplay.close();
+      if (state !== 'NONE') this.avplay.close();
     } catch (err) {
       console.warn('AVPlay stop error:', err);
     } finally {
-      this.setState('NONE');
+      if (this.state !== 'NONE') this.setState('NONE');
     }
   }
 
@@ -229,7 +355,8 @@ export class AVPlayerService {
   public getTracks(): TrackInfo[] {
     if (!this.avplay) return [];
     try {
-      return this.avplay.getTotalTrackInfo() || [];
+      const raw: any[] = this.avplay.getTotalTrackInfo() || [];
+      return raw.map((t) => ({ index: Number(t.index), type: t.type, extra_info: parseExtraInfo(t.extra_info) }));
     } catch {
       return [];
     }
@@ -241,6 +368,16 @@ export class AVPlayerService {
       this.avplay.selectTrack(type, index);
     } catch (err) {
       console.warn('AVPlay selectTrack error:', err);
+    }
+  }
+
+  /** AVPlay only sends the subtitle text (the app draws it); silent = no more text events. */
+  public setSubtitlesEnabled(enabled: boolean) {
+    if (!this.avplay) return;
+    try {
+      this.avplay.setSilentSubtitle(!enabled);
+    } catch (err) {
+      console.warn('AVPlay setSilentSubtitle error:', err);
     }
   }
 
@@ -266,7 +403,7 @@ export class AVPlayerService {
    * TV Lifecycle: smart hub / standby suspension and restoration.
    */
   public suspend() {
-    if (this.isSuspended) return;
+    if (this.isSuspended || this.state === 'NONE') return;
     this.isSuspended = true;
     this.resumeTimeMs = this.currentTimeMs;
     this.stopStallWatchdog();
@@ -274,7 +411,7 @@ export class AVPlayerService {
       try {
         this.avplay.suspend();
       } catch {
-        this.stop();
+        this.closeCurrent();
       }
     }
   }
@@ -285,6 +422,7 @@ export class AVPlayerService {
     if (this.avplay) {
       try {
         this.avplay.restore();
+        this.applyDisplayArea();
         if (this.resumeTimeMs > 0 && !this.isLive) {
           this.seekTo(this.resumeTimeMs);
         }
@@ -302,35 +440,45 @@ export class AVPlayerService {
     }
   }
 
-  private registerCallbacks() {
+  private registerCallbacks(token: number) {
+    const current = () => token === this.openToken;
     const listenerObj = {
       onbufferingstart: () => {
+        if (!current()) return;
         this.setState('BUFFERING');
         this.listener.onBufferingStart?.();
       },
       onbufferingprogress: (percent: number) => {
+        if (!current()) return;
         this.listener.onBufferingProgress?.(percent);
       },
       onbufferingcomplete: () => {
+        if (!current()) return;
         this.setState('PLAYING');
+        this.lastTickTimestamp = Date.now();
         this.listener.onBufferingComplete?.();
       },
       oncurrentplaytime: (timeMs: number) => {
+        if (!current()) return;
         this.currentTimeMs = timeMs;
         this.lastPlayTimeTick = timeMs;
         this.lastTickTimestamp = Date.now();
         this.listener.onCurrentPlayTime?.(timeMs);
       },
       onerror: (eventType: string) => {
-        this.listener.onError?.(`Erreur de lecture: ${eventType}`);
+        if (!current()) return;
+        this.stopStallWatchdog();
+        this.listener.onError?.(describePlayerError(eventType));
       },
       onevent: (eventType: string, eventData: any) => {
         console.log('AVPlay event:', eventType, eventData);
       },
       onsubtitlechange: (duration: number, text: string) => {
-        this.listener.onSubtitleChange?.(text);
+        if (!current()) return;
+        this.listener.onSubtitleChange?.(text, Number(duration) || 0);
       },
       onstreamcompleted: () => {
+        if (!current()) return;
         this.listener.onStreamCompleted?.();
       },
     };
@@ -348,8 +496,9 @@ export class AVPlayerService {
     this.stallWatchdogTimer = setInterval(() => {
       if (this.state === 'PLAYING') {
         const gap = Date.now() - this.lastTickTimestamp;
-        if (gap > 6000) {
-          // Playhead stalled for 6s
+        if (gap > 8000) {
+          // Playhead stalled for 8s
+          this.lastTickTimestamp = Date.now();
           this.listener.onStallDetected?.();
         }
       }
@@ -365,16 +514,13 @@ export class AVPlayerService {
 
   private startMockPlayback() {
     let current = 0;
-    const interval = setInterval(() => {
+    this.mockTimer = setInterval(() => {
       if (this.state === 'PLAYING') {
         current += 1000;
         this.currentTimeMs = current;
-        this.durationMs = 7200000; // 2 hours
+        this.durationMs = this.isLive ? 0 : 7200000; // 2 hours
         this.listener.onCurrentPlayTime?.(current);
-      } else if (this.state === 'NONE') {
-        clearInterval(interval);
       }
     }, 1000);
   }
 }
-

@@ -198,10 +198,22 @@ export const OnboardingView: Component<OnboardingProps> = (props) => {
               ))}
             </div>
             <div style={{ display: "flex", gap: "24px", "justify-content": "center" }}>
-              <button class={`tv-btn ${focusId() === 'btn-pair-accept' ? 'focused' : ''}`} onClick={() => void accept()}>
+              <button
+                id="btn-pair-accept"
+                tabindex="-1"
+                aria-label="Ajouter les comptes reçus sur cette TV"
+                class={`tv-btn ${focusId() === 'btn-pair-accept' ? 'focused' : ''}`}
+                onClick={() => void accept()}
+              >
                 Ajouter sur cette TV
               </button>
-              <button class={`tv-btn ${focusId() === 'btn-pair-refuse' ? 'focused' : ''}`} onClick={() => void refuse()}>
+              <button
+                id="btn-pair-refuse"
+                tabindex="-1"
+                aria-label="Refuser l'importation des comptes"
+                class={`tv-btn ${focusId() === 'btn-pair-refuse' ? 'focused' : ''}`}
+                onClick={() => void refuse()}
+              >
                 Refuser
               </button>
             </div>
@@ -217,7 +229,14 @@ export const OnboardingView: Component<OnboardingProps> = (props) => {
                 <div style={{ color: "var(--buntu-text-muted)", "font-size": "20px", "text-align": "center" }}>
                   <p>{pairingError() || 'Préparation du code…'}</p>
                   <Show when={pairingError()}>
-                    <button class={`tv-btn ${focusId() === 'btn-retry' ? 'focused' : ''}`} style={{ "margin-top": "16px" }} onClick={() => void startPairing()}>
+                    <button
+                      id="btn-retry"
+                      tabindex="-1"
+                      aria-label="Réessayer la génération du code QR d'appariement"
+                      class={`tv-btn ${focusId() === 'btn-retry' ? 'focused' : ''}`}
+                      style={{ "margin-top": "16px" }}
+                      onClick={() => void startPairing()}
+                    >
                       Réessayer
                     </button>
                   </Show>
@@ -254,12 +273,18 @@ export const OnboardingView: Component<OnboardingProps> = (props) => {
         <Show when={!request() && !busy()}>
           <div style={{ display: "flex", gap: "24px", "justify-content": "center" }}>
             <button
+              id="btn-manual"
+              tabindex="-1"
+              aria-label="Saisir votre source IPTV manuellement avec la télécommande"
               class={`tv-btn ${focusId() === 'btn-manual' ? 'focused' : ''}`}
               onClick={() => setIsManualInput(true)}
             >
               Saisir avec la télécommande
             </button>
             <button
+              id="btn-skip"
+              tabindex="-1"
+              aria-label="Passer cette étape et accéder à l'application"
               class={`tv-btn ${focusId() === 'btn-skip' ? 'focused' : ''}`}
               onClick={() => props.onComplete()}
             >
