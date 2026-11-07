@@ -62,22 +62,26 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       return;
     }
 
-    const maxRows = Math.max(cats.length, list.length + (pages > 1 ? 1 : 0));
+    const channelRows = list.length + (pages > 1 ? 1 : 0);
+    const maxRows = Math.max(cats.length, channelRows);
     const grid: FocusableItem[][] = [];
 
     for (let i = 0; i < maxRows; i++) {
       const row: FocusableItem[] = [];
-      if (i < cats.length) {
-        const cat = cats[i];
+
+      // Column 0: Category (padded to bottom if channelRows > cats.length)
+      if (cats.length > 0) {
+        const catIdx = Math.min(i, cats.length - 1);
+        const cat = cats[catIdx];
         row.push({
-          id: `cat-${i}`,
+          id: `cat-${catIdx}`,
           onSelect: () => {
-            setSelectedCategory(cat);
             void loadChannels(cat, cats, 1);
           },
         });
       }
 
+      // Column 1+: Channel or pagination buttons
       if (i < list.length) {
         const ch = list[i];
         row.push({
@@ -98,12 +102,20 @@ export const LiveView: Component<LiveViewProps> = (props) => {
             onSelect: () => void loadChannels(selectedCategory(), cats, page + 1),
           });
         }
+      } else if (list.length > 0) {
+        // Padded row when categories > channels
+        const lastCh = list[list.length - 1];
+        row.push({
+          id: `channel-${lastCh.id}`,
+          onSelect: () => props.onPlayChannel(lastCh),
+        });
       }
 
       if (row.length > 0) {
         grid.push(row);
       }
     }
+
     spatialNav.setGrid(grid, 0, list.length > 0 && cats.length > 0 ? 1 : 0);
   };
 
@@ -129,25 +141,30 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
     rebuildGrid(cats, list, targetPage, pages);
 
-    if (!isNewCat && list.length > 0) {
+    if (list.length > 0) {
       spatialNav.setFocusById(`channel-${list[0].id}`);
     }
   };
 
   return (
     <div class="tv-container">
-      <div class="tv-header">
-        <h2 style={{ "font-size": "32px", color: "var(--buntu-gold)" }}>Direct TV</h2>
-        <div style={{ color: "var(--buntu-cyan)", "font-weight": "700" }}>
-          {totalCount()} chaînes au total
+      {/* Header */}
+      <div class="tv-live-header">
+        <h1 class="tv-live-title">
+          <span>Direct TV</span>
+        </h1>
+        <div class="tv-live-badge">
+          <span>{totalCount()} chaînes</span>
+          <span style={{ opacity: 0.5 }}>•</span>
+          <span>Page {currentPage()} / {totalPages()}</span>
         </div>
       </div>
 
       <Show
         when={channels().length > 0 || categories().length > 0}
         fallback={
-          <div style={{ flex: 1, display: "flex", "flex-direction": "column", "align-items": "center", "justify-content": "center", gap: "24px" }}>
-            <p style={{ "font-size": "24px", color: "var(--buntu-text-muted)" }}>
+          <div style={{ flex: 1, display: "flex", "flex-direction": "column", "align-items": "center", "justify-content": "center", padding: "40px" }}>
+            <p style={{ "font-size": "24px", color: "var(--buntu-text-muted)", "margin-bottom": "24px" }}>
               Aucune chaîne en direct disponible. Ajoutez un abonnement IPTV pour commencer.
             </p>
             <Show when={props.onAddSource}>
@@ -161,17 +178,9 @@ export const LiveView: Component<LiveViewProps> = (props) => {
           </div>
         }
       >
-        <div style={{ display: "flex", gap: "32px", flex: 1, "overflow-y": "hidden" }}>
+        <div class="tv-live-layout">
           {/* Categories Sidebar */}
-          <div style={{
-            width: "360px",
-            display: "flex",
-            "flex-direction": "column",
-            gap: "8px",
-            "overflow-y": "auto",
-            "border-right": "1px solid var(--buntu-border)",
-            "padding-right": "16px"
-          }}>
+          <div class="tv-live-sidebar" role="tablist" aria-label="Catégories de chaînes">
             <For each={categories()}>
               {(cat, idx) => (
                 <div
@@ -180,12 +189,8 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                   tabindex="-1"
                   aria-selected={selectedCategory() === cat}
                   aria-label={`Catégorie ${cat}`}
-                  class={`tv-nav-item ${selectedCategory() === cat ? 'active' : ''} ${focusId() === `cat-${idx()}` ? 'focused' : ''}`}
-                  onClick={() => {
-                    setSelectedCategory(cat);
-                    void loadChannels(cat, categories(), 1);
-                  }}
-                  style={{ cursor: "pointer" }}
+                  class={`tv-category-item ${selectedCategory() === cat ? 'active' : ''} ${focusId() === `cat-${idx()}` ? 'focused' : ''}`}
+                  onClick={() => void loadChannels(cat, categories(), 1)}
                 >
                   {cat}
                 </div>
@@ -194,7 +199,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
           </div>
 
           {/* Channels List */}
-          <div style={{ flex: 1, display: "flex", "flex-direction": "column", gap: "12px", "overflow-y": "auto" }} role="list" aria-label="Liste des chaînes en direct">
+          <div class="tv-live-channels" role="list" aria-label="Liste des chaînes en direct">
             <For each={channels()}>
               {(ch) => (
                 <div
@@ -202,53 +207,68 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                   role="button"
                   tabindex="-1"
                   aria-label={`Chaîne numéro ${ch.chno || ''} : ${ch.name}, catégorie ${ch.group_title || 'Général'}. Appuyez sur OK pour regarder en plein écran.`}
-                  class={`tv-card ${focusId() === `channel-${ch.id}` ? 'focused' : ''}`}
-                  style={{
-                    padding: "16px 24px",
-                    display: "flex",
-                    "align-items": "center",
-                    gap: "24px",
-                    cursor: "pointer",
-                  }}
+                  class={`tv-channel-row ${focusId() === `channel-${ch.id}` ? 'focused' : ''}`}
                   onClick={() => props.onPlayChannel(ch)}
                 >
-                  <div style={{
-                    "font-size": "24px",
-                    "font-weight": "800",
-                    color: "var(--buntu-cyan)",
-                    width: "48px"
-                  }}>
+                  {/* Channel Number Badge */}
+                  <div class="tv-channel-num">
                     {ch.chno || '•'}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ "font-size": "24px", "font-weight": "700" }}>{ch.name}</div>
-                    <div style={{ "font-size": "18px", color: "var(--buntu-text-muted)", "margin-top": "4px" }}>
+
+                  {/* Channel Logo / Fallback */}
+                  <div class="tv-channel-logo">
+                    <Show
+                      when={ch.logo_url}
+                      fallback={<span class="tv-channel-logo-fallback">📺</span>}
+                    >
+                      <img
+                        src={ch.logo_url}
+                        alt=""
+                        loading="lazy"
+                        onError={(e) => {
+                          const target = e.currentTarget as HTMLElement;
+                          target.style.display = 'none';
+                          if (target.parentElement) {
+                            const fallback = document.createElement('span');
+                            fallback.className = 'tv-channel-logo-fallback';
+                            fallback.textContent = '📺';
+                            target.parentElement.appendChild(fallback);
+                          }
+                        }}
+                      />
+                    </Show>
+                  </div>
+
+                  {/* Channel Name & Category Subtitle */}
+                  <div class="tv-channel-info">
+                    <div class="tv-channel-name">{ch.name}</div>
+                    <div class="tv-channel-meta">
                       {ch.group_title || 'Général'}
                     </div>
                   </div>
-                  <Show when={focusId() === `channel-${ch.id}`}>
-                    <div style={{
-                      background: "var(--buntu-gold)",
-                      color: "#000000",
-                      "font-weight": "800",
-                      "font-size": "16px",
-                      padding: "6px 16px",
-                      "border-radius": "6px",
-                      "letter-spacing": "1px",
-                    }}>
-                      ▶ REGARDER
-                    </div>
-                  </Show>
-                  <div style={{ "font-size": "16px", color: "var(--buntu-gold)" }}>
-                    {ch.catchup_days ? `Replay ${ch.catchup_days}j` : ''}
+
+                  {/* Channel Badges & Action Pill */}
+                  <div class="tv-channel-actions">
+                    <Show when={ch.catchup_days}>
+                      <div class="tv-channel-catchup">
+                        Replay {ch.catchup_days}j
+                      </div>
+                    </Show>
+
+                    <Show when={focusId() === `channel-${ch.id}`}>
+                      <div class="tv-watch-pill">
+                        <span>▶</span>
+                        <span>REGARDER</span>
+                      </div>
+                    </Show>
                   </div>
                 </div>
               )}
             </For>
 
-            {/* Pagination Controls in Channel Column */}
+            {/* Pagination Controls */}
             <Show when={totalPages() > 1}>
-              <div class="tv-pagination-bar" style={{ padding: "16px 0", "justify-content": "flex-start" }} role="navigation" aria-label="Pagination des chaînes">
+              <div class="tv-pagination-bar" role="navigation" aria-label="Pagination des chaînes">
                 <button
                   id="btn-live-prev"
                   role="button"
@@ -260,7 +280,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                   ◀ Précédent
                 </button>
 
-                <div class="tv-page-indicator" style={{ "font-size": "18px", padding: "8px 20px" }}>
+                <div class="tv-page-indicator">
                   Page {currentPage()} sur {totalPages()} ({totalCount()} chaînes)
                 </div>
 

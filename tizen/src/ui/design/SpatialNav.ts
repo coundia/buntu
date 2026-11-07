@@ -243,8 +243,14 @@ class SpatialNav {
 
     if (key === 'UP') {
       if (r > 0) {
+        const currentItem = this.focusableGrid[r]?.[c];
+        const prevColIndex = Math.min(c, (this.focusableGrid[r - 1]?.length || 1) - 1);
+        const prevItem = this.focusableGrid[r - 1]?.[prevColIndex];
+        if (currentItem && prevItem && currentItem.id === prevItem.id) {
+          return false;
+        }
         r--;
-        c = Math.min(c, this.focusableGrid[r].length - 1);
+        c = prevColIndex;
       } else if (this.headerItems.length > 0) {
         this.currentRow = -1;
         this.applyFocus(this.headerItems[this.headerCol]);
@@ -254,8 +260,14 @@ class SpatialNav {
       }
     } else if (key === 'DOWN') {
       if (r < this.focusableGrid.length - 1) {
+        const currentItem = this.focusableGrid[r]?.[c];
+        const nextColIndex = Math.min(c, (this.focusableGrid[r + 1]?.length || 1) - 1);
+        const nextItem = this.focusableGrid[r + 1]?.[nextColIndex];
+        if (currentItem && nextItem && currentItem.id === nextItem.id) {
+          return false;
+        }
         r++;
-        c = Math.min(c, this.focusableGrid[r].length - 1);
+        c = nextColIndex;
       } else {
         return false;
       }

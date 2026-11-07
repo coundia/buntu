@@ -292,7 +292,7 @@ export const App: Component = () => {
       )}
 
       {/* Main Content Router */}
-      <main style={{ "padding-top": currentRoute() !== 'player' ? "120px" : "0", width: "100%", height: "100%" }} role="main">
+      <main style={{ "padding-top": currentRoute() !== 'player' ? "120px" : "0", width: "100%", height: "100%", "box-sizing": "border-box", overflow: "hidden" }} role="main">
         <Switch>
           <Match when={currentRoute() === 'onboarding'}>
             <OnboardingView
