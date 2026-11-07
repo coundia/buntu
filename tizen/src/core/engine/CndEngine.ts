@@ -6,7 +6,7 @@
  * Storage (IndexedDB/wa-sqlite), and AVPlayerService.
  */
 
-import { Database, ItemRecord, SourceRecord } from '../storage/Database';
+import { Database, ItemRecord, SourceRecord, FAVORITES_CATEGORY } from '../storage/Database';
 import { HttpClient } from '../net/HttpClient';
 import { AVPlayerService } from '../player/AVPlayerService';
 import { WorkerBridge } from '../../worker/worker-bridge';
@@ -409,9 +409,11 @@ export class CndEngine {
     limit = 30
   ): Promise<ItemRecord[]> {
     if (groupTitle) {
-      const isAdult = await this.checkAdultCategory(groupTitle);
-      if ((this.activeProfile.isKids || !this.isAdultUnlocked) && isAdult) {
-        return [];
+      if (groupTitle !== FAVORITES_CATEGORY && groupTitle !== 'Favoris') {
+        const isAdult = await this.checkAdultCategory(groupTitle);
+        if ((this.activeProfile.isKids || !this.isAdultUnlocked) && isAdult) {
+          return [];
+        }
       }
       return this.db.getItemsByKindAndGroup(kind, groupTitle, offset, limit);
     }
@@ -433,9 +435,11 @@ export class CndEngine {
     groupTitle?: string
   ): Promise<number> {
     if (groupTitle) {
-      const isAdult = await this.checkAdultCategory(groupTitle);
-      if ((this.activeProfile.isKids || !this.isAdultUnlocked) && isAdult) {
-        return 0;
+      if (groupTitle !== FAVORITES_CATEGORY && groupTitle !== 'Favoris') {
+        const isAdult = await this.checkAdultCategory(groupTitle);
+        if ((this.activeProfile.isKids || !this.isAdultUnlocked) && isAdult) {
+          return 0;
+        }
       }
     }
     return this.db.countItemsByKindAndGroup(kind, groupTitle);
@@ -444,12 +448,18 @@ export class CndEngine {
   public async getCategories(kind: 'live' | 'movie' | 'series'): Promise<string[]> {
     const mem = this.categoriesMemCache.get(kind);
     if (mem && mem.length > 0) {
-      return mem;
+      if (mem[0] === FAVORITES_CATEGORY) {
+        return mem;
+      }
+      const fixed = [FAVORITES_CATEGORY, ...mem.filter(c => c !== FAVORITES_CATEGORY && c !== 'Favoris')];
+      this.categoriesMemCache.set(kind, fixed);
+      return fixed;
     }
 
     const rawCategories = await this.db.getCategories(kind);
-    const result: string[] = [];
+    const result: string[] = [FAVORITES_CATEGORY];
     for (const cat of rawCategories) {
+      if (cat === FAVORITES_CATEGORY || cat === 'Favoris') continue;
       const isAdult = await this.checkAdultCategory(cat);
       if ((this.activeProfile.isKids || !this.isAdultUnlocked) && isAdult) continue;
       result.push(cat);

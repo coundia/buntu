@@ -24,6 +24,8 @@ export interface SourceRecord {
   last_sync_at?: number;
 }
 
+export const FAVORITES_CATEGORY = '★ Favoris';
+
 export interface ItemRecord {
   id: number;
   source_id: number;
@@ -235,6 +237,35 @@ export class Database {
     const targetKinds = this.kindsFor(kind);
     const results: ItemRecord[] = [];
 
+    // Fast-path: Favorites query across kinds
+    if (groupTitle === FAVORITES_CATEGORY || groupTitle === 'Favoris') {
+      await new Promise<void>((resolve, reject) => {
+        const tx = this.db!.transaction(['items'], 'readonly');
+        const store = tx.objectStore('items');
+        const req = store.index('is_favorite').openCursor(IDBKeyRange.only(1));
+
+        let skipped = 0;
+        req.onsuccess = (ev: any) => {
+          const cursor: IDBCursorWithValue | null = ev.target.result;
+          if (!cursor || results.length >= limit) {
+            resolve();
+            return;
+          }
+          const item = cursor.value as ItemRecord;
+          if (targetKinds.includes(item.kind)) {
+            if (skipped < offset) {
+              skipped++;
+            } else {
+              results.push(item);
+            }
+          }
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+      });
+      return results;
+    }
+
     for (const k of targetKinds) {
       if (results.length >= limit) break;
       await new Promise<void>((resolve, reject) => {
@@ -272,6 +303,32 @@ export class Database {
   ): Promise<number> {
     if (!this.db) return 0;
     const targetKinds = this.kindsFor(kind);
+
+    // Fast-path: Count favorites
+    if (groupTitle === FAVORITES_CATEGORY || groupTitle === 'Favoris') {
+      let total = 0;
+      await new Promise<void>((resolve, reject) => {
+        const tx = this.db!.transaction(['items'], 'readonly');
+        const store = tx.objectStore('items');
+        const req = store.index('is_favorite').openCursor(IDBKeyRange.only(1));
+
+        req.onsuccess = (ev: any) => {
+          const cursor: IDBCursorWithValue | null = ev.target.result;
+          if (!cursor) {
+            resolve();
+            return;
+          }
+          const item = cursor.value as ItemRecord;
+          if (targetKinds.includes(item.kind)) {
+            total++;
+          }
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+      });
+      return total;
+    }
+
     let total = 0;
 
     for (const k of targetKinds) {

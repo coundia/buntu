@@ -82,6 +82,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
         spatialNav.setFocusById(`channel-${items[0].id}`);
       } else {
         rebuildGrid(cats, [], false);
+        spatialNav.setFocusById('cat-0');
       }
     } else {
       rebuildGrid([], [], false);
@@ -140,6 +141,16 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     const next = await engine.toggleFavorite(current.id);
     setIsFav(next);
     announce(next ? 'Chaîne ajoutée aux favoris' : 'Chaîne retirée des favoris');
+    if (selectedCategory().includes('Favoris')) {
+      await scroller.reset();
+      const items = scroller.items();
+      if (items.length > 0) {
+        void updatePreview(items[0]);
+      } else {
+        setPreviewChannel(null);
+      }
+      rebuildGrid(categories(), items, false);
+    }
   };
 
   const handleFullscreen = () => {
@@ -402,8 +413,12 @@ export const LiveView: Component<LiveViewProps> = (props) => {
             <Show
               when={activeChannels().length > 0}
               fallback={
-                <div style={{ padding: "48px 0", "text-align": "center", color: "var(--buntu-text-muted)", "font-size": "20px" }}>
-                  Aucune chaîne ne correspond à "{searchQuery()}".
+                <div style={{ padding: "48px 24px", "text-align": "center", color: "var(--buntu-text-muted)", "font-size": "20px" }}>
+                  {isSearchMode()
+                    ? `Aucune chaîne ne correspond à "${searchQuery()}".`
+                    : selectedCategory().includes('Favoris')
+                    ? 'Aucune chaîne dans vos favoris. Appuyez sur ☆ Favori pour ajouter vos chaînes préférées !'
+                    : 'Aucune chaîne dans cette catégorie.'}
                 </div>
               }
             >

@@ -42,12 +42,24 @@ describe('Pagination & Micro-Cache Optimization', () => {
     mockLocalStorage.setItem('cnd_categories_live', JSON.stringify(['France', 'Sport', 'Cinéma']));
 
     const cats1 = await engine.getCategories('live');
-    expect(cats1).toEqual(['France', 'Sport', 'Cinéma']);
+    expect(cats1).toEqual(['★ Favoris', 'France', 'Sport', 'Cinéma']);
 
     // Changing localStorage won't affect in-memory cache until invalidated
     mockLocalStorage.setItem('cnd_categories_live', JSON.stringify(['OnlyNews']));
     const cats2 = await engine.getCategories('live');
-    expect(cats2).toEqual(['France', 'Sport', 'Cinéma']);
+    expect(cats2).toEqual(['★ Favoris', 'France', 'Sport', 'Cinéma']);
+  });
+
+  it('ensures FAVORITES_CATEGORY is always the first category across live, movies, and series', async () => {
+    const engine = CndEngine.getInstance();
+    mockLocalStorage.setItem('cnd_categories_movie', JSON.stringify(['Action', 'Comédie']));
+    mockLocalStorage.setItem('cnd_categories_series', JSON.stringify(['Drame', 'Anime']));
+
+    const movieCats = await engine.getCategories('movie');
+    expect(movieCats[0]).toBe('★ Favoris');
+
+    const seriesCats = await engine.getCategories('series');
+    expect(seriesCats[0]).toBe('★ Favoris');
   });
 });
 
