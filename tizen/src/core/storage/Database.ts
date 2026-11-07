@@ -293,6 +293,54 @@ export class Database {
     return total;
   }
 
+  public async searchItems(
+    query: string,
+    kind?: 'live' | 'movie' | 'series',
+    limit = 60
+  ): Promise<ItemRecord[]> {
+    if (!this.db || !query.trim()) return [];
+    const normalized = query.trim().toLowerCase();
+    const targetKinds = kind ? this.kindsFor(kind) : ['live', 'movie', 'series', 'episode'];
+    const results: ItemRecord[] = [];
+
+    for (const k of targetKinds) {
+      if (results.length >= limit) break;
+      await new Promise<void>((resolve, reject) => {
+        const tx = this.db!.transaction(['items'], 'readonly');
+        const store = tx.objectStore('items');
+        const req = store.index('kind').openCursor(IDBKeyRange.only(k));
+
+        req.onsuccess = (ev: any) => {
+          const cursor: IDBCursorWithValue | null = ev.target.result;
+          if (!cursor || results.length >= limit) {
+            resolve();
+            return;
+          }
+          const item = cursor.value as ItemRecord;
+          const name = (item.name || '').toLowerCase();
+          const cleanName = (item.name_clean || '').toLowerCase();
+          const group = (item.group_title || '').toLowerCase();
+          const year = item.year ? String(item.year) : '';
+          const chno = item.chno ? String(item.chno) : '';
+
+          if (
+            name.includes(normalized) ||
+            cleanName.includes(normalized) ||
+            group.includes(normalized) ||
+            year === normalized ||
+            chno === normalized
+          ) {
+            results.push(item);
+          }
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    return results;
+  }
+
   public saveCategoriesCache(kind: string, categories: string[]): void {
     try {
       localStorage.setItem(`cnd_categories_${kind}`, JSON.stringify(categories));

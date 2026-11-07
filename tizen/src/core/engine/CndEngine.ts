@@ -511,13 +511,25 @@ export class CndEngine {
   }
 
   /**
+   * Fast In-Screen Catalog Search with optional kind filter.
+   */
+  public async searchCatalog(
+    query: string,
+    kind?: 'live' | 'movie' | 'series',
+    limit = 60
+  ): Promise<ItemRecord[]> {
+    if (!query.trim()) return [];
+    return this.db.searchItems(query, kind, limit);
+  }
+
+  /**
    * Search.
    */
-  public async search(rawQuery: string): Promise<any[]> {
+  public async search(rawQuery: string, kind?: 'live' | 'movie' | 'series'): Promise<any[]> {
     if (!rawQuery.trim()) return [];
 
     const parsedQuery = await this.worker.parseSearchQuery(rawQuery, Date.now() / 1000, new Date().getTimezoneOffset());
-    const candidates = await this.db.getItemsByKindAndGroup('movie', undefined, 0, 100);
+    const candidates = await this.db.searchItems(rawQuery, kind, 80);
     const searchCandidates = candidates.map((c) => ({
       id: c.id,
       name: c.name,
