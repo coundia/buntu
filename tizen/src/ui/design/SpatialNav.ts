@@ -20,13 +20,16 @@ class SpatialNav {
   private currentFocus = createSignal<string>('');
   private focusableGrid: FocusableItem[][] = [];
   private headerItems: FocusableItem[] = [];
-  private currentRow = 0; // -1 means focus is in `headerItems` (Top Navigation Bar)
+  private headerOrientation: 'horizontal' | 'vertical' = 'horizontal';
+  private savedGridRow = 0;
+  private currentRow = 0; // -1 means focus is in `headerItems` (Navigation Bar / Sidebar)
   private currentCol = 0;
   private headerCol = 0;
   private isInitialized = false;
   private modalState: {
     grid: FocusableItem[][];
     header: FocusableItem[];
+    headerOrientation: 'horizontal' | 'vertical';
     row: number;
     col: number;
     headerCol: number;
@@ -62,15 +65,17 @@ class SpatialNav {
     return this.modalState !== null;
   }
 
-  public setHeader(items: FocusableItem[], activeIndex = 0) {
+  public setHeader(items: FocusableItem[], activeIndex = 0, orientation: 'horizontal' | 'vertical' = 'horizontal') {
     if (this.modalState) {
       this.modalState.header = items;
+      this.modalState.headerOrientation = orientation;
       if (items.length > 0) {
         this.modalState.headerCol = Math.min(Math.max(0, activeIndex), items.length - 1);
       }
       return;
     }
     this.headerItems = items;
+    this.headerOrientation = orientation;
     if (items.length > 0) {
       this.headerCol = Math.min(Math.max(0, activeIndex), items.length - 1);
     } else if (this.currentRow === -1) {
@@ -128,6 +133,7 @@ class SpatialNav {
       this.modalState = {
         grid: this.focusableGrid,
         header: this.headerItems,
+        headerOrientation: this.headerOrientation,
         row: this.currentRow,
         col: this.currentCol,
         headerCol: this.headerCol,
@@ -156,6 +162,7 @@ class SpatialNav {
     const prev = this.modalState;
     this.modalState = null;
     this.headerItems = prev.header;
+    this.headerOrientation = prev.headerOrientation;
     this.focusableGrid = prev.grid;
     this.currentRow = prev.row;
     this.currentCol = prev.col;
@@ -206,9 +213,49 @@ class SpatialNav {
   }
 
   private handleKey = (key: RemoteKey): boolean => {
-    // 1. Navigation inside Top Navigation Bar / Rail (currentRow === -1)
+    // 1. Navigation inside Navigation Bar / Buntu Left Sidebar (currentRow === -1)
     if (this.currentRow === -1) {
       if (!this.headerItems.length) return false;
+
+      if (this.headerOrientation === 'vertical') {
+        if (key === 'UP') {
+          if (this.headerCol > 0) {
+            this.headerCol--;
+            this.applyFocus(this.headerItems[this.headerCol]);
+          }
+          return true;
+        }
+        if (key === 'DOWN') {
+          if (this.headerCol < this.headerItems.length - 1) {
+            this.headerCol++;
+            this.applyFocus(this.headerItems[this.headerCol]);
+          }
+          return true;
+        }
+        if (key === 'RIGHT') {
+          if (this.focusableGrid.length > 0) {
+            this.currentRow = Math.min(Math.max(0, this.savedGridRow), this.focusableGrid.length - 1);
+            this.currentCol = 0;
+            const item = this.focusableGrid[this.currentRow]?.[0];
+            if (item) this.applyFocus(item);
+          }
+          return true;
+        }
+        if (key === 'LEFT') {
+          return true;
+        }
+        if (key === 'ENTER') {
+          const item = this.headerItems[this.headerCol];
+          if (item?.onSelect) {
+            item.onSelect();
+            return true;
+          }
+          return false;
+        }
+        return false;
+      }
+
+      // Horizontal header bar mode
       if (key === 'LEFT' || key === 'UP') {
         if (this.headerCol > 0) {
           this.headerCol--;
@@ -255,18 +302,30 @@ class SpatialNav {
 
     let r = this.currentRow;
     let c = this.currentCol;
+    const currentItem = this.focusableGrid[r]?.[c];
 
     if (key === 'UP') {
       if (r > 0) {
-        const currentItem = this.focusableGrid[r]?.[c];
-        const prevColIndex = Math.min(c, (this.focusableGrid[r - 1]?.length || 1) - 1);
-        const prevItem = this.focusableGrid[r - 1]?.[prevColIndex];
-        if (currentItem && prevItem && currentItem.id === prevItem.id) {
+        let nr = r - 1;
+        while (nr >= 0) {
+          const colIdx = Math.min(c, (this.focusableGrid[nr]?.length || 1) - 1);
+          const candidate = this.focusableGrid[nr]?.[colIdx];
+          if (candidate && (!currentItem || candidate.id !== currentItem.id)) {
+            r = nr;
+            c = colIdx;
+            break;
+          }
+          nr--;
+        }
+        if (nr < 0) {
+          if (this.headerOrientation === 'horizontal' && this.headerItems.length > 0) {
+            this.currentRow = -1;
+            this.applyFocus(this.headerItems[this.headerCol]);
+            return true;
+          }
           return false;
         }
-        r--;
-        c = prevColIndex;
-      } else if (this.headerItems.length > 0) {
+      } else if (this.headerOrientation === 'horizontal' && this.headerItems.length > 0) {
         this.currentRow = -1;
         this.applyFocus(this.headerItems[this.headerCol]);
         return true;
@@ -275,21 +334,35 @@ class SpatialNav {
       }
     } else if (key === 'DOWN') {
       if (r < this.focusableGrid.length - 1) {
-        const currentItem = this.focusableGrid[r]?.[c];
-        const nextColIndex = Math.min(c, (this.focusableGrid[r + 1]?.length || 1) - 1);
-        const nextItem = this.focusableGrid[r + 1]?.[nextColIndex];
-        if (currentItem && nextItem && currentItem.id === nextItem.id) {
+        let nr = r + 1;
+        while (nr < this.focusableGrid.length) {
+          const colIdx = Math.min(c, (this.focusableGrid[nr]?.length || 1) - 1);
+          const candidate = this.focusableGrid[nr]?.[colIdx];
+          if (candidate && (!currentItem || candidate.id !== currentItem.id)) {
+            r = nr;
+            c = colIdx;
+            break;
+          }
+          nr++;
+        }
+        if (nr >= this.focusableGrid.length) {
           return false;
         }
-        r++;
-        c = nextColIndex;
       } else {
         return false;
       }
     } else if (key === 'LEFT') {
       if (c > 0) {
         c--;
+        // Snap row to canonical first occurrence if column repeats trailing element
+        const target = this.focusableGrid[r]?.[c];
+        if (target) {
+          while (r > 0 && this.focusableGrid[r - 1]?.[Math.min(c, (this.focusableGrid[r - 1]?.length || 1) - 1)]?.id === target.id) {
+            r--;
+          }
+        }
       } else if (this.headerItems.length > 0) {
+        this.savedGridRow = r;
         this.currentRow = -1;
         this.applyFocus(this.headerItems[this.headerCol]);
         return true;

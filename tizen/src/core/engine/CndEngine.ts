@@ -317,6 +317,7 @@ export class CndEngine {
       onProgress?.(`Enregistrement sur la TV : ${saved} / ${total} contenus…`, pct);
     });
 
+    this.categoriesMemCache.clear();
     onProgress?.(`${itemRecords.length} contenus importés avec succès !`, 100);
     return itemRecords.length;
   }
@@ -386,6 +387,7 @@ export class CndEngine {
       const pct = 78 + Math.round((saved / Math.max(1, total)) * 22);
       onProgress?.(`Enregistrement sur la TV : ${saved} / ${total} contenus…`, pct);
     });
+    this.categoriesMemCache.clear();
     onProgress?.(`${items.length} contenus importés avec succès !`, 100);
     return items.length;
   }
@@ -472,6 +474,48 @@ export class CndEngine {
     return this.db.getFavorites();
   }
 
+  public async getFavoritesByKind(kind: 'live' | 'movie' | 'series', limit = 16): Promise<ItemRecord[]> {
+    return this.db.getItemsByKindAndGroup(kind, FAVORITES_CATEGORY, 0, limit);
+  }
+
+  public async getCategoryCounts(kind: 'live' | 'movie' | 'series'): Promise<{ total: number; favCount: number; counts: Record<string, number> }> {
+    return this.db.getCategoryCounts(kind);
+  }
+
+  public async getGlobalCounts(): Promise<{ live: number; movie: number; series: number; sources: number }> {
+    const [live, movie, series, sources] = await Promise.all([
+      this.db.countItemsByKindAndGroup('live'),
+      this.db.countItemsByKindAndGroup('movie'),
+      this.db.countItemsByKindAndGroup('series'),
+      this.db.getSources().then((s) => s.length),
+    ]);
+    return { live, movie, series, sources };
+  }
+
+  public recordRecent(item: ItemRecord): void {
+    const kindKey = item.kind === 'episode' ? 'series' : item.kind;
+    const storageKey = `cnd_recent_${kindKey}`;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const ids: number[] = raw ? JSON.parse(raw) : [];
+      const next = [item.id, ...ids.filter((id) => id !== item.id)].slice(0, 16);
+      localStorage.setItem(storageKey, JSON.stringify(next));
+    } catch {}
+  }
+
+  public async getRecentItems(kind: 'live' | 'movie' | 'series', limit = 12): Promise<ItemRecord[]> {
+    const storageKey = `cnd_recent_${kind}`;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return [];
+      const ids: number[] = JSON.parse(raw);
+      if (!Array.isArray(ids) || ids.length === 0) return [];
+      return this.db.getItemsByIds(ids.slice(0, limit));
+    } catch {
+      return [];
+    }
+  }
+
   public async toggleFavorite(itemId: number): Promise<boolean> {
     return this.db.toggleFavorite(itemId);
   }
@@ -481,6 +525,7 @@ export class CndEngine {
    * The same live channel already playing (preview → full screen) is not reopened unless `force`.
    */
   public async play(item: ItemRecord, options: { force?: boolean } = {}): Promise<void> {
+    this.recordRecent(item);
     const token = ++this.playToken;
     const isLive = item.kind === 'live';
     const alreadyPlaying =

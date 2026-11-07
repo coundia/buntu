@@ -328,10 +328,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     <div
       style={{
         position: "absolute",
-        top: 0,
-        left: 0,
-        width: "1920px",
-        height: "1080px",
+        inset: 0,
+        width: "100%",
+        height: "100%",
         background: "transparent",
         overflow: "hidden",
       }}

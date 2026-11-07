@@ -1,11 +1,11 @@
-import { Component, createSignal, onMount, For, Show } from 'solid-js';
+import { Component, createSignal, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
-import { ItemRecord } from '../../core/storage/Database';
+import { ItemRecord, FAVORITES_CATEGORY } from '../../core/storage/Database';
+import { AVPlayerService } from '../../core/player/AVPlayerService';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
-import { TvSearchBar } from '../../ui/components/TvSearchBar';
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
-import { getCategoryMeta, formatViewCount } from '../../core/utils/categoryMeta';
+import { detectChannelQuality, formatBuntuCount } from '../../core/utils/categoryMeta';
 import { announce } from '../../ui/design/a11y';
 
 export interface SeriesViewProps {
@@ -14,35 +14,49 @@ export interface SeriesViewProps {
 
 export const SeriesView: Component<SeriesViewProps> = (props) => {
   const engine = CndEngine.getInstance();
-  const PAGE_SIZE = 25;
+  const player = AVPlayerService.getInstance();
+  const PAGE_SIZE = 40;
 
   const [categories, setCategories] = createSignal<string[]>([]);
+  const [catCounts, setCatCounts] = createSignal<Record<string, number>>({});
+  const [totalCount, setTotalCount] = createSignal(0);
+  const [favCount, setFavCount] = createSignal(0);
+
   const [selectedCat, setSelectedCat] = createSignal<string>('');
+  const [catFilter, setCatFilter] = createSignal<string>('');
+  const [showCats, setShowCats] = createSignal(true);
+  const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
+  const [showInspector, setShowInspector] = createSignal(false);
+
   const [searchQuery, setSearchQuery] = createSignal<string>('');
   const [searchResults, setSearchResults] = createSignal<ItemRecord[]>([]);
+
+  const [recentSeries, setRecentSeries] = createSignal<ItemRecord[]>([]);
+  const [favSeries, setFavSeries] = createSignal<ItemRecord[]>([]);
   const [previewSeries, setPreviewSeries] = createSignal<ItemRecord | null>(null);
-  const [isFav, setIsFav] = createSignal(false);
   const [focusId] = spatialNav.getFocusSignal();
 
+  let gridRef: HTMLDivElement | undefined;
+  let viewportRef: HTMLDivElement | undefined;
+  let resizeHandler: (() => void) | null = null;
+
   const isSearchMode = () => searchQuery().trim().length > 0;
-  const activeSeries = () => isSearchMode() ? searchResults() : scroller.items();
+  const activeSeries = () => (isSearchMode() ? searchResults() : scroller.items());
+  const showsShelves = () => !isSearchMode() && selectedCat() === '';
 
-  const activePreviewSeries = (): ItemRecord | null => {
-    return previewSeries() || (activeSeries().length > 0 ? activeSeries()[0] : null);
-  };
-
-  const previewTitle = () => {
-    const s = activePreviewSeries();
-    if (!s) return 'Séries TV';
-    return s.name_clean && s.name_clean !== s.name ? s.name_clean : cleanMediaTitle(s.name).clean;
-  };
+  const filteredCategories = createMemo(() => {
+    const raw = categories().filter((c) => c !== FAVORITES_CATEGORY && c !== 'Favoris');
+    const q = catFilter().trim().toLowerCase();
+    if (!q) return raw;
+    return raw.filter((c) => c.toLowerCase().includes(q));
+  });
 
   const scroller = createInfiniteScroller<ItemRecord>({
     pageSize: PAGE_SIZE,
-    threshold: 10,
-    maxItems: 300,
+    threshold: 12,
+    maxItems: 360,
     fetchBatch: async (offset, limit) => {
-      const cat = selectedCat();
+      const cat = selectedCat() || undefined;
       const [list, count] = await Promise.all([
         engine.getCatalog('series', cat, offset, limit),
         engine.countCatalog('series', cat),
@@ -53,406 +67,637 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
       if (!isSearchMode()) {
         announce(`Séries, ${list.length} séries affichées sur ${total}`);
         if (!previewSeries() && list.length > 0) {
-          updatePreview(list[0]);
+          setPreviewSeries(list[0]);
         }
-        rebuildGrid(categories(), list, true);
+        scheduleRebuildGrid(true);
       }
     },
   });
 
+  const syncAvPlayRect = () => {
+    if (!showInspector() || !viewportRef) return;
+    const rect = viewportRef.getBoundingClientRect();
+    if (rect.width > 10 && rect.height > 10) {
+      player.setDisplayArea({
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      });
+    }
+  };
+
+  const refreshShelvesAndCounts = async () => {
+    const [countsData, recents, favs] = await Promise.all([
+      engine.getCategoryCounts('series'),
+      engine.getRecentItems('series', 10),
+      engine.getFavoritesByKind('series', 12),
+    ]);
+    setTotalCount(countsData.total);
+    setFavCount(countsData.favCount);
+    setCatCounts(countsData.counts);
+    setRecentSeries(recents);
+    setFavSeries(favs);
+  };
+
   onMount(async () => {
+    resizeHandler = () => {
+      syncAvPlayRect();
+      scheduleRebuildGrid(true);
+    };
+    window.addEventListener('resize', resizeHandler);
+
     const cats = await engine.getCategories('series');
     setCategories(cats);
-    if (cats.length > 0) {
-      setSelectedCat(cats[0]);
-      await scroller.reset();
-      const items = scroller.items();
-      if (items.length > 0) {
-        updatePreview(items[0]);
-      }
-      rebuildGrid(cats, items, false);
-      if (items.length > 0) {
-        spatialNav.setFocusById(`series-${items[0].id}`);
-      } else {
-        spatialNav.setFocusById('series-cat-0');
-      }
-    } else {
-      rebuildGrid([], [], false);
+    await refreshShelvesAndCounts();
+
+    await scroller.reset();
+    const items = scroller.items();
+    if (items.length > 0) {
+      setPreviewSeries(items[0]);
+    }
+    scheduleRebuildGrid(false);
+    if (items.length > 0) {
+      const firstId = recentSeries().length > 0
+        ? `recent-s-${recentSeries()[0].id}`
+        : favSeries().length > 0
+          ? `fav-s-${favSeries()[0].id}`
+          : `series-${items[0].id}`;
+      spatialNav.setFocusById(firstId);
+    } else if (cats.length > 0) {
+      spatialNav.setFocusById('series-cat-all');
     }
   });
 
-  const updatePreview = (series: ItemRecord) => {
-    setPreviewSeries(series);
-    setIsFav(series.is_favorite === 1);
+  onCleanup(() => {
+    if (resizeHandler) window.removeEventListener('resize', resizeHandler);
+    document.querySelector('.app-root')?.classList.remove('preview-mode');
+  });
+
+  const toggleInspector = () => {
+    const next = !showInspector();
+    setShowInspector(next);
+    if (next) {
+      document.querySelector('.app-root')?.classList.add('preview-mode');
+      requestAnimationFrame(() => syncAvPlayRect());
+    } else {
+      document.querySelector('.app-root')?.classList.remove('preview-mode');
+      engine.stopPlayback();
+    }
+    scheduleRebuildGrid(true);
   };
 
-  const focusInput = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) (el as HTMLInputElement).focus();
+  const handleSelectCategory = async (cat: string) => {
+    if (cat === selectedCat() && !isSearchMode()) return;
+    setSelectedCat(cat);
+    if (isSearchMode()) {
+      setSearchQuery('');
+      setSearchResults([]);
+    }
+    await scroller.reset();
+    const items = scroller.items();
+    if (items.length > 0) {
+      setPreviewSeries(items[0]);
+    }
+    scheduleRebuildGrid(false);
+    if (items.length > 0) {
+      spatialNav.setFocusById(`series-${items[0].id}`);
+    }
+  };
+
+  const handleCardActivate = (s: ItemRecord) => {
+    engine.recordRecent(s);
+    setPreviewSeries(s);
+    props.onSelectSeries(s);
+  };
+
+  const handleToggleFavorite = async (s: ItemRecord, e?: MouseEvent) => {
+    e?.stopPropagation();
+    const next = await engine.toggleFavorite(s.id);
+    s.is_favorite = next ? 1 : 0;
+    announce(next ? 'Série ajoutée aux favoris' : 'Série retirée des favoris');
+    await refreshShelvesAndCounts();
+    if (selectedCat() === FAVORITES_CATEGORY) {
+      await scroller.reset();
+    } else {
+      setSearchResults((prev) => [...prev]);
+    }
+    scheduleRebuildGrid(true);
   };
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (!query.trim()) {
       setSearchResults([]);
-      rebuildGrid(categories(), scroller.items(), false);
+      scheduleRebuildGrid(true);
       return;
     }
-    const results = await engine.searchCatalog(query, 'series', 60);
+    const results = await engine.searchCatalog(query, 'series', 100);
     setSearchResults(results);
-    if (results.length > 0) {
-      updatePreview(results[0]);
+    announce(`${results.length} séries trouvées`);
+    scheduleRebuildGrid(true);
+  };
+
+  const focusDomInput = (id: string) => {
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    el?.focus();
+  };
+
+  const detectGridColumns = (): number => {
+    if (viewMode() === 'list') return 1;
+    if (!gridRef) return 5;
+    const firstCard = gridRef.querySelector('.buntu-vod-card') as HTMLElement | null;
+    if (firstCard && gridRef.clientWidth > 0 && firstCard.offsetWidth > 0) {
+      return Math.max(1, Math.round(gridRef.clientWidth / (firstCard.offsetWidth + 16)));
     }
-    announce(`${results.length} résultats pour la recherche ${query}`);
-    rebuildSearchGrid(results);
+    if (gridRef.clientWidth > 0) {
+      return Math.max(1, Math.floor((gridRef.clientWidth + 16) / 190));
+    }
+    return 5;
   };
 
-  const handleClearSearch = () => {
-    setSearchQuery('');
-    setSearchResults([]);
-    rebuildGrid(categories(), scroller.items(), false);
-  };
-
-  const handleToggleFav = async () => {
-    const current = activePreviewSeries();
-    if (!current) return;
-    const next = await engine.toggleFavorite(current.id);
-    setIsFav(next);
-    announce(next ? 'Série ajoutée aux favoris' : 'Série retirée des favoris');
-    if (selectedCat().includes('Favoris')) {
-      await scroller.reset();
-      const items = scroller.items();
-      if (items.length > 0) {
-        updatePreview(items[0]);
-      } else {
-        setPreviewSeries(null);
-      }
-      rebuildGrid(categories(), items, false);
+  const scheduleRebuildGrid = (preserveFocus: boolean) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => rebuildGrid(preserveFocus));
+    } else {
+      rebuildGrid(preserveFocus);
     }
   };
 
-  const rebuildSearchGrid = (results: ItemRecord[]) => {
+  const rebuildGrid = (preserveFocus = false) => {
+    const list = activeSeries();
+    const cats = filteredCategories();
+
     const grid: FocusableItem[][] = [];
 
-    // Search bar row
-    const searchRow: FocusableItem[] = [
-      { id: 'series-search-input', onSelect: () => focusInput('series-search-input') },
+    // Row 0: Toolbar
+    const toolbarRow: FocusableItem[] = [
+      { id: 's-toggle-cats', onSelect: () => { setShowCats((v) => !v); scheduleRebuildGrid(true); } },
+      { id: 's-mode-grid', onSelect: () => { setViewMode('grid'); scheduleRebuildGrid(true); } },
+      { id: 's-mode-list', onSelect: () => { setViewMode('list'); scheduleRebuildGrid(true); } },
+      { id: 's-toggle-inspector', onSelect: toggleInspector },
+      { id: 's-search-input', onSelect: () => focusDomInput('s-search-input') },
     ];
     if (searchQuery().trim()) {
-      searchRow.push({ id: 'series-search-input-clear', onSelect: handleClearSearch });
+      toolbarRow.push({ id: 's-search-clear', onSelect: () => void handleSearch('') });
     }
-    grid.push(searchRow);
+    grid.push(toolbarRow);
 
-    for (let i = 0; i < results.length; i++) {
-      const s = results[i];
-      const row: FocusableItem[] = [
-        {
-          id: `series-${s.id}`,
-          onFocus: () => updatePreview(s),
-          onSelect: () => props.onSelectSeries(s),
+    // Left Category Column
+    const catColItems: FocusableItem[] = [];
+    if (showCats()) {
+      catColItems.push({
+        id: 's-cat-home',
+        onSelect: () => {
+          setCatFilter('');
+          void handleSelectCategory('');
         },
-      ];
-      if (i === 0) row.push({ id: 'btn-series-details', onSelect: () => props.onSelectSeries(s) });
-      else if (i === 1) row.push({ id: 'btn-series-fav', onSelect: () => void handleToggleFav() });
-      grid.push(row);
-    }
-
-    spatialNav.setGrid(grid, 0, 0, false);
-  };
-
-  const rebuildGrid = (cats: string[], list: ItemRecord[], preserveFocus = false) => {
-    const grid: FocusableItem[][] = [];
-
-    // Row 0: Search Bar
-    const searchRow: FocusableItem[] = [
-      { id: 'series-search-input', onSelect: () => focusInput('series-search-input') },
-    ];
-    if (searchQuery().trim()) {
-      searchRow.push({ id: 'series-search-input-clear', onSelect: handleClearSearch });
-    }
-    grid.push(searchRow);
-
-    const maxRows = Math.max(cats.length, list.length);
-
-    for (let i = 0; i < maxRows; i++) {
-      const row: FocusableItem[] = [];
-
-      // Column 0: Categories (vertical list)
-      if (cats.length > 0) {
-        const catIdx = Math.min(i, cats.length - 1);
-        const cat = cats[catIdx];
-        row.push({
-          id: `series-cat-${catIdx}`,
+      });
+      catColItems.push({
+        id: 's-cat-filter',
+        onSelect: () => focusDomInput('s-cat-filter'),
+      });
+      catColItems.push({
+        id: 'series-cat-all',
+        onSelect: () => void handleSelectCategory(''),
+      });
+      catColItems.push({
+        id: 'series-cat-fav',
+        onSelect: () => void handleSelectCategory(FAVORITES_CATEGORY),
+      });
+      cats.forEach((cat, idx) => {
+        catColItems.push({
+          id: `series-cat-${idx}`,
           onSelect: () => void handleSelectCategory(cat),
         });
-      }
+      });
+    }
 
-      // Column 1: Series list
-      if (list.length > 0) {
-        const seriesIdx = Math.min(i, list.length - 1);
-        const s = list[seriesIdx];
-        row.push({
+    // Content Rows
+    const contentRows: FocusableItem[][] = [];
+
+    if (showsShelves()) {
+      const recents = recentSeries();
+      if (recents.length > 0) {
+        contentRows.push(
+          recents.slice(0, 7).map((s) => ({
+            id: `recent-s-${s.id}`,
+            onFocus: () => setPreviewSeries(s),
+            onSelect: () => handleCardActivate(s),
+          }))
+        );
+      }
+      const favs = favSeries();
+      if (favs.length > 0) {
+        contentRows.push(
+          favs.slice(0, 7).map((s) => ({
+            id: `fav-s-${s.id}`,
+            onFocus: () => setPreviewSeries(s),
+            onSelect: () => handleCardActivate(s),
+          }))
+        );
+      }
+    }
+
+    const cols = detectGridColumns();
+    for (let i = 0; i < list.length; i += cols) {
+      const slice = list.slice(i, i + cols);
+      contentRows.push(
+        slice.map((s, idx) => ({
           id: `series-${s.id}`,
           onFocus: () => {
-            void scroller.checkTrigger(seriesIdx);
-            updatePreview(s);
+            setPreviewSeries(s);
+            if (!isSearchMode()) {
+              void scroller.checkTrigger(i + idx);
+            }
           },
-          onSelect: () => props.onSelectSeries(s),
-        });
-      }
-
-      // Column 2: Side action buttons for hero player
-      if (i === 0) {
-        row.push({
-          id: 'btn-series-details',
-          onSelect: () => activePreviewSeries() && props.onSelectSeries(activePreviewSeries()!),
-        });
-      } else if (i === 1) {
-        row.push({ id: 'btn-series-fav', onSelect: () => void handleToggleFav() });
-      }
-
-      grid.push(row);
+          onSelect: () => handleCardActivate(s),
+        }))
+      );
     }
 
-    spatialNav.setGrid(grid, list.length > 0 ? 1 : 0, cats.length > 0 ? 1 : 0, preserveFocus);
+    const totalBodyRows = Math.max(catColItems.length, contentRows.length);
+    for (let r = 0; r < totalBodyRows; r++) {
+      const row: FocusableItem[] = [];
+      if (catColItems.length > 0) {
+        row.push(catColItems[Math.min(r, catColItems.length - 1)]);
+      }
+      if (contentRows.length > 0) {
+        row.push(...contentRows[Math.min(r, contentRows.length - 1)]);
+      }
+      if (showInspector() && previewSeries()) {
+        if (r === 0) {
+          row.push({ id: 's-insp-details', onSelect: () => handleCardActivate(previewSeries()!) });
+        } else if (r === 1) {
+          row.push({ id: 's-insp-fav', onSelect: () => void handleToggleFavorite(previewSeries()!) });
+        }
+      }
+      if (row.length > 0) grid.push(row);
+    }
+
+    spatialNav.setGrid(grid, 1, catColItems.length > 0 ? 1 : 0, preserveFocus);
   };
 
-  const handleSelectCategory = async (cat: string) => {
-    if (cat === selectedCat()) return;
-    setSearchQuery('');
-    setSearchResults([]);
-    setSelectedCat(cat);
-    await scroller.reset();
-    const items = scroller.items();
-    if (items.length > 0) {
-      updatePreview(items[0]);
-    }
-    rebuildGrid(categories(), items, false);
-    if (items.length > 0) {
-      spatialNav.setFocusById(`series-${items[0].id}`);
-    }
-  };
+  const renderSeriesCard = (s: ItemRecord, cardId: string) => {
+    const parsed = () => cleanMediaTitle(s.name);
+    const title = () => (s.name_clean && s.name_clean !== s.name ? s.name_clean : parsed().clean);
+    const year = () => s.year || parsed().year;
+    const quality = () => detectChannelQuality(s.name);
 
-  const handleContainerScroll = (e: Event) => {
-    if (isSearchMode()) return;
-    const el = e.currentTarget as HTMLElement;
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 350) {
-      void scroller.loadMore();
-    }
+    return (
+      <div
+        id={cardId}
+        role="button"
+        tabindex="-1"
+        aria-label={`Série ${title()}`}
+        class={`buntu-vod-card ${focusId() === cardId ? 'focused' : ''}`}
+        onClick={() => handleCardActivate(s)}
+      >
+        <div class="buntu-vod-poster">
+          <Show
+            when={s.logo_url}
+            fallback={
+              <div class="buntu-vod-poster-fallback">
+                <span style={{ 'font-size': '32px' }}>🍿</span>
+                <span style={{ 'font-size': '11px', 'font-weight': '600' }}>{title()}</span>
+              </div>
+            }
+          >
+            <img
+              src={s.logo_url}
+              alt=""
+              loading="lazy"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          </Show>
+
+          <Show when={viewMode() === 'grid'}>
+            <div class="buntu-vod-badge-top">
+              <Show when={quality()}>
+                <span class={`buntu-q-badge ${quality() === '4K' ? 'uhd' : ''}`}>{quality()}</span>
+              </Show>
+              <Show when={s.imdb_rating && s.imdb_rating > 0}>
+                <span class="buntu-q-badge">★ {s.imdb_rating!.toFixed(1)}</span>
+              </Show>
+            </div>
+            <button
+              type="button"
+              tabindex="-1"
+              class={`buntu-vod-star-overlay ${s.is_favorite === 1 ? 'fav' : ''}`}
+              title="Favori"
+              onClick={(e) => void handleToggleFavorite(s, e)}
+            >
+              {s.is_favorite === 1 ? '★' : '☆'}
+            </button>
+          </Show>
+        </div>
+
+        <div class="buntu-vod-meta">
+          <div class="buntu-vod-title">{title()}</div>
+          <div class="buntu-vod-sub">
+            <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>
+              {s.season_num ? `Saison ${s.season_num}` : (year() ? `${year()}${s.group_title ? ' · ' + s.group_title : ''}` : s.group_title || 'Série')}
+            </span>
+            <Show when={viewMode() === 'list'}>
+              <button
+                type="button"
+                tabindex="-1"
+                class={`buntu-ch-star ${s.is_favorite === 1 ? 'fav' : ''}`}
+                onClick={(e) => void handleToggleFavorite(s, e)}
+              >
+                {s.is_favorite === 1 ? '★' : '☆'}
+              </button>
+            </Show>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
-      <div class="tv-minimal-3col">
-        {/* Column 1: Categories Sidebar */}
-        <div class="tv-min-col-categories" role="tablist" aria-label="Catégories de séries">
-          <h1 class="tv-min-col-title">
-            <span>Séries TV</span>
-          </h1>
+    <div class={`buntu-page ${showInspector() ? 'with-preview' : ''}`}>
+      {/* Top Toolbar */}
+      <header class="buntu-toolbar">
+        <div class="buntu-toolbar-left">
+          <button
+            id="s-toggle-cats"
+            type="button"
+            tabindex="-1"
+            class={`buntu-tool-btn ${showCats() ? 'active' : ''} ${focusId() === 's-toggle-cats' ? 'focused' : ''}`}
+            onClick={() => {
+              setShowCats((v) => !v);
+              scheduleRebuildGrid(true);
+            }}
+          >
+            ☰
+          </button>
+          <h1 class="buntu-toolbar-title">Séries</h1>
+          <Show when={totalCount() > 0}>
+            <span class="buntu-toolbar-subtitle">{formatBuntuCount(totalCount())} séries</span>
+          </Show>
+        </div>
 
-          <div style={{ "margin-bottom": "14px" }}>
-            <TvSearchBar
-              id="series-search-input"
-              placeholder="Rechercher une série..."
-              value={searchQuery()}
-              onInput={handleSearch}
-              onClear={handleClearSearch}
-              focusId={focusId()}
-            />
-          </div>
-
-          <div class="tv-min-cat-list">
-            <For each={categories()}>
-              {(cat, idx) => {
-                const meta = getCategoryMeta(cat);
-                const isSelected = () => selectedCat() === cat;
-                return (
-                  <div
-                    id={`series-cat-${idx()}`}
-                    role="tab"
-                    tabindex="-1"
-                    aria-selected={isSelected()}
-                    aria-label={`Catégorie ${cat}`}
-                    class={`tv-min-cat-item ${isSelected() ? 'active' : ''} ${focusId() === `series-cat-${idx()}` ? 'focused' : ''}`}
-                    onClick={() => void handleSelectCategory(cat)}
-                  >
-                    <div class="tv-min-cat-badge">{meta.icon}</div>
-                    <div class="tv-min-cat-info">
-                      <div class="tv-min-cat-name">{cat}</div>
-                      <div class="tv-min-cat-count">
-                        {isSelected() ? `${scroller.total()} Séries` : 'Séries'}
-                      </div>
-                    </div>
-                  </div>
-                );
+        <div class="buntu-toolbar-right">
+          <div class="buntu-seg-group">
+            <button
+              id="s-mode-grid"
+              type="button"
+              tabindex="-1"
+              class={`buntu-seg-btn ${viewMode() === 'grid' ? 'active' : ''} ${focusId() === 's-mode-grid' ? 'focused' : ''}`}
+              onClick={() => {
+                setViewMode('grid');
+                scheduleRebuildGrid(true);
               }}
-            </For>
-          </div>
-        </div>
-
-        {/* Column 2: Cards List with Infinite Scroll */}
-        <div
-          class="tv-min-col-cards"
-          role="list"
-          aria-label="Catalogue des séries"
-          onScroll={handleContainerScroll}
-        >
-          <div class="tv-min-cards-scroll">
-            <Show
-              when={activeSeries().length > 0}
-              fallback={
-                <div style={{ padding: "48px 20px", "text-align": "center", color: "var(--buntu-text-muted)", "font-size": "18px" }}>
-                  {isSearchMode()
-                    ? `Aucune série ne correspond à "${searchQuery()}".`
-                    : selectedCat().includes('Favoris')
-                    ? 'Aucune série dans vos favoris. Appuyez sur ☆ Favori pour ajouter vos séries préférées !'
-                    : 'Aucune série dans cette catégorie.'}
-                </div>
-              }
             >
-              <For each={activeSeries()}>
-                {(series) => {
-                  const title = series.name_clean && series.name_clean !== series.name
-                    ? series.name_clean
-                    : cleanMediaTitle(series.name).clean;
-                  const is4k = title.toLowerCase().includes('4k') || title.toLowerCase().includes('uhd');
-                  const isSelected = () => activePreviewSeries()?.id === series.id;
-                  return (
-                    <div
-                      id={`series-${series.id}`}
-                      role="button"
-                      tabindex="-1"
-                      aria-label={`Série ${title}`}
-                      class={`tv-min-media-card ${focusId() === `series-${series.id}` ? 'focused' : ''} ${isSelected() ? 'active' : ''}`}
-                      onClick={() => props.onSelectSeries(series)}
-                    >
-                      <div class="tv-min-card-thumb">
-                        <Show
-                          when={series.logo_url}
-                          fallback={<span style={{ "font-size": "32px" }}>🍿</span>}
-                        >
-                          <img
-                            src={series.logo_url}
-                            alt=""
-                            loading="lazy"
-                            referrerpolicy="no-referrer"
-                            crossOrigin="anonymous"
-                            onError={(e) => {
-                              const target = e.currentTarget as HTMLElement;
-                              target.style.display = 'none';
-                              if (target.parentElement) {
-                                target.parentElement.innerHTML = '<span style="font-size:32px;">🍿</span>';
-                              }
-                            }}
-                          />
-                        </Show>
-                      </div>
+              ⊞
+            </button>
+            <button
+              id="s-mode-list"
+              type="button"
+              tabindex="-1"
+              class={`buntu-seg-btn ${viewMode() === 'list' ? 'active' : ''} ${focusId() === 's-mode-list' ? 'focused' : ''}`}
+              onClick={() => {
+                setViewMode('list');
+                scheduleRebuildGrid(true);
+              }}
+            >
+              ☰
+            </button>
+          </div>
 
-                      <div class="tv-min-card-meta">
-                        <div class="tv-min-card-title">{title}</div>
-                        <div class="tv-min-card-views">
-                          {series.season_num ? `Saison ${series.season_num} • ${formatViewCount(series.id)}` : formatViewCount(series.id)}
-                        </div>
-                        <div class="tv-min-card-tags">
-                          <span class="tv-min-tag">{is4k ? '4K' : 'HD'}</span>
-                          <span class="tv-min-tag">SÉRIE</span>
-                          <Show when={series.episode_num}>
-                            <span class="tv-min-tag" style={{ color: "var(--buntu-cyan)" }}>Ép. {series.episode_num}</span>
-                          </Show>
-                        </div>
-                      </div>
+          <button
+            id="s-toggle-inspector"
+            type="button"
+            tabindex="-1"
+            class={`buntu-tool-btn ${showInspector() ? 'active' : ''} ${focusId() === 's-toggle-inspector' ? 'focused' : ''}`}
+            onClick={toggleInspector}
+          >
+            ◫
+          </button>
 
-                      <Show when={series.is_favorite === 1}>
-                        <div class="tv-min-card-fav">★</div>
-                      </Show>
-                    </div>
-                  );
-                }}
-              </For>
-            </Show>
-
-            {/* Infinite Scroll Loader */}
-            <Show when={scroller.isLoading()}>
-              <div style={{ "text-align": "center", padding: "16px", color: "var(--buntu-text-muted)" }}>
-                Chargement des séries...
-              </div>
+          <div class="buntu-search-wrap">
+            <span class="buntu-search-icon">🔍</span>
+            <input
+              id="s-search-input"
+              type="text"
+              value={searchQuery()}
+              placeholder="Rechercher une série"
+              class={`buntu-search-field ${focusId() === 's-search-input' ? 'focused' : ''}`}
+              onInput={(e) => void handleSearch(e.currentTarget.value)}
+            />
+            <Show when={searchQuery().trim().length > 0}>
+              <button
+                id="s-search-clear"
+                type="button"
+                tabindex="-1"
+                class={`buntu-search-clear ${focusId() === 's-search-clear' ? 'focused' : ''}`}
+                onClick={() => void handleSearch('')}
+              >
+                ✕
+              </button>
             </Show>
           </div>
         </div>
+      </header>
 
-        {/* Column 3: Hero Panel (16:9 Viewport + Details + Synopsis + Actions) */}
-        <div class="tv-min-col-hero" role="region" aria-label="Aperçu de la série">
-          <div id="tv-mini-viewport" class="tv-min-hero-viewport">
-            <div class="tv-mini-mock-screen">
-              <div class="tv-mini-live-tag" style={{ background: "rgba(245, 166, 35, 0.9)" }}>
-                <span>🍿 SÉRIES TV</span>
-              </div>
-              <div class="tv-mini-hd-badge">1080p FHD</div>
-
-              <div class="tv-mini-mock-art">
-                <Show
-                  when={activePreviewSeries()?.logo_url}
-                  fallback={<span style={{ "font-size": "48px" }}>🍿</span>}
-                >
-                  <img
-                    src={activePreviewSeries()!.logo_url}
-                    alt=""
-                    referrerpolicy="no-referrer"
-                    crossOrigin="anonymous"
-                    style={{ "max-width": "80px", "max-height": "80px", "object-fit": "contain" }}
-                  />
-                </Show>
-              </div>
-
-              <div class="tv-mini-mock-title">{previewTitle()}</div>
-            </div>
-          </div>
-
-          {/* Now Playing Metadata Section */}
-          <div class="tv-min-hero-info">
-            <div class="tv-min-now-label">FICHE SÉRIE...</div>
-            <h2 class="tv-min-hero-title">{previewTitle()}</h2>
-            <p class="tv-min-hero-desc">
-              {activePreviewSeries()?.plot || (activePreviewSeries()?.group_title ? `Série disponible dans le bouquet ${activePreviewSeries()!.group_title}. Tous les épisodes et saisons disponibles en qualité Full HD.` : 'Série télévisée complète avec saisons et épisodes.')}
-            </p>
-
-            {/* Progress Bar Timeline */}
-            <div class="tv-min-hero-progress">
-              <span class="tv-min-time">Saison {activePreviewSeries()?.season_num || 1}</span>
-              <div class="tv-min-track">
-                <div class="tv-min-fill" style={{ width: "60%" }}>
-                  <div class="tv-min-knob" />
-                </div>
-              </div>
-              <span class="tv-min-time">Épisode {activePreviewSeries()?.episode_num || 1}</span>
-            </div>
-
-            {/* Hero Action Buttons */}
-            <div class="tv-min-hero-actions">
+      {/* Split Body */}
+      <div class="buntu-body-split">
+        <Show when={showCats()}>
+          <aside class="buntu-cat-pane" aria-label="Catégories Séries">
+            <div class="buntu-cat-filter-bar">
               <button
-                id="btn-series-details"
+                id="s-cat-home"
+                type="button"
+                tabindex="-1"
+                class={`buntu-cat-home-btn ${focusId() === 's-cat-home' ? 'focused' : ''}`}
+                onClick={() => {
+                  setCatFilter('');
+                  void handleSelectCategory('');
+                }}
+              >
+                ⌂
+              </button>
+              <input
+                id="s-cat-filter"
+                type="text"
+                value={catFilter()}
+                placeholder="Filtrer les catégories"
+                class={`buntu-cat-filter-input ${focusId() === 's-cat-filter' ? 'focused' : ''}`}
+                onInput={(e) => {
+                  setCatFilter(e.currentTarget.value);
+                  scheduleRebuildGrid(true);
+                }}
+              />
+            </div>
+
+            <div class="buntu-cat-list">
+              <div
+                id="series-cat-all"
                 role="button"
                 tabindex="-1"
-                aria-label={`Voir les épisodes de ${previewTitle()}`}
-                class={`tv-min-btn-play ${focusId() === 'btn-series-details' ? 'focused' : ''}`}
-                onClick={() => activePreviewSeries() && props.onSelectSeries(activePreviewSeries()!)}
+                class={`buntu-cat-row ${selectedCat() === '' && !isSearchMode() ? 'active' : ''} ${focusId() === 'series-cat-all' ? 'focused' : ''}`}
+                onClick={() => void handleSelectCategory('')}
+              >
+                <div class="buntu-cat-row-left">
+                  <span class="buntu-cat-row-icon">⊞</span>
+                  <span class="buntu-cat-row-title">Toutes les séries</span>
+                </div>
+                <span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span>
+              </div>
+
+              <div
+                id="series-cat-fav"
+                role="button"
+                tabindex="-1"
+                class={`buntu-cat-row ${selectedCat() === FAVORITES_CATEGORY && !isSearchMode() ? 'active' : ''} ${focusId() === 'series-cat-fav' ? 'focused' : ''}`}
+                onClick={() => void handleSelectCategory(FAVORITES_CATEGORY)}
+              >
+                <div class="buntu-cat-row-left">
+                  <span class="buntu-cat-row-icon fav">★</span>
+                  <span class="buntu-cat-row-title">Favoris</span>
+                </div>
+                <span class="buntu-cat-count">{formatBuntuCount(favCount())}</span>
+              </div>
+
+              <For each={filteredCategories()}>
+                {(cat, idx) => (
+                  <div
+                    id={`series-cat-${idx()}`}
+                    role="button"
+                    tabindex="-1"
+                    class={`buntu-cat-row ${selectedCat() === cat && !isSearchMode() ? 'active' : ''} ${focusId() === `series-cat-${idx()}` ? 'focused' : ''}`}
+                    onClick={() => void handleSelectCategory(cat)}
+                  >
+                    <div class="buntu-cat-row-left">
+                      <span class="buntu-cat-row-title">{cat}</span>
+                    </div>
+                    <span class="buntu-cat-count">{formatBuntuCount(catCounts()[cat] || 0)}</span>
+                  </div>
+                )}
+              </For>
+            </div>
+          </aside>
+        </Show>
+
+        <section
+          class="buntu-content-scroll"
+          onScroll={(e) => {
+            if (isSearchMode()) return;
+            const el = e.currentTarget as HTMLElement;
+            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 360) {
+              void scroller.loadMore();
+            }
+          }}
+        >
+          {/* Shelf 1: Reprendre / Récemment consultés */}
+          <Show when={showsShelves() && recentSeries().length > 0}>
+            <div class="buntu-section">
+              <div class="buntu-section-header">
+                <h2 class="buntu-section-title">
+                  <span style={{ color: 'var(--buntu-accent)' }}>▶</span> Reprendre
+                </h2>
+              </div>
+              <div class="buntu-vod-shelf">
+                <For each={recentSeries().slice(0, 7)}>
+                  {(s) => renderSeriesCard(s, `recent-s-${s.id}`)}
+                </For>
+              </div>
+            </div>
+          </Show>
+
+          {/* Shelf 2: Favoris */}
+          <Show when={showsShelves() && favSeries().length > 0}>
+            <div class="buntu-section">
+              <div class="buntu-section-header">
+                <h2 class="buntu-section-title">
+                  <span style={{ color: 'var(--buntu-star)' }}>★</span> Favoris
+                </h2>
+              </div>
+              <div class="buntu-vod-shelf">
+                <For each={favSeries().slice(0, 7)}>
+                  {(s) => renderSeriesCard(s, `fav-s-${s.id}`)}
+                </For>
+              </div>
+            </div>
+          </Show>
+
+          {/* Main Series Grid */}
+          <div class="buntu-section">
+            <div class="buntu-section-header">
+              <h2 class="buntu-section-title">
+                {isSearchMode()
+                  ? `Recherche : « ${searchQuery()} »`
+                  : selectedCat() === FAVORITES_CATEGORY
+                    ? 'Favoris'
+                    : selectedCat() || 'Toutes les séries'}
+              </h2>
+              <span class="buntu-section-meta">
+                {isSearchMode()
+                  ? `${searchResults().length} résultats`
+                  : `${formatBuntuCount(scroller.total())} séries`}
+              </span>
+            </div>
+
+            <div
+              ref={gridRef}
+              class={`buntu-vod-grid ${viewMode() === 'list' ? 'list-mode' : ''}`}
+            >
+              <For each={activeSeries()}>
+                {(s) => renderSeriesCard(s, `series-${s.id}`)}
+              </For>
+            </div>
+
+            <Show when={!isSearchMode() && scroller.isLoading()}>
+              <div class="tv-infinite-loader">
+                <div class="tv-spinner-small" />
+                <span>Chargement des séries…</span>
+              </div>
+            </Show>
+          </div>
+        </section>
+
+        {/* Optional Inspector Pane */}
+        <Show when={showInspector() && previewSeries()}>
+          <aside class="buntu-inspector-pane" aria-label="Aperçu série">
+            <div ref={viewportRef} class="buntu-inspector-viewport" style={{ background: '#111318' }}>
+              <Show when={previewSeries()?.logo_url} fallback={<div class="tv-mini-mock-screen">🍿</div>}>
+                <img
+                  src={previewSeries()!.logo_url}
+                  alt=""
+                  style={{ width: '100%', height: '100%', 'object-fit': 'cover' }}
+                />
+              </Show>
+            </div>
+            <h3 class="buntu-inspector-title">
+              {previewSeries()!.name_clean || previewSeries()!.name}
+            </h3>
+            <p class="buntu-inspector-desc">
+              {previewSeries()!.plot || previewSeries()!.group_title || 'Série VOD complète avec saisons et épisodes.'}
+            </p>
+            <div class="buntu-inspector-actions">
+              <button
+                id="s-insp-details"
+                type="button"
+                tabindex="-1"
+                class={`buntu-action-primary ${focusId() === 's-insp-details' ? 'focused' : ''}`}
+                onClick={() => handleCardActivate(previewSeries()!)}
               >
                 ▶ Voir les épisodes
               </button>
-
               <button
-                id="btn-series-fav"
-                role="button"
+                id="s-insp-fav"
+                type="button"
                 tabindex="-1"
-                aria-label="Basculer favori"
-                class={`tv-min-btn-secondary ${focusId() === 'btn-series-fav' ? 'focused' : ''}`}
-                onClick={() => void handleToggleFav()}
+                class={`buntu-action-secondary ${focusId() === 's-insp-fav' ? 'focused' : ''}`}
+                onClick={() => void handleToggleFavorite(previewSeries()!)}
               >
-                {isFav() ? '★ Retirer Favori' : '☆ Favori'}
+                {previewSeries()!.is_favorite === 1 ? '★' : '☆'}
               </button>
             </div>
-          </div>
-        </div>
+          </aside>
+        </Show>
       </div>
     </div>
   );

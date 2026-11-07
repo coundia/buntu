@@ -178,19 +178,40 @@ export class AVPlayerService {
 
   private applyDisplayArea() {
     const { x, y, width, height } = this.displayArea;
+    const isFullScreen = x === 0 && y === 0 && width === 1920 && height === 1080;
     const plane = this.videoPlane();
     if (plane) {
       plane.style.position = 'absolute';
-      plane.style.left = `${x}px`;
-      plane.style.top = `${y}px`;
-      plane.style.width = `${width}px`;
-      plane.style.height = `${height}px`;
+      if (isFullScreen) {
+        plane.style.left = '0';
+        plane.style.top = '0';
+        plane.style.width = '100%';
+        plane.style.height = '100%';
+      } else {
+        plane.style.left = `${x}px`;
+        plane.style.top = `${y}px`;
+        plane.style.width = `${width}px`;
+        plane.style.height = `${height}px`;
+      }
     }
     if (!this.avplay) return;
     try {
       const st = this.avplay.getState();
       if (st === 'NONE') return;
-      this.avplay.setDisplayRect(x, y, width, height);
+      if (isFullScreen) {
+        this.avplay.setDisplayRect(0, 0, 1920, 1080);
+      } else {
+        const vw = typeof window !== 'undefined' && window.innerWidth > 0 ? window.innerWidth : 1920;
+        const vh = typeof window !== 'undefined' && window.innerHeight > 0 ? window.innerHeight : 1080;
+        const sx = 1920 / vw;
+        const sy = 1080 / vh;
+        this.avplay.setDisplayRect(
+          Math.round(x * sx),
+          Math.round(y * sy),
+          Math.max(2, Math.round(width * sx)),
+          Math.max(2, Math.round(height * sy))
+        );
+      }
     } catch (err) {
       console.warn('AVPlay setDisplayRect failed:', err);
     }

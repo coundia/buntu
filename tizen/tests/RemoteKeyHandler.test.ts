@@ -79,4 +79,46 @@ describe('RemoteKeyHandler - Tizen Key Normalization', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 40, key: 'ArrowDown' }));
     expect(spatialNav.getCurrentFocusId()).toBe('btn-skip');
   });
+
+  it('navigates Buntu vertical left sidebar with UP/DOWN and exits RIGHT to grid', () => {
+    handler.init();
+    spatialNav.init();
+
+    const selected: string[] = [];
+    spatialNav.setHeader(
+      [
+        { id: 'nav-live', onSelect: () => selected.push('nav-live') },
+        { id: 'nav-guide', onSelect: () => selected.push('nav-guide') },
+        { id: 'nav-movies', onSelect: () => selected.push('nav-movies') },
+      ],
+      0,
+      'vertical',
+    );
+    spatialNav.setGrid([
+      [
+        { id: 'cat-all', onSelect: () => selected.push('cat-all') },
+        { id: 'ch-1', onSelect: () => selected.push('ch-1') },
+      ],
+    ]);
+
+    expect(spatialNav.getCurrentFocusId()).toBe('cat-all');
+
+    // LEFT from col 0 -> enters vertical sidebar at nav-live
+    window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 37, key: 'ArrowLeft' }));
+    expect(spatialNav.getCurrentFocusId()).toBe('nav-live');
+
+    // DOWN -> moves down vertical sidebar to nav-guide, then nav-movies
+    window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 40, key: 'ArrowDown' }));
+    expect(spatialNav.getCurrentFocusId()).toBe('nav-guide');
+    window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 40, key: 'ArrowDown' }));
+    expect(spatialNav.getCurrentFocusId()).toBe('nav-movies');
+
+    // UP -> back to nav-guide
+    window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 38, key: 'ArrowUp' }));
+    expect(spatialNav.getCurrentFocusId()).toBe('nav-guide');
+
+    // RIGHT -> exits sidebar back to cat-all
+    window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 39, key: 'ArrowRight' }));
+    expect(spatialNav.getCurrentFocusId()).toBe('cat-all');
+  });
 });
