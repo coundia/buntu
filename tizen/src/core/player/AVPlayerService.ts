@@ -198,6 +198,15 @@ export class AVPlayerService {
     try {
       const st = this.avplay.getState();
       if (st === 'NONE') return;
+      // In a window smaller than the screen (Live TV preview) the letter-box mode shows no picture on
+      // the TV (sound only); the "full screen" mode fills the given window. Verified on a Tizen 6.0 TV.
+      try {
+        this.avplay.setDisplayMethod(
+          isFullScreen ? 'PLAYER_DISPLAY_MODE_LETTER_BOX' : 'PLAYER_DISPLAY_MODE_FULL_SCREEN'
+        );
+      } catch {
+        /* older firmware: default display mode */
+      }
       if (isFullScreen) {
         this.avplay.setDisplayRect(0, 0, 1920, 1080);
       } else {
@@ -239,12 +248,7 @@ export class AVPlayerService {
       this.videoPlane();
       this.avplay.open(url);
       this.setState('IDLE');
-      try {
-        this.avplay.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX');
-      } catch {
-        /* older firmware: default display mode */
-      }
-      this.applyDisplayArea();
+      this.applyDisplayArea(); // window + display mode (see applyDisplayArea)
 
       // Direct: rapid startup (small initial buffer). Movies: longer buffer for stability.
       try {
@@ -297,6 +301,8 @@ export class AVPlayerService {
     try {
       this.avplay.play();
       this.setState('PLAYING');
+      // Some firmwares only honor a window smaller than the screen once the stream is running.
+      this.applyDisplayArea();
       this.startStallWatchdog();
     } catch (err: any) {
       this.listener.onError?.(describePlayerError(err));
