@@ -63,3 +63,4 @@ describe('Universal Media Title Normalizer', () => {
     expect(cleanMediaTitle('Inception (2010)').year).toBe(2010);
   });
 });
+
