@@ -92,14 +92,20 @@ export const DetailsView: Component<DetailsViewProps> = (props) => {
           </p>
 
           {/* Action buttons */}
-          <div style={{ display: "flex", gap: "24px" }}>
+          <div style={{ display: "flex", gap: "24px" }} role="toolbar" aria-label="Actions du média">
             <button
+              id="btn-play-now"
+              tabindex="-1"
+              aria-label={`Lancer la lecture de ${props.item.name_clean || props.item.name}`}
               class={`tv-btn ${focusId() === 'btn-play-now' ? 'focused' : ''}`}
               onClick={() => props.onPlay(props.item)}
             >
               ▶ Lancer la lecture
             </button>
             <button
+              id="btn-toggle-fav"
+              tabindex="-1"
+              aria-label={isFav() ? 'Retirer ce titre des favoris' : 'Ajouter ce titre aux favoris'}
               class={`tv-btn ${focusId() === 'btn-toggle-fav' ? 'focused' : ''}`}
               onClick={async () => {
                 const next = await engine.toggleFavorite(props.item.id);
@@ -109,6 +115,9 @@ export const DetailsView: Component<DetailsViewProps> = (props) => {
               {isFav() ? '★ Retirer des favoris' : '☆ Ajouter aux favoris'}
             </button>
             <button
+              id="btn-back"
+              tabindex="-1"
+              aria-label="Retourner au catalogue"
               class={`tv-btn ${focusId() === 'btn-back' ? 'focused' : ''}`}
               onClick={() => props.onBack()}
             >

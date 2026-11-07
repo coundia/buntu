@@ -45,18 +45,29 @@ export const GuideView: Component<GuideViewProps> = (props) => {
         </div>
       </div>
 
-      <div style={{ display: "flex", "flex-direction": "column", gap: "12px", "overflow-y": "auto", flex: 1 }}>
+      <div
+        role="list"
+        aria-label="Liste des chaînes et programmes"
+        style={{ display: "flex", "flex-direction": "column", gap: "12px", "overflow-y": "auto", flex: 1 }}
+      >
         <For each={channels()}>
           {(ch) => {
             const epg = ch.tvg_id ? epgMap()[ch.tvg_id] : undefined;
+            const nowTitle = epg?.now?.title || 'Programme en cours';
+            const nextTitle = epg?.next?.title || 'À suivre';
             return (
               <div
+                id={`guide-channel-${ch.id}`}
+                role="button"
+                tabindex="-1"
+                aria-label={`Chaîne ${ch.name}. En ce moment: ${nowTitle}. Suivant: ${nextTitle}. Appuyez pour regarder.`}
                 class={`tv-card ${focusId() === `guide-channel-${ch.id}` ? 'focused' : ''}`}
                 style={{
                   padding: "16px 24px",
                   display: "flex",
                   "align-items": "center",
                   gap: "24px",
+                  cursor: "pointer",
                 }}
                 onClick={() => props.onPlayChannel(ch)}
               >
@@ -68,7 +79,7 @@ export const GuideView: Component<GuideViewProps> = (props) => {
                 {/* Now Programme */}
                 <div style={{ flex: 1, background: "var(--buntu-slate-light)", padding: "12px", "border-radius": "8px" }}>
                   <div style={{ "font-size": "18px", "font-weight": "600", color: "var(--buntu-cyan)" }}>
-                    EN CE MOMENT: {epg?.now?.title || 'Programme en cours'}
+                    EN CE MOMENT: {nowTitle}
                   </div>
                   <div style={{ "font-size": "14px", color: "var(--buntu-text-muted)", "margin-top": "4px" }}>
                     {epg?.now?.description || 'Aucune information détaillée'}
@@ -78,7 +89,7 @@ export const GuideView: Component<GuideViewProps> = (props) => {
                 {/* Next Programme */}
                 <div style={{ width: "320px", background: "rgba(255,255,255,0.05)", padding: "12px", "border-radius": "8px" }}>
                   <div style={{ "font-size": "16px", "font-weight": "600" }}>
-                    SUIVANT: {epg?.next?.title || 'À suivre'}
+                    SUIVANT: {nextTitle}
                   </div>
                 </div>
               </div>

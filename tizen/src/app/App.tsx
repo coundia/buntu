@@ -65,7 +65,7 @@ export const App: Component = () => {
     spatialNav.setHeader(
       NAV_ITEMS.map((nav) => ({
         id: `nav-${nav.route}`,
-        onSelect: () => setCurrentRoute(nav.route),
+        onSelect: () => navigateTo(nav.route),
       })),
       activeIdx,
     );
@@ -109,35 +109,42 @@ export const App: Component = () => {
     }
   };
 
+  const navigateTo = (route: ScreenRoute) => {
+    if (currentRoute() === 'player' && route !== 'player') {
+      engine.stopPlayback();
+    }
+    setCurrentRoute(route);
+  };
+
   const handleGlobalKey = (key: RemoteKey): boolean => {
     // Red -> Live TV
     if (key === 'RED') {
-      setCurrentRoute('live');
+      navigateTo('live');
       return true;
     }
     // Green -> EPG Guide
     if (key === 'GREEN') {
-      setCurrentRoute('guide');
+      navigateTo('guide');
       return true;
     }
     // Yellow -> Search
     if (key === 'YELLOW') {
-      setCurrentRoute('search');
+      navigateTo('search');
       return true;
     }
     // Blue -> Settings
     if (key === 'BLUE') {
-      setCurrentRoute('settings');
+      navigateTo('settings');
       return true;
     }
 
     if (key === 'BACK' && currentRoute() !== 'player' && currentRoute() !== 'onboarding') {
       if (currentRoute() !== 'live') {
-        setCurrentRoute('live');
+        navigateTo('live');
         return true;
       }
       if (!hasSources()) {
-        setCurrentRoute('onboarding');
+        navigateTo('onboarding');
         return true;
       }
     }
@@ -148,64 +155,97 @@ export const App: Component = () => {
   const handlePlayItem = async (item: ItemRecord) => {
     setSelectedItem(item);
     setCurrentRoute('player');
-    await engine.play(item);
+    await engine.play(item, { force: true });
+  };
+
+  const handleNextChannel = async () => {
+    const current = selectedItem();
+    if (!current || current.kind !== 'live') return;
+    const channels = await engine.getCatalog('live', undefined, 0, 200);
+    const idx = channels.findIndex((c) => c.id === current.id);
+    if (idx !== -1 && channels.length > 1) {
+      const next = channels[(idx + 1) % channels.length];
+      await handlePlayItem(next);
+    }
+  };
+
+  const handlePrevChannel = async () => {
+    const current = selectedItem();
+    if (!current || current.kind !== 'live') return;
+    const channels = await engine.getCatalog('live', undefined, 0, 200);
+    const idx = channels.findIndex((c) => c.id === current.id);
+    if (idx !== -1 && channels.length > 1) {
+      const prev = channels[(idx - 1 + channels.length) % channels.length];
+      await handlePlayItem(prev);
+    }
   };
 
   const handleSelectDetails = (item: ItemRecord) => {
     setSelectedItem(item);
-    setCurrentRoute('details');
+    navigateTo('details');
   };
 
   return (
-    <div style={{ width: "1920px", height: "1080px", position: "relative" }}>
+    <div
+      class={`app-root ${currentRoute() === 'player' ? 'video-mode' : ''}`}
+      style={{ width: "1920px", height: "1080px", position: "relative" }}
+    >
       {/* Top TV Navigation Bar (hidden in player) */}
       {currentRoute() !== 'player' && (
-        <div style={{
-          position: "absolute",
-          top: "48px",
-          left: "80px",
-          right: "80px",
-          height: "64px",
-          display: "flex",
-          "align-items": "center",
-          "justify-content": "space-between",
-          "z-index": 40
-        }}>
+        <header
+          style={{
+            position: "absolute",
+            top: "48px",
+            left: "80px",
+            right: "80px",
+            height: "64px",
+            display: "flex",
+            "align-items": "center",
+            "justify-content": "space-between",
+            "z-index": 40
+          }}
+          role="banner"
+        >
           <div style={{
             "font-size": "32px",
             "font-weight": "800",
             color: "var(--buntu-gold)",
             "letter-spacing": "2px"
-          }}>
+          }} aria-label="CND IPTV">
             CND IPTV
           </div>
 
-          <div style={{ display: "flex", gap: "12px" }}>
+          <nav style={{ display: "flex", gap: "12px" }} role="tablist" aria-label="Sections principales">
             {NAV_ITEMS.map((nav) => (
               <button
+                id={`nav-${nav.route}`}
+                role="tab"
+                tabindex="-1"
+                aria-selected={currentRoute() === nav.route}
+                aria-label={`Onglet ${nav.label}`}
                 class={`tv-nav-item ${currentRoute() === nav.route ? 'active' : ''} ${focusId() === `nav-${nav.route}` ? 'focused' : ''}`}
-                onClick={() => setCurrentRoute(nav.route)}
+                onClick={() => navigateTo(nav.route)}
               >
                 {nav.label}
               </button>
             ))}
-          </div>
-        </div>
+          </nav>
+        </header>
       )}
 
       {/* Main Content Router */}
-      <div style={{ "padding-top": currentRoute() !== 'player' ? "120px" : "0", width: "100%", height: "100%" }}>
+      <main style={{ "padding-top": currentRoute() !== 'player' ? "120px" : "0", width: "100%", height: "100%" }} role="main">
         <Switch>
           <Match when={currentRoute() === 'onboarding'}>
             <OnboardingView
               onComplete={() => {
                 setHasSources(true);
-                setCurrentRoute('live');
+                navigateTo('live');
               }}
               onAddM3u={async (url) => {
                 await engine.syncM3uSource('Ma Source', url);
                 setHasSources(true);
-                setCurrentRoute('live');
+                navigateTo('live');
               }}
             />
           </Match>
@@ -213,7 +253,7 @@ export const App: Component = () => {
           <Match when={currentRoute() === 'live'}>
             <LiveView
               onPlayChannel={handlePlayItem}
-              onAddSource={() => setCurrentRoute('onboarding')}
+              onAddSource={() => navigateTo('onboarding')}
             />
           </Match>
 
@@ -233,14 +273,16 @@ export const App: Component = () => {
             <DetailsView
               item={selectedItem()!}
               onPlay={handlePlayItem}
-              onBack={() => setCurrentRoute('movies')}
+              onBack={() => navigateTo('movies')}
             />
           </Match>
 
           <Match when={currentRoute() === 'player' && selectedItem()}>
             <PlayerView
               item={selectedItem()!}
-              onExit={() => setCurrentRoute('live')}
+              onExit={() => navigateTo('live')}
+              onNextChannel={handleNextChannel}
+              onPrevChannel={handlePrevChannel}
             />
           </Match>
 
@@ -254,20 +296,20 @@ export const App: Component = () => {
 
           <Match when={currentRoute() === 'sources'}>
             <SourcesView
-              onBack={() => setCurrentRoute('live')}
-              onAddNew={() => setCurrentRoute('onboarding')}
+              onBack={() => navigateTo('live')}
+              onAddNew={() => navigateTo('onboarding')}
             />
           </Match>
 
           <Match when={currentRoute() === 'profiles'}>
-            <ProfilesView onProfileChanged={() => setCurrentRoute('live')} />
+            <ProfilesView onProfileChanged={() => navigateTo('live')} />
           </Match>
 
           <Match when={currentRoute() === 'settings'}>
             <SettingsView />
           </Match>
         </Switch>
-      </div>
+      </main>
     </div>
   );
 };

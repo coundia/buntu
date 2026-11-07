@@ -37,6 +37,9 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
       <div class="tv-header">
         <h2 style={{ "font-size": "32px", color: "var(--buntu-gold)" }}>Gestion des abonnements & sources</h2>
         <button
+          id="btn-add-source"
+          tabindex="-1"
+          aria-label="Ajouter une nouvelle source IPTV"
           class={`tv-btn ${focusId() === 'btn-add-source' ? 'focused' : ''}`}
           onClick={() => props.onAddNew()}
         >
@@ -44,10 +47,18 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
         </button>
       </div>
 
-      <div style={{ display: "flex", "flex-direction": "column", gap: "16px", "overflow-y": "auto" }}>
+      <div
+        role="list"
+        aria-label="Liste des sources d'abonnements"
+        style={{ display: "flex", "flex-direction": "column", gap: "16px", "overflow-y": "auto" }}
+      >
         <For each={sources()}>
           {(source) => (
             <div
+              id={`source-item-${source.id}`}
+              role="button"
+              tabindex="-1"
+              aria-label={`Source ${source.name}, type ${source.source_type}, ${source.item_count} éléments.`}
               class={`tv-card ${focusId() === `source-item-${source.id}` ? 'focused' : ''}`}
               style={{
                 padding: "24px",

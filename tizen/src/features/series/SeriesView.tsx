@@ -51,10 +51,15 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     <div class="tv-container">
       <div class="tv-header">
         <h2 style={{ "font-size": "32px", color: "var(--buntu-gold)" }}>Séries TV</h2>
-        <div style={{ display: "flex", gap: "12px", "overflow-x": "auto", "max-width": "1000px" }}>
+        <div style={{ display: "flex", gap: "12px", "overflow-x": "auto", "max-width": "1000px" }} role="tablist" aria-label="Catégories de séries">
           <For each={categories().slice(0, 8)}>
             {(cat, idx) => (
               <button
+                id={`series-cat-${idx()}`}
+                role="tab"
+                tabindex="-1"
+                aria-selected={selectedCat() === cat}
+                aria-label={`Catégorie ${cat}`}
                 class={`tv-nav-item ${selectedCat() === cat ? 'active' : ''} ${focusId() === `series-cat-${idx()}` ? 'focused' : ''}`}
                 onClick={() => void loadSeries(cat)}
               >
@@ -72,13 +77,17 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
         "overflow-y": "auto",
         padding: "16px 0",
         flex: 1
-      }}>
+      }} role="list" aria-label="Catalogue des séries">
         <For each={seriesList()}>
           {(series) => (
             <div
+              id={`series-${series.id}`}
+              role="button"
+              tabindex="-1"
+              aria-label={`Série ${series.name_clean || series.name}, Saison ${series.season_num || 1}, Épisode ${series.episode_num || 1}`}
               class={`tv-card tv-poster-card ${focusId() === `series-${series.id}` ? 'focused' : ''}`}
               onClick={() => props.onSelectSeries(series)}
-              style={{ width: "100%", height: "400px" }}
+              style={{ width: "100%", height: "400px", cursor: "pointer" }}
             >
               <div
                 class="tv-poster-img"
@@ -87,8 +96,14 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
                   "background-image": series.logo_url ? `url(${series.logo_url})` : 'none',
                   "background-size": "cover",
                   "background-position": "center",
+                  display: "flex",
+                  "align-items": "center",
+                  "justify-content": "center",
+                  color: "var(--buntu-text-muted)",
                 }}
-              />
+              >
+                {!series.logo_url && <span style={{ "font-size": "48px" }}>📺</span>}
+              </div>
               <div class="tv-poster-title">{series.name_clean || series.name}</div>
               <div style={{
                 display: "flex",

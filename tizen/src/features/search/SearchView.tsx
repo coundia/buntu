@@ -91,13 +91,16 @@ export const SearchView: Component<SearchViewProps> = (props) => {
 
       <div style={{ display: "flex", gap: "48px", flex: 1, "overflow-y": "hidden" }}>
         {/* On-Screen Keyboard */}
-        <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
+        <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }} role="group" aria-label="Clavier virtuel">
           <For each={KEYBOARD_ROWS}>
             {(row) => (
               <div style={{ display: "flex", gap: "8px" }}>
                 <For each={row}>
                   {(k) => (
                     <button
+                      id={`key-${k}`}
+                      tabindex="-1"
+                      aria-label={`Touche ${k === 'ESPACE' ? 'Espace' : k === 'EFFACER' ? 'Effacer un caractère' : k === 'RECHERCHER' ? 'Lancer la recherche' : k}`}
                       class={`tv-btn ${focusId() === `key-${k}` ? 'focused' : ''}`}
                       style={{
                         padding: k.length > 1 ? "12px 24px" : "12px 20px",
@@ -116,10 +119,18 @@ export const SearchView: Component<SearchViewProps> = (props) => {
         </div>
 
         {/* Search Results */}
-        <div style={{ flex: 1, display: "flex", "flex-direction": "column", gap: "12px", "overflow-y": "auto" }}>
+        <div
+          role="list"
+          aria-label="Résultats de recherche"
+          style={{ flex: 1, display: "flex", "flex-direction": "column", gap: "12px", "overflow-y": "auto" }}
+        >
           <For each={results()}>
             {(res, idx) => (
               <div
+                id={`search-res-${idx()}`}
+                role="button"
+                tabindex="-1"
+                aria-label={`Résultat: ${res.candidate.name_clean || res.candidate.name}, catégorie ${res.candidate.group_title || 'générale'}, type ${res.candidate.kind}`}
                 class={`tv-card ${focusId() === `search-res-${idx()}` ? 'focused' : ''}`}
                 style={{
                   padding: "16px 24px",

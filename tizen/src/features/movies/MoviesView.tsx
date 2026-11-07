@@ -51,10 +51,15 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     <div class="tv-container">
       <div class="tv-header">
         <h2 style={{ "font-size": "32px", color: "var(--buntu-gold)" }}>Films & VOD</h2>
-        <div style={{ display: "flex", gap: "12px", "overflow-x": "auto", "max-width": "1000px" }}>
+        <div style={{ display: "flex", gap: "12px", "overflow-x": "auto", "max-width": "1000px" }} role="tablist" aria-label="Catégories de films">
           <For each={categories().slice(0, 8)}>
             {(cat, idx) => (
               <button
+                id={`movie-cat-${idx()}`}
+                role="tab"
+                tabindex="-1"
+                aria-selected={selectedCat() === cat}
+                aria-label={`Catégorie ${cat}`}
                 class={`tv-nav-item ${selectedCat() === cat ? 'active' : ''} ${focusId() === `movie-cat-${idx()}` ? 'focused' : ''}`}
                 onClick={() => void loadMovies(cat)}
               >
@@ -72,13 +77,17 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
         "overflow-y": "auto",
         padding: "16px 0",
         flex: 1
-      }}>
+      }} role="list" aria-label="Catalogue des films">
         <For each={movies()}>
           {(movie) => (
             <div
+              id={`movie-${movie.id}`}
+              role="button"
+              tabindex="-1"
+              aria-label={`Film ${movie.name_clean || movie.name}, ${movie.year || ''}, note ${movie.imdb_rating ? movie.imdb_rating.toFixed(1) + ' sur 10' : 'non noté'}`}
               class={`tv-card tv-poster-card ${focusId() === `movie-${movie.id}` ? 'focused' : ''}`}
               onClick={() => props.onSelectMovie(movie)}
-              style={{ width: "100%", height: "400px" }}
+              style={{ width: "100%", height: "400px", cursor: "pointer" }}
             >
               <div
                 class="tv-poster-img"
@@ -87,8 +96,14 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
                   "background-image": movie.logo_url ? `url(${movie.logo_url})` : 'none',
                   "background-size": "cover",
                   "background-position": "center",
+                  display: "flex",
+                  "align-items": "center",
+                  "justify-content": "center",
+                  color: "var(--buntu-text-muted)",
                 }}
-              />
+              >
+                {!movie.logo_url && <span style={{ "font-size": "48px" }}>🎬</span>}
+              </div>
               <div class="tv-poster-title">{movie.name_clean || movie.name}</div>
               <div style={{
                 display: "flex",
@@ -98,7 +113,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
                 color: "var(--buntu-text-muted)"
               }}>
                 <span>{movie.year || ''}</span>
-                <span style={{ color: "var(--buntu-gold)" }}>
+                <span style={{ color: "var(--buntu-gold)", "font-weight": "700" }}>
                   {movie.imdb_rating ? `★ ${movie.imdb_rating.toFixed(1)}` : ''}
                 </span>
               </div>

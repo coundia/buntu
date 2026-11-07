@@ -51,10 +51,14 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
         <h3 style={{ "font-size": "24px", "margin-bottom": "16px", color: "var(--buntu-cyan)" }}>
           Films à découvrir
         </h3>
-        <div class="tv-shelf">
+        <div class="tv-shelf" role="list" aria-label="Films à découvrir">
           <For each={movieRecs()}>
             {(movie) => (
               <div
+                id={`reco-movie-${movie.id}`}
+                role="button"
+                tabindex="-1"
+                aria-label={`Film ${movie.name_clean || movie.name}, ${movie.year || ''}`}
                 class={`tv-card tv-poster-card ${focusId() === `reco-movie-${movie.id}` ? 'focused' : ''}`}
                 onClick={() => props.onSelectItem(movie)}
                 style={{ cursor: "pointer" }}
@@ -64,8 +68,15 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
                   style={{
                     "background-image": movie.logo_url ? `url(${movie.logo_url})` : 'none',
                     "background-size": "cover",
+                    "background-position": "center",
+                    display: "flex",
+                    "align-items": "center",
+                    "justify-content": "center",
+                    color: "var(--buntu-text-muted)",
                   }}
-                />
+                >
+                  {!movie.logo_url && <span style={{ "font-size": "36px" }}>🎬</span>}
+                </div>
                 <div class="tv-poster-title">{movie.name_clean || movie.name}</div>
               </div>
             )}
@@ -78,10 +89,14 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
         <h3 style={{ "font-size": "24px", "margin-bottom": "16px", color: "var(--buntu-gold)" }}>
           Séries recommandées
         </h3>
-        <div class="tv-shelf">
+        <div class="tv-shelf" role="list" aria-label="Séries recommandées">
           <For each={seriesRecs()}>
             {(series) => (
               <div
+                id={`reco-series-${series.id}`}
+                role="button"
+                tabindex="-1"
+                aria-label={`Série ${series.name_clean || series.name}`}
                 class={`tv-card tv-poster-card ${focusId() === `reco-series-${series.id}` ? 'focused' : ''}`}
                 onClick={() => props.onSelectItem(series)}
                 style={{ cursor: "pointer" }}
@@ -91,8 +106,15 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
                   style={{
                     "background-image": series.logo_url ? `url(${series.logo_url})` : 'none',
                     "background-size": "cover",
+                    "background-position": "center",
+                    display: "flex",
+                    "align-items": "center",
+                    "justify-content": "center",
+                    color: "var(--buntu-text-muted)",
                   }}
-                />
+                >
+                  {!series.logo_url && <span style={{ "font-size": "36px" }}>📺</span>}
+                </div>
                 <div class="tv-poster-title">{series.name_clean || series.name}</div>
               </div>
             )}

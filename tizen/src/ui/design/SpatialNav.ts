@@ -7,6 +7,7 @@
 
 import { createSignal } from 'solid-js';
 import { RemoteKey, RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
+import { syncDomFocus } from './a11y';
 
 export interface FocusableItem {
   id: string;
@@ -115,6 +116,7 @@ class SpatialNav {
         if (el && typeof el.scrollIntoView === 'function') {
           el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         }
+        syncDomFocus();
       });
     }
   }
