@@ -1,8 +1,8 @@
-import { Component, createSignal, onMount, onCleanup, For, Show } from 'solid-js';
+import { Component, createSignal, onMount, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
-import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
+import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
 import { announce } from '../../ui/design/a11y';
 
 export interface LiveViewProps {
@@ -16,43 +16,42 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
   const [categories, setCategories] = createSignal<string[]>([]);
   const [selectedCategory, setSelectedCategory] = createSignal<string>('');
-  const [channels, setChannels] = createSignal<ItemRecord[]>([]);
-  const [currentPage, setCurrentPage] = createSignal(1);
-  const [totalCount, setTotalCount] = createSignal(0);
   const [focusId] = spatialNav.getFocusSignal();
 
-  const totalPages = () => Math.max(1, Math.ceil(totalCount() / PAGE_SIZE));
-
-  let keyUnsub: (() => void) | null = null;
+  const scroller = createInfiniteScroller<ItemRecord>({
+    pageSize: PAGE_SIZE,
+    threshold: 8,
+    maxItems: 300,
+    fetchBatch: async (offset, limit) => {
+      const cat = selectedCategory();
+      const [list, count] = await Promise.all([
+        engine.getCatalog('live', cat, offset, limit),
+        engine.countCatalog('live', cat),
+      ]);
+      return { items: list, total: count };
+    },
+    onBatchLoaded: (list, total) => {
+      announce(`Direct, ${list.length} chaînes affichées sur ${total}`);
+      rebuildGrid(categories(), list, true);
+    },
+  });
 
   onMount(async () => {
     const cats = await engine.getCategories('live');
     setCategories(cats);
     if (cats.length > 0) {
       setSelectedCategory(cats[0]);
-      await loadChannels(cats[0], cats, 1);
+      await scroller.reset();
+      rebuildGrid(cats, scroller.items(), false);
+      if (scroller.items().length > 0) {
+        spatialNav.setFocusById(`channel-${scroller.items()[0].id}`);
+      }
     } else {
-      rebuildGrid([], [], 1, 1);
+      rebuildGrid([], [], false);
     }
-
-    keyUnsub = RemoteKeyHandler.getInstance().addListener((key) => {
-      if (key === 'CHANNEL_UP' && currentPage() < totalPages()) {
-        void loadChannels(selectedCategory(), categories(), currentPage() + 1);
-        return true;
-      }
-      if (key === 'CHANNEL_DOWN' && currentPage() > 1) {
-        void loadChannels(selectedCategory(), categories(), currentPage() - 1);
-        return true;
-      }
-      return false;
-    });
   });
 
-  onCleanup(() => {
-    if (keyUnsub) keyUnsub();
-  });
-
-  const rebuildGrid = (cats: string[], list: ItemRecord[], page: number, pages: number) => {
+  const rebuildGrid = (cats: string[], list: ItemRecord[], preserveFocus = false) => {
     if (cats.length === 0 && list.length === 0) {
       if (props.onAddSource) {
         spatialNav.setGrid([[{ id: 'btn-live-add-source', onSelect: () => props.onAddSource?.() }]]);
@@ -62,46 +61,39 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       return;
     }
 
-    const channelRows = list.length + (pages > 1 ? 1 : 0);
-    const maxRows = Math.max(cats.length, channelRows);
+    const maxRows = Math.max(cats.length, list.length);
     const grid: FocusableItem[][] = [];
 
     for (let i = 0; i < maxRows; i++) {
       const row: FocusableItem[] = [];
 
-      // Column 0: Category (padded to bottom if channelRows > cats.length)
+      // Column 0: Categories (padded to bottom if list.length > cats.length)
       if (cats.length > 0) {
         const catIdx = Math.min(i, cats.length - 1);
         const cat = cats[catIdx];
         row.push({
           id: `cat-${catIdx}`,
-          onSelect: () => {
-            void loadChannels(cat, cats, 1);
+          onSelect: async () => {
+            if (cat !== selectedCategory()) {
+              setSelectedCategory(cat);
+              await scroller.reset();
+              rebuildGrid(cats, scroller.items(), false);
+              if (scroller.items().length > 0) {
+                spatialNav.setFocusById(`channel-${scroller.items()[0].id}`);
+              }
+            }
           },
         });
       }
 
-      // Column 1+: Channel or pagination buttons
+      // Column 1: Live Channels
       if (i < list.length) {
         const ch = list[i];
         row.push({
           id: `channel-${ch.id}`,
+          onFocus: () => void scroller.checkTrigger(i),
           onSelect: () => props.onPlayChannel(ch),
         });
-      } else if (i === list.length && pages > 1) {
-        // Pagination buttons row on the channels column
-        if (page > 1) {
-          row.push({
-            id: 'btn-live-prev',
-            onSelect: () => void loadChannels(selectedCategory(), cats, page - 1),
-          });
-        }
-        if (page < pages) {
-          row.push({
-            id: 'btn-live-next',
-            onSelect: () => void loadChannels(selectedCategory(), cats, page + 1),
-          });
-        }
       } else if (list.length > 0) {
         // Padded row when categories > channels
         const lastCh = list[list.length - 1];
@@ -116,33 +108,23 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       }
     }
 
-    spatialNav.setGrid(grid, 0, list.length > 0 && cats.length > 0 ? 1 : 0);
+    spatialNav.setGrid(grid, 0, list.length > 0 && cats.length > 0 ? 1 : 0, preserveFocus);
   };
 
-  const loadChannels = async (category: string, cats = categories(), page = 1) => {
-    const isNewCat = category !== selectedCategory();
-    const targetPage = isNewCat ? 1 : page;
-    setSelectedCategory(category);
-    setCurrentPage(targetPage);
+  const handleSelectCategory = async (cat: string) => {
+    if (cat === selectedCategory()) return;
+    setSelectedCategory(cat);
+    await scroller.reset();
+    rebuildGrid(categories(), scroller.items(), false);
+    if (scroller.items().length > 0) {
+      spatialNav.setFocusById(`channel-${scroller.items()[0].id}`);
+    }
+  };
 
-    const offset = (targetPage - 1) * PAGE_SIZE;
-
-    // Parallel execution: fetch channel slice + instant count
-    const [list, count] = await Promise.all([
-      engine.getCatalog('live', category, offset, PAGE_SIZE),
-      engine.countCatalog('live', category),
-    ]);
-
-    setChannels(list);
-    setTotalCount(count);
-
-    const pages = Math.max(1, Math.ceil(count / PAGE_SIZE));
-    announce(`Direct, catégorie ${category}, page ${targetPage} sur ${pages}, ${count} chaînes`);
-
-    rebuildGrid(cats, list, targetPage, pages);
-
-    if (list.length > 0) {
-      spatialNav.setFocusById(`channel-${list[0].id}`);
+  const handleChannelsScroll = (e: Event) => {
+    const el = e.currentTarget as HTMLElement;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 300) {
+      void scroller.loadMore();
     }
   };
 
@@ -154,14 +136,12 @@ export const LiveView: Component<LiveViewProps> = (props) => {
           <span>Direct TV</span>
         </h1>
         <div class="tv-live-badge">
-          <span>{totalCount()} chaînes</span>
-          <span style={{ opacity: 0.5 }}>•</span>
-          <span>Page {currentPage()} / {totalPages()}</span>
+          <span>{scroller.items().length} / {scroller.total()} chaînes</span>
         </div>
       </div>
 
       <Show
-        when={channels().length > 0 || categories().length > 0}
+        when={scroller.items().length > 0 || categories().length > 0}
         fallback={
           <div style={{ flex: 1, display: "flex", "flex-direction": "column", "align-items": "center", "justify-content": "center", padding: "40px" }}>
             <p style={{ "font-size": "24px", color: "var(--buntu-text-muted)", "margin-bottom": "24px" }}>
@@ -190,7 +170,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                   aria-selected={selectedCategory() === cat}
                   aria-label={`Catégorie ${cat}`}
                   class={`tv-category-item ${selectedCategory() === cat ? 'active' : ''} ${focusId() === `cat-${idx()}` ? 'focused' : ''}`}
-                  onClick={() => void loadChannels(cat, categories(), 1)}
+                  onClick={() => void handleSelectCategory(cat)}
                 >
                   {cat}
                 </div>
@@ -198,9 +178,14 @@ export const LiveView: Component<LiveViewProps> = (props) => {
             </For>
           </div>
 
-          {/* Channels List */}
-          <div class="tv-live-channels" role="list" aria-label="Liste des chaînes en direct">
-            <For each={channels()}>
+          {/* Channels List with Infinite Scroll */}
+          <div
+            class="tv-live-channels"
+            role="list"
+            aria-label="Liste des chaînes en direct"
+            onScroll={handleChannelsScroll}
+          >
+            <For each={scroller.items()}>
               {(ch) => (
                 <div
                   id={`channel-${ch.id}`}
@@ -266,34 +251,17 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               )}
             </For>
 
-            {/* Pagination Controls */}
-            <Show when={totalPages() > 1}>
-              <div class="tv-pagination-bar" role="navigation" aria-label="Pagination des chaînes">
-                <button
-                  id="btn-live-prev"
-                  role="button"
-                  tabindex="-1"
-                  aria-label="Page précédente de chaînes"
-                  class={`tv-btn ${currentPage() <= 1 ? 'disabled' : ''} ${focusId() === 'btn-live-prev' ? 'focused' : ''}`}
-                  onClick={() => void loadChannels(selectedCategory(), categories(), currentPage() - 1)}
-                >
-                  ◀ Précédent
-                </button>
+            {/* Infinite Scroll Loader / End Status */}
+            <Show when={scroller.isLoading()}>
+              <div class="tv-infinite-loader">
+                <span class="tv-spinner-small" />
+                <span>Chargement des chaînes suivantes...</span>
+              </div>
+            </Show>
 
-                <div class="tv-page-indicator">
-                  Page {currentPage()} sur {totalPages()} ({totalCount()} chaînes)
-                </div>
-
-                <button
-                  id="btn-live-next"
-                  role="button"
-                  tabindex="-1"
-                  aria-label="Page suivante de chaînes"
-                  class={`tv-btn ${currentPage() >= totalPages() ? 'disabled' : ''} ${focusId() === 'btn-live-next' ? 'focused' : ''}`}
-                  onClick={() => void loadChannels(selectedCategory(), categories(), currentPage() + 1)}
-                >
-                  Suivant ▶
-                </button>
+            <Show when={!scroller.hasMore() && scroller.items().length > 0}>
+              <div class="tv-infinite-end">
+                • Fin de la catégorie ({scroller.total()} chaînes) •
               </div>
             </Show>
           </div>
