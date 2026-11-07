@@ -3,7 +3,7 @@ import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord, FAVORITES_CATEGORY } from '../../core/storage/Database';
 import { AVPlayerService } from '../../core/player/AVPlayerService';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
-import { screenState, isContentFocusId, revealItem } from '../../core/navigation/ScreenState';
+import { screenState, isContentFocusId, revealItem, BrowseSnapshot } from '../../core/navigation/ScreenState';
 import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { detectChannelQuality, formatBuntuCount } from '../../core/utils/categoryMeta';
@@ -39,6 +39,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
 
   // Last card focused in the content area: restored when BACK returns here from details/player.
   let lastContentFocus = '';
+  let lastScrollTop = 0;
   createEffect(() => {
     const f = focusId();
     if (isContentFocusId(f)) lastContentFocus = f;
@@ -115,12 +116,36 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     };
     window.addEventListener('resize', resizeHandler);
 
+    // BACK from the player/details: same category, view mode and focused card as before.
+    const restored = screenState.restore('series');
+    const snap = restored?.snapshot as BrowseSnapshot<ItemRecord> | undefined;
+    if (restored && snap) {
+      // Instant return: show what was on screen, then refresh counts and shelves behind.
+      setSelectedCat(restored.category);
+      setViewMode(restored.viewMode);
+      setCategories(snap.categories);
+      setCatCounts(snap.catCounts);
+      setFavCount(snap.favCount);
+      setRecentSeries(snap.recent);
+      setFavSeries(snap.favs);
+      setTotalCount(snap.totalCount);
+      scroller.setItems(snap.items, snap.total);
+      rebuildGrid(false);
+      if (restored.focusId && document.getElementById(restored.focusId)) {
+        spatialNav.setFocusById(restored.focusId);
+      }
+      const scrollArea = document.querySelector('.buntu-content-scroll') as HTMLElement | null;
+      if (scrollArea) scrollArea.scrollTop = snap.scrollTop;
+      document.querySelector('.buntu-cat-row.active')?.scrollIntoView({ block: 'nearest' });
+      void refreshShelvesAndCounts().then(() => scheduleRebuildGrid(true));
+      return;
+    }
+
     const cats = await engine.getCategories('series');
     setCategories(cats);
     await refreshShelvesAndCounts();
 
-    // BACK from details/player: same category, view mode and focused series as before.
-    const restored = screenState.restore('series');
+    // (restored state read at the top of onMount)
     if (restored) {
       setSelectedCat(restored.category);
       setViewMode(restored.viewMode);
@@ -154,7 +179,22 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
   });
 
   onCleanup(() => {
-    screenState.save('series', { category: selectedCat(), viewMode: viewMode(), focusId: lastContentFocus });
+    screenState.save('series', {
+      category: selectedCat(),
+      viewMode: viewMode(),
+      focusId: lastContentFocus,
+      snapshot: {
+        categories: categories(),
+        catCounts: catCounts(),
+        totalCount: totalCount(),
+        favCount: favCount(),
+        recent: recentSeries(),
+        favs: favSeries(),
+        items: scroller.items(),
+        total: scroller.total(),
+        scrollTop: lastScrollTop,
+      },
+    });
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
     document.querySelector('.app-root')?.classList.remove('preview-mode');
   });
@@ -609,6 +649,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
         <section
           class="buntu-content-scroll"
           onScroll={(e) => {
+            lastScrollTop = (e.currentTarget as HTMLElement).scrollTop;
             if (isSearchMode()) return;
             const el = e.currentTarget as HTMLElement;
             if (el.scrollTop + el.clientHeight >= el.scrollHeight - 360) {
