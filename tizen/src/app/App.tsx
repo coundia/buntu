@@ -21,6 +21,8 @@ import { SourcesView } from '../features/sources/SourcesView';
 import { ProfilesView } from '../features/profiles/ProfilesView';
 import { SettingsView } from '../features/settings/SettingsView';
 import { OnboardingView } from '../features/onboarding/OnboardingView';
+import { NavigationHistory, NavEntry } from '../core/navigation/NavigationHistory';
+import { screenState } from '../core/navigation/ScreenState';
 
 export type ScreenRoute =
   | 'onboarding'
@@ -40,7 +42,9 @@ export const App: Component = () => {
   const engine = CndEngine.getInstance();
   const player = AVPlayerService.getInstance();
   const [currentRoute, setCurrentRoute] = createSignal<ScreenRoute>('live');
-  const [previousRoute, setPreviousRoute] = createSignal<ScreenRoute>('live');
+  // Screens query the database: they must not mount before the engine has opened it.
+  const [engineReady, setEngineReady] = createSignal(false);
+  const history = new NavigationHistory<ItemRecord>();
   const [selectedItem, setSelectedItem] = createSignal<ItemRecord | null>(null);
   const [hasSources, setHasSources] = createSignal(true);
   const [showExitDialog, setShowExitDialog] = createSignal(false);
@@ -145,6 +149,8 @@ export const App: Component = () => {
       console.warn('[App] Engine init fallback to onboarding:', err);
       setHasSources(false);
       setCurrentRoute('onboarding');
+    } finally {
+      setEngineReady(true);
     }
   });
 
@@ -163,14 +169,34 @@ export const App: Component = () => {
     }
   };
 
-  const navigateTo = (route: ScreenRoute) => {
+  const here = (): NavEntry<ItemRecord> => ({ route: currentRoute(), item: selectedItem() });
+
+  /** Opens a screen and remembers the current one so BACK can return to it. */
+  const navigateTo = (route: ScreenRoute, opts: { reset?: boolean } = {}) => {
     if (currentRoute() === 'player' && route !== 'player') {
       engine.stopPlayback();
     }
-    if (route !== currentRoute()) {
-      setPreviousRoute(currentRoute());
+    screenState.disarm();
+    if (opts.reset) {
+      history.reset();
+      screenState.clear();
+    } else {
+      history.enter(here(), { route, item: route === 'details' ? selectedItem() : null });
     }
     setCurrentRoute(route);
+  };
+
+  /** BACK: returns to the screen displayed before. False when there is nothing to go back to. */
+  const goBack = (): boolean => {
+    const previous = history.back();
+    if (!previous) return false;
+    if (currentRoute() === 'player') {
+      engine.stopPlayback();
+    }
+    if (previous.item) setSelectedItem(previous.item);
+    screenState.arm(previous.route);
+    setCurrentRoute(previous.route as ScreenRoute);
+    return true;
   };
 
   const handleGlobalKey = (key: RemoteKey): boolean => {
@@ -204,8 +230,11 @@ export const App: Component = () => {
         return false;
       }
       if (currentRoute() !== 'onboarding') {
+        if (goBack()) {
+          return true;
+        }
         if (currentRoute() !== 'live') {
-          navigateTo('live');
+          navigateTo('live', { reset: true });
           return true;
         }
         if (!hasSources()) {
@@ -222,6 +251,11 @@ export const App: Component = () => {
   };
 
   const handlePlayItem = async (item: ItemRecord) => {
+    // Zapping from one channel to the next keeps the screen that opened the player.
+    if (currentRoute() !== 'player') {
+      screenState.disarm();
+      history.enter(here(), { route: 'player', item });
+    }
     setSelectedItem(item);
     setCurrentRoute('player');
     await engine.play(item, { force: true });
@@ -352,6 +386,15 @@ export const App: Component = () => {
 
       {/* Main Content Router */}
       <main class="tv-screen-content" role="main">
+        <Show
+          when={engineReady()}
+          fallback={
+            <div class="tv-loader-card" style={{ margin: 'auto', 'max-width': '520px' }}>
+              <div class="tv-spinner-small" />
+              <span>Chargement…</span>
+            </div>
+          }
+        >
         <Switch>
           <Match when={currentRoute() === 'onboarding'}>
             <OnboardingView
@@ -362,7 +405,7 @@ export const App: Component = () => {
               onAddM3u={async (url) => {
                 await engine.syncM3uSource('Ma Source', url);
                 setHasSources(true);
-                navigateTo('live');
+                navigateTo('live', { reset: true });
               }}
             />
           </Match>
@@ -393,7 +436,7 @@ export const App: Component = () => {
             <SeriesDetailsView
               item={selectedItem()!}
               onPlay={handlePlayItem}
-              onBack={() => navigateTo('series')}
+              onBack={() => { if (!goBack()) navigateTo('series'); }}
             />
           </Match>
 
@@ -401,14 +444,14 @@ export const App: Component = () => {
             <DetailsView
               item={selectedItem()!}
               onPlay={handlePlayItem}
-              onBack={() => navigateTo(previousRoute() === 'details' ? 'movies' : previousRoute())}
+              onBack={() => { if (!goBack()) navigateTo('movies'); }}
             />
           </Match>
 
           <Match when={currentRoute() === 'player' && selectedItem()}>
             <PlayerView
               item={selectedItem()!}
-              onExit={() => navigateTo('live')}
+              onExit={() => { if (!goBack()) navigateTo('live', { reset: true }); }}
               onNextChannel={handleNextChannel}
               onPrevChannel={handlePrevChannel}
             />
@@ -424,19 +467,20 @@ export const App: Component = () => {
 
           <Match when={currentRoute() === 'sources'}>
             <SourcesView
-              onBack={() => navigateTo('live')}
+              onBack={() => { if (!goBack()) navigateTo('live', { reset: true }); }}
               onAddNew={() => navigateTo('onboarding')}
             />
           </Match>
 
           <Match when={currentRoute() === 'profiles'}>
-            <ProfilesView onProfileChanged={() => navigateTo('live')} />
+            <ProfilesView onProfileChanged={() => navigateTo('live', { reset: true })} />
           </Match>
 
           <Match when={currentRoute() === 'settings'}>
             <SettingsView onRequestExit={openExitDialog} />
           </Match>
         </Switch>
+        </Show>
       </main>
 
       {/* Exit Confirmation Modal */}

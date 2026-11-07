@@ -242,10 +242,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
 
   const handleKey = (key: RemoteKey): boolean => {
     if (key === 'BACK') {
-      if (showOsd()) {
-        setShowOsd(false);
-        return true;
-      }
+      // BACK always leaves the player and returns to the screen that opened it (no OSD detour).
       player.stop();
       props.onExit();
       return true;
