@@ -80,6 +80,8 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       rebuildGrid(cats, items, false);
       if (items.length > 0) {
         spatialNav.setFocusById(`movie-${items[0].id}`);
+      } else {
+        spatialNav.setFocusById('movie-cat-0');
       }
     } else {
       rebuildGrid([], [], false);
@@ -150,6 +152,16 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     const next = await engine.toggleFavorite(current.id);
     setIsFav(next);
     announce(next ? 'Film ajouté aux favoris' : 'Film retiré des favoris');
+    if (selectedCat().includes('Favoris')) {
+      await scroller.reset();
+      const items = scroller.items();
+      if (items.length > 0) {
+        updatePreview(items[0]);
+      } else {
+        setPreviewMovie(null);
+      }
+      rebuildGrid(categories(), items, false);
+    }
   };
 
   const rebuildSearchGrid = (results: ItemRecord[]) => {
@@ -334,8 +346,12 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
           <Show
             when={activeMovies().length > 0}
             fallback={
-              <div style={{ width: "100%", padding: "48px 0", "text-align": "center", color: "var(--buntu-text-muted)", "font-size": "20px" }}>
-                Aucun film ne correspond à "{searchQuery()}".
+              <div style={{ width: "100%", padding: "48px 20px", "text-align": "center", color: "var(--buntu-text-muted)", "font-size": "20px" }}>
+                {isSearchMode()
+                  ? `Aucun film ne correspond à "${searchQuery()}".`
+                  : selectedCat().includes('Favoris')
+                  ? 'Aucun film dans vos favoris. Appuyez sur ☆ Favori pour ajouter vos films préférés !'
+                  : 'Aucun film dans cette catégorie.'}
               </div>
             }
           >
