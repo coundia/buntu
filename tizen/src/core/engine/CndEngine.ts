@@ -47,6 +47,7 @@ export class CndEngine {
   private isAdultUnlocked = false;
   private currentPlayingItem: ItemRecord | null = null;
   private playToken = 0;
+  private categoriesMemCache = new Map<string, string[]>();
 
   public static getInstance(): CndEngine {
     if (!CndEngine.instance) {
@@ -68,11 +69,13 @@ export class CndEngine {
   public setProfile(profile: ProfileState) {
     this.activeProfile = profile;
     this.isAdultUnlocked = false;
+    this.categoriesMemCache.clear();
   }
 
   public unlockAdult(pin: string): boolean {
     if (pin === '0000' || pin === '1234') {
       this.isAdultUnlocked = true;
+      this.categoriesMemCache.clear();
       return true;
     }
     return false;
@@ -368,17 +371,23 @@ export class CndEngine {
   }
 
   /**
-   * Catalog Queries.
+   * Catalog Queries with fast single-category bypass and pagination.
    */
   public async getCatalog(
     kind: 'live' | 'movie' | 'series',
     groupTitle?: string,
     offset = 0,
-    limit = 60
+    limit = 30
   ): Promise<ItemRecord[]> {
-    const items = await this.db.getItemsByKindAndGroup(kind, groupTitle, offset, limit);
+    if (groupTitle) {
+      const isAdult = await this.checkAdultCategory(groupTitle);
+      if ((this.activeProfile.isKids || !this.isAdultUnlocked) && isAdult) {
+        return [];
+      }
+      return this.db.getItemsByKindAndGroup(kind, groupTitle, offset, limit);
+    }
 
-    // Apply adult & kids filter
+    const items = await this.db.getItemsByKindAndGroup(kind, undefined, offset, limit);
     const filtered: ItemRecord[] = [];
     for (const item of items) {
       if (this.activeProfile.isKids || !this.isAdultUnlocked) {
@@ -390,7 +399,25 @@ export class CndEngine {
     return filtered;
   }
 
+  public async countCatalog(
+    kind: 'live' | 'movie' | 'series',
+    groupTitle?: string
+  ): Promise<number> {
+    if (groupTitle) {
+      const isAdult = await this.checkAdultCategory(groupTitle);
+      if ((this.activeProfile.isKids || !this.isAdultUnlocked) && isAdult) {
+        return 0;
+      }
+    }
+    return this.db.countItemsByKindAndGroup(kind, groupTitle);
+  }
+
   public async getCategories(kind: 'live' | 'movie' | 'series'): Promise<string[]> {
+    const mem = this.categoriesMemCache.get(kind);
+    if (mem && mem.length > 0) {
+      return mem;
+    }
+
     const rawCategories = await this.db.getCategories(kind);
     const result: string[] = [];
     for (const cat of rawCategories) {
@@ -398,6 +425,7 @@ export class CndEngine {
       if ((this.activeProfile.isKids || !this.isAdultUnlocked) && isAdult) continue;
       result.push(cat);
     }
+    this.categoriesMemCache.set(kind, result);
     return result;
   }
 

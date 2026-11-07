@@ -181,6 +181,19 @@ export class Database {
     });
 
     const CHUNK_SIZE = 2500;
+    const catMap = new Map<string, Set<string>>();
+    for (const item of prepared) {
+      if (item.group_title) {
+        const k = item.kind === 'series' || item.kind === 'episode' ? 'series' : item.kind;
+        let set = catMap.get(k);
+        if (!set) {
+          set = new Set<string>();
+          catMap.set(k, set);
+        }
+        set.add(item.group_title);
+      }
+    }
+
     for (let offset = 0; offset < prepared.length; offset += CHUNK_SIZE) {
       const slice = prepared.slice(offset, offset + CHUNK_SIZE);
       await new Promise<void>((resolve, reject) => {
@@ -199,6 +212,13 @@ export class Database {
       });
       onBatchProgress?.(Math.min(offset + slice.length, prepared.length), prepared.length);
     }
+
+    // Persist discovered categories for instant (0ms) access on all tabs
+    for (const [k, set] of catMap.entries()) {
+      if (set.size > 0) {
+        this.saveCategoriesCache(k, Array.from(set).sort());
+      }
+    }
   }
 
   private kindsFor(kind: 'live' | 'movie' | 'series'): string[] {
@@ -209,12 +229,11 @@ export class Database {
     kind: 'live' | 'movie' | 'series',
     groupTitle?: string,
     offset = 0,
-    limit = 60
+    limit = 30
   ): Promise<ItemRecord[]> {
     if (!this.db) return [];
     const targetKinds = this.kindsFor(kind);
     const results: ItemRecord[] = [];
-    let skipped = 0;
 
     for (const k of targetKinds) {
       if (results.length >= limit) break;
@@ -225,15 +244,16 @@ export class Database {
           ? store.index('kind_group').openCursor(IDBKeyRange.only([k, groupTitle]))
           : store.index('kind').openCursor(IDBKeyRange.only(k));
 
+        let hasAdvanced = false;
         req.onsuccess = (ev: any) => {
           const cursor: IDBCursorWithValue | null = ev.target.result;
           if (!cursor || results.length >= limit) {
             resolve();
             return;
           }
-          if (skipped < offset) {
-            skipped++;
-            cursor.continue();
+          if (offset > 0 && !hasAdvanced) {
+            hasAdvanced = true;
+            cursor.advance(offset);
             return;
           }
           results.push(cursor.value as ItemRecord);
@@ -246,7 +266,62 @@ export class Database {
     return results;
   }
 
+  public async countItemsByKindAndGroup(
+    kind: 'live' | 'movie' | 'series',
+    groupTitle?: string
+  ): Promise<number> {
+    if (!this.db) return 0;
+    const targetKinds = this.kindsFor(kind);
+    let total = 0;
+
+    for (const k of targetKinds) {
+      await new Promise<void>((resolve, reject) => {
+        const tx = this.db!.transaction(['items'], 'readonly');
+        const store = tx.objectStore('items');
+        const req = groupTitle
+          ? store.index('kind_group').count(IDBKeyRange.only([k, groupTitle]))
+          : store.index('kind').count(IDBKeyRange.only(k));
+
+        req.onsuccess = (ev: any) => {
+          total += Number(ev.target.result || 0);
+          resolve();
+        };
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    return total;
+  }
+
+  public saveCategoriesCache(kind: string, categories: string[]): void {
+    try {
+      localStorage.setItem(`cnd_categories_${kind}`, JSON.stringify(categories));
+    } catch {}
+    this.put('settings', { key: `categories_${kind}`, value: categories }).catch(() => {});
+  }
+
   public async getCategories(kind: 'live' | 'movie' | 'series'): Promise<string[]> {
+    // 1. Instant cache from localStorage (0.1ms)
+    try {
+      const cached = localStorage.getItem(`cnd_categories_${kind}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {}
+
+    // 2. Fast cache from settings in IndexedDB (1ms)
+    try {
+      const setting = await this.getById<{ key: string; value: string[] }>('settings', `categories_${kind}`);
+      if (setting?.value && Array.isArray(setting.value) && setting.value.length > 0) {
+        try { localStorage.setItem(`cnd_categories_${kind}`, JSON.stringify(setting.value)); } catch {}
+        return setting.value;
+      }
+    } catch {}
+
+    // 3. Fallback: single scan and persist for subsequent tabs
     if (!this.db) return [];
     const targetKinds = this.kindsFor(kind);
     const set = new Set<string>();
@@ -271,7 +346,11 @@ export class Database {
         req.onerror = () => reject(req.error);
       });
     }
-    return Array.from(set).sort();
+    const sorted = Array.from(set).sort();
+    if (sorted.length > 0) {
+      this.saveCategoriesCache(kind, sorted);
+    }
+    return sorted;
   }
 
   public async toggleFavorite(itemId: number): Promise<boolean> {
