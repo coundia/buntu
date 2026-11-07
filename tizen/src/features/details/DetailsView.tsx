@@ -2,6 +2,7 @@ import { Component, createSignal, onMount, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
 import { spatialNav } from '../../ui/design/SpatialNav';
+import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 
 export interface DetailsViewProps {
   item: ItemRecord;
@@ -36,7 +37,10 @@ export const DetailsView: Component<DetailsViewProps> = (props) => {
     ]);
   });
 
-  const title = () => props.item.name_clean || props.item.name;
+  const title = () =>
+    props.item.name_clean && props.item.name_clean !== props.item.name
+      ? props.item.name_clean
+      : cleanMediaTitle(props.item.name).clean;
 
   return (
     <div class="tv-container" style={{ "justify-content": "center" }}>
@@ -57,6 +61,8 @@ export const DetailsView: Component<DetailsViewProps> = (props) => {
             <img
               src={props.item.logo_url}
               alt=""
+              referrerpolicy="no-referrer"
+              crossOrigin="anonymous"
               onError={(e) => {
                 const target = e.currentTarget as HTMLElement;
                 target.style.display = 'none';

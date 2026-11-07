@@ -4,6 +4,7 @@ import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
 import { TvSearchBar } from '../../ui/components/TvSearchBar';
+import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { announce } from '../../ui/design/a11y';
 
 export interface LiveViewProps {
@@ -280,51 +281,57 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               }
             >
               <For each={activeChannels()}>
-                {(ch) => (
-                  <div
-                    id={`channel-${ch.id}`}
-                    role="button"
-                    tabindex="-1"
-                    aria-label={`Chaîne numéro ${ch.chno || ''} : ${ch.name}, catégorie ${ch.group_title || 'Général'}. Appuyez sur OK pour regarder en plein écran.`}
-                    class={`tv-channel-row ${focusId() === `channel-${ch.id}` ? 'focused' : ''}`}
-                    onClick={() => props.onPlayChannel(ch)}
-                  >
-                    {/* Channel Number Badge */}
-                    <div class="tv-channel-num">
-                      {ch.chno || '•'}
-                    </div>
-
-                    {/* Channel Logo / Fallback */}
-                    <div class="tv-channel-logo">
-                      <Show
-                        when={ch.logo_url}
-                        fallback={<span class="tv-channel-logo-fallback">📺</span>}
-                      >
-                        <img
-                          src={ch.logo_url}
-                          alt=""
-                          loading="lazy"
-                          onError={(e) => {
-                            const target = e.currentTarget as HTMLElement;
-                            target.style.display = 'none';
-                            if (target.parentElement) {
-                              const fallback = document.createElement('span');
-                              fallback.className = 'tv-channel-logo-fallback';
-                              fallback.textContent = '📺';
-                              target.parentElement.appendChild(fallback);
-                            }
-                          }}
-                        />
-                      </Show>
-                    </div>
-
-                    {/* Channel Name & Category Subtitle */}
-                    <div class="tv-channel-info">
-                      <div class="tv-channel-name">{ch.name}</div>
-                      <div class="tv-channel-meta">
-                        {ch.group_title || 'Général'}
+                {(ch) => {
+                  const chName = ch.name_clean && ch.name_clean !== ch.name
+                    ? ch.name_clean
+                    : cleanMediaTitle(ch.name).clean;
+                  return (
+                    <div
+                      id={`channel-${ch.id}`}
+                      role="button"
+                      tabindex="-1"
+                      aria-label={`Chaîne numéro ${ch.chno || ''} : ${chName}, catégorie ${ch.group_title || 'Général'}. Appuyez sur OK pour regarder en plein écran.`}
+                      class={`tv-channel-row ${focusId() === `channel-${ch.id}` ? 'focused' : ''}`}
+                      onClick={() => props.onPlayChannel(ch)}
+                    >
+                      {/* Channel Number Badge */}
+                      <div class="tv-channel-num">
+                        {ch.chno || '•'}
                       </div>
-                    </div>
+
+                      {/* Channel Logo / Fallback */}
+                      <div class="tv-channel-logo">
+                        <Show
+                          when={ch.logo_url}
+                          fallback={<span class="tv-channel-logo-fallback">📺</span>}
+                        >
+                          <img
+                            src={ch.logo_url}
+                            alt=""
+                            loading="lazy"
+                            referrerpolicy="no-referrer"
+                            crossOrigin="anonymous"
+                            onError={(e) => {
+                              const target = e.currentTarget as HTMLElement;
+                              target.style.display = 'none';
+                              if (target.parentElement) {
+                                const fallback = document.createElement('span');
+                                fallback.className = 'tv-channel-logo-fallback';
+                                fallback.textContent = '📺';
+                                target.parentElement.appendChild(fallback);
+                              }
+                            }}
+                          />
+                        </Show>
+                      </div>
+
+                      {/* Channel Name & Category Subtitle */}
+                      <div class="tv-channel-info">
+                        <div class="tv-channel-name">{chName}</div>
+                        <div class="tv-channel-meta">
+                          {ch.group_title || 'Général'}
+                        </div>
+                      </div>
 
                     {/* Channel Badges & Action Pill */}
                     <div class="tv-channel-actions">
@@ -342,8 +349,9 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                       </Show>
                     </div>
                   </div>
-                )}
-              </For>
+                );
+              }}
+            </For>
             </Show>
 
             {/* Infinite Scroll Loader & End Status (Only in standard mode) */}

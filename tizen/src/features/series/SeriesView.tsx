@@ -4,6 +4,7 @@ import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
 import { TvSearchBar } from '../../ui/components/TvSearchBar';
+import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { announce } from '../../ui/design/a11y';
 
 export interface SeriesViewProps {
@@ -230,7 +231,9 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
         >
           <For each={activeSeries()}>
             {(series) => {
-              const title = series.name_clean || series.name;
+              const title = series.name_clean && series.name_clean !== series.name
+                ? series.name_clean
+                : cleanMediaTitle(series.name).clean;
               const is4k = title.toLowerCase().includes('4k') || title.toLowerCase().includes('uhd');
               return (
                 <div class="tv-poster-cell">
@@ -257,6 +260,8 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
                           src={series.logo_url}
                           alt=""
                           loading="lazy"
+                          referrerpolicy="no-referrer"
+                          crossOrigin="anonymous"
                           onError={(e) => {
                             const target = e.currentTarget as HTMLElement;
                             target.style.display = 'none';

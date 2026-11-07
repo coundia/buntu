@@ -11,6 +11,8 @@ import { HttpClient } from '../net/HttpClient';
 import { AVPlayerService } from '../player/AVPlayerService';
 import { WorkerBridge } from '../../worker/worker-bridge';
 
+import { cleanMediaTitle } from '../utils/titleCleaner';
+
 export interface ProfileState {
   id: number;
   name: string;
@@ -19,16 +21,6 @@ export interface ProfileState {
 }
 
 export type SyncProgressCallback = (msg: string, percent?: number) => void;
-
-function cleanYearFromTitle(rawName: string): { clean: string; year?: number } {
-  const m = rawName.match(/[\(\[\s]((?:19|20)\d{2})[\)\]]?\s*$/);
-  if (m) {
-    const yr = parseInt(m[1], 10);
-    const stripped = rawName.slice(0, m.index).replace(/[-–—\s]+$/, '').trim();
-    return { clean: stripped || rawName.trim(), year: yr };
-  }
-  return { clean: rawName.trim() };
-}
 
 export class CndEngine {
   private static instance: CndEngine;
@@ -205,6 +197,7 @@ export class CndEngine {
       const streamId = String(s?.stream_id ?? '').trim();
       if (!streamId) continue;
       const rawName = String(s?.name || `Chaîne ${i + 1}`).trim();
+      const cleanName = cleanMediaTitle(rawName).clean;
       const catName = liveCats.get(String(s?.category_id ?? '')) || 'Direct';
       const archiveDays = Number(s?.tv_archive) > 0 ? Number(s?.tv_archive_duration) || undefined : undefined;
       itemRecords.push({
@@ -212,7 +205,7 @@ export class CndEngine {
         stable_hash: `live_${streamId}`,
         kind: 'live',
         name: rawName,
-        name_clean: rawName,
+        name_clean: cleanName,
         group_title: catName,
         tvg_id: s?.epg_channel_id ? String(s.epg_channel_id) : undefined,
         tvg_name: rawName,
@@ -233,7 +226,7 @@ export class CndEngine {
       const streamId = String(s?.stream_id ?? '').trim();
       if (!streamId) continue;
       const rawName = String(s?.name || `Film ${i + 1}`).trim();
-      const { clean, year } = cleanYearFromTitle(rawName);
+      const { clean, year } = cleanMediaTitle(rawName);
       const catName = vodCats.get(String(s?.category_id ?? '')) || 'Films';
       const ext = String(s?.container_extension || 'mp4').replace(/^\.+/, '') || 'mp4';
       const ratingRaw = s?.rating != null ? Number(s.rating) : s?.rating_5based != null ? Number(s.rating_5based) * 2 : NaN;
@@ -260,7 +253,7 @@ export class CndEngine {
       const seriesId = String(s?.series_id ?? '').trim();
       if (!seriesId) continue;
       const rawName = String(s?.name || `Série ${i + 1}`).trim();
-      const { clean, year } = cleanYearFromTitle(rawName);
+      const { clean, year } = cleanMediaTitle(rawName);
       const catName = seriesCats.get(String(s?.category_id ?? '')) || 'Séries';
       const ratingRaw = s?.rating != null ? Number(s.rating) : s?.rating_5based != null ? Number(s.rating_5based) * 2 : NaN;
       itemRecords.push({
