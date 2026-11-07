@@ -132,6 +132,59 @@ describe.skipIf(!built)('pairing protocol in WebAssembly (shared with Swift and 
     const link = JSON.parse(wasm_pairing_parse_link(offer.link, 1_800_000_001));
     expect(link).toMatchObject({ tv_name: 'Salon TV', transport: 'msf', host: '192.168.1.9', port: 8001 });
   });
+
+  it('accepts a share document when phone clock is behind TV clock and streams import progress', async () => {
+    const tvNow = 1_794_058_828; // e.g. TV clock set months ahead of phone
+    const phoneNow = 1_775_000_000;
+    const skewedShare = JSON.stringify({
+      format: 'cnd-source-share',
+      version: 1,
+      created_at: phoneNow,
+      expires_at: phoneNow + 3600,
+      sources: [
+        { name: 'Mon Abonnement', type: 'xtream', server: 'http://srv.example:8080', username: 'bob', password: 'pw' },
+      ],
+    });
+    const env: PairingEnv = { now: () => tvNow, entropy: (n) => bytes(17, n), tvName: () => 'Samsung TV', tvIp: () => '192.168.1.9' };
+    const bridge = {
+      pairingCreateOffer: async (e: Uint8Array, n: string, t: string, h: string, p: number, at: number) => wasm_pairing_create_offer(e, n, t, h, p, at),
+      qrMatrix: async (t: string) => wasm_qr_matrix(t),
+      pairingOpen: async (st: string, m: string, at: number) => wasm_pairing_open(st, m, at),
+      pairingSealReply: async (k: string, s: string, e: Uint8Array, r: string, c: number) => wasm_pairing_seal_reply(k, s, e, r, c),
+    };
+    let deliver: (d: string, f: string) => void = () => {};
+    const requests: PairingRequest[] = [];
+    const progressSteps: string[] = [];
+    const service = new PairingService(
+      { onRequest: (r) => requests.push(r), onClosed: () => {}, onError: () => {} },
+      env,
+      bridge,
+      {
+        channel: () => ({
+          setHandlers: (m: any) => { deliver = (d, f) => m({ data: d, from: f }); },
+          connect: async () => {},
+          reply: () => {},
+          close: () => {},
+        }),
+        existingSources: async () => [],
+        apply: async (_preview, onProgress) => {
+          onProgress?.('Vérification du compte Xtream…', 10);
+          onProgress?.('Téléchargement des chaînes…', 60);
+          return 1;
+        },
+      }
+    );
+    const offer = await service.start();
+    const phone = JSON.parse(wasm_pairing_seal(offer.link, bytes(55, 44), skewedShare, 'Samsung SM-S908N', phoneNow));
+    deliver(phone.message, 'phone-client-id');
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0].from).toBe('Samsung SM-S908N');
+    const added = await requests[0].accept((msg, pct) => progressSteps.push(`${pct}:${msg}`));
+    expect(added).toBe(1);
+    expect(progressSteps).toEqual(['10:Vérification du compte Xtream…', '60:Téléchargement des chaînes…']);
+  });
 });
 
 describe('share document import (preview before anything is added)', () => {

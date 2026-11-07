@@ -23,7 +23,9 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
   const [password, setPassword] = createSignal('');
   const [url, setUrl] = createSignal('');
   const [busy, setBusy] = createSignal(false);
+  const [progressPct, setProgressPct] = createSignal(5);
   const [message, setMessage] = createSignal('');
+  const [isError, setIsError] = createSignal(false);
   const [focusId] = spatialNav.getFocusSignal();
 
   const fieldIds = () =>
@@ -92,6 +94,7 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
   const submit = async () => {
     if (busy()) return;
     if (!valid()) {
+      setIsError(true);
       setMessage(
         kind() === 'm3u'
           ? "L'adresse de la playlist doit commencer par http:// ou https://"
@@ -100,18 +103,27 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
       return;
     }
     setBusy(true);
-    setMessage('');
+    setIsError(false);
+    setProgressPct(5);
+    setMessage('Connexion au serveur IPTV…');
+    spatialNav.setGrid([]);
     try {
       const engine = CndEngine.getInstance();
       const label = name().trim() || (kind() === 'm3u' ? 'Ma playlist' : 'Mon IPTV');
+      const onProgress = (msg: string, pct?: number) => {
+        setMessage(msg);
+        if (pct !== undefined) setProgressPct(Math.max(5, Math.min(100, pct)));
+      };
       if (kind() === 'xtream') {
-        await engine.syncXtreamSource(label, server().trim(), username().trim(), password(), undefined, setMessage);
+        await engine.syncXtreamSource(label, server().trim(), username().trim(), password(), undefined, onProgress);
       } else {
-        await engine.syncM3uSource(label, url().trim(), setMessage);
+        await engine.syncM3uSource(label, url().trim(), onProgress);
       }
       props.onAdded();
     } catch (e: any) {
+      setIsError(true);
       setMessage(e?.message ? `Échec : ${e.message}` : 'Échec de la synchronisation');
+      updateGrid();
     } finally {
       setBusy(false);
     }
@@ -137,6 +149,26 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
 
   return (
     <div style={{ 'max-width': '760px', margin: '0 auto' }}>
+      <Show
+        when={!busy()}
+        fallback={
+          <div class="tv-loader-card">
+            <div class="tv-spinner" role="status" aria-label="Importation en cours" />
+            <h2 style={{ 'font-size': '32px', color: 'var(--buntu-gold)', margin: 0 }}>
+              Importation du compte en cours…
+            </h2>
+            <p style={{ 'font-size': '24px', color: 'var(--buntu-cyan)', margin: 0 }}>
+              {message() || 'Synchronisation…'}
+            </p>
+            <div class="tv-progress-track">
+              <div class="tv-progress-bar" style={{ width: `${progressPct()}%` }} />
+            </div>
+            <p style={{ 'font-size': '18px', color: 'var(--buntu-text-muted)', margin: 0 }}>
+              Veuillez patienter ({progressPct()}%)
+            </p>
+          </div>
+        }
+      >
       <h2 style={{ 'font-size': '36px', color: 'var(--buntu-gold)', 'margin-bottom': '20px' }}>Ajouter un compte avec la télécommande</h2>
 
       <div style={{ display: 'flex', gap: '16px', 'margin-bottom': '20px' }}>
@@ -159,17 +191,18 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
       </Show>
 
       <Show when={message()}>
-        <p style={{ 'font-size': '22px', color: 'var(--buntu-cyan)', margin: '8px 0 16px' }}>{message()}</p>
+        <p style={{ 'font-size': '22px', color: isError() ? 'var(--buntu-danger)' : 'var(--buntu-cyan)', margin: '8px 0 16px' }}>{message()}</p>
       </Show>
 
       <div style={{ display: 'flex', gap: '24px', 'justify-content': 'center' }}>
         <button class={`tv-btn ${focusId() === 'btn-submit' ? 'focused' : ''}`} onClick={() => void submit()}>
-          {busy() ? 'Synchronisation…' : 'Ajouter'}
+          Ajouter
         </button>
         <button class={`tv-btn ${focusId() === 'btn-cancel' ? 'focused' : ''}`} onClick={() => props.onCancel()}>
           Retour
         </button>
       </div>
+      </Show>
     </div>
   );
 };
