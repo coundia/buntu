@@ -40,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pcoundia.buntu.core.designsystem.BuntuErrorBanner
 import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.BuntuPrimaryActionButton
+import com.pcoundia.buntu.core.platform.tv.IncomingPairingUi
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
 import com.pcoundia.buntu.core.domain.model.SourceKind
 import com.pcoundia.buntu.core.platform.tv.QrMatrix
@@ -61,6 +62,8 @@ fun OnboardingRoute(
         onSubmitSource = viewModel::submitSourceAndSync,
         onSelectProfile = viewModel::selectProfileAndAdvance,
         onFinish = { viewModel.finishOnboarding(onCompleted = onFinished) },
+        onConfirmPairing = viewModel::confirmIncomingPairing,
+        onRefusePairing = viewModel::refuseIncomingPairing,
     )
 }
 
@@ -72,8 +75,16 @@ fun OnboardingScreen(
     onSubmitSource: () -> Unit,
     onSelectProfile: (Long) -> Unit,
     onFinish: () -> Unit,
+    onConfirmPairing: () -> Unit = {},
+    onRefusePairing: () -> Unit = {},
 ) {
     val metrics = LocalBuntuMetrics.current
+
+    // A phone sent accounts: nothing is added before the user answers here (PRD-39 § 4.3).
+    state.incomingPairing?.let { incoming ->
+        IncomingPairingCard(incoming, onConfirmPairing, onRefusePairing)
+        return
+    }
 
     Column(
         modifier = Modifier
@@ -145,7 +156,8 @@ private fun StepOneAddSource(
                     )
                     Spacer(modifier = Modifier.height(metrics.spacingXS))
                     Text(
-                        text = "Scannez ce QR code avec votre téléphone ou ouvrez ${state.pairingUrl} sur le même Wi-Fi.",
+                        text = "Scannez ce QR code avec l'appareil photo de votre téléphone : il ouvre l'application Buntu, " +
+                            "qui envoie vos comptes chiffrés. Téléphone et TV doivent être sur le même Wi-Fi.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = BuntuPalette.MutedSilver,
                     )
@@ -301,3 +313,40 @@ fun QrCodeBox(matrix: QrMatrix, modifier: Modifier = Modifier) {
     }
 }
 
+
+/** The confirmation shown on the TV: who sends what, host only (never a password or a full address). */
+@Composable
+private fun IncomingPairingCard(
+    incoming: IncomingPairingUi,
+    onConfirm: () -> Unit,
+    onRefuse: () -> Unit,
+) {
+    val metrics = LocalBuntuMetrics.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BuntuPalette.Midnight)
+            .padding(horizontal = metrics.horizontalScreenPadding, vertical = metrics.verticalScreenPadding),
+        verticalArrangement = Arrangement.spacedBy(metrics.spacingL),
+    ) {
+        val count = incoming.sources.size
+        Text(
+            text = "${incoming.from.ifBlank { "Un téléphone" }} veut ajouter $count compte${if (count > 1) "s" else ""}",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = BuntuPalette.TerangaGold,
+        )
+        incoming.sources.forEach { source ->
+            Text(
+                text = "${source.name} · ${if (source.isXtream) "Xtream" else "M3U"} · ${source.host}" +
+                    if (source.hasPassword) " · avec mot de passe" else "",
+                style = MaterialTheme.typography.bodyLarge,
+                color = BuntuPalette.PureWhite,
+            )
+        }
+        BuntuPrimaryActionButton(label = "Ajouter", onClick = onConfirm)
+        TextButton(onClick = onRefuse) {
+            Text("Refuser", color = BuntuPalette.MutedSilver)
+        }
+    }
+}

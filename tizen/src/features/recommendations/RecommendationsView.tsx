@@ -1,6 +1,7 @@
 import { Component, createSignal, onMount, For } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
+import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 
 export interface RecommendationsViewProps {
   onSelectItem: (item: ItemRecord) => void;
@@ -10,12 +11,32 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
   const engine = CndEngine.getInstance();
   const [movieRecs, setMovieRecs] = createSignal<ItemRecord[]>([]);
   const [seriesRecs, setSeriesRecs] = createSignal<ItemRecord[]>([]);
+  const [focusId] = spatialNav.getFocusSignal();
 
   onMount(async () => {
     const movies = await engine.getCatalog('movie', undefined, 0, 10);
     const series = await engine.getCatalog('series', undefined, 0, 10);
     setMovieRecs(movies);
     setSeriesRecs(series);
+
+    const grid: FocusableItem[][] = [];
+    if (movies.length > 0) {
+      grid.push(
+        movies.map((m) => ({
+          id: `reco-movie-${m.id}`,
+          onSelect: () => props.onSelectItem(m),
+        }))
+      );
+    }
+    if (series.length > 0) {
+      grid.push(
+        series.map((s) => ({
+          id: `reco-series-${s.id}`,
+          onSelect: () => props.onSelectItem(s),
+        }))
+      );
+    }
+    spatialNav.setGrid(grid);
   });
 
   return (
@@ -34,7 +55,7 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
           <For each={movieRecs()}>
             {(movie) => (
               <div
-                class="tv-card tv-poster-card"
+                class={`tv-card tv-poster-card ${focusId() === `reco-movie-${movie.id}` ? 'focused' : ''}`}
                 onClick={() => props.onSelectItem(movie)}
                 style={{ cursor: "pointer" }}
               >
@@ -61,7 +82,7 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
           <For each={seriesRecs()}>
             {(series) => (
               <div
-                class="tv-card tv-poster-card"
+                class={`tv-card tv-poster-card ${focusId() === `reco-series-${series.id}` ? 'focused' : ''}`}
                 onClick={() => props.onSelectItem(series)}
                 style={{ cursor: "pointer" }}
               >
@@ -81,4 +102,3 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
     </div>
   );
 };
-

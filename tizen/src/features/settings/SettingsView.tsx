@@ -1,6 +1,7 @@
 import { Component, createSignal, onMount } from 'solid-js';
 import { HttpClient } from '../../core/net/HttpClient';
 import { WorkerBridge } from '../../worker/worker-bridge';
+import { spatialNav } from '../../ui/design/SpatialNav';
 
 export const SettingsView: Component = () => {
   const net = HttpClient.getInstance();
@@ -10,8 +11,25 @@ export const SettingsView: Component = () => {
   const [wasmVer, setWasmVer] = createSignal('Chargement...');
   const [tvModel, setTvModel] = createSignal('Samsung Smart TV (Tizen 3.0+)');
   const [purgeMsg, setPurgeMsg] = createSignal('');
+  const [focusId] = spatialNav.getFocusSignal();
+
+  const toggleSingleConnection = () => {
+    const next = !singleConn();
+    net.setSingleConnectionMode(next);
+    setSingleConn(next);
+  };
+
+  const purgeCache = () => {
+    localStorage.clear();
+    setPurgeMsg('Cache des miniatures et instantanés purgé.');
+  };
 
   onMount(async () => {
+    spatialNav.setGrid([
+      [{ id: 'btn-single-conn', onSelect: toggleSingleConnection }],
+      [{ id: 'btn-purge-cache', onSelect: purgeCache }],
+    ]);
+
     try {
       const v = await worker.getVersion();
       setWasmVer(v);
@@ -29,17 +47,6 @@ export const SettingsView: Component = () => {
     }
   });
 
-  const toggleSingleConnection = () => {
-    const next = !singleConn();
-    net.setSingleConnectionMode(next);
-    setSingleConn(next);
-  };
-
-  const purgeCache = () => {
-    localStorage.clear();
-    setPurgeMsg('Cache des miniatures et instantanés purgé.');
-  };
-
   return (
     <div class="tv-container" style={{ "overflow-y": "auto" }}>
       <div class="tv-header">
@@ -54,7 +61,10 @@ export const SettingsView: Component = () => {
             Pour les abonnements limités à 1 seule connexion simultanée, l'application met en attente
             automatiquement toute requête parallèle pour éviter le bannissement ou l'erreur 429.
           </p>
-          <button class="tv-btn" onClick={toggleSingleConnection}>
+          <button
+            class={`tv-btn ${focusId() === 'btn-single-conn' ? 'focused' : ''}`}
+            onClick={toggleSingleConnection}
+          >
             Mode 1 Connexion Stricte : {singleConn() ? 'ACTIVÉ (Recommandé)' : 'DÉSACTIVÉ'}
           </button>
         </div>
@@ -83,7 +93,10 @@ export const SettingsView: Component = () => {
           <p style={{ color: "var(--buntu-text-muted)", "margin-bottom": "16px" }}>
             Libère l'espace disque IndexedDB en conservant vos favoris et vos sources.
           </p>
-          <button class="tv-btn" onClick={purgeCache}>
+          <button
+            class={`tv-btn ${focusId() === 'btn-purge-cache' ? 'focused' : ''}`}
+            onClick={purgeCache}
+          >
             Purger le cache
           </button>
           {purgeMsg() && (
@@ -94,4 +107,3 @@ export const SettingsView: Component = () => {
     </div>
   );
 };
-

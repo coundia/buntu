@@ -18,8 +18,15 @@ class SpatialNav {
   private static instance: SpatialNav;
   private currentFocus = createSignal<string>('');
   private focusableGrid: FocusableItem[][] = [];
-  private currentRow = 0;
+  private headerItems: FocusableItem[] = [];
+  private currentRow = 0; // -1 means focus is in `headerItems` (Top Navigation Bar)
   private currentCol = 0;
+  private headerCol = 0;
+  private isInitialized = false;
+
+  private constructor() {
+    this.init();
+  }
 
   public static getInstance(): SpatialNav {
     if (!SpatialNav.instance) {
@@ -29,6 +36,9 @@ class SpatialNav {
   }
 
   public init() {
+    if (this.isInitialized) return;
+    this.isInitialized = true;
+    RemoteKeyHandler.getInstance().init();
     RemoteKeyHandler.getInstance().addListener(this.handleKey);
   }
 
@@ -40,34 +50,122 @@ class SpatialNav {
     return this.currentFocus[0]();
   }
 
+  public setHeader(items: FocusableItem[], activeIndex = 0) {
+    this.headerItems = items;
+    if (items.length > 0) {
+      this.headerCol = Math.min(Math.max(0, activeIndex), items.length - 1);
+    } else if (this.currentRow === -1) {
+      this.currentRow = 0;
+    }
+  }
+
   public setGrid(grid: FocusableItem[][], initialRow = 0, initialCol = 0) {
-    this.focusableGrid = grid;
-    this.currentRow = Math.min(initialRow, Math.max(0, grid.length - 1));
-    this.currentCol = Math.min(initialCol, Math.max(0, (grid[this.currentRow]?.length || 1) - 1));
+    const nonEmpty = grid.filter((row) => row.length > 0);
+    this.focusableGrid = nonEmpty;
+
+    if (nonEmpty.length === 0) {
+      if (this.headerItems.length > 0) {
+        this.currentRow = -1;
+        const hItem = this.headerItems[this.headerCol];
+        if (hItem) {
+          this.applyFocus(hItem);
+        }
+      } else {
+        this.currentFocus[1]('');
+      }
+      return;
+    }
+
+    this.currentRow = Math.min(initialRow, Math.max(0, nonEmpty.length - 1));
+    this.currentCol = Math.min(initialCol, Math.max(0, (nonEmpty[this.currentRow]?.length || 1) - 1));
 
     const item = this.focusableGrid[this.currentRow]?.[this.currentCol];
     if (item) {
-      this.currentFocus[1](item.id);
-      item.onFocus?.();
+      this.applyFocus(item);
     }
   }
 
   public setFocusById(id: string) {
+    for (let c = 0; c < this.headerItems.length; c++) {
+      if (this.headerItems[c].id === id) {
+        this.currentRow = -1;
+        this.headerCol = c;
+        this.applyFocus(this.headerItems[c]);
+        return;
+      }
+    }
     for (let r = 0; r < this.focusableGrid.length; r++) {
       for (let c = 0; c < this.focusableGrid[r].length; c++) {
         if (this.focusableGrid[r][c].id === id) {
           this.currentRow = r;
           this.currentCol = c;
-          this.currentFocus[1](id);
-          this.focusableGrid[r][c].onFocus?.();
+          this.applyFocus(this.focusableGrid[r][c]);
           return;
         }
       }
     }
   }
 
+  private applyFocus(item: FocusableItem) {
+    this.currentFocus[1](item.id);
+    item.onFocus?.();
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => {
+        const el = document.querySelector('.focused') as HTMLElement | null;
+        if (el && typeof el.scrollIntoView === 'function') {
+          el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      });
+    }
+  }
+
   private handleKey = (key: RemoteKey): boolean => {
-    if (!this.focusableGrid.length) return false;
+    // 1. Navigation inside Top Navigation Bar (currentRow === -1)
+    if (this.currentRow === -1) {
+      if (!this.headerItems.length) return false;
+      if (key === 'LEFT') {
+        if (this.headerCol > 0) {
+          this.headerCol--;
+          this.applyFocus(this.headerItems[this.headerCol]);
+        }
+        return true;
+      }
+      if (key === 'RIGHT') {
+        if (this.headerCol < this.headerItems.length - 1) {
+          this.headerCol++;
+          this.applyFocus(this.headerItems[this.headerCol]);
+        }
+        return true;
+      }
+      if (key === 'DOWN') {
+        if (this.focusableGrid.length > 0) {
+          this.currentRow = 0;
+          this.currentCol = Math.min(this.currentCol, this.focusableGrid[0].length - 1);
+          const item = this.focusableGrid[0][this.currentCol];
+          if (item) this.applyFocus(item);
+        }
+        return true;
+      }
+      if (key === 'ENTER') {
+        const item = this.headerItems[this.headerCol];
+        if (item?.onSelect) {
+          item.onSelect();
+          return true;
+        }
+        return false;
+      }
+      return false;
+    }
+
+    // 2. If screen grid is empty, allow jumping up to Top Navigation Bar
+    if (!this.focusableGrid.length) {
+      if ((key === 'UP' || key === 'LEFT' || key === 'RIGHT') && this.headerItems.length > 0) {
+        this.currentRow = -1;
+        this.applyFocus(this.headerItems[this.headerCol]);
+        return true;
+      }
+      return false;
+    }
 
     let r = this.currentRow;
     let c = this.currentCol;
@@ -76,6 +174,10 @@ class SpatialNav {
       if (r > 0) {
         r--;
         c = Math.min(c, this.focusableGrid[r].length - 1);
+      } else if (this.headerItems.length > 0) {
+        this.currentRow = -1;
+        this.applyFocus(this.headerItems[this.headerCol]);
+        return true;
       } else {
         return false;
       }
@@ -111,14 +213,12 @@ class SpatialNav {
 
     this.currentRow = r;
     this.currentCol = c;
-    const item = this.focusableGrid[r][c];
+    const item = this.focusableGrid[r]?.[c];
     if (item) {
-      this.currentFocus[1](item.id);
-      item.onFocus?.();
+      this.applyFocus(item);
     }
     return true;
   };
 }
 
 export const spatialNav = SpatialNav.getInstance();
-

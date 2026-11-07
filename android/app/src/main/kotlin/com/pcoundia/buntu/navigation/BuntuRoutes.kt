@@ -1,5 +1,6 @@
 package com.pcoundia.buntu.navigation
 
+import android.net.Uri
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
@@ -94,12 +95,16 @@ object BuntuRoutes {
     const val SEARCH = "search"
     const val DOWNLOADS = "downloads"
     const val SOURCES = "sources"
+    const val SOURCES_PATTERN = "sources?pairLink={pairLink}"
     const val PROFILES = "profiles"
     const val SETTINGS = "settings"
 
     const val DETAILS_PATTERN = "details/{mediaId}?isSeries={isSeries}"
     const val PLAYER_PATTERN =
         "player/{itemId}?startPositionMs={startPositionMs}&catchupStartEpoch={catchupStartEpoch}&catchupEndEpoch={catchupEndEpoch}"
+
+    fun sources(pairLink: String? = null): String =
+        if (pairLink.isNullOrBlank()) SOURCES else "sources?pairLink=${Uri.encode(pairLink)}"
 
     fun details(mediaId: Long, isSeries: Boolean): String =
         "details/$mediaId?isSeries=$isSeries"

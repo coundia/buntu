@@ -107,11 +107,8 @@ final class ShareSourcesModel {
         return try? keychain.readSecret(forKey: key)
     }
 
-    func prepare() async {
-        guard canPrepare else { return }
-        isPreparing = true
-        errorMessage = nil
-        defer { isPreparing = false }
+    /// The sources document for the chosen sources (passwords read from the Keychain only when allowed).
+    func exportDocument() async throws -> ShareExport {
         let chosen = sources.filter { selected.contains($0.id) }
         let options = chosen.map { source in
             ShareSourceOption(
@@ -124,10 +121,19 @@ final class ShareSourcesModel {
         let engine = self.engine
         let from = DeviceName.current
         let validFor = UInt32(validity.rawValue)
+        return try await Task.detached(priority: .userInitiated) {
+            try engine.exportShareDocument(options: options, from: from, validForSeconds: validFor)
+        }.value
+    }
+
+    func prepare() async {
+        guard canPrepare else { return }
+        isPreparing = true
+        errorMessage = nil
+        defer { isPreparing = false }
+        let validFor = UInt32(validity.rawValue)
         do {
-            let export = try await Task.detached(priority: .userInitiated) {
-                try engine.exportShareDocument(options: options, from: from, validForSeconds: validFor)
-            }.value
+            let export = try await exportDocument()
             let code = ShareEnvelope.makeCode()
             let expiresAt = Date().addingTimeInterval(TimeInterval(validFor))
             let envelope = try ShareEnvelope.seal(
