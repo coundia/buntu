@@ -325,7 +325,10 @@ export const App: Component = () => {
           </Match>
 
           <Match when={currentRoute() === 'movies'}>
-            <MoviesView onSelectMovie={handleSelectDetails} />
+            <MoviesView
+              onSelectMovie={handleSelectDetails}
+              onPlayMovie={handlePlayItem}
+            />
           </Match>
 
           <Match when={currentRoute() === 'series'}>
