@@ -379,3 +379,4 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
     </div>
   );
 };
+
