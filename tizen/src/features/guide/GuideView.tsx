@@ -1,4 +1,4 @@
-import { Component, createSignal, onMount, For } from 'solid-js';
+import { Component, createSignal, onMount, onCleanup, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { Database, EpgProgramRecord, ItemRecord } from '../../core/storage/Database';
 import { spatialNav } from '../../ui/design/SpatialNav';
@@ -12,10 +12,19 @@ export const GuideView: Component<GuideViewProps> = (props) => {
   const db = Database.getInstance();
   const [channels, setChannels] = createSignal<ItemRecord[]>([]);
   const [epgMap, setEpgMap] = createSignal<Record<string, { now?: EpgProgramRecord; next?: EpgProgramRecord }>>({});
+  const [currentTime, setCurrentTime] = createSignal(
+    new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  );
   const [focusId] = spatialNav.getFocusSignal();
 
+  let timerId: any = null;
+
   onMount(async () => {
-    const list = await engine.getCatalog('live', undefined, 0, 30);
+    timerId = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }));
+    }, 10000);
+
+    const list = await engine.getCatalog('live', undefined, 0, 40);
     setChannels(list);
 
     const nowTs = Math.floor(Date.now() / 1000);
@@ -36,19 +45,29 @@ export const GuideView: Component<GuideViewProps> = (props) => {
     spatialNav.setGrid(grid);
   });
 
+  onCleanup(() => {
+    if (timerId) clearInterval(timerId);
+  });
+
   return (
     <div class="tv-container">
-      <div class="tv-header">
-        <h2 style={{ "font-size": "32px", color: "var(--buntu-gold)" }}>Guide des programmes (EPG)</h2>
-        <div style={{ color: "var(--buntu-text-muted)" }}>
-          {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+      {/* Header */}
+      <div class="tv-live-header">
+        <h1 class="tv-live-title">
+          <span>Guide des programmes (EPG)</span>
+        </h1>
+        <div class="tv-live-badge">
+          <span>🕒 {currentTime()}</span>
+          <span style={{ opacity: 0.5 }}>•</span>
+          <span>{channels().length} chaînes</span>
         </div>
       </div>
 
+      {/* Guide Rows */}
       <div
         role="list"
         aria-label="Liste des chaînes et programmes"
-        style={{ display: "flex", "flex-direction": "column", gap: "12px", "overflow-y": "auto", flex: 1 }}
+        class="tv-live-channels"
       >
         <For each={channels()}>
           {(ch) => {
@@ -61,37 +80,47 @@ export const GuideView: Component<GuideViewProps> = (props) => {
                 role="button"
                 tabindex="-1"
                 aria-label={`Chaîne ${ch.name}. En ce moment: ${nowTitle}. Suivant: ${nextTitle}. Appuyez pour regarder.`}
-                class={`tv-card ${focusId() === `guide-channel-${ch.id}` ? 'focused' : ''}`}
-                style={{
-                  padding: "16px 24px",
-                  display: "flex",
-                  "align-items": "center",
-                  gap: "24px",
-                  cursor: "pointer",
-                }}
+                class={`tv-guide-row ${focusId() === `guide-channel-${ch.id}` ? 'focused' : ''}`}
                 onClick={() => props.onPlayChannel(ch)}
               >
-                <div style={{ width: "240px" }}>
-                  <div style={{ "font-size": "20px", "font-weight": "700" }}>{ch.name}</div>
-                  <div style={{ "font-size": "14px", color: "var(--buntu-text-muted)" }}>{ch.group_title}</div>
+                {/* Channel Column: Number + Name */}
+                <div class="tv-guide-channel-col">
+                  <div class="tv-guide-num">
+                    {ch.chno || '•'}
+                  </div>
+                  <div class="tv-guide-channel-text">
+                    <div class="tv-guide-channel-name">{ch.name}</div>
+                    <div class="tv-guide-channel-cat">{ch.group_title || 'Direct TV'}</div>
+                  </div>
                 </div>
 
                 {/* Now Programme */}
-                <div style={{ flex: 1, background: "var(--buntu-slate-light)", padding: "12px", "border-radius": "8px" }}>
-                  <div style={{ "font-size": "18px", "font-weight": "600", color: "var(--buntu-cyan)" }}>
-                    EN CE MOMENT: {nowTitle}
+                <div class="tv-guide-now-box">
+                  <div class="tv-guide-now-header">
+                    <span class="tv-guide-live-pill">
+                      <span class="tv-guide-live-dot" />
+                      DIRECT
+                    </span>
+                    <span class="tv-guide-now-title">{nowTitle}</span>
                   </div>
-                  <div style={{ "font-size": "14px", color: "var(--buntu-text-muted)", "margin-top": "4px" }}>
-                    {epg?.now?.description || 'Aucune information détaillée'}
+                  <div class="tv-guide-now-desc">
+                    {epg?.now?.description || 'Aucune information détaillée sur le programme'}
                   </div>
                 </div>
 
                 {/* Next Programme */}
-                <div style={{ width: "320px", background: "rgba(255,255,255,0.05)", padding: "12px", "border-radius": "8px" }}>
-                  <div style={{ "font-size": "16px", "font-weight": "600" }}>
-                    SUIVANT: {nextTitle}
-                  </div>
+                <div class="tv-guide-next-box">
+                  <div class="tv-guide-next-label">À SUIVRE</div>
+                  <div class="tv-guide-next-title">{nextTitle}</div>
                 </div>
+
+                {/* Focused Action Pill */}
+                <Show when={focusId() === `guide-channel-${ch.id}`}>
+                  <div class="tv-watch-pill">
+                    <span>▶</span>
+                    <span>REGARDER</span>
+                  </div>
+                </Show>
               </div>
             );
           }}
@@ -100,4 +129,3 @@ export const GuideView: Component<GuideViewProps> = (props) => {
     </div>
   );
 };
-

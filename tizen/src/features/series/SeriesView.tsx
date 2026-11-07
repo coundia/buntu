@@ -69,7 +69,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     announce(`Séries, catégorie ${category || 'toutes'}, page ${targetPage} sur ${pages}`);
 
     const grid: FocusableItem[][] = [];
-    const visibleCats = cats.slice(0, 8);
+    const visibleCats = cats.slice(0, 16);
     if (visibleCats.length > 0) {
       grid.push(
         visibleCats.map((cat, idx) => ({
@@ -116,10 +116,14 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
 
   return (
     <div class="tv-container" style={{ "overflow-y": "auto" }}>
-      <div class="tv-header">
-        <h2 style={{ "font-size": "32px", color: "var(--buntu-gold)" }}>Séries TV</h2>
-        <div style={{ display: "flex", gap: "12px", "overflow-x": "auto", "max-width": "1000px" }} role="tablist" aria-label="Catégories de séries">
-          <For each={categories().slice(0, 8)}>
+      {/* Header with Title & Horizontal Category Tabs */}
+      <div class="tv-live-header">
+        <h1 class="tv-live-title">
+          <span>Séries TV</span>
+        </h1>
+
+        <div class="tv-category-tabs" role="tablist" aria-label="Catégories de séries">
+          <For each={categories().slice(0, 16)}>
             {(cat, idx) => (
               <button
                 id={`series-cat-${idx()}`}
@@ -127,7 +131,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
                 tabindex="-1"
                 aria-selected={selectedCat() === cat}
                 aria-label={`Catégorie ${cat}`}
-                class={`tv-nav-item ${selectedCat() === cat ? 'active' : ''} ${focusId() === `series-cat-${idx()}` ? 'focused' : ''}`}
+                class={`tv-category-pill ${selectedCat() === cat ? 'active' : ''} ${focusId() === `series-cat-${idx()}` ? 'focused' : ''}`}
                 onClick={() => void loadSeries(cat, categories(), 1)}
               >
                 {cat}
@@ -135,55 +139,79 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
             )}
           </For>
         </div>
+
+        <div class="tv-live-badge" style={{ "margin-left": "16px", "flex-shrink": 0 }}>
+          <span>{totalCount()} séries</span>
+        </div>
       </div>
 
-      <div style={{
-        display: "grid",
-        "grid-template-columns": "repeat(5, 1fr)",
-        gap: "24px",
-        padding: "16px 0",
-      }} role="list" aria-label="Catalogue des séries">
+      {/* 5-Column Pixel-Perfect Series Poster Grid */}
+      <div class="tv-poster-grid" role="list" aria-label="Catalogue des séries">
         <For each={seriesList()}>
-          {(series) => (
-            <div
-              id={`series-${series.id}`}
-              role="button"
-              tabindex="-1"
-              aria-label={`Série ${series.name_clean || series.name}, Saison ${series.season_num || 1}, Épisode ${series.episode_num || 1}`}
-              class={`tv-card tv-poster-card ${focusId() === `series-${series.id}` ? 'focused' : ''}`}
-              onClick={() => props.onSelectSeries(series)}
-              style={{ width: "100%", height: "400px", cursor: "pointer" }}
-            >
-              <div
-                class="tv-poster-img"
-                style={{
-                  height: "320px",
-                  "background-image": series.logo_url ? `url(${series.logo_url})` : 'none',
-                  "background-size": "cover",
-                  "background-position": "center",
-                  display: "flex",
-                  "align-items": "center",
-                  "justify-content": "center",
-                  color: "var(--buntu-text-muted)",
-                }}
-              >
-                {!series.logo_url && <span style={{ "font-size": "48px" }}>📺</span>}
+          {(series) => {
+            const title = series.name_clean || series.name;
+            const is4k = title.toLowerCase().includes('4k') || title.toLowerCase().includes('uhd');
+            return (
+              <div class="tv-poster-cell">
+                <div
+                  id={`series-${series.id}`}
+                  role="button"
+                  tabindex="-1"
+                  aria-label={`Série ${title}, Saison ${series.season_num || 1}, Épisode ${series.episode_num || 1}`}
+                  class={`tv-card tv-poster-card ${focusId() === `series-${series.id}` ? 'focused' : ''}`}
+                  onClick={() => props.onSelectSeries(series)}
+                >
+                  {/* Poster Art with Fallback */}
+                  <div class="tv-poster-art">
+                    <Show
+                      when={series.logo_url}
+                      fallback={
+                        <div class="tv-poster-fallback">
+                          <span class="tv-poster-fallback-icon">📺</span>
+                          <span class="tv-poster-fallback-title">{title}</span>
+                        </div>
+                      }
+                    >
+                      <img
+                        src={series.logo_url}
+                        alt=""
+                        loading="lazy"
+                        onError={(e) => {
+                          const target = e.currentTarget as HTMLElement;
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
+                          if (parent && !parent.querySelector('.tv-poster-fallback')) {
+                            const fb = document.createElement('div');
+                            fb.className = 'tv-poster-fallback';
+                            fb.innerHTML = `<span class="tv-poster-fallback-icon">📺</span><span class="tv-poster-fallback-title">${title}</span>`;
+                            parent.appendChild(fb);
+                          }
+                        }}
+                      />
+                    </Show>
+
+                    {/* Quality / Season Badge */}
+                    <Show when={is4k || series.season_num}>
+                      <div class="tv-poster-badge">
+                        {is4k ? '4K' : `S${series.season_num || 1}`}
+                      </div>
+                    </Show>
+                  </div>
+
+                  {/* Card Body */}
+                  <div class="tv-poster-body">
+                    <div class="tv-poster-title">{title}</div>
+                    <div class="tv-poster-sub">
+                      <span>Saison {series.season_num || 1}</span>
+                      <span style={{ color: "var(--buntu-cyan)", "font-weight": "700" }}>
+                        Ép. {series.episode_num || 1}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="tv-poster-title">{series.name_clean || series.name}</div>
-              <div style={{
-                display: "flex",
-                "justify-content": "space-between",
-                padding: "0 12px 8px 12px",
-                "font-size": "14px",
-                color: "var(--buntu-text-muted)"
-              }}>
-                <span>Saison {series.season_num || 1}</span>
-                <span style={{ color: "var(--buntu-cyan)" }}>
-                  Ép. {series.episode_num || 1}
-                </span>
-              </div>
-            </div>
-          )}
+            );
+          }}
         </For>
       </div>
 
