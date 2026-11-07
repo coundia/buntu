@@ -40,7 +40,17 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
   });
 
   return (
-    <div class="tv-container" style={{ "overflow-y": "auto" }}>
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        padding: "24px 40px",
+        "box-sizing": "border-box",
+        overflow: "hidden",
+        display: "flex",
+        "flex-direction": "column"
+      }}
+    >
       {/* Header */}
       <div class="tv-live-header">
         <h1 class="tv-live-title">

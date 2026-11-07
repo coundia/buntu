@@ -206,10 +206,10 @@ class SpatialNav {
   }
 
   private handleKey = (key: RemoteKey): boolean => {
-    // 1. Navigation inside Top Navigation Bar (currentRow === -1)
+    // 1. Navigation inside Top Navigation Bar / Rail (currentRow === -1)
     if (this.currentRow === -1) {
       if (!this.headerItems.length) return false;
-      if (key === 'LEFT') {
+      if (key === 'LEFT' || key === 'UP') {
         if (this.headerCol > 0) {
           this.headerCol--;
           this.applyFocus(this.headerItems[this.headerCol]);
@@ -243,7 +243,7 @@ class SpatialNav {
       return false;
     }
 
-    // 2. If screen grid is empty, allow jumping up to Top Navigation Bar
+    // 2. If screen grid is empty, allow jumping to Navigation
     if (!this.focusableGrid.length) {
       if ((key === 'UP' || key === 'LEFT' || key === 'RIGHT') && this.headerItems.length > 0) {
         this.currentRow = -1;
@@ -289,6 +289,10 @@ class SpatialNav {
     } else if (key === 'LEFT') {
       if (c > 0) {
         c--;
+      } else if (this.headerItems.length > 0) {
+        this.currentRow = -1;
+        this.applyFocus(this.headerItems[this.headerCol]);
+        return true;
       } else {
         return false;
       }

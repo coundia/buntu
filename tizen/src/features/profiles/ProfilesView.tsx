@@ -57,7 +57,19 @@ export const ProfilesView: Component<ProfilesViewProps> = (props) => {
   });
 
   return (
-    <div class="tv-container" style={{ "justify-content": "center", "align-items": "center" }}>
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        padding: "24px 40px",
+        "box-sizing": "border-box",
+        overflow: "hidden",
+        display: "flex",
+        "flex-direction": "column",
+        "justify-content": "center",
+        "align-items": "center"
+      }}
+    >
       <div style={{ "text-align": "center", "max-width": "700px" }}>
         <h1 style={{ "font-size": "44px", color: "var(--buntu-gold)", "margin-bottom": "36px" }}>
           Qui regarde la télévision ?
