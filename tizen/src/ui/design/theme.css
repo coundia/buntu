@@ -26,7 +26,7 @@
   background: transparent !important;
 }
 
-html, body {
+html, body, #root {
   background-color: transparent !important;
   background: transparent !important;
   color: var(--buntu-text);
@@ -34,20 +34,33 @@ html, body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  width: 1920px;
-  height: 1080px;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100%;
+  max-height: 100%;
 }
 
-/* App root container: painted when browsing menus; transparent when in video-mode (AVPlay plane visible behind) */
+/* App root container: painted when browsing menus; transparent when in video-mode / preview-mode (AVPlay plane visible behind) */
 .app-root {
-  width: 1920px;
-  height: 1080px;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100%;
+  max-height: 100%;
   position: relative;
-  background-color: var(--buntu-midnight);
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  background-color: #1E1E1E;
   transition: background-color 0.2s ease;
+  box-sizing: border-box;
 }
 
 .app-root.video-mode {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+.app-root.preview-mode {
   background-color: transparent !important;
   background: transparent !important;
 }
@@ -83,10 +96,11 @@ html, body {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  padding: 0 var(--tv-safe-pad-h) var(--tv-safe-pad-v);
+  padding: clamp(16px, 2vh, 32px) clamp(20px, 2.5vw, 48px) clamp(20px, 3vh, 40px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: #1E1E1E;
 }
 
 /* Header & Nav */
@@ -1674,13 +1688,15 @@ html, body {
    ========================================================================== */
 
 .tv-series-container {
-  width: 1760px;
-  height: 940px;
-  margin: 112px 80px 28px 80px;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: clamp(16px, 2vh, 32px) clamp(20px, 2.5vw, 48px);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   overflow: hidden;
+  background: #1E1E1E;
 }
 
 .tv-series-header-card {
@@ -1989,555 +2005,1114 @@ html, body {
 
 
 /* ==============================================================================
-   MINIMALIST TV DESIGN SYSTEM (Reference Image UI)
+   BUNTU RESPONSIVE SMART TV DESIGN SYSTEM
+   Matches Buntu Native macOS/Apple TV Architecture, Responsive across 720p/1080p/4K
    ============================================================================== */
 
-.tv-app-shell {
-  width: 1920px;
-  height: 1080px;
-  position: relative;
-  background-color: #0A0D14;
-  background-image: radial-gradient(ellipse at 85% 15%, rgba(25, 34, 52, 0.45) 0%, #0A0D14 70%);
-  color: #FFFFFF;
-  overflow: hidden;
-  box-sizing: border-box;
+:root {
+  --buntu-accent: #0A84FF;
+  --buntu-accent-soft: rgba(10, 132, 255, 0.2);
+  --buntu-sidebar-bg: #262524;
+  --buntu-cat-bg: #202022;
+  --buntu-main-bg: #1C1C1E;
+  --buntu-toolbar-bg: #252527;
+  --buntu-card-bg: #2B2B2E;
+  --buntu-card-hover: #34353A;
+  --buntu-hairline: rgba(255, 255, 255, 0.08);
+  --buntu-star: #FFD60A;
+  --buntu-uhd: #FF9F0A;
 }
 
-/* Left Vertical Navigation Rail */
-.tv-nav-rail {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 76px;
-  background: rgba(12, 15, 23, 0.95);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+/* 1. Left Navigation Sidebar (with Icon + Label + Counter Badges) */
+.buntu-sidebar {
+  width: clamp(188px, 13.2vw, 238px);
+  height: 100%;
+  flex-shrink: 0;
+  background: var(--buntu-sidebar-bg);
+  border-right: 1px solid var(--buntu-hairline);
   display: flex;
   flex-direction: column;
+  padding: clamp(10px, 1.4vh, 18px) 10px;
+  box-sizing: border-box;
+  z-index: 100;
+  user-select: none;
+  transition: width 0.18s ease;
+}
+
+.buntu-sidebar.collapsed {
+  width: 68px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.buntu-brand-header {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 28px 0;
-  z-index: 100;
-  box-sizing: border-box;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.tv-rail-top,
-.tv-rail-mid,
-.tv-rail-bottom {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-.tv-rail-btn {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  color: rgba(255, 255, 255, 0.55);
-  background: transparent;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
-  box-sizing: border-box;
-}
-
-.tv-rail-btn.active {
-  color: #FFFFFF;
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.25);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-}
-
-.tv-rail-btn.focused {
-  color: #000000 !important;
-  background: var(--buntu-gold) !important;
-  border-color: #FFFFFF !important;
-  transform: scale(1.18);
-  box-shadow: 0 0 20px rgba(245, 166, 35, 0.7);
-  z-index: 10;
-}
-
-.tv-rail-btn.tv-rail-exit.focused {
-  background: var(--buntu-danger) !important;
-  color: #FFFFFF !important;
-  box-shadow: 0 0 20px rgba(255, 59, 48, 0.7);
-}
-
-/* Top Right Status Bar (Clock, Weather, Search, Avatar) */
-.tv-top-status-bar {
-  position: absolute;
-  top: 24px;
-  right: 48px;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  z-index: 80;
-}
-
-.tv-status-clock {
-  font-size: 22px;
-  font-weight: 700;
-  color: #FFFFFF;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.5px;
-}
-
-.tv-status-weather {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 14px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  font-size: 15px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.tv-status-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  color: #FFFFFF;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.tv-status-btn.focused {
-  background: var(--buntu-gold);
-  color: #000;
-  transform: scale(1.12);
-}
-
-.tv-status-avatar {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #E50914 0%, #B81D24 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  font-weight: 800;
-  color: #FFFFFF;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 4px 12px rgba(229, 9, 20, 0.35);
-}
-
-/* Minimalist Screen Main Container */
-.tv-screen-content {
-  position: absolute;
-  left: 76px;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
-.tv-minimal-3col {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  padding: 24px 40px 24px 24px;
-  box-sizing: border-box;
-  gap: 22px;
-  overflow: hidden;
-}
-
-/* Column 1: Categories Sidebar */
-.tv-min-col-categories {
-  width: 290px;
+  padding: 4px 8px 14px 8px;
+  gap: 10px;
   flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-sizing: border-box;
 }
 
-.tv-min-col-title {
-  font-size: 28px;
-  font-weight: 800;
-  color: #FFFFFF;
-  margin: 0 0 16px 4px;
-  letter-spacing: 0.5px;
+.buntu-brand-identity {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.tv-min-cat-list {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-right: 6px;
-  box-sizing: border-box;
-}
-
-.tv-min-cat-item {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 14px;
-  border-radius: 14px;
-  background: transparent;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
-  box-sizing: border-box;
-  flex-shrink: 0;
-}
-
-.tv-min-cat-badge {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 22px;
-  flex-shrink: 0;
-  transition: all 0.15s ease;
-}
-
-.tv-min-cat-info {
-  flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
 
-.tv-min-cat-name {
-  font-size: 17px;
+.buntu-brand-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #141416;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.buntu-brand-text {
+  font-size: clamp(16px, 1.15vw, 20px);
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.7);
+  color: #FFFFFF;
+  letter-spacing: -0.2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.tv-min-cat-count {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
-  margin-top: 2px;
+.buntu-sidebar.collapsed .buntu-brand-text,
+.buntu-sidebar.collapsed .buntu-nav-group-label,
+.buntu-sidebar.collapsed .buntu-nav-label,
+.buntu-sidebar.collapsed .buntu-nav-count {
+  display: none;
 }
 
-.tv-min-cat-item.active .tv-min-cat-badge {
-  background: rgba(245, 166, 35, 0.18);
-  border-color: var(--buntu-gold);
-  box-shadow: 0 0 14px rgba(245, 166, 35, 0.4);
+.buntu-nav-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.tv-min-cat-item.active .tv-min-cat-name {
-  color: #FFFFFF;
-  font-weight: 800;
-}
-
-.tv-min-cat-item.focused {
-  background: rgba(255, 255, 255, 0.08) !important;
-  border-color: var(--buntu-gold) !important;
-  transform: translateX(8px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-}
-
-.tv-min-cat-item.focused .tv-min-cat-name {
-  color: #FFFFFF !important;
-}
-
-/* Column 2: Cards List */
-.tv-min-col-cards {
-  width: 480px;
+.buntu-nav-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(255, 255, 255, 0.42);
+  padding: 12px 10px 5px 10px;
   flex-shrink: 0;
+}
+
+.buntu-nav-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: clamp(8px, 0.9vh, 11px) 10px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: clamp(13.5px, 0.95vw, 16.5px);
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  box-sizing: border-box;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+  flex-shrink: 0;
+}
+
+.buntu-sidebar.collapsed .buntu-nav-btn {
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.buntu-nav-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(15px, 1.05vw, 18px);
+  flex-shrink: 0;
+  color: var(--buntu-accent);
+}
+
+.buntu-nav-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.buntu-nav-count {
+  font-size: clamp(11px, 0.78vw, 13px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.48);
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+}
+
+.buntu-nav-btn.active {
+  background: var(--buntu-accent);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.buntu-nav-btn.active .buntu-nav-icon {
+  color: #FFFFFF;
+}
+
+.buntu-nav-btn.active .buntu-nav-count {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.buntu-nav-btn.focused {
+  background: rgba(10, 132, 255, 0.32) !important;
+  border-color: #FFFFFF !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.55);
+  z-index: 5;
+}
+
+.buntu-nav-btn.active.focused {
+  background: var(--buntu-accent) !important;
+  border-color: #FFFFFF !important;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.45), 0 4px 16px rgba(10, 132, 255, 0.65);
+}
+
+.buntu-sidebar-footer {
+  padding-top: 10px;
+  margin-top: 8px;
+  border-top: 1px solid var(--buntu-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.buntu-nav-btn.exit-btn .buntu-nav-icon {
+  color: #FF453A;
+}
+
+.buntu-nav-btn.exit-btn.focused {
+  background: #FF453A !important;
+  border-color: #FFFFFF !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 0 0 3px rgba(255, 69, 58, 0.5);
+}
+
+.buntu-nav-btn.exit-btn.focused .buntu-nav-icon {
+  color: #FFFFFF;
+}
+
+/* 2. Main Screen Router Container */
+.tv-screen-content {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* 3. Buntu Screen Shell (Top Toolbar + Split Body) */
+.buntu-page {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--buntu-main-bg);
+  box-sizing: border-box;
+}
+
+.buntu-page.with-preview {
+  background: transparent;
+}
+
+/* Top Toolbar */
+.buntu-toolbar {
+  height: clamp(48px, 5vh, 58px);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(14px, 1.5vw, 24px);
+  background: var(--buntu-toolbar-bg);
+  border-bottom: 1px solid var(--buntu-hairline);
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.buntu-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.buntu-toolbar-title {
+  font-size: clamp(16px, 1.15vw, 21px);
+  font-weight: 700;
+  color: #FFFFFF;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.buntu-toolbar-subtitle {
+  font-size: clamp(12px, 0.82vw, 14px);
+  color: rgba(255, 255, 255, 0.48);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.buntu-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.buntu-tool-btn {
+  height: 34px;
+  min-width: 34px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 2px solid transparent;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: all 0.12s ease;
+}
+
+.buntu-tool-btn.active {
+  background: rgba(10, 132, 255, 0.25);
+  color: #FFFFFF;
+  border-color: rgba(10, 132, 255, 0.55);
+}
+
+.buntu-tool-btn.focused {
+  background: var(--buntu-accent) !important;
+  color: #FFFFFF !important;
+  border-color: #FFFFFF !important;
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.6);
+}
+
+.buntu-seg-group {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--buntu-hairline);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.buntu-seg-btn {
+  height: 28px;
+  min-width: 32px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.buntu-seg-btn.active {
+  background: rgba(255, 255, 255, 0.16);
+  color: #FFFFFF;
+}
+
+.buntu-seg-btn.focused {
+  background: var(--buntu-accent) !important;
+  color: #FFFFFF !important;
+  border-color: #FFFFFF !important;
+}
+
+/* Top-Right Search Input in Toolbar */
+.buntu-search-wrap {
+  position: relative;
+  width: clamp(190px, 18vw, 310px);
+  display: flex;
+  align-items: center;
+}
+
+.buntu-search-icon {
+  position: absolute;
+  left: 10px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+}
+
+.buntu-search-field {
+  width: 100%;
+  height: 34px;
+  padding: 0 30px 0 30px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  background: #171719;
+  color: #FFFFFF;
+  font-size: clamp(12.5px, 0.88vw, 15px);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.buntu-search-field::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.buntu-search-field.focused,
+.buntu-search-field:focus {
+  border-color: var(--buntu-accent);
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.45);
+}
+
+.buntu-search-clear {
+  position: absolute;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.18);
+  color: #FFFFFF;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.buntu-search-clear.focused {
+  background: #FF453A;
+}
+
+/* 4. Split Body: Category Column + Main Content + Optional Inspector */
+.buntu-body-split {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Category Column */
+.buntu-cat-pane {
+  width: clamp(205px, 15vw, 272px);
+  flex-shrink: 0;
+  height: 100%;
+  background: var(--buntu-cat-bg);
+  border-right: 1px solid var(--buntu-hairline);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
 }
 
-.tv-min-cards-scroll {
+.buntu-cat-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.buntu-cat-home-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.buntu-cat-home-btn.focused {
+  background: var(--buntu-accent);
+  color: #FFFFFF;
+  border-color: #FFFFFF;
+}
+
+.buntu-cat-filter-input {
   flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  background: #151517;
+  color: #FFFFFF;
+  font-size: clamp(12px, 0.82vw, 14px);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.buntu-cat-filter-input::placeholder {
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.buntu-cat-filter-input.focused,
+.buntu-cat-filter-input:focus {
+  border-color: var(--buntu-accent);
+}
+
+.buntu-cat-list {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  padding: 6px 8px 24px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+}
+
+.buntu-cat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: clamp(7px, 0.8vh, 10px) 10px;
+  border-radius: 7px;
+  border: 2px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: clamp(12.5px, 0.88vw, 15px);
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.buntu-cat-row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.buntu-cat-row-icon {
+  font-size: 14px;
+  color: var(--buntu-accent);
+  flex-shrink: 0;
+}
+
+.buntu-cat-row-icon.fav {
+  color: var(--buntu-star);
+}
+
+.buntu-cat-row-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.buntu-cat-count {
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.65);
+  font-size: clamp(10.5px, 0.74vw, 12.5px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.buntu-cat-row.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #FFFFFF;
+  font-weight: 700;
+}
+
+.buntu-cat-row.active .buntu-cat-count {
+  background: rgba(255, 255, 255, 0.18);
+  color: #FFFFFF;
+}
+
+.buntu-cat-row.focused {
+  background: var(--buntu-accent) !important;
+  border-color: #FFFFFF !important;
+  color: #FFFFFF !important;
+  font-weight: 700;
+  box-shadow: 0 2px 12px rgba(10, 132, 255, 0.45);
+}
+
+.buntu-cat-row.focused .buntu-cat-row-icon,
+.buntu-cat-row.focused .buntu-cat-count {
+  color: #FFFFFF !important;
+}
+
+.buntu-cat-row.focused .buntu-cat-count {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* 5. Main Scrollable Catalog Area */
+.buntu-content-scroll {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: clamp(14px, 1.6vw, 24px);
+  background: var(--buntu-main-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  box-sizing: border-box;
+}
+
+.buntu-section {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 4px 8px 30px 4px;
-  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
-.tv-min-media-card {
+.buntu-section-header {
   display: flex;
   align-items: center;
-  min-height: 106px;
-  height: 106px;
-  padding: 12px 16px;
-  border-radius: 18px;
-  background: rgba(21, 25, 36, 0.85);
-  border: 2px solid rgba(255, 255, 255, 0.05);
-  cursor: pointer;
-  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.buntu-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: clamp(15px, 1.05vw, 19px);
+  font-weight: 700;
+  color: #FFFFFF;
+  margin: 0;
+}
+
+.buntu-section-meta {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 600;
+}
+
+/* Horizontal Shelves (Récemment consultés & Favoris) */
+.buntu-shelf-scroll {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(clamp(230px, 17.5vw, 295px), 1fr);
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 4px 2px 6px 2px;
+}
+
+/* Multi-Column Responsive Channel Grid */
+.buntu-channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(220px, 16vw, 280px), 1fr));
+  gap: 12px;
+  width: 100%;
   box-sizing: border-box;
-  flex-shrink: 0;
+  padding-bottom: 28px;
+}
+
+.buntu-channel-grid.list-mode {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+/* Buntu Channel Card (1:1 Match with Reference Image & ChannelCardView.swift) */
+.buntu-ch-card {
+  background: var(--buntu-card-bg);
+  border: 2px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 12px 14px;
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
   position: relative;
 }
 
-.tv-min-card-thumb {
-  width: 76px;
-  height: 76px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.45);
+.buntu-channel-grid.list-mode .buntu-ch-card {
+  min-height: 62px;
+  flex-direction: row;
+  align-items: center;
+  padding: 8px 16px;
+}
+
+.buntu-ch-card.playing {
+  border-color: var(--buntu-accent);
+  background: #2C3340;
+}
+
+.buntu-ch-card.focused {
+  background: var(--buntu-card-hover) !important;
+  border-color: var(--buntu-accent) !important;
+  box-shadow: 0 0 0 2px #FFFFFF, 0 8px 24px rgba(0, 0, 0, 0.65);
+  transform: translateY(-2px);
+  z-index: 10;
+}
+
+.buntu-ch-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.buntu-ch-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: #17171A;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 3px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   flex-shrink: 0;
-  margin-right: 16px;
+  box-sizing: border-box;
 }
 
-.tv-min-card-thumb img {
+.buntu-ch-logo img {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
-.tv-min-card-meta {
+.buntu-ch-logo-fallback {
+  font-size: 18px;
+  opacity: 0.65;
+}
+
+.buntu-ch-info {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 2px;
+}
+
+.buntu-ch-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.buntu-ch-num {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.48);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.buntu-ch-name {
+  font-size: clamp(13px, 0.92vw, 15px);
+  font-weight: 700;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.buntu-q-badge {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #FFFFFF;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+.buntu-q-badge.uhd {
+  background: var(--buntu-uhd);
+  color: #000000;
+}
+
+.buntu-ch-group {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+}
+
+.buntu-ch-star {
+  background: transparent;
+  border: none;
+  padding: 4px;
+  font-size: 16px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.26);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.12s ease, color 0.12s ease;
+}
+
+.buntu-ch-star.fav {
+  color: var(--buntu-star);
+}
+
+.buntu-ch-epg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.buntu-channel-grid.list-mode .buntu-ch-epg {
+  width: clamp(180px, 22vw, 320px);
+  flex-shrink: 0;
+}
+
+.buntu-epg-title {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.buntu-epg-bar {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.buntu-epg-fill {
+  height: 100%;
+  background: var(--buntu-accent);
+  border-radius: 2px;
+}
+
+.buntu-epg-empty {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 6. VOD Poster Grid & Shelves (Films & Séries) */
+.buntu-vod-shelf {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(clamp(145px, 11vw, 190px), 1fr);
+  gap: 14px;
+  overflow-x: auto;
+  padding: 4px 2px 8px 2px;
+}
+
+.buntu-vod-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(150px, 11.5vw, 198px), 1fr));
+  gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
+  padding-bottom: 28px;
+}
+
+.buntu-vod-grid.list-mode {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.buntu-vod-card {
+  background: var(--buntu-card-bg);
+  border: 2px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+  position: relative;
+}
+
+.buntu-vod-grid.list-mode .buntu-vod-card {
+  flex-direction: row;
+  align-items: center;
+  height: 76px;
+  padding: 8px 14px;
+  gap: 14px;
+}
+
+.buntu-vod-card.focused {
+  border-color: var(--buntu-accent) !important;
+  box-shadow: 0 0 0 2px #FFFFFF, 0 10px 28px rgba(0, 0, 0, 0.75);
+  transform: translateY(-3px);
+  z-index: 15;
+}
+
+.buntu-vod-poster {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  background: linear-gradient(145deg, #242529 0%, #17181B 100%);
+  position: relative;
+  display: flex;
+  align-items: center;
   justify-content: center;
   overflow: hidden;
 }
 
-.tv-min-card-title {
-  font-size: 19px;
-  font-weight: 700;
-  color: #FFFFFF;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.25;
-}
-
-.tv-min-card-views {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.5);
-  margin: 4px 0 6px 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tv-min-card-tags {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.tv-min-tag {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.85);
-  letter-spacing: 0.5px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.tv-min-card-fav {
-  font-size: 20px;
-  color: #FFA000;
-  margin-left: 12px;
+.buntu-vod-grid.list-mode .buntu-vod-poster {
+  width: 46px;
+  height: 62px;
+  aspect-ratio: auto;
+  border-radius: 6px;
   flex-shrink: 0;
 }
 
-.tv-min-media-card.active {
-  background: rgba(28, 34, 50, 0.9);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.tv-min-media-card.focused {
-  background: rgba(38, 46, 68, 0.95) !important;
-  border-color: rgba(255, 255, 255, 0.6) !important;
-  border-left: 6px solid #FFFFFF !important;
-  transform: scale(1.02);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), 0 0 16px rgba(255, 255, 255, 0.15);
-  z-index: 10;
-}
-
-/* Column 3: Hero Panel (Video Viewport + Now Playing + Synopsis + Timeline) */
-.tv-min-col-hero {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding-top: 56px;
-  box-sizing: border-box;
-}
-
-.tv-min-hero-viewport {
+.buntu-vod-poster img {
   width: 100%;
-  height: 480px;
-  border-radius: 20px;
-  overflow: hidden;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  position: relative;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8);
-  box-sizing: border-box;
+  height: 100%;
+  object-fit: cover;
 }
 
-.tv-min-hero-info {
-  margin-top: 20px;
+.buntu-vod-poster-fallback {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.tv-min-now-label {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  text-align: center;
   color: rgba(255, 255, 255, 0.5);
 }
 
-.tv-min-hero-title {
-  font-size: 30px;
-  font-weight: 800;
+.buntu-vod-badge-top {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 5px;
+  z-index: 3;
+}
+
+.buntu-vod-star-overlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.62);
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+}
+
+.buntu-vod-star-overlay.fav {
+  color: var(--buntu-star);
+}
+
+.buntu-vod-meta {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.buntu-vod-title {
+  font-size: clamp(13px, 0.9vw, 15px);
+  font-weight: 700;
   color: #FFFFFF;
-  line-height: 1.2;
-  margin: 0;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.tv-min-hero-desc {
-  font-size: 15px;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.7);
-  max-height: 64px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-}
-
-.tv-min-hero-progress {
+.buntu-vod-sub {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-top: 4px;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.48);
 }
 
-.tv-min-time {
-  font-size: 14px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.tv-min-track {
-  flex: 1;
-  height: 5px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-  position: relative;
-}
-
-.tv-min-fill {
+/* 7. Optional Right Inspector / Mini-Player Drawer (Responsive AVPlay Viewport) */
+.buntu-inspector-pane {
+  width: clamp(310px, 26vw, 440px);
+  flex-shrink: 0;
   height: 100%;
-  background: #FFFFFF;
-  border-radius: 3px;
-  position: relative;
-}
-
-.tv-min-knob {
-  position: absolute;
-  right: -5px;
-  top: -4px;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: #FFFFFF;
-  box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
-}
-
-.tv-min-hero-actions {
+  background: rgba(28, 28, 30, 0.92);
+  border-left: 1px solid var(--buntu-hairline);
+  padding: 16px;
   display: flex;
+  flex-direction: column;
   gap: 14px;
-  align-items: center;
-  margin-top: 8px;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
-.tv-min-btn-play {
-  padding: 10px 24px;
-  border-radius: 24px;
-  background: #FFFFFF;
-  color: #000000;
-  font-size: 16px;
-  font-weight: 700;
+.buntu-inspector-viewport {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.buntu-inspector-title {
+  font-size: clamp(17px, 1.2vw, 22px);
+  font-weight: 800;
+  color: #FFFFFF;
+  margin: 0;
+  line-height: 1.25;
+}
+
+.buntu-inspector-desc {
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0;
+}
+
+.buntu-inspector-actions {
   display: flex;
-  align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.buntu-action-primary {
+  flex: 1;
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: 8px;
   border: 2px solid transparent;
+  background: var(--buntu-accent);
+  color: #FFFFFF;
+  font-size: 14px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   cursor: pointer;
-  transition: all 0.15s ease;
 }
 
-.tv-min-btn-play.focused {
-  background: var(--buntu-gold);
-  color: #000;
-  border-color: #FFFFFF;
-  transform: scale(1.08);
-  box-shadow: 0 0 18px rgba(245, 166, 35, 0.6);
+.buntu-action-primary.focused {
+  border-color: #FFFFFF !important;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.55);
 }
 
-.tv-min-btn-secondary {
-  padding: 10px 20px;
-  border-radius: 24px;
+.buntu-action-secondary {
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.08);
   color: #FFFFFF;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  justify-content: center;
+  gap: 6px;
   cursor: pointer;
-  transition: all 0.15s ease;
 }
 
-.tv-min-btn-secondary.focused {
-  background: var(--buntu-gold);
-  color: #000;
-  border-color: #FFFFFF;
-  transform: scale(1.08);
-  box-shadow: 0 0 18px rgba(245, 166, 35, 0.6);
+.buntu-action-secondary.focused {
+  background: var(--buntu-accent) !important;
+  border-color: #FFFFFF !important;
+}
+
+/* Responsive Breakpoints for Compact TVs (720p) & 4K UHD Panels */
+@media (max-width: 1366px) {
+  .buntu-sidebar {
+    width: 184px;
+  }
+  .buntu-cat-pane {
+    width: 200px;
+  }
+  .buntu-channel-grid {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .buntu-cat-pane {
+    width: 175px;
+  }
+  .buntu-sidebar {
+    width: 165px;
+  }
+}
+
+@media (min-width: 2400px) {
+  .buntu-sidebar {
+    width: 340px;
+  }
+  .buntu-cat-pane {
+    width: 390px;
+  }
+  .buntu-toolbar {
+    height: 82px;
+  }
+  .buntu-ch-card {
+    min-height: 140px;
+    padding: 18px 22px;
+  }
 }

@@ -6,6 +6,7 @@ import { Database, ItemRecord } from '../core/storage/Database';
 import { spatialNav } from '../ui/design/SpatialNav';
 import { PlatformService } from '../core/platform/PlatformService';
 import { announce } from '../ui/design/a11y';
+import { formatBuntuCount } from '../core/utils/categoryMeta';
 
 import { LiveView } from '../features/live/LiveView';
 import { GuideView } from '../features/guide/GuideView';
@@ -43,22 +44,35 @@ export const App: Component = () => {
   const [selectedItem, setSelectedItem] = createSignal<ItemRecord | null>(null);
   const [hasSources, setHasSources] = createSignal(true);
   const [showExitDialog, setShowExitDialog] = createSignal(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
+  const [globalCounts, setGlobalCounts] = createSignal({ live: 0, movie: 0, series: 0, sources: 0 });
   const [focusId] = spatialNav.getFocusSignal();
-  const [clock, setClock] = createSignal('');
 
   let keyUnsub: (() => void) | null = null;
 
-  const NAV_ITEMS: { route: ScreenRoute; label: string; icon: string }[] = [
-    { route: 'live', label: 'Direct', icon: '📺' },
-    { route: 'movies', label: 'Films', icon: '🎬' },
-    { route: 'series', label: 'Séries', icon: '🍿' },
-    { route: 'guide', label: 'Guide', icon: '📅' },
+  const IPTV_NAV_ITEMS: { route: ScreenRoute; label: string; icon: string; countKey?: 'live' | 'movie' | 'series' }[] = [
+    { route: 'live', label: 'Live TV', icon: '📺', countKey: 'live' },
+    { route: 'guide', label: 'Guide TV', icon: '📅' },
+    { route: 'movies', label: 'Films', icon: '🎬', countKey: 'movie' },
+    { route: 'series', label: 'Séries', icon: '🍿', countKey: 'series' },
     { route: 'recommendations', label: 'Pour vous', icon: '✨' },
     { route: 'search', label: 'Recherche', icon: '🔍' },
-    { route: 'sources', label: 'Sources', icon: '📡' },
-    { route: 'profiles', label: 'Profils', icon: '👤' },
-    { route: 'settings', label: 'Paramètres', icon: '⚙️' },
   ];
+
+  const SYSTEM_NAV_ITEMS: { route: ScreenRoute; label: string; icon: string; countKey?: 'sources' }[] = [
+    { route: 'sources', label: 'Sources', icon: '📡', countKey: 'sources' },
+    { route: 'profiles', label: 'Profils', icon: '👤' },
+    { route: 'settings', label: 'Réglages', icon: '⚙️' },
+  ];
+
+  const ALL_NAV_ITEMS = [...IPTV_NAV_ITEMS, ...SYSTEM_NAV_ITEMS];
+
+  const refreshGlobalCounts = async () => {
+    try {
+      const c = await engine.getGlobalCounts();
+      setGlobalCounts(c);
+    } catch {}
+  };
 
   const openExitDialog = () => {
     setShowExitDialog(true);
@@ -88,16 +102,17 @@ export const App: Component = () => {
     PlatformService.exitApp();
   };
 
-  // Keep Top Navigation Bar registered with SpatialNav whenever visible
+  // Keep Left Buntu Sidebar registered with SpatialNav (vertical orientation) whenever visible
   createEffect(() => {
     const route = currentRoute();
     if (route === 'player' || showExitDialog()) {
       spatialNav.setHeader([]);
       return;
     }
-    const activeIdx = Math.max(0, NAV_ITEMS.findIndex((n) => n.route === route));
+    void refreshGlobalCounts();
+    const activeIdx = Math.max(0, ALL_NAV_ITEMS.findIndex((n) => n.route === route));
     const headerItems = [
-      ...NAV_ITEMS.map((nav) => ({
+      ...ALL_NAV_ITEMS.map((nav) => ({
         id: `nav-${nav.route}`,
         onSelect: () => navigateTo(nav.route),
       })),
@@ -106,22 +121,10 @@ export const App: Component = () => {
         onSelect: openExitDialog,
       },
     ];
-    spatialNav.setHeader(headerItems, activeIdx);
+    spatialNav.setHeader(headerItems, activeIdx, 'vertical');
   });
 
-  let clockTimer: any = null;
-
   onMount(async () => {
-    // Clock updater for top right status bar
-    const updateClock = () => {
-      const now = new Date();
-      const h = String(now.getHours()).padStart(2, '0');
-      const m = String(now.getMinutes()).padStart(2, '0');
-      setClock(`${h}:${m}`);
-    };
-    updateClock();
-    clockTimer = setInterval(updateClock, 10000);
-
     // Initialize remote control & spatial navigation immediately (before any async work)
     RemoteKeyHandler.getInstance().init();
     spatialNav.init();
@@ -131,6 +134,7 @@ export const App: Component = () => {
     try {
       await engine.init();
       const storedSources = await Database.getInstance().getSources();
+      await refreshGlobalCounts();
       if (storedSources.length === 0) {
         setHasSources(false);
         setCurrentRoute('onboarding');
@@ -145,7 +149,6 @@ export const App: Component = () => {
   });
 
   onCleanup(() => {
-    if (clockTimer) clearInterval(clockTimer);
     if (keyUnsub) keyUnsub();
     document.removeEventListener('visibilitychange', handleVisibilityChange);
   });
@@ -254,79 +257,97 @@ export const App: Component = () => {
   return (
     <div
       class={`app-root ${currentRoute() === 'player' ? 'video-mode' : ''}`}
-      style={{ width: "1920px", height: "1080px", position: "relative" }}
     >
-      {/* Left Vertical Navigation Rail & Top Status Bar (hidden in player) */}
+      {/* Left Buntu Navigation Sidebar (hidden in full-screen player) */}
       {currentRoute() !== 'player' && (
-        <>
-          <aside class="tv-nav-rail" role="navigation" aria-label="Menu principal">
-            <div class="tv-rail-top">
-              <button
-                id="nav-back"
-                role="button"
-                tabindex="-1"
-                aria-label="Retour"
-                class={`tv-rail-btn ${focusId() === 'nav-back' ? 'focused' : ''}`}
-                onClick={() => {
-                  if (currentRoute() !== 'live') navigateTo('live');
+        <aside
+          class={`buntu-sidebar ${sidebarCollapsed() ? 'collapsed' : ''}`}
+          role="navigation"
+          aria-label="Menu principal Buntu"
+        >
+          <div class="buntu-brand-header">
+            <div class="buntu-brand-identity">
+              <img
+                src="./icon.png"
+                alt="Buntu"
+                class="buntu-brand-logo"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = 'none';
                 }}
-              >
-                ‹
-              </button>
+              />
+              <span class="buntu-brand-text">Buntu</span>
             </div>
+            <button
+              type="button"
+              tabindex="-1"
+              class="buntu-cat-home-btn"
+              title={sidebarCollapsed() ? 'Déplier le menu' : 'Replier le menu'}
+              onClick={() => setSidebarCollapsed((v) => !v)}
+            >
+              ◧
+            </button>
+          </div>
 
-            <nav class="tv-rail-mid" role="tablist" aria-label="Sections">
-              {NAV_ITEMS.map((nav) => (
+          <nav class="buntu-nav-scroll" role="tablist" aria-label="Sections IPTV">
+            <div class="buntu-nav-group-label">IPTV</div>
+            {IPTV_NAV_ITEMS.map((nav) => {
+              const countVal = () => (nav.countKey ? globalCounts()[nav.countKey] : 0);
+              return (
                 <button
                   id={`nav-${nav.route}`}
                   role="tab"
                   tabindex="-1"
                   aria-selected={currentRoute() === nav.route}
                   aria-label={nav.label}
-                  class={`tv-rail-btn ${currentRoute() === nav.route ? 'active' : ''} ${focusId() === `nav-${nav.route}` ? 'focused' : ''}`}
+                  class={`buntu-nav-btn ${currentRoute() === nav.route ? 'active' : ''} ${focusId() === `nav-${nav.route}` ? 'focused' : ''}`}
                   onClick={() => navigateTo(nav.route)}
                 >
-                  {nav.icon}
+                  <span class="buntu-nav-icon">{nav.icon}</span>
+                  <span class="buntu-nav-label">{nav.label}</span>
+                  <Show when={countVal() > 0}>
+                    <span class="buntu-nav-count">{formatBuntuCount(countVal())}</span>
+                  </Show>
                 </button>
-              ))}
-            </nav>
+              );
+            })}
 
-            <div class="tv-rail-bottom">
-              <button
-                id="nav-exit"
-                role="button"
-                tabindex="-1"
-                aria-label="Quitter l'application"
-                class={`tv-rail-btn tv-rail-exit ${focusId() === 'nav-exit' ? 'focused' : ''}`}
-                onClick={openExitDialog}
-              >
-                ⏻
-              </button>
-            </div>
-          </aside>
+            <div class="buntu-nav-group-label">Gestion</div>
+            {SYSTEM_NAV_ITEMS.map((nav) => {
+              const countVal = () => (nav.countKey ? globalCounts()[nav.countKey] : 0);
+              return (
+                <button
+                  id={`nav-${nav.route}`}
+                  role="tab"
+                  tabindex="-1"
+                  aria-selected={currentRoute() === nav.route}
+                  aria-label={nav.label}
+                  class={`buntu-nav-btn ${currentRoute() === nav.route ? 'active' : ''} ${focusId() === `nav-${nav.route}` ? 'focused' : ''}`}
+                  onClick={() => navigateTo(nav.route)}
+                >
+                  <span class="buntu-nav-icon">{nav.icon}</span>
+                  <span class="buntu-nav-label">{nav.label}</span>
+                  <Show when={countVal() > 0}>
+                    <span class="buntu-nav-count">{formatBuntuCount(countVal())}</span>
+                  </Show>
+                </button>
+              );
+            })}
+          </nav>
 
-          {/* Top Right Status Bar (Clock, Weather, Search, Avatar) */}
-          <div class="tv-top-status-bar" role="region" aria-label="Statut système">
-            <div class="tv-status-clock">{clock()}</div>
-            <div class="tv-status-weather">⛅ 24°</div>
+          <div class="buntu-sidebar-footer">
             <button
-              id="btn-status-search"
+              id="nav-exit"
               role="button"
               tabindex="-1"
-              aria-label="Recherche rapide"
-              class={`tv-status-btn ${focusId() === 'btn-status-search' ? 'focused' : ''}`}
-              onClick={() => navigateTo('search')}
+              aria-label="Quitter l'application"
+              class={`buntu-nav-btn exit-btn ${focusId() === 'nav-exit' ? 'focused' : ''}`}
+              onClick={openExitDialog}
             >
-              🔍
+              <span class="buntu-nav-icon">⏻</span>
+              <span class="buntu-nav-label">Quitter</span>
             </button>
-            <div
-              class="tv-status-avatar"
-              aria-label="Profil utilisateur"
-            >
-              👤
-            </div>
           </div>
-        </>
+        </aside>
       )}
 
       {/* Main Content Router */}

@@ -1,12 +1,11 @@
-import { Component, createSignal, onMount, onCleanup, For, Show } from 'solid-js';
+import { Component, createSignal, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
-import { Database, EpgProgramRecord, ItemRecord } from '../../core/storage/Database';
+import { Database, EpgProgramRecord, ItemRecord, FAVORITES_CATEGORY } from '../../core/storage/Database';
 import { AVPlayerService } from '../../core/player/AVPlayerService';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollController';
-import { TvSearchBar } from '../../ui/components/TvSearchBar';
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
-import { getCategoryMeta, formatViewCount } from '../../core/utils/categoryMeta';
+import { detectChannelQuality, formatBuntuCount } from '../../core/utils/categoryMeta';
 import { announce } from '../../ui/design/a11y';
 
 export interface LiveViewProps {
@@ -18,36 +17,52 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   const engine = CndEngine.getInstance();
   const db = Database.getInstance();
   const player = AVPlayerService.getInstance();
-  const PAGE_SIZE = 40;
+  const PAGE_SIZE = 60;
 
   const [categories, setCategories] = createSignal<string[]>([]);
+  const [catCounts, setCatCounts] = createSignal<Record<string, number>>({});
+  const [totalCount, setTotalCount] = createSignal(0);
+  const [favCount, setFavCount] = createSignal(0);
+
+  // '' means "Toutes les chaînes"
   const [selectedCategory, setSelectedCategory] = createSignal<string>('');
+  const [catFilter, setCatFilter] = createSignal<string>('');
+  const [showCats, setShowCats] = createSignal(true);
+  const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
+  const [showInspector, setShowInspector] = createSignal(false);
+
   const [searchQuery, setSearchQuery] = createSignal<string>('');
   const [searchResults, setSearchResults] = createSignal<ItemRecord[]>([]);
+
+  const [recentChannels, setRecentChannels] = createSignal<ItemRecord[]>([]);
+  const [favChannels, setFavChannels] = createSignal<ItemRecord[]>([]);
+  const [epgMap, setEpgMap] = createSignal<Record<string, EpgProgramRecord | undefined>>({});
+
   const [previewChannel, setPreviewChannel] = createSignal<ItemRecord | null>(null);
-  const [currentEpg, setCurrentEpg] = createSignal<{ now?: EpgProgramRecord; next?: EpgProgramRecord } | null>(null);
-  const [isFav, setIsFav] = createSignal(false);
+  const [previewEpg, setPreviewEpg] = createSignal<{ now?: EpgProgramRecord; next?: EpgProgramRecord } | null>(null);
   const [focusId] = spatialNav.getFocusSignal();
+
+  let gridRef: HTMLDivElement | undefined;
+  let viewportRef: HTMLDivElement | undefined;
+  let resizeHandler: (() => void) | null = null;
 
   const isSearchMode = () => searchQuery().trim().length > 0;
   const activeChannels = () => (isSearchMode() ? searchResults() : scroller.items());
+  const showsShelves = () => !isSearchMode() && selectedCategory() === '';
 
-  const activePreviewChannel = (): ItemRecord | null => {
-    return previewChannel() || (activeChannels().length > 0 ? activeChannels()[0] : null);
-  };
-
-  const previewTitle = () => {
-    const ch = activePreviewChannel();
-    if (!ch) return 'Direct TV';
-    return ch.name_clean && ch.name_clean !== ch.name ? ch.name_clean : cleanMediaTitle(ch.name).clean;
-  };
+  const filteredCategories = createMemo(() => {
+    const raw = categories().filter((c) => c !== FAVORITES_CATEGORY && c !== 'Favoris');
+    const q = catFilter().trim().toLowerCase();
+    if (!q) return raw;
+    return raw.filter((c) => c.toLowerCase().includes(q));
+  });
 
   const scroller = createInfiniteScroller<ItemRecord>({
     pageSize: PAGE_SIZE,
-    threshold: 8,
-    maxItems: 300,
+    threshold: 12,
+    maxItems: 420,
     fetchBatch: async (offset, limit) => {
-      const cat = selectedCategory();
+      const cat = selectedCategory() || undefined;
       const [list, count] = await Promise.all([
         engine.getCatalog('live', cat, offset, limit),
         engine.countCatalog('live', cat),
@@ -56,161 +71,222 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     },
     onBatchLoaded: (list, total) => {
       if (!isSearchMode()) {
-        announce(`Direct, ${list.length} chaînes affichées sur ${total}`);
+        announce(`Live TV, ${list.length} chaînes affichées sur ${total}`);
+        void hydrateEpgForList(list);
         if (!previewChannel() && list.length > 0) {
-          void updatePreview(list[0]);
+          void selectForPreview(list[0], false);
         }
-        rebuildGrid(categories(), list, true);
+        scheduleRebuildGrid(true);
       }
     },
   });
 
-  onMount(async () => {
-    // 1. Configure AVPlay display area for the mini player window on Samsung TV
-    player.setDisplayArea({ x: 918, y: 84, width: 880, height: 495 });
-    document.querySelector('.app-root')?.classList.add('preview-mode');
+  const hydrateEpgForList = async (items: ItemRecord[]) => {
+    const nowTs = Math.floor(Date.now() / 1000);
+    const updates: Record<string, EpgProgramRecord | undefined> = {};
+    let hasNew = false;
+    const current = epgMap();
+    for (const ch of items.slice(0, 40)) {
+      if (ch.tvg_id && !(ch.tvg_id in current)) {
+        try {
+          const res = await db.getEpgNowNext(ch.tvg_id, nowTs);
+          updates[ch.tvg_id] = res.now;
+          hasNew = true;
+        } catch {}
+      }
+    }
+    if (hasNew) {
+      setEpgMap((prev) => ({ ...prev, ...updates }));
+    }
+  };
 
-    // 2. Load categories & initial channels
+  const syncAvPlayRect = () => {
+    if (!showInspector() || !viewportRef) return;
+    const rect = viewportRef.getBoundingClientRect();
+    if (rect.width > 10 && rect.height > 10) {
+      player.setDisplayArea({
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      });
+    }
+  };
+
+  const refreshShelvesAndCounts = async () => {
+    const [countsData, recents, favs] = await Promise.all([
+      engine.getCategoryCounts('live'),
+      engine.getRecentItems('live', 10),
+      engine.getFavoritesByKind('live', 12),
+    ]);
+    setTotalCount(countsData.total);
+    setFavCount(countsData.favCount);
+    setCatCounts(countsData.counts);
+    setRecentChannels(recents);
+    setFavChannels(favs);
+    void hydrateEpgForList([...recents, ...favs]);
+  };
+
+  onMount(async () => {
+    resizeHandler = () => {
+      syncAvPlayRect();
+      scheduleRebuildGrid(true);
+    };
+    window.addEventListener('resize', resizeHandler);
+
     const cats = await engine.getCategories('live');
     setCategories(cats);
-    if (cats.length > 0) {
-      setSelectedCategory(cats[0]);
-      await scroller.reset();
-      const items = scroller.items();
-      if (items.length > 0) {
-        await updatePreview(items[0]);
-        rebuildGrid(cats, items, false);
-        spatialNav.setFocusById(`channel-${items[0].id}`);
-      } else {
-        rebuildGrid(cats, [], false);
-        spatialNav.setFocusById('cat-0');
-      }
-    } else {
-      rebuildGrid([], [], false);
+    await refreshShelvesAndCounts();
+
+    await scroller.reset();
+    const items = scroller.items();
+    if (items.length > 0) {
+      await selectForPreview(items[0], false);
+    }
+    scheduleRebuildGrid(false);
+    if (items.length > 0) {
+      const firstId = recentChannels().length > 0
+        ? `recent-ch-${recentChannels()[0].id}`
+        : favChannels().length > 0
+          ? `fav-ch-${favChannels()[0].id}`
+          : `channel-${items[0].id}`;
+      spatialNav.setFocusById(firstId);
+    } else if (cats.length > 0) {
+      spatialNav.setFocusById('cat-all');
     }
   });
 
   onCleanup(() => {
+    if (resizeHandler) window.removeEventListener('resize', resizeHandler);
     document.querySelector('.app-root')?.classList.remove('preview-mode');
   });
 
-  const updatePreview = async (ch: ItemRecord) => {
+  const selectForPreview = async (ch: ItemRecord, startStream = false) => {
     setPreviewChannel(ch);
-    setIsFav(ch.is_favorite === 1);
     if (ch.tvg_id) {
       try {
         const epg = await db.getEpgNowNext(ch.tvg_id, Math.floor(Date.now() / 1000));
-        setCurrentEpg(epg);
+        setPreviewEpg(epg);
       } catch {
-        setCurrentEpg(null);
+        setPreviewEpg(null);
       }
     } else {
-      setCurrentEpg(null);
+      setPreviewEpg(null);
+    }
+    if (startStream && showInspector()) {
+      syncAvPlayRect();
+      await engine.play(ch);
     }
   };
 
-  const focusInput = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) (el as HTMLInputElement).focus();
+  const toggleInspector = () => {
+    const next = !showInspector();
+    setShowInspector(next);
+    if (next) {
+      document.querySelector('.app-root')?.classList.add('preview-mode');
+      requestAnimationFrame(() => {
+        syncAvPlayRect();
+        const ch = previewChannel() || activeChannels()[0];
+        if (ch) void selectForPreview(ch, true);
+      });
+    } else {
+      document.querySelector('.app-root')?.classList.remove('preview-mode');
+      engine.stopPlayback();
+    }
+    scheduleRebuildGrid(true);
+  };
+
+  const handleSelectCategory = async (cat: string) => {
+    if (cat === selectedCategory() && !isSearchMode()) return;
+    setSelectedCategory(cat);
+    if (isSearchMode()) {
+      setSearchQuery('');
+      setSearchResults([]);
+    }
+    await scroller.reset();
+    const items = scroller.items();
+    if (items.length > 0) {
+      void selectForPreview(items[0], false);
+    }
+    scheduleRebuildGrid(false);
+    if (items.length > 0) {
+      spatialNav.setFocusById(`channel-${items[0].id}`);
+    }
+  };
+
+  const handleCardActivate = (ch: ItemRecord) => {
+    engine.recordRecent(ch);
+    if (showInspector()) {
+      if (previewChannel()?.id === ch.id) {
+        props.onPlayChannel(ch);
+      } else {
+        void selectForPreview(ch, true);
+      }
+    } else {
+      props.onPlayChannel(ch);
+    }
+  };
+
+  const handleToggleFavorite = async (ch: ItemRecord, e?: MouseEvent) => {
+    e?.stopPropagation();
+    const next = await engine.toggleFavorite(ch.id);
+    ch.is_favorite = next ? 1 : 0;
+    announce(next ? 'Ajouté aux favoris' : 'Retiré des favoris');
+    await refreshShelvesAndCounts();
+    if (selectedCategory() === FAVORITES_CATEGORY) {
+      await scroller.reset();
+    } else {
+      // Trigger reactive refresh on list items
+      setSearchResults((prev) => [...prev]);
+    }
+    scheduleRebuildGrid(true);
   };
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (!query.trim()) {
       setSearchResults([]);
-      rebuildGrid(categories(), scroller.items(), false);
+      scheduleRebuildGrid(true);
       return;
     }
-    const results = await engine.searchCatalog(query, 'live', 80);
+    const results = await engine.searchCatalog(query, 'live', 100);
     setSearchResults(results);
-    if (results.length > 0) {
-      void updatePreview(results[0]);
+    void hydrateEpgForList(results);
+    announce(`${results.length} chaînes trouvées`);
+    scheduleRebuildGrid(true);
+  };
+
+  const focusDomInput = (id: string) => {
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    el?.focus();
+  };
+
+  const detectGridColumns = (): number => {
+    if (viewMode() === 'list') return 1;
+    if (!gridRef) return 4;
+    const firstCard = gridRef.querySelector('.buntu-ch-card') as HTMLElement | null;
+    if (firstCard && gridRef.clientWidth > 0 && firstCard.offsetWidth > 0) {
+      return Math.max(1, Math.round(gridRef.clientWidth / (firstCard.offsetWidth + 12)));
     }
-    announce(`${results.length} résultats pour la recherche ${query}`);
-    rebuildSearchGrid(results);
-  };
-
-  const handleClearSearch = () => {
-    setSearchQuery('');
-    setSearchResults([]);
-    rebuildGrid(categories(), scroller.items(), false);
-  };
-
-  const handleToggleFav = async () => {
-    const current = activePreviewChannel();
-    if (!current) return;
-    const next = await engine.toggleFavorite(current.id);
-    setIsFav(next);
-    announce(next ? 'Chaîne ajoutée aux favoris' : 'Chaîne retirée des favoris');
-    if (selectedCategory().includes('Favoris')) {
-      await scroller.reset();
-      const items = scroller.items();
-      if (items.length > 0) {
-        void updatePreview(items[0]);
-      } else {
-        setPreviewChannel(null);
-      }
-      rebuildGrid(categories(), items, false);
+    if (gridRef.clientWidth > 0) {
+      return Math.max(1, Math.floor((gridRef.clientWidth + 12) / 252));
     }
+    return 4;
   };
 
-  const handleFullscreen = () => {
-    const ch = activePreviewChannel();
-    if (ch) {
-      props.onPlayChannel(ch);
-    }
-  };
-
-  const handleChannelSelect = (ch: ItemRecord) => {
-    if (previewChannel()?.id === ch.id) {
-      // Second click or Enter while already previewing -> open fullscreen
-      props.onPlayChannel(ch);
+  const scheduleRebuildGrid = (preserveFocus: boolean) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => rebuildGrid(preserveFocus));
     } else {
-      // First click -> preview in mini player
-      void updatePreview(ch);
+      rebuildGrid(preserveFocus);
     }
   };
 
-  const rebuildSearchGrid = (results: ItemRecord[]) => {
-    const grid: FocusableItem[][] = [];
+  const rebuildGrid = (preserveFocus = false) => {
+    const list = activeChannels();
+    const cats = filteredCategories();
 
-    // Row 0: Search bar
-    const searchRow: FocusableItem[] = [
-      { id: 'live-search-input', onSelect: () => focusInput('live-search-input') },
-    ];
-    if (searchQuery().trim()) {
-      searchRow.push({ id: 'live-search-input-clear', onSelect: handleClearSearch });
-    }
-    grid.push(searchRow);
-
-    // Results rows
-    for (let i = 0; i < results.length; i++) {
-      const ch = results[i];
-      const row: FocusableItem[] = [
-        {
-          id: `channel-${ch.id}`,
-          onFocus: () => void updatePreview(ch),
-          onSelect: () => handleChannelSelect(ch),
-        },
-      ];
-
-      // Side buttons for mini player
-      if (i === 0) {
-        row.push({ id: 'btn-mini-fullscreen', onSelect: handleFullscreen });
-      } else if (i === 1) {
-        row.push({ id: 'btn-mini-play', onSelect: handleFullscreen });
-      } else if (i === 2) {
-        row.push({ id: 'btn-mini-fav', onSelect: () => void handleToggleFav() });
-      }
-
-      grid.push(row);
-    }
-
-    spatialNav.setGrid(grid, 0, 0, false);
-  };
-
-  const rebuildGrid = (cats: string[], list: ItemRecord[], preserveFocus = false) => {
-    if (cats.length === 0 && list.length === 0) {
+    if (totalCount() === 0 && list.length === 0 && cats.length === 0) {
       if (props.onAddSource) {
         spatialNav.setGrid([[{ id: 'btn-live-add-source', onSelect: () => props.onAddSource?.() }]]);
       } else {
@@ -221,322 +297,483 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
     const grid: FocusableItem[][] = [];
 
-    // Row 0: Search Bar
-    const searchRow: FocusableItem[] = [
-      { id: 'live-search-input', onSelect: () => focusInput('live-search-input') },
+    // Row 0: Top Toolbar
+    const toolbarRow: FocusableItem[] = [
+      { id: 'live-toggle-cats', onSelect: () => { setShowCats((v) => !v); scheduleRebuildGrid(true); } },
+      { id: 'live-mode-grid', onSelect: () => { setViewMode('grid'); scheduleRebuildGrid(true); } },
+      { id: 'live-mode-list', onSelect: () => { setViewMode('list'); scheduleRebuildGrid(true); } },
+      { id: 'live-toggle-inspector', onSelect: toggleInspector },
+      { id: 'live-search-input', onSelect: () => focusDomInput('live-search-input') },
     ];
     if (searchQuery().trim()) {
-      searchRow.push({ id: 'live-search-input-clear', onSelect: handleClearSearch });
+      toolbarRow.push({
+        id: 'live-search-clear',
+        onSelect: () => void handleSearch(''),
+      });
     }
-    grid.push(searchRow);
+    grid.push(toolbarRow);
 
-    const maxRows = Math.max(cats.length, list.length);
-
-    for (let i = 0; i < maxRows; i++) {
-      const row: FocusableItem[] = [];
-
-      // Column 0: Categories (padded to bottom if list.length > cats.length)
-      if (cats.length > 0) {
-        const catIdx = Math.min(i, cats.length - 1);
-        const cat = cats[catIdx];
-        row.push({
-          id: `cat-${catIdx}`,
-          onSelect: async () => {
-            if (cat !== selectedCategory()) {
-              setSelectedCategory(cat);
-              await scroller.reset();
-              const items = scroller.items();
-              if (items.length > 0) {
-                void updatePreview(items[0]);
-              }
-              rebuildGrid(cats, items, false);
-              if (items.length > 0) {
-                spatialNav.setFocusById(`channel-${items[0].id}`);
-              }
-            }
-          },
+    // Build Left Category Column items
+    const catColItems: FocusableItem[] = [];
+    if (showCats()) {
+      catColItems.push({
+        id: 'live-cat-home',
+        onSelect: () => {
+          setCatFilter('');
+          void handleSelectCategory('');
+        },
+      });
+      catColItems.push({
+        id: 'live-cat-filter',
+        onSelect: () => focusDomInput('live-cat-filter'),
+      });
+      catColItems.push({
+        id: 'cat-all',
+        onSelect: () => void handleSelectCategory(''),
+      });
+      catColItems.push({
+        id: 'cat-fav',
+        onSelect: () => void handleSelectCategory(FAVORITES_CATEGORY),
+      });
+      cats.forEach((cat, idx) => {
+        catColItems.push({
+          id: `cat-${idx}`,
+          onSelect: () => void handleSelectCategory(cat),
         });
-      }
+      });
+    }
 
-      // Column 1: Live Channels
-      if (i < list.length) {
-        const ch = list[i];
-        row.push({
+    // Build Right Content Rows
+    const contentRows: FocusableItem[][] = [];
+
+    if (showsShelves()) {
+      const recents = recentChannels();
+      if (recents.length > 0) {
+        contentRows.push(
+          recents.slice(0, 6).map((ch) => ({
+            id: `recent-ch-${ch.id}`,
+            onFocus: () => void selectForPreview(ch, false),
+            onSelect: () => handleCardActivate(ch),
+          }))
+        );
+      }
+      const favs = favChannels();
+      if (favs.length > 0) {
+        contentRows.push(
+          favs.slice(0, 6).map((ch) => ({
+            id: `fav-ch-${ch.id}`,
+            onFocus: () => void selectForPreview(ch, false),
+            onSelect: () => handleCardActivate(ch),
+          }))
+        );
+      }
+    }
+
+    const cols = detectGridColumns();
+    for (let i = 0; i < list.length; i += cols) {
+      const slice = list.slice(i, i + cols);
+      contentRows.push(
+        slice.map((ch, idx) => ({
           id: `channel-${ch.id}`,
           onFocus: () => {
-            void scroller.checkTrigger(i);
-            void updatePreview(ch);
+            void selectForPreview(ch, false);
+            if (!isSearchMode()) {
+              void scroller.checkTrigger(i + idx);
+            }
           },
-          onSelect: () => handleChannelSelect(ch),
-        });
-      } else if (list.length > 0) {
-        const lastCh = list[list.length - 1];
-        row.push({
-          id: `channel-${lastCh.id}`,
-          onSelect: () => handleChannelSelect(lastCh),
-        });
+          onSelect: () => handleCardActivate(ch),
+        }))
+      );
+    }
+
+    const totalBodyRows = Math.max(catColItems.length, contentRows.length);
+    for (let r = 0; r < totalBodyRows; r++) {
+      const row: FocusableItem[] = [];
+      if (catColItems.length > 0) {
+        row.push(catColItems[Math.min(r, catColItems.length - 1)]);
       }
-
-      // Column 2: Mini Player Action buttons on top rows
-      if (i === 0) {
-        row.push({ id: 'btn-mini-fullscreen', onSelect: handleFullscreen });
-      } else if (i === 1) {
-        row.push({ id: 'btn-mini-play', onSelect: handleFullscreen });
-      } else if (i === 2) {
-        row.push({ id: 'btn-mini-fav', onSelect: () => void handleToggleFav() });
+      if (contentRows.length > 0) {
+        const cRow = contentRows[Math.min(r, contentRows.length - 1)];
+        row.push(...cRow);
       }
-
-      if (row.length > 0) {
-        grid.push(row);
+      if (showInspector() && previewChannel()) {
+        if (r === 0) {
+          row.push({ id: 'live-insp-play', onSelect: () => props.onPlayChannel(previewChannel()!) });
+        } else if (r === 1) {
+          row.push({ id: 'live-insp-fav', onSelect: () => void handleToggleFavorite(previewChannel()!) });
+        }
       }
+      if (row.length > 0) grid.push(row);
     }
 
-    spatialNav.setGrid(grid, list.length > 0 ? 1 : 0, cats.length > 0 ? 1 : 0, preserveFocus);
+    spatialNav.setGrid(grid, 1, catColItems.length > 0 ? 1 : 0, preserveFocus);
   };
 
-  const handleSelectCategory = async (cat: string) => {
-    if (cat === selectedCategory()) return;
-    setSearchQuery('');
-    setSearchResults([]);
-    setSelectedCategory(cat);
-    await scroller.reset();
-    const items = scroller.items();
-    if (items.length > 0) {
-      void updatePreview(items[0]);
-    }
-    rebuildGrid(categories(), items, false);
-    if (items.length > 0) {
-      spatialNav.setFocusById(`channel-${items[0].id}`);
-    }
+  const epgRatio = (prog?: EpgProgramRecord): number => {
+    if (!prog || prog.end_ts <= prog.start_ts) return 0;
+    const now = Date.now() / 1000;
+    return Math.min(100, Math.max(0, ((now - prog.start_ts) / (prog.end_ts - prog.start_ts)) * 100));
   };
 
-  const handleChannelsScroll = (e: Event) => {
-    if (isSearchMode()) return;
-    const el = e.currentTarget as HTMLElement;
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 300) {
-      void scroller.loadMore();
-    }
-  };
+  const renderChannelCard = (ch: ItemRecord, cardId: string, fallbackIdx: number) => {
+    const cleanTitle = () => (ch.name_clean && ch.name_clean !== ch.name ? ch.name_clean : cleanMediaTitle(ch.name).clean);
+    const quality = () => detectChannelQuality(ch.name);
+    const nowProg = () => (ch.tvg_id ? epgMap()[ch.tvg_id] : undefined);
+    const isPlaying = () => previewChannel()?.id === ch.id && showInspector();
 
-  const progressPercent = () => {
-    const epg = currentEpg();
-    if (!epg?.now?.start_ts || !epg?.now?.end_ts) return 0;
-    const start = epg.now.start_ts;
-    const end = epg.now.end_ts;
-    const now = Math.floor(Date.now() / 1000);
-    if (now < start) return 0;
-    if (now >= end) return 100;
-    return Math.round(((now - start) / (end - start)) * 100);
-  };
+    return (
+      <div
+        id={cardId}
+        role="button"
+        tabindex="-1"
+        aria-label={`${cleanTitle()}, chaîne ${ch.chno || fallbackIdx + 1}`}
+        class={`buntu-ch-card ${isPlaying() ? 'playing' : ''} ${focusId() === cardId ? 'focused' : ''}`}
+        onClick={() => handleCardActivate(ch)}
+      >
+        <div class="buntu-ch-top">
+          <div class="buntu-ch-logo">
+            <Show when={ch.logo_url} fallback={<span class="buntu-ch-logo-fallback">📺</span>}>
+              <img
+                src={ch.logo_url}
+                alt=""
+                loading="lazy"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            </Show>
+          </div>
 
-  const formatTimeRange = (start?: number, end?: number) => {
-    if (!start || !end) return '';
-    const sDate = new Date(start * 1000);
-    const eDate = new Date(end * 1000);
-    const sStr = sDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    const eStr = eDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    return `${sStr} - ${eStr}`;
-  };
+          <div class="buntu-ch-info">
+            <div class="buntu-ch-title-row">
+              <span class="buntu-ch-num">{ch.chno || fallbackIdx + 1}</span>
+              <span class="buntu-ch-name">{cleanTitle()}</span>
+              <Show when={quality()}>
+                <span class={`buntu-q-badge ${quality() === '4K' ? 'uhd' : ''}`}>{quality()}</span>
+              </Show>
+            </div>
+            <Show when={ch.group_title}>
+              <div class="buntu-ch-group">{ch.group_title}</div>
+            </Show>
+          </div>
 
-  const formatTimestamp = (ts?: number, fallback = '00:00:00') => {
-    if (!ts) return fallback;
-    const d = new Date(ts * 1000);
-    const h = String(d.getHours()).padStart(2, '0');
-    const m = String(d.getMinutes()).padStart(2, '0');
-    const s = String(d.getSeconds()).padStart(2, '0');
-    return `${h}:${m}:${s}`;
+          <button
+            type="button"
+            tabindex="-1"
+            class={`buntu-ch-star ${ch.is_favorite === 1 ? 'fav' : ''}`}
+            title="Favori"
+            onClick={(e) => void handleToggleFavorite(ch, e)}
+          >
+            {ch.is_favorite === 1 ? '★' : '☆'}
+          </button>
+        </div>
+
+        <div class="buntu-ch-epg">
+          <Show
+            when={nowProg()}
+            fallback={
+              <div class="buntu-epg-empty">
+                {ch.tvg_id ? 'Guide indisponible' : 'Pas de guide'}
+              </div>
+            }
+          >
+            <div class="buntu-epg-title">{nowProg()!.title}</div>
+            <div class="buntu-epg-bar">
+              <div class="buntu-epg-fill" style={{ width: `${epgRatio(nowProg())}%` }} />
+            </div>
+          </Show>
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
-      <Show
-        when={activeChannels().length > 0 || categories().length > 0 || isSearchMode()}
-        fallback={
-          <div style={{ flex: 1, display: "flex", "flex-direction": "column", "align-items": "center", "justify-content": "center", height: "100%", padding: "40px" }}>
-            <p style={{ "font-size": "24px", color: "var(--buntu-text-muted)", "margin-bottom": "24px" }}>
-              Aucune chaîne en direct disponible. Ajoutez un abonnement IPTV pour commencer.
-            </p>
-            <Show when={props.onAddSource}>
+    <div class={`buntu-page ${showInspector() ? 'with-preview' : ''}`}>
+      {/* Top Buntu Toolbar */}
+      <header class="buntu-toolbar">
+        <div class="buntu-toolbar-left">
+          <button
+            id="live-toggle-cats"
+            type="button"
+            tabindex="-1"
+            class={`buntu-tool-btn ${showCats() ? 'active' : ''} ${focusId() === 'live-toggle-cats' ? 'focused' : ''}`}
+            title={showCats() ? 'Masquer les catégories' : 'Afficher les catégories'}
+            onClick={() => {
+              setShowCats((v) => !v);
+              scheduleRebuildGrid(true);
+            }}
+          >
+            ☰
+          </button>
+          <h1 class="buntu-toolbar-title">Live TV</h1>
+          <Show when={totalCount() > 0}>
+            <span class="buntu-toolbar-subtitle">{formatBuntuCount(totalCount())} chaînes</span>
+          </Show>
+        </div>
+
+        <div class="buntu-toolbar-right">
+          <div class="buntu-seg-group" role="group" aria-label="Mode d'affichage">
+            <button
+              id="live-mode-grid"
+              type="button"
+              tabindex="-1"
+              class={`buntu-seg-btn ${viewMode() === 'grid' ? 'active' : ''} ${focusId() === 'live-mode-grid' ? 'focused' : ''}`}
+              title="Grille"
+              onClick={() => {
+                setViewMode('grid');
+                scheduleRebuildGrid(true);
+              }}
+            >
+              ⊞
+            </button>
+            <button
+              id="live-mode-list"
+              type="button"
+              tabindex="-1"
+              class={`buntu-seg-btn ${viewMode() === 'list' ? 'active' : ''} ${focusId() === 'live-mode-list' ? 'focused' : ''}`}
+              title="Liste"
+              onClick={() => {
+                setViewMode('list');
+                scheduleRebuildGrid(true);
+              }}
+            >
+              ☰
+            </button>
+          </div>
+
+          <button
+            id="live-toggle-inspector"
+            type="button"
+            tabindex="-1"
+            class={`buntu-tool-btn ${showInspector() ? 'active' : ''} ${focusId() === 'live-toggle-inspector' ? 'focused' : ''}`}
+            title="Aperçu mini-lecteur"
+            onClick={toggleInspector}
+          >
+            ◫
+          </button>
+
+          <div class="buntu-search-wrap">
+            <span class="buntu-search-icon">🔍</span>
+            <input
+              id="live-search-input"
+              type="text"
+              value={searchQuery()}
+              placeholder="Rechercher une chaîne"
+              class={`buntu-search-field ${focusId() === 'live-search-input' ? 'focused' : ''}`}
+              onInput={(e) => void handleSearch(e.currentTarget.value)}
+            />
+            <Show when={searchQuery().trim().length > 0}>
               <button
-                class={`tv-btn ${focusId() === 'btn-live-add-source' ? 'focused' : ''}`}
-                onClick={() => props.onAddSource?.()}
+                id="live-search-clear"
+                type="button"
+                tabindex="-1"
+                class={`buntu-search-clear ${focusId() === 'live-search-clear' ? 'focused' : ''}`}
+                onClick={() => void handleSearch('')}
               >
-                + Ajouter une source IPTV
+                ✕
               </button>
             </Show>
           </div>
-        }
-      >
-        <div class="tv-minimal-3col">
-          {/* Column 1: Categories Sidebar */}
-          <div class="tv-min-col-categories" role="tablist" aria-label="Catégories de chaînes">
-            <h1 class="tv-min-col-title">
-              <span>Live TV's</span>
-            </h1>
+        </div>
+      </header>
 
-            <div style={{ "margin-bottom": "14px" }}>
-              <TvSearchBar
-                id="live-search-input"
-                placeholder="Rechercher chaîne..."
-                value={searchQuery()}
-                onInput={handleSearch}
-                onClear={handleClearSearch}
-                focusId={focusId()}
+      {/* Main Split Body */}
+      <div class="buntu-body-split">
+        {/* Column 1: Categories List */}
+        <Show when={showCats()}>
+          <aside class="buntu-cat-pane" aria-label="Catégories Live TV">
+            <div class="buntu-cat-filter-bar">
+              <button
+                id="live-cat-home"
+                type="button"
+                tabindex="-1"
+                class={`buntu-cat-home-btn ${focusId() === 'live-cat-home' ? 'focused' : ''}`}
+                title="Toutes les catégories"
+                onClick={() => {
+                  setCatFilter('');
+                  void handleSelectCategory('');
+                }}
+              >
+                ⌂
+              </button>
+              <input
+                id="live-cat-filter"
+                type="text"
+                value={catFilter()}
+                placeholder="Filtrer les catégories"
+                class={`buntu-cat-filter-input ${focusId() === 'live-cat-filter' ? 'focused' : ''}`}
+                onInput={(e) => {
+                  setCatFilter(e.currentTarget.value);
+                  scheduleRebuildGrid(true);
+                }}
               />
             </div>
 
-            <div class="tv-min-cat-list">
-              <For each={categories()}>
-                {(cat, idx) => {
-                  const meta = getCategoryMeta(cat);
-                  const isSelected = () => selectedCategory() === cat;
-                  return (
-                    <div
-                      id={`cat-${idx()}`}
-                      role="tab"
-                      tabindex="-1"
-                      aria-selected={isSelected()}
-                      aria-label={`Catégorie ${cat}`}
-                      class={`tv-min-cat-item ${isSelected() ? 'active' : ''} ${focusId() === `cat-${idx()}` ? 'focused' : ''}`}
-                      onClick={() => void handleSelectCategory(cat)}
-                    >
-                      <div class="tv-min-cat-badge">{meta.icon}</div>
-                      <div class="tv-min-cat-info">
-                        <div class="tv-min-cat-name">{cat}</div>
-                        <div class="tv-min-cat-count">
-                          {isSelected() ? `${scroller.total()} Chaînes` : 'Chaînes'}
-                        </div>
-                      </div>
+            <div class="buntu-cat-list">
+              {/* Toutes les chaînes */}
+              <div
+                id="cat-all"
+                role="button"
+                tabindex="-1"
+                class={`buntu-cat-row ${selectedCategory() === '' && !isSearchMode() ? 'active' : ''} ${focusId() === 'cat-all' ? 'focused' : ''}`}
+                onClick={() => void handleSelectCategory('')}
+              >
+                <div class="buntu-cat-row-left">
+                  <span class="buntu-cat-row-icon">⊞</span>
+                  <span class="buntu-cat-row-title">Toutes les chaînes</span>
+                </div>
+                <span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span>
+              </div>
+
+              {/* Favoris */}
+              <div
+                id="cat-fav"
+                role="button"
+                tabindex="-1"
+                class={`buntu-cat-row ${selectedCategory() === FAVORITES_CATEGORY && !isSearchMode() ? 'active' : ''} ${focusId() === 'cat-fav' ? 'focused' : ''}`}
+                onClick={() => void handleSelectCategory(FAVORITES_CATEGORY)}
+              >
+                <div class="buntu-cat-row-left">
+                  <span class="buntu-cat-row-icon fav">★</span>
+                  <span class="buntu-cat-row-title">Favoris</span>
+                </div>
+                <span class="buntu-cat-count">{formatBuntuCount(favCount())}</span>
+              </div>
+
+              {/* Provider Categories with Exact Counts */}
+              <For each={filteredCategories()}>
+                {(cat, idx) => (
+                  <div
+                    id={`cat-${idx()}`}
+                    role="button"
+                    tabindex="-1"
+                    class={`buntu-cat-row ${selectedCategory() === cat && !isSearchMode() ? 'active' : ''} ${focusId() === `cat-${idx()}` ? 'focused' : ''}`}
+                    onClick={() => void handleSelectCategory(cat)}
+                  >
+                    <div class="buntu-cat-row-left">
+                      <span class="buntu-cat-row-title">{cat}</span>
                     </div>
-                  );
-                }}
+                    <span class="buntu-cat-count">{formatBuntuCount(catCounts()[cat] || 0)}</span>
+                  </div>
+                )}
               </For>
             </div>
-          </div>
+          </aside>
+        </Show>
 
-          {/* Column 2: Cards List with Infinite Scroll */}
-          <div
-            class="tv-min-col-cards"
-            role="list"
-            aria-label="Liste des chaînes"
-            onScroll={handleChannelsScroll}
+        {/* Column 2: Main Scrollable Content (Shelves + Responsive Multi-Column Grid) */}
+        <section
+          class="buntu-content-scroll"
+          onScroll={(e) => {
+            if (isSearchMode()) return;
+            const el = e.currentTarget as HTMLElement;
+            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 360) {
+              void scroller.loadMore();
+            }
+          }}
+        >
+          <Show
+            when={totalCount() > 0 || activeChannels().length > 0}
+            fallback={
+              <div class="tv-loader-card" style={{ margin: 'auto', 'max-width': '520px' }}>
+                <div style={{ 'font-size': '44px' }}>📡</div>
+                <h2 style={{ margin: 0, 'font-size': '24px' }}>Aucune chaîne disponible</h2>
+                <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', 'font-size': '15px' }}>
+                  Ajoutez une source IPTV M3U ou Xtream Codes pour charger vos chaînes en direct.
+                </p>
+                <Show when={props.onAddSource}>
+                  <button
+                    id="btn-live-add-source"
+                    type="button"
+                    tabindex="-1"
+                    class={`buntu-action-primary ${focusId() === 'btn-live-add-source' ? 'focused' : ''}`}
+                    onClick={() => props.onAddSource?.()}
+                  >
+                    + Ajouter une source IPTV
+                  </button>
+                </Show>
+              </div>
+            }
           >
-            <div class="tv-min-cards-scroll">
-              <Show
-                when={activeChannels().length > 0}
-                fallback={
-                  <div style={{ padding: "48px 20px", "text-align": "center", color: "var(--buntu-text-muted)", "font-size": "18px" }}>
-                    {isSearchMode()
-                      ? `Aucune chaîne ne correspond à "${searchQuery()}".`
-                      : selectedCategory().includes('Favoris')
-                      ? 'Aucune chaîne dans vos favoris. Appuyez sur ☆ Favori pour ajouter vos chaînes préférées !'
-                      : 'Aucune chaîne dans cette catégorie.'}
-                  </div>
-                }
+            {/* Shelf 1: Récemment consultés */}
+            <Show when={showsShelves() && recentChannels().length > 0}>
+              <div class="buntu-section">
+                <div class="buntu-section-header">
+                  <h2 class="buntu-section-title">
+                    <span style={{ opacity: 0.7 }}>🕒</span> Récemment consultés
+                  </h2>
+                </div>
+                <div class="buntu-shelf-scroll">
+                  <For each={recentChannels().slice(0, 6)}>
+                    {(ch, idx) => renderChannelCard(ch, `recent-ch-${ch.id}`, idx())}
+                  </For>
+                </div>
+              </div>
+            </Show>
+
+            {/* Shelf 2: Favoris */}
+            <Show when={showsShelves() && favChannels().length > 0}>
+              <div class="buntu-section">
+                <div class="buntu-section-header">
+                  <h2 class="buntu-section-title">
+                    <span style={{ color: 'var(--buntu-star)' }}>★</span> Favoris
+                  </h2>
+                </div>
+                <div class="buntu-shelf-scroll">
+                  <For each={favChannels().slice(0, 6)}>
+                    {(ch, idx) => renderChannelCard(ch, `fav-ch-${ch.id}`, idx())}
+                  </For>
+                </div>
+              </div>
+            </Show>
+
+            {/* Main Multi-Column Channel Grid */}
+            <div class="buntu-section">
+              <div class="buntu-section-header">
+                <h2 class="buntu-section-title">
+                  {isSearchMode()
+                    ? `Recherche : « ${searchQuery()} »`
+                    : selectedCategory() === FAVORITES_CATEGORY
+                      ? 'Favoris'
+                      : selectedCategory() || 'Toutes les chaînes'}
+                </h2>
+                <span class="buntu-section-meta">
+                  {isSearchMode()
+                    ? `${searchResults().length} résultats`
+                    : `${formatBuntuCount(scroller.total())} chaînes`}
+                </span>
+              </div>
+
+              <div
+                ref={gridRef}
+                class={`buntu-channel-grid ${viewMode() === 'list' ? 'list-mode' : ''}`}
               >
                 <For each={activeChannels()}>
-                  {(ch) => {
-                    const chName = ch.name_clean && ch.name_clean !== ch.name
-                      ? ch.name_clean
-                      : cleanMediaTitle(ch.name).clean;
-                    const isSelected = () => activePreviewChannel()?.id === ch.id;
-                    return (
-                      <div
-                        id={`channel-${ch.id}`}
-                        role="button"
-                        tabindex="-1"
-                        aria-label={`Chaîne ${chName}`}
-                        class={`tv-min-media-card ${focusId() === `channel-${ch.id}` ? 'focused' : ''} ${isSelected() ? 'active' : ''}`}
-                        onClick={() => handleChannelSelect(ch)}
-                      >
-                        <div class="tv-min-card-thumb">
-                          <Show
-                            when={ch.logo_url}
-                            fallback={<span style={{ "font-size": "32px" }}>📺</span>}
-                          >
-                            <img
-                              src={ch.logo_url}
-                              alt=""
-                              loading="lazy"
-                              referrerpolicy="no-referrer"
-                              crossOrigin="anonymous"
-                              onError={(e) => {
-                                const target = e.currentTarget as HTMLElement;
-                                target.style.display = 'none';
-                                if (target.parentElement) {
-                                  target.parentElement.innerHTML = '<span style="font-size:32px;">📺</span>';
-                                }
-                              }}
-                            />
-                          </Show>
-                        </div>
-
-                        <div class="tv-min-card-meta">
-                          <div class="tv-min-card-title">{chName}</div>
-                          <div class="tv-min-card-views">{formatViewCount(ch.id)}</div>
-                          <div class="tv-min-card-tags">
-                            <span class="tv-min-tag">HD</span>
-                            <Show when={ch.tvg_id}><span class="tv-min-tag">EPG</span></Show>
-                            <Show when={ch.catchup_days}><span class="tv-min-tag">REPLAY</span></Show>
-                          </div>
-                        </div>
-
-                        <Show when={ch.is_favorite === 1}>
-                          <div class="tv-min-card-fav">★</div>
-                        </Show>
-                      </div>
-                    );
-                  }}
+                  {(ch, idx) => renderChannelCard(ch, `channel-${ch.id}`, idx())}
                 </For>
-              </Show>
+              </div>
 
-              {/* Infinite Scroll Loader */}
               <Show when={!isSearchMode() && scroller.isLoading()}>
-                <div style={{ "text-align": "center", padding: "16px", color: "var(--buntu-text-muted)" }}>
-                  Chargement...
+                <div class="tv-infinite-loader">
+                  <div class="tv-spinner-small" />
+                  <span>Chargement des chaînes…</span>
                 </div>
               </Show>
             </div>
-          </div>
+          </Show>
+        </section>
 
-          {/* Column 3: Hero Panel (16:9 Viewport + Now Playing + Synopsis + Timeline + Actions) */}
-          <div class="tv-min-col-hero" role="region" aria-label="Aperçu et mini lecteur">
-            <div id="tv-mini-viewport" class="tv-min-hero-viewport">
-              {/* Hardware AVPlay or Web Mock */}
-              <Show
-                when={!(window as any).webapis?.avplay}
-                fallback={
-                  <div class="tv-mini-tv-overlay">
-                    <div class="tv-mini-live-tag">
-                      <span class="tv-live-pulse-dot" />
-                      <span>DIRECT</span>
-                    </div>
-                    <div class="tv-mini-hd-badge">1080p FHD</div>
-                  </div>
-                }
-              >
+        {/* Optional Column 3: Mini-Player Inspector Drawer */}
+        <Show when={showInspector() && previewChannel()}>
+          <aside class="buntu-inspector-pane" aria-label="Aperçu chaîne">
+            <div id="live-preview-viewport" ref={viewportRef} class="buntu-inspector-viewport">
+              <Show when={typeof (window as any).webapis === 'undefined'}>
                 <div class="tv-mini-mock-screen">
-                  <div class="tv-mini-live-tag">
-                    <span class="tv-live-pulse-dot" />
-                    <span>DIRECT</span>
-                  </div>
-                  <div class="tv-mini-hd-badge">1080p FHD</div>
-
                   <div class="tv-mini-mock-art">
-                    <Show
-                      when={activePreviewChannel()?.logo_url}
-                      fallback={<span style={{ "font-size": "48px" }}>📺</span>}
-                    >
-                      <img
-                        src={activePreviewChannel()!.logo_url}
-                        alt=""
-                        referrerpolicy="no-referrer"
-                        crossOrigin="anonymous"
-                        style={{ "max-width": "80px", "max-height": "80px", "object-fit": "contain" }}
-                      />
+                    <Show when={previewChannel()?.logo_url} fallback={<span style={{ 'font-size': '34px' }}>📺</span>}>
+                      <img src={previewChannel()!.logo_url} alt="" style={{ width: '100%', height: '100%', 'object-fit': 'contain' }} />
                     </Show>
                   </div>
-
                   <div class="tv-mini-equalizer">
                     <span class="eq-bar eq-1" />
                     <span class="eq-bar eq-2" />
@@ -544,76 +781,42 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                     <span class="eq-bar eq-4" />
                     <span class="eq-bar eq-5" />
                   </div>
-
-                  <div class="tv-mini-mock-title">{previewTitle()}</div>
                 </div>
               </Show>
             </div>
 
-            {/* Now Playing Metadata Section */}
-            <div class="tv-min-hero-info">
-              <div class="tv-min-now-label">NOW PLAYING...</div>
-              <h2 class="tv-min-hero-title">
-                {currentEpg()?.now?.title || previewTitle()}
-              </h2>
-              <p class="tv-min-hero-desc">
-                {currentEpg()?.now?.desc || (activePreviewChannel()?.group_title ? `Diffusion en continu dans le bouquet ${activePreviewChannel()!.group_title}. Flux haute définition optimisé Smart TV.` : 'Programme en cours de diffusion.')}
-              </p>
+            <h3 class="buntu-inspector-title">
+              {previewChannel()!.name_clean || previewChannel()!.name}
+            </h3>
+            <p class="buntu-inspector-desc">
+              {previewEpg()?.now?.title
+                ? `${previewEpg()!.now!.title}${previewEpg()!.now!.description ? ' — ' + previewEpg()!.now!.description : ''}`
+                : previewChannel()!.group_title || 'Diffusion en direct'}
+            </p>
 
-              {/* Progress Bar Timeline */}
-              <div class="tv-min-hero-progress">
-                <span class="tv-min-time">
-                  {formatTimestamp(currentEpg()?.now?.start_ts, '01:52:37')}
-                </span>
-                <div class="tv-min-track">
-                  <div class="tv-min-fill" style={{ width: `${Math.max(5, progressPercent())}%` }}>
-                    <div class="tv-min-knob" />
-                  </div>
-                </div>
-                <span class="tv-min-time">
-                  {formatTimestamp(currentEpg()?.now?.end_ts, '02:10:46')}
-                </span>
-              </div>
-
-              {/* Hero Action Buttons */}
-              <div class="tv-min-hero-actions">
-                <button
-                  id="btn-mini-play"
-                  role="button"
-                  tabindex="-1"
-                  aria-label={`Lancer ${previewTitle()}`}
-                  class={`tv-min-btn-play ${focusId() === 'btn-mini-play' ? 'focused' : ''}`}
-                  onClick={handleFullscreen}
-                >
-                  ▶ Regarder
-                </button>
-
-                <button
-                  id="btn-mini-fav"
-                  role="button"
-                  tabindex="-1"
-                  aria-label="Basculer favori"
-                  class={`tv-min-btn-secondary ${focusId() === 'btn-mini-fav' ? 'focused' : ''}`}
-                  onClick={() => void handleToggleFav()}
-                >
-                  {isFav() ? '★ Retirer Favori' : '☆ Favori'}
-                </button>
-
-                <button
-                  id="btn-mini-fullscreen"
-                  role="button"
-                  tabindex="-1"
-                  aria-label="Plein écran"
-                  class={`tv-min-btn-secondary ${focusId() === 'btn-mini-fullscreen' ? 'focused' : ''}`}
-                  onClick={handleFullscreen}
-                >
-                  ⛶ Plein écran
-                </button>
-              </div>
+            <div class="buntu-inspector-actions">
+              <button
+                id="live-insp-play"
+                type="button"
+                tabindex="-1"
+                class={`buntu-action-primary ${focusId() === 'live-insp-play' ? 'focused' : ''}`}
+                onClick={() => props.onPlayChannel(previewChannel()!)}
+              >
+                ⛶ Plein écran
+              </button>
+              <button
+                id="live-insp-fav"
+                type="button"
+                tabindex="-1"
+                class={`buntu-action-secondary ${focusId() === 'live-insp-fav' ? 'focused' : ''}`}
+                onClick={() => void handleToggleFavorite(previewChannel()!)}
+              >
+                {previewChannel()!.is_favorite === 1 ? '★ Favori' : '☆ Favori'}
+              </button>
             </div>
-          </div>
-        </div>
-      </Show>
+          </aside>
+        </Show>
+      </div>
     </div>
   );
 };

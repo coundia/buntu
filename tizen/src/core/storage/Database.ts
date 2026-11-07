@@ -220,6 +220,9 @@ export class Database {
       if (set.size > 0) {
         this.saveCategoriesCache(k, Array.from(set).sort());
       }
+      try {
+        localStorage.removeItem(`cnd_cat_counts_${k}`);
+      } catch {}
     }
   }
 
@@ -470,6 +473,63 @@ export class Database {
   public async getFavorites(): Promise<ItemRecord[]> {
     const all = await this.getAll<ItemRecord>('items');
     return all.filter((i) => i.is_favorite === 1);
+  }
+
+  public async getItemsByIds(ids: number[]): Promise<ItemRecord[]> {
+    if (!this.db || ids.length === 0) return [];
+    const results: ItemRecord[] = [];
+    for (const id of ids) {
+      const item = await this.getById<ItemRecord>('items', id);
+      if (item) results.push(item);
+    }
+    return results;
+  }
+
+  public async getCategoryCounts(kind: 'live' | 'movie' | 'series'): Promise<{ total: number; favCount: number; counts: Record<string, number> }> {
+    const favCount = await this.countItemsByKindAndGroup(kind, FAVORITES_CATEGORY);
+    try {
+      const cached = localStorage.getItem(`cnd_cat_counts_${kind}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed.total === 'number' && parsed.counts) {
+          return { total: parsed.total, favCount, counts: parsed.counts };
+        }
+      }
+    } catch {}
+
+    if (!this.db) return { total: 0, favCount, counts: {} };
+    const targetKinds = this.kindsFor(kind);
+    const counts: Record<string, number> = {};
+    let total = 0;
+
+    for (const k of targetKinds) {
+      await new Promise<void>((resolve, reject) => {
+        const tx = this.db!.transaction(['items'], 'readonly');
+        const store = tx.objectStore('items');
+        const req = store.index('kind').openCursor(IDBKeyRange.only(k));
+        req.onsuccess = (ev: any) => {
+          const cursor: IDBCursorWithValue | null = ev.target.result;
+          if (!cursor) {
+            resolve();
+            return;
+          }
+          const item = cursor.value as ItemRecord;
+          total++;
+          const grp = item.group_title || 'Autres';
+          counts[grp] = (counts[grp] || 0) + 1;
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    if (total > 0) {
+      try {
+        localStorage.setItem(`cnd_cat_counts_${kind}`, JSON.stringify({ total, counts }));
+      } catch {}
+    }
+
+    return { total, favCount, counts };
   }
 
   public async updateWatchProgress(itemId: number, positionMs: number, durationMs: number): Promise<void> {

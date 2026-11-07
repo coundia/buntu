@@ -65,3 +65,27 @@ export function formatViewCount(id: number): string {
   }
   return '+1.5M vues';
 }
+
+/**
+ * Quality badge guessed from the channel/media name ('4K', 'FHD', 'HD')
+ * matching Buntu Apple's ChannelQuality.detect.
+ */
+export function detectChannelQuality(name: string): '4K' | 'FHD' | 'HD' | null {
+  if (!name) return null;
+  if (/(^|[^A-Za-z0-9])(4K|UHD|2160P?)($|[^A-Za-z0-9])/i.test(name)) return '4K';
+  if (/(^|[^A-Za-z0-9])(FHD|1080[PI]?)($|[^A-Za-z0-9])/i.test(name)) return 'FHD';
+  if (/(^|[^A-Za-z0-9])(HD|720P?)($|[^A-Za-z0-9])/i.test(name)) return 'HD';
+  return null;
+}
+
+/**
+ * Formats integer counters in Buntu dot-separated style (e.g. 19383 -> "19.383").
+ */
+export function formatBuntuCount(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  return Math.floor(n)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+
