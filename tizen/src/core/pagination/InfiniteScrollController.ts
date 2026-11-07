@@ -110,3 +110,4 @@ export function createInfiniteScroller<T>(options: InfiniteScrollOptions<T>): In
     setItems,
   };
 }
+

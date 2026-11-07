@@ -111,3 +111,4 @@ describe('InfiniteScrollController (SRP Architecture)', () => {
     expect(scroller.items().length).toBe(8);
   });
 });
+
