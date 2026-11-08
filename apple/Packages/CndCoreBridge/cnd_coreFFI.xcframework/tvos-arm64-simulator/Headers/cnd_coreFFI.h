@@ -322,6 +322,11 @@ int8_t uniffi_cnd_core_fn_method_cndengine_cancel_recording(void*_Nonnull ptr, i
 void uniffi_cnd_core_fn_method_cndengine_clear_logs(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_CLEAR_TAXONOMY_GROUP_OVERRIDE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_CLEAR_TAXONOMY_GROUP_OVERRIDE
+void uniffi_cnd_core_fn_method_cndengine_clear_taxonomy_group_override(void*_Nonnull ptr, RustBuffer group_title, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_CLEAR_TAXONOMY_OVERRIDE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_CLEAR_TAXONOMY_OVERRIDE
 void uniffi_cnd_core_fn_method_cndengine_clear_taxonomy_override(void*_Nonnull ptr, RustBuffer stable_hash, RustCallStatus *_Nonnull out_status
@@ -457,6 +462,11 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_get_hosts(void*_Nonnull ptr, Rust
 RustBuffer uniffi_cnd_core_fn_method_cndengine_get_item_by_id(void*_Nonnull ptr, int64_t item_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_ITEM_TAXONOMY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_ITEM_TAXONOMY
+RustBuffer uniffi_cnd_core_fn_method_cndengine_get_item_taxonomy(void*_Nonnull ptr, RustBuffer stable_hash, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_LOGS_SINCE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_LOGS_SINCE
 RustBuffer uniffi_cnd_core_fn_method_cndengine_get_logs_since(void*_Nonnull ptr, uint64_t after_seq_id, uint32_t limit, RustCallStatus *_Nonnull out_status
@@ -500,6 +510,16 @@ RustBuffer uniffi_cnd_core_fn_method_cndengine_get_stream_health(void*_Nonnull p
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_STREAM_HEALTH_BATCH
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_STREAM_HEALTH_BATCH
 RustBuffer uniffi_cnd_core_fn_method_cndengine_get_stream_health_batch(void*_Nonnull ptr, RustBuffer hashes, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_TAXONOMY_GROUP_OVERRIDE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_TAXONOMY_GROUP_OVERRIDE
+RustBuffer uniffi_cnd_core_fn_method_cndengine_get_taxonomy_group_override(void*_Nonnull ptr, RustBuffer group_title, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_TAXONOMY_OVERRIDE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_GET_TAXONOMY_OVERRIDE
+RustBuffer uniffi_cnd_core_fn_method_cndengine_get_taxonomy_override(void*_Nonnull ptr, RustBuffer stable_hash, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_HIDE_GROUP
@@ -837,6 +857,11 @@ int8_t uniffi_cnd_core_fn_method_cndengine_remove_series_rule(void*_Nonnull ptr,
 void uniffi_cnd_core_fn_method_cndengine_reset_dismissed_recommendations(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESET_TAXONOMY_OVERRIDES
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESET_TAXONOMY_OVERRIDES
+uint32_t uniffi_cnd_core_fn_method_cndengine_reset_taxonomy_overrides(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESOLVE_CATCHUP_URL
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_RESOLVE_CATCHUP_URL
 RustBuffer uniffi_cnd_core_fn_method_cndengine_resolve_catchup_url(void*_Nonnull ptr, RustBuffer stream_url, RustBuffer catchup_type, RustBuffer catchup_source, RustBuffer catchup_days, int64_t start_ts, int64_t end_ts, RustCallStatus *_Nonnull out_status
@@ -897,6 +922,11 @@ void uniffi_cnd_core_fn_method_cndengine_set_custom_order(void*_Nonnull ptr, int
 void uniffi_cnd_core_fn_method_cndengine_set_recording_directory(void*_Nonnull ptr, RustBuffer dir, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SET_TAXONOMY_GROUP_OVERRIDE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SET_TAXONOMY_GROUP_OVERRIDE
+void uniffi_cnd_core_fn_method_cndengine_set_taxonomy_group_override(void*_Nonnull ptr, RustBuffer group_title, RustBuffer country, RustBuffer themes, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SET_TAXONOMY_OVERRIDE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SET_TAXONOMY_OVERRIDE
 void uniffi_cnd_core_fn_method_cndengine_set_taxonomy_override(void*_Nonnull ptr, RustBuffer stable_hash, RustBuffer country, RustBuffer themes, RustCallStatus *_Nonnull out_status
@@ -935,6 +965,11 @@ void uniffi_cnd_core_fn_method_cndengine_subtitles_sign_out(void*_Nonnull ptr, R
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SUBTITLES_SIGNED_IN
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_SUBTITLES_SIGNED_IN
 int8_t uniffi_cnd_core_fn_method_cndengine_subtitles_signed_in(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_TAXONOMY_OVERRIDE_SUMMARY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_TAXONOMY_OVERRIDE_SUMMARY
+RustBuffer uniffi_cnd_core_fn_method_cndengine_taxonomy_override_summary(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_TAXONOMY_STATUS
@@ -1344,6 +1379,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_clear_logs(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_CLEAR_TAXONOMY_GROUP_OVERRIDE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_CLEAR_TAXONOMY_GROUP_OVERRIDE
+uint16_t uniffi_cnd_core_checksum_method_cndengine_clear_taxonomy_group_override(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_CLEAR_TAXONOMY_OVERRIDE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_CLEAR_TAXONOMY_OVERRIDE
 uint16_t uniffi_cnd_core_checksum_method_cndengine_clear_taxonomy_override(void
@@ -1506,6 +1547,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_get_item_by_id(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_ITEM_TAXONOMY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_ITEM_TAXONOMY
+uint16_t uniffi_cnd_core_checksum_method_cndengine_get_item_taxonomy(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_LOGS_SINCE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_LOGS_SINCE
 uint16_t uniffi_cnd_core_checksum_method_cndengine_get_logs_since(void
@@ -1557,6 +1604,18 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_get_stream_health(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_STREAM_HEALTH_BATCH
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_STREAM_HEALTH_BATCH
 uint16_t uniffi_cnd_core_checksum_method_cndengine_get_stream_health_batch(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_TAXONOMY_GROUP_OVERRIDE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_TAXONOMY_GROUP_OVERRIDE
+uint16_t uniffi_cnd_core_checksum_method_cndengine_get_taxonomy_group_override(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_TAXONOMY_OVERRIDE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_GET_TAXONOMY_OVERRIDE
+uint16_t uniffi_cnd_core_checksum_method_cndengine_get_taxonomy_override(void
     
 );
 #endif
@@ -1962,6 +2021,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_reset_dismissed_recommendatio
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESET_TAXONOMY_OVERRIDES
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESET_TAXONOMY_OVERRIDES
+uint16_t uniffi_cnd_core_checksum_method_cndengine_reset_taxonomy_overrides(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESOLVE_CATCHUP_URL
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_RESOLVE_CATCHUP_URL
 uint16_t uniffi_cnd_core_checksum_method_cndengine_resolve_catchup_url(void
@@ -2034,6 +2099,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_set_recording_directory(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SET_TAXONOMY_GROUP_OVERRIDE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SET_TAXONOMY_GROUP_OVERRIDE
+uint16_t uniffi_cnd_core_checksum_method_cndengine_set_taxonomy_group_override(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SET_TAXONOMY_OVERRIDE
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SET_TAXONOMY_OVERRIDE
 uint16_t uniffi_cnd_core_checksum_method_cndengine_set_taxonomy_override(void
@@ -2079,6 +2150,12 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_subtitles_sign_out(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SUBTITLES_SIGNED_IN
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_SUBTITLES_SIGNED_IN
 uint16_t uniffi_cnd_core_checksum_method_cndengine_subtitles_signed_in(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_TAXONOMY_OVERRIDE_SUMMARY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_TAXONOMY_OVERRIDE_SUMMARY
+uint16_t uniffi_cnd_core_checksum_method_cndengine_taxonomy_override_summary(void
     
 );
 #endif
