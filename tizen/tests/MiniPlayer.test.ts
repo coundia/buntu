@@ -98,6 +98,16 @@ describe('mini player controller', () => {
     expect(onFullscreen).toHaveBeenCalledWith(a);
   });
 
+  it('playItem resumes an item without changing the focused one', async () => {
+    const { ctl, engine } = setup();
+    ctl.focus(b);
+    await ctl.playItem(a);
+    expect(ctl.playing()?.id).toBe(1);
+    expect(ctl.focused()?.id).toBe(2); // the details still follow the cursor
+    expect(ctl.status()).toBe('playing');
+    expect(engine.play).toHaveBeenCalledWith(a);
+  });
+
   it('with the panel hidden, OK goes straight to full screen', () => {
     const { ctl, onFullscreen, engine } = setup();
     ctl.toggleVisible();

@@ -6,7 +6,8 @@
  * Storage (IndexedDB/wa-sqlite), and AVPlayerService.
  */
 
-import { Database, ItemRecord, SourceRecord, FAVORITES_CATEGORY } from '../storage/Database';
+import { neighbourInList, zapContext } from '../navigation/ZapContext';
+import { Database, ItemRecord, SourceRecord, FAVORITES_CATEGORY, RECENT_CATEGORY, RECENT_LIMIT } from '../storage/Database';
 import { HttpClient } from '../net/HttpClient';
 import { AVPlayerService } from '../player/AVPlayerService';
 import { WorkerBridge } from '../../worker/worker-bridge';
@@ -410,6 +411,10 @@ export class CndEngine {
     offset = 0,
     limit = 30
   ): Promise<ItemRecord[]> {
+    if (groupTitle === RECENT_CATEGORY) {
+      const recents = await this.visibleRecents(kind);
+      return recents.slice(offset, offset + limit);
+    }
     if (groupTitle) {
       if (groupTitle !== FAVORITES_CATEGORY && groupTitle !== 'Favoris') {
         const isAdult = await this.checkAdultCategory(groupTitle);
@@ -436,6 +441,9 @@ export class CndEngine {
     kind: 'live' | 'movie' | 'series',
     groupTitle?: string
   ): Promise<number> {
+    if (groupTitle === RECENT_CATEGORY) {
+      return (await this.visibleRecents(kind)).length;
+    }
     if (groupTitle) {
       if (groupTitle !== FAVORITES_CATEGORY && groupTitle !== 'Favoris') {
         const isAdult = await this.checkAdultCategory(groupTitle);
@@ -498,9 +506,59 @@ export class CndEngine {
     try {
       const raw = localStorage.getItem(storageKey);
       const ids: number[] = raw ? JSON.parse(raw) : [];
-      const next = [item.id, ...ids.filter((id) => id !== item.id)].slice(0, 16);
+      const next = [item.id, ...ids.filter((id) => id !== item.id)].slice(0, RECENT_LIMIT);
       localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {}
+  }
+
+  /** The recently watched items of this kind, without the adult ones when the profile may not see them. */
+  private async visibleRecents(kind: 'live' | 'movie' | 'series'): Promise<ItemRecord[]> {
+    // Watching an episode records the episode: the series list only shows series.
+    const recents = (await this.getRecentItems(kind, RECENT_LIMIT)).filter(
+      (item) => kind !== 'series' || item.kind !== 'episode'
+    );
+    if (!this.activeProfile.isKids && this.isAdultUnlocked) return recents;
+    const visible: ItemRecord[] = [];
+    for (const item of recents) {
+      if (!(await this.checkAdultCategory(item.group_title || ''))) visible.push(item);
+    }
+    return visible;
+  }
+
+  /**
+   * The channel to switch to with Ch+ / Ch-: the next (or previous) one in the list the viewer came
+   * from. `category` is '' for all channels, FAVORITES_CATEGORY, RECENT_CATEGORY or a provider category.
+   * Wraps around at the ends; null when there is nowhere to go.
+   */
+  public async getAdjacentItem(
+    current: ItemRecord,
+    category: string,
+    direction: 'next' | 'prev'
+  ): Promise<ItemRecord | null> {
+    const kind = current.kind === 'episode' ? 'series' : current.kind;
+    const step = direction === 'next' ? 1 : -1;
+
+    if (category === RECENT_CATEGORY) {
+      if (!zapContext.frozen) zapContext.frozen = await this.visibleRecents(kind);
+      return (neighbourInList(zapContext.frozen as ItemRecord[], current.id, step) as ItemRecord | undefined) ?? null;
+    }
+    if (category === FAVORITES_CATEGORY) {
+      const favorites = await this.db.getItemsByKindAndGroup(kind, FAVORITES_CATEGORY, 0, 5000);
+      return neighbourInList(favorites, current.id, step) ?? null;
+    }
+
+    const mustHideAdult = this.activeProfile.isKids || !this.isAdultUnlocked;
+    let fromId = current.id;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const candidate = await this.db.getNeighbourItem(kind, category || undefined, fromId, direction);
+      if (!candidate || candidate.id === current.id) return null;
+      if (mustHideAdult && (await this.checkAdultCategory(candidate.group_title || ''))) {
+        fromId = candidate.id; // skip channels of an adult category
+        continue;
+      }
+      return candidate;
+    }
+    return null;
   }
 
   public async getRecentItems(kind: 'live' | 'movie' | 'series', limit = 12): Promise<ItemRecord[]> {

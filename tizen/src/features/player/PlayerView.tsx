@@ -5,6 +5,13 @@ import { ItemRecord } from '../../core/storage/Database';
 import { RemoteKey, RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
 import { spatialNav } from '../../ui/design/SpatialNav';
 import { announce } from '../../ui/design/a11y';
+import { CndEngine } from '../../core/engine/CndEngine';
+import { Database } from '../../core/storage/Database';
+import { InfoChips, InfoProgress } from '../../ui/components/InfoParts';
+import { cleanMediaTitle } from '../../core/utils/titleCleaner';
+import { detectChannelQuality } from '../../core/utils/categoryMeta';
+import { formatClock, formatDuration, formatRuntime, percentOf } from '../../core/utils/timeFormat';
+import { createPlayerInfo } from './playerInfo';
 
 export interface PlayerViewProps {
   item: ItemRecord;
@@ -32,6 +39,37 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   const [activeSubIndex, setActiveSubIndex] = createSignal(-1);
   const [showChannelHud, setShowChannelHud] = createSignal(true);
   const [focusId] = spatialNav.getFocusSignal();
+  const [seekToast, setSeekToast] = createSignal('');
+
+  // Clock, decoded stream facts, TV program and favorite flag shown over the picture.
+  const info = createPlayerInfo(() => props.item, {
+    player,
+    db: Database.getInstance(),
+    engine: CndEngine.getInstance(),
+  });
+
+  const isLive = () => props.item.kind === 'live';
+  const title = () => props.item.name_clean || cleanMediaTitle(props.item.name).clean;
+  const qualityChip = () => {
+    const q = info.stream()?.quality || detectChannelQuality(props.item.name);
+    return q ? { text: q, tone: q === '4K' ? ('uhd' as const) : ('quality' as const) } : null;
+  };
+  /** The program on air now (the guide may start with a program that has not begun yet). */
+  const epgNow = () => {
+    const first = info.epg()[0];
+    return first && first.start_ts <= info.nowTs() ? first : undefined;
+  };
+  const epgNext = () => info.epg().filter((p) => p.start_ts > info.nowTs()).slice(0, 2);
+  const minutesLeft = (endTs: number) => Math.max(0, Math.ceil((endTs - info.nowTs()) / 60));
+  const kindLabel = () => {
+    if (isLive()) return '● EN DIRECT';
+    if (props.item.kind === 'episode') {
+      return `ÉPISODE${props.item.season_num ? ` S${props.item.season_num}` : ''}${props.item.episode_num ? `E${props.item.episode_num}` : ''}`;
+    }
+    return 'FILM';
+  };
+  /** When a film ends if it keeps playing, as a clock time. */
+  const endsAt = () => (durationMs() > 0 ? formatClock(info.nowTs() + (durationMs() - currentTimeMs()) / 1000) : '');
 
   let osdTimer: any = null;
   let hudTimer: any = null;
@@ -63,6 +101,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
             ...(props.onPrevChannel ? [{ id: 'btn-osd-prev-ch', onSelect: () => props.onPrevChannel?.() }] : []),
             ...(props.onNextChannel ? [{ id: 'btn-osd-next-ch', onSelect: () => props.onNextChannel?.() }] : []),
           ]),
+      { id: 'btn-osd-fav', onSelect: () => void toggleFavorite() },
       {
         id: 'btn-osd-audio-track',
         onSelect: cycleAudioTrack,
@@ -149,6 +188,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     if (keyUnsub) keyUnsub();
     if (osdTimer) clearTimeout(osdTimer);
     if (hudTimer) clearTimeout(hudTimer);
+    if (toastTimer) clearTimeout(toastTimer);
     if (subtitleTimer()) clearTimeout(subtitleTimer());
     player.stop();
   });
@@ -182,10 +222,25 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     resetOsdTimer();
   };
 
+  let toastTimer: any = null;
+  const showToast = (text: string) => {
+    setSeekToast(text);
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => setSeekToast(''), 1300);
+  };
+
+  const toggleFavorite = async () => {
+    const next = await info.toggleFavorite();
+    announce(next ? 'Ajouté aux favoris' : 'Retiré des favoris');
+    showToast(next ? '★ Ajouté aux favoris' : '☆ Retiré des favoris');
+    resetOsdTimer();
+  };
+
   const seekDelta = (deltaMs: number) => {
     const target = Math.max(0, currentTimeMs() + deltaMs);
     player.seekTo(target);
     const secs = Math.abs(Math.round(deltaMs / 1000));
+    showToast(deltaMs > 0 ? `⏩ +${secs} s` : `⏪ −${secs} s`);
     announce(deltaMs > 0 ? `Avance rapide de ${secs} secondes` : `Retour arrière de ${secs} secondes`);
     resetOsdTimer();
   };
@@ -334,26 +389,19 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       role="region"
       aria-label={`Lecteur vidéo : ${props.item.name_clean || props.item.name}`}
     >
-      {/* 1. Channel HUD banner (briefly appears on channel switch / entry) */}
-      <Show when={showChannelHud() && props.item.kind === 'live'}>
+      {/* 1. Channel banner: briefly on entry / channel change, with what is on air */}
+      <Show when={showChannelHud() && isLive()}>
         <div class="tv-channel-hud" role="status" aria-live="polite">
-          <div style={{
-            background: "var(--buntu-gold)",
-            color: "#000000",
-            "font-weight": "800",
-            "font-size": "20px",
-            padding: "4px 12px",
-            "border-radius": "6px",
-          }}>
-            {props.item.chno ? `CH ${props.item.chno}` : 'LIVE'}
-          </div>
-          <div>
-            <div style={{ "font-size": "26px", "font-weight": "800", color: "#FFFFFF" }}>
-              {props.item.name_clean || props.item.name}
-            </div>
-            <div style={{ "font-size": "18px", color: "var(--buntu-cyan)" }}>
-              {props.item.group_title || 'Direct TV'}
-            </div>
+          <div class="tv-hud-badge">{props.item.chno ? `CH ${props.item.chno}` : 'LIVE'}</div>
+          <div class="tv-hud-main">
+            <div class="tv-hud-name">{title()}</div>
+            <div class="tv-hud-sub">{props.item.group_title || 'Direct TV'}</div>
+            <Show when={epgNow()}>
+              <div class="tv-hud-now">
+                <span class="when">{formatClock(epgNow()!.start_ts)}</span> {epgNow()!.title}
+              </div>
+              <InfoProgress percent={percentOf(info.nowTs() - epgNow()!.start_ts, epgNow()!.end_ts - epgNow()!.start_ts)} />
+            </Show>
           </div>
         </div>
       </Show>
@@ -434,32 +482,132 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         </div>
       </Show>
 
-      {/* 6. OSD Controls Overlay */}
+      {/* 6. Short confirmation (seek, favorite) */}
+      <Show when={seekToast()}>
+        <div class="tv-seek-toast" role="status">
+          {seekToast()}
+        </div>
+      </Show>
+
+      {/* 7. Top bar: the clock and what the TV decodes */}
+      <Show when={showOsd() && !playerError()}>
+        <div class="tv-osd-top">
+          <Show when={info.stream()}>
+            <div class="tv-osd-tech">
+              <Show when={info.stream()!.height > 0}>
+                <span>
+                  {info.stream()!.width}×{info.stream()!.height}
+                </span>
+              </Show>
+              <Show when={info.stream()!.videoCodec}>
+                <span>{info.stream()!.videoCodec}</span>
+              </Show>
+              <Show when={info.stream()!.audioCodec}>
+                <span>
+                  {info.stream()!.audioCodec}
+                  {info.stream()!.audioChannels ? ` ${info.stream()!.audioChannels}` : ''}
+                </span>
+              </Show>
+            </div>
+          </Show>
+          <div class="tv-osd-clock">{info.clock()}</div>
+        </div>
+      </Show>
+
+      {/* 8. Controls and information */}
       <Show when={showOsd() && !playerError()}>
         <div class="tv-osd">
-          <div style={{ display: "flex", "justify-content": "space-between", "align-items": "flex-end" }}>
-            <div>
-              <div style={{ "font-size": "18px", color: "var(--buntu-cyan)", "font-weight": "800", "letter-spacing": "1px" }}>
-                {props.item.kind === 'live' ? '● EN DIRECT' : 'FILM / SÉRIE'}
+          <div class="tv-osd-head">
+            <div class="tv-osd-heading">
+              <div class="tv-osd-kicker">
+                {kindLabel()}
+                <Show when={isLive() && props.item.chno}>
+                  <span class="tv-osd-chno"> · CH {props.item.chno}</span>
+                </Show>
               </div>
-              <h1 style={{ "font-size": "36px", "font-weight": "800", "margin-top": "4px" }}>
-                {props.item.name_clean || props.item.name}
-              </h1>
+              <h1 class="tv-osd-title">{title()}</h1>
             </div>
-            <div style={{ "font-size": "22px", color: "var(--buntu-text-muted)", "font-weight": "700" }}>
-              {props.item.kind === 'live' ? 'Direct TV' : `${formatTime(currentTimeMs())} / ${formatTime(durationMs())}`}
-            </div>
+            <Show when={!isLive()}>
+              <div class="tv-osd-clockline">
+                {formatDuration(currentTimeMs())} / {formatDuration(durationMs())}
+              </div>
+            </Show>
           </div>
 
-          {/* Progress bar (VOD only) */}
-          <Show when={props.item.kind !== 'live'}>
+          <InfoChips
+            chips={
+              isLive()
+                ? [
+                    qualityChip(),
+                    props.item.country ? { text: props.item.country.toUpperCase() } : null,
+                    props.item.language ? { text: props.item.language.toUpperCase() } : null,
+                    (props.item.catchup_days || 0) > 0 ? { text: `↺ Replay ${props.item.catchup_days} j` } : null,
+                    props.item.group_title ? { text: props.item.group_title } : null,
+                  ]
+                : [
+                    qualityChip(),
+                    props.item.imdb_rating && props.item.imdb_rating > 0
+                      ? { text: `★ ${props.item.imdb_rating.toFixed(1)}`, tone: 'rating' }
+                      : null,
+                    props.item.year ? { text: String(props.item.year) } : null,
+                    durationMs() > 0 ? { text: formatRuntime(durationMs()) } : null,
+                    props.item.language ? { text: props.item.language.toUpperCase() } : null,
+                    props.item.container_ext ? { text: props.item.container_ext.toUpperCase() } : null,
+                    props.item.group_title ? { text: props.item.group_title } : null,
+                  ]
+            }
+          />
+
+          {/* Live: the program on air and the next ones */}
+          <Show when={isLive()}>
+            <Show when={epgNow()} fallback={<div class="tv-osd-note">Pas de guide pour cette chaîne.</div>}>
+              <div class="tv-osd-program">
+                <div class="tv-osd-label">
+                  EN CE MOMENT · {formatClock(epgNow()!.start_ts)} – {formatClock(epgNow()!.end_ts)} · il reste{' '}
+                  {minutesLeft(epgNow()!.end_ts) >= 60
+                    ? formatRuntime(minutesLeft(epgNow()!.end_ts) * 60000)
+                    : `${minutesLeft(epgNow()!.end_ts)} min`}
+                </div>
+                <div class="tv-osd-program-title">{epgNow()!.title}</div>
+                <InfoProgress
+                  percent={percentOf(info.nowTs() - epgNow()!.start_ts, epgNow()!.end_ts - epgNow()!.start_ts)}
+                />
+                <Show when={epgNow()!.description}>
+                  <p class="tv-osd-desc">{epgNow()!.description}</p>
+                </Show>
+              </div>
+            </Show>
+            <Show when={epgNext().length > 0}>
+              <div class="tv-osd-next">
+                <span class="tv-osd-label">À SUIVRE</span>
+                <For each={epgNext()}>
+                  {(program) => (
+                    <span class="tv-osd-next-item">
+                      <span class="when">{formatClock(program.start_ts)}</span> {program.title}
+                    </span>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </Show>
+
+          {/* Film / episode: progress, end time and synopsis */}
+          <Show when={!isLive()}>
             <div class="tv-osd-progress-bg">
               <div class="tv-osd-progress-fill" style={{ width: `${progressPct()}%` }} />
             </div>
+            <Show when={durationMs() > 0}>
+              <div class="tv-osd-note">
+                Il reste {formatRuntime(Math.max(0, durationMs() - currentTimeMs()))} · se termine à {endsAt()}
+              </div>
+            </Show>
+            <Show when={props.item.plot}>
+              <p class="tv-osd-desc">{props.item.plot}</p>
+            </Show>
           </Show>
 
           {/* Action buttons */}
-          <div style={{ display: "flex", gap: "16px", "margin-top": "12px", "align-items": "center" }}>
+          <div class="tv-osd-actions">
             <button
               class={`tv-btn ${focusId() === 'btn-osd-play-pause' ? 'focused' : ''}`}
               onClick={togglePlayPause}
@@ -468,31 +616,31 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               {isPlaying() ? '⏸ Pause' : '▶ Lecture'}
             </button>
 
-            <Show when={props.item.kind !== 'live'}>
+            <Show when={!isLive()}>
               <button
                 class={`tv-btn ${focusId() === 'btn-osd-seek-back' ? 'focused' : ''}`}
                 onClick={() => seekDelta(-10000)}
                 aria-label="Reculer de 10 secondes"
               >
-                ⏪ -10s
+                ⏪ −10 s
               </button>
               <button
                 class={`tv-btn ${focusId() === 'btn-osd-seek-fwd' ? 'focused' : ''}`}
                 onClick={() => seekDelta(10000)}
                 aria-label="Avancer de 10 secondes"
               >
-                ⏩ +10s
+                ⏩ +10 s
               </button>
             </Show>
 
-            <Show when={props.item.kind === 'live'}>
+            <Show when={isLive()}>
               <Show when={props.onPrevChannel}>
                 <button
                   class={`tv-btn ${focusId() === 'btn-osd-prev-ch' ? 'focused' : ''}`}
                   onClick={() => { props.onPrevChannel?.(); triggerChannelHud(); }}
                   aria-label="Chaîne précédente"
                 >
-                  ⏮ Chaîne précédente
+                  ⏮ Précédente
                 </button>
               </Show>
               <Show when={props.onNextChannel}>
@@ -501,10 +649,18 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
                   onClick={() => { props.onNextChannel?.(); triggerChannelHud(); }}
                   aria-label="Chaîne suivante"
                 >
-                  ⏭ Chaîne suivante
+                  ⏭ Suivante
                 </button>
               </Show>
             </Show>
+
+            <button
+              class={`tv-btn ${focusId() === 'btn-osd-fav' ? 'focused' : ''}`}
+              onClick={() => void toggleFavorite()}
+              aria-label={info.isFavorite() ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+            >
+              {info.isFavorite() ? '★ Favori' : '☆ Favori'}
+            </button>
 
             <button
               class={`tv-btn ${focusId() === 'btn-osd-audio-track' ? 'focused' : ''}`}
@@ -512,6 +668,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               aria-label={audioLabel()}
             >
               🔊 {audioLabel()}
+              <Show when={audioTracks().length > 1}>
+                <span class="tv-btn-count"> · {audioTracks().length} pistes</span>
+              </Show>
             </button>
 
             <button
@@ -521,6 +680,18 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
             >
               💬 {subtitleLabel()}
             </button>
+          </div>
+
+          <div class="tv-osd-hints">
+            <span><b>◀ ▶ ▲ ▼</b> naviguer</span>
+            <span><b>OK</b> valider</span>
+            <Show when={isLive()}>
+              <span><b>CH +/−</b> changer de chaîne</span>
+            </Show>
+            <Show when={!isLive()}>
+              <span><b>⏪ ⏩</b> ±30 s</span>
+            </Show>
+            <span><b>RETOUR</b> quitter</span>
           </div>
         </div>
       </Show>

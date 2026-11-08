@@ -1,6 +1,7 @@
 import { Component, JSX, Show } from 'solid-js';
 import type { MiniPlayerController, MiniPlayerItem } from '../../core/player/MiniPlayerController';
 import type { PanelExtraAction } from '../design/miniPlayerFocus';
+import { formatDuration, percentOf } from '../../core/utils/timeFormat';
 
 /**
  * Right panel of a catalog screen: the mini player on top, the details of the focused item below,
@@ -80,10 +81,47 @@ export function MiniPlayerPanel<T extends MiniPlayerItem>(props: MiniPlayerPanel
           <Show when={ctl.status() === 'playing' && ctl.playing()}>
             <span class="buntu-insp-live">● {props.titleOf(ctl.playing()!)}</span>
           </Show>
+          {/* Facts about what plays, drawn over the picture: what the TV decodes, and the time for a film */}
+          <Show when={ctl.status() === 'playing'}>
+            <div class="buntu-insp-overlay">
+              <Show when={ctl.durationMs() > 0}>
+                <div class="buntu-insp-time">
+                  <span>{formatDuration(ctl.positionMs())}</span>
+                  <div class="buntu-insp-time-bar">
+                    <div
+                      class="buntu-insp-time-fill"
+                      style={{ width: `${percentOf(ctl.positionMs(), ctl.durationMs())}%` }}
+                    />
+                  </div>
+                  <span>{formatDuration(ctl.durationMs())}</span>
+                </div>
+              </Show>
+              <Show when={ctl.streamInfo()}>
+                <div class="buntu-insp-tech">
+                  <Show when={ctl.streamInfo()!.height > 0}>
+                    <span>
+                      {ctl.streamInfo()!.width}×{ctl.streamInfo()!.height}
+                      {ctl.streamInfo()!.quality ? ` · ${ctl.streamInfo()!.quality}` : ''}
+                    </span>
+                  </Show>
+                  <Show when={ctl.streamInfo()!.videoCodec}>
+                    <span>{ctl.streamInfo()!.videoCodec}</span>
+                  </Show>
+                  <Show when={ctl.streamInfo()!.audioCodec}>
+                    <span>
+                      {ctl.streamInfo()!.audioCodec}
+                      {ctl.streamInfo()!.audioChannels ? ` ${ctl.streamInfo()!.audioChannels}` : ''}
+                      {ctl.streamInfo()!.audioLanguage ? ` · ${ctl.streamInfo()!.audioLanguage.toUpperCase()}` : ''}
+                    </span>
+                  </Show>
+                </div>
+              </Show>
+            </div>
+          </Show>
         </div>
 
         <div class="buntu-insp-body">
-          {props.details(ctl.focused()!)}
+          <div class="buntu-insp-scroll">{props.details(ctl.focused()!)}</div>
 
           <div class="buntu-inspector-actions">
             <button

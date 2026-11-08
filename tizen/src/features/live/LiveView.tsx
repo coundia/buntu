@@ -1,6 +1,6 @@
 import { Component, createSignal, createMemo, createEffect, onMount, onCleanup, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
-import { Database, EpgProgramRecord, ItemRecord, FAVORITES_CATEGORY } from '../../core/storage/Database';
+import { Database, EpgProgramRecord, ItemRecord, FAVORITES_CATEGORY, RECENT_CATEGORY } from '../../core/storage/Database';
 import { AVPlayerService } from '../../core/player/AVPlayerService';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { screenState, isContentFocusId, revealItem, BrowseSnapshot } from '../../core/navigation/ScreenState';
@@ -8,8 +8,11 @@ import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollCont
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { detectChannelQuality, formatBuntuCount } from '../../core/utils/categoryMeta';
 import { announce } from '../../ui/design/a11y';
+import { zapContext } from '../../core/navigation/ZapContext';
 import { createMiniPlayer } from '../../core/player/MiniPlayerController';
 import { MiniPlayerPanel } from '../../ui/components/MiniPlayerPanel';
+import { InfoChips, InfoSection, InfoProgress } from '../../ui/components/InfoParts';
+import { formatClock } from '../../core/utils/timeFormat';
 import { panelFocusItems, panelItemForRow, installPanelLeftReturn } from '../../ui/design/miniPlayerFocus';
 
 export interface LiveViewProps {
@@ -27,10 +30,10 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   const [catCounts, setCatCounts] = createSignal<Record<string, number>>({});
   const [totalCount, setTotalCount] = createSignal(0);
   const [favCount, setFavCount] = createSignal(0);
+  const [recentCount, setRecentCount] = createSignal(0);
 
   // '' means "Toutes les chaînes"; the default is FAVORITES_CATEGORY (set on mount when favorites exist)
   const [selectedCategory, setSelectedCategory] = createSignal<string>('');
-  const [catFilter, setCatFilter] = createSignal<string>('');
   const [showCats, setShowCats] = createSignal(true);
   const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
   // Bumped when a favorite flag changes (the records are mutated in place).
@@ -39,7 +42,12 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   const mini = createMiniPlayer<ItemRecord>({
     engine,
     player,
-    onFullscreen: (ch) => props.onPlayChannel(ch),
+    onFullscreen: (ch) => {
+      // Ch+ / Ch- in the player will move through the list shown here (category, favorites, recents).
+      zapContext.category = isSearchMode() ? '' : selectedCategory();
+      zapContext.frozen = null;
+      props.onPlayChannel(ch);
+    },
   });
   let unsubPanelKeys: (() => void) | null = null;
 
@@ -52,6 +60,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
   const previewChannel = mini.focused; // the channel under the cursor (details of the panel)
   const [previewEpg, setPreviewEpg] = createSignal<{ now?: EpgProgramRecord; next?: EpgProgramRecord } | null>(null);
+  const [previewUpcoming, setPreviewUpcoming] = createSignal<EpgProgramRecord[]>([]);
   const [focusId] = spatialNav.getFocusSignal();
 
   // Last card focused in the content area: restored when BACK returns here from details/player.
@@ -71,9 +80,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
   const filteredCategories = createMemo(() => {
     const raw = categories().filter((c) => c !== FAVORITES_CATEGORY && c !== 'Favoris');
-    const q = catFilter().trim().toLowerCase();
-    if (!q) return raw;
-    return raw.filter((c) => c.toLowerCase().includes(q));
+    return raw;
   });
 
   const scroller = createInfiniteScroller<ItemRecord>({
@@ -120,20 +127,22 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   };
 
   const refreshShelvesAndCounts = async () => {
-    const [countsData, recents, favs] = await Promise.all([
+    const [countsData, recents, favs, recentTotal] = await Promise.all([
       engine.getCategoryCounts('live'),
       engine.getRecentItems('live', 10),
       engine.getFavoritesByKind('live', 12),
+      engine.countCatalog('live', RECENT_CATEGORY),
     ]);
     setTotalCount(countsData.total);
     setFavCount(countsData.favCount);
+    setRecentCount(recentTotal);
     setCatCounts(countsData.counts);
     setRecentChannels(recents);
     setFavChannels(favs);
     void hydrateEpgForList([...recents, ...favs]);
   };
 
-  onMount(async () => {
+  const initScreen = async () => {
     resizeHandler = () => {
       mini.syncRect();
       scheduleRebuildGrid(true);
@@ -207,6 +216,18 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     } else if (cats.length > 0) {
       spatialNav.setFocusById('cat-fav');
     }
+  };
+
+  /** The mini player always resumes the channel watched last (also when coming back from full screen). */
+  const autoplayLast = async () => {
+    if (!mini.visible() || mini.active()) return;
+    const [last] = await engine.getRecentItems('live', 1);
+    if (last && !mini.active()) void mini.playItem(last);
+  };
+
+  onMount(async () => {
+    await initScreen();
+    void autoplayLast();
   });
 
   onCleanup(() => {
@@ -236,15 +257,20 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   /** The cursor is on a channel: its details (and program) fill the panel; the stream is untouched. */
   const selectForPreview = async (ch: ItemRecord) => {
     mini.focus(ch);
-    if (ch.tvg_id) {
-      try {
-        const epg = await db.getEpgNowNext(ch.tvg_id, Math.floor(Date.now() / 1000));
-        if (previewChannel()?.id === ch.id) setPreviewEpg(epg);
-      } catch {
-        if (previewChannel()?.id === ch.id) setPreviewEpg(null);
-      }
-    } else {
+    if (!ch.tvg_id) {
       setPreviewEpg(null);
+      setPreviewUpcoming([]);
+      return;
+    }
+    try {
+      const programs = await db.getEpgUpcoming(ch.tvg_id, Math.floor(Date.now() / 1000), 4);
+      if (previewChannel()?.id !== ch.id) return; // the cursor already moved on
+      setPreviewEpg({ now: programs[0], next: programs[1] });
+      setPreviewUpcoming(programs.slice(1));
+    } catch {
+      if (previewChannel()?.id !== ch.id) return;
+      setPreviewEpg(null);
+      setPreviewUpcoming([]);
     }
   };
 
@@ -368,15 +394,8 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     const catColItems: FocusableItem[] = [];
     if (showCats()) {
       catColItems.push({
-        id: 'live-cat-home',
-        onSelect: () => {
-          setCatFilter('');
-          void handleSelectCategory('');
-        },
-      });
-      catColItems.push({
-        id: 'live-cat-filter',
-        onSelect: () => focusDomInput('live-cat-filter'),
+        id: 'cat-recent',
+        onSelect: () => void handleSelectCategory(RECENT_CATEGORY),
       });
       catColItems.push({
         id: 'cat-fav',
@@ -464,11 +483,6 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   const isFav = (ch: ItemRecord) => {
     favTick();
     return ch.is_favorite === 1;
-  };
-
-  const fmtTime = (ts: number) => {
-    const d = new Date(ts * 1000);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
   const epgRatio = (prog?: EpgProgramRecord): number => {
@@ -644,34 +658,22 @@ export const LiveView: Component<LiveViewProps> = (props) => {
         {/* Column 1: Categories List */}
         <Show when={showCats()}>
           <aside class="buntu-cat-pane" aria-label="Catégories Live TV">
-            <div class="buntu-cat-filter-bar">
-              <button
-                id="live-cat-home"
-                type="button"
-                tabindex="-1"
-                class={`buntu-cat-home-btn ${focusId() === 'live-cat-home' ? 'focused' : ''}`}
-                title="Toutes les catégories"
-                onClick={() => {
-                  setCatFilter('');
-                  void handleSelectCategory('');
-                }}
-              >
-                ⌂
-              </button>
-              <input
-                id="live-cat-filter"
-                type="text"
-                value={catFilter()}
-                placeholder="Filtrer les catégories"
-                class={`buntu-cat-filter-input ${focusId() === 'live-cat-filter' ? 'focused' : ''}`}
-                onInput={(e) => {
-                  setCatFilter(e.currentTarget.value);
-                  scheduleRebuildGrid(true);
-                }}
-              />
-            </div>
-
             <div class="buntu-cat-list">
+              {/* Récemment vus */}
+              <div
+                id="cat-recent"
+                role="button"
+                tabindex="-1"
+                class={`buntu-cat-row ${selectedCategory() === RECENT_CATEGORY && !isSearchMode() ? 'active' : ''} ${focusId() === 'cat-recent' ? 'focused' : ''}`}
+                onClick={() => void handleSelectCategory(RECENT_CATEGORY)}
+              >
+                <div class="buntu-cat-row-left">
+                  <span class="buntu-cat-row-icon">🕒</span>
+                  <span class="buntu-cat-row-title">Récemment vus</span>
+                </div>
+                <span class="buntu-cat-count">{formatBuntuCount(recentCount())}</span>
+              </div>
+
               {/* Favoris */}
               <div
                 id="cat-fav"
@@ -796,7 +798,9 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                 <h2 class="buntu-section-title">
                   {isSearchMode()
                     ? `Recherche : « ${searchQuery()} »`
-                    : selectedCategory() === FAVORITES_CATEGORY
+                    : selectedCategory() === RECENT_CATEGORY
+                      ? 'Récemment vus'
+                      : selectedCategory() === FAVORITES_CATEGORY
                       ? 'Favoris'
                       : selectedCategory() || 'Toutes les chaînes'}
                 </h2>
@@ -816,7 +820,22 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                 </For>
               </div>
 
-              <Show when={!isSearchMode() && scroller.isLoading()}>
+              <Show
+              when={
+                !isSearchMode() &&
+                !scroller.isLoading() &&
+                scroller.items().length === 0 &&
+                (selectedCategory() === RECENT_CATEGORY || selectedCategory() === FAVORITES_CATEGORY)
+              }
+            >
+              <p class="buntu-empty-hint">
+                {selectedCategory() === RECENT_CATEGORY
+                  ? 'Regardez une chaîne : il apparaîtra ici.'
+                  : 'Aucun favori pour l’instant : ajoutez-en avec ☆ Favori.'}
+              </p>
+            </Show>
+
+            <Show when={!isSearchMode() && scroller.isLoading()}>
                 <div class="tv-infinite-loader">
                   <div class="tv-spinner-small" />
                   <span>Chargement des chaînes…</span>
@@ -836,45 +855,64 @@ export const LiveView: Component<LiveViewProps> = (props) => {
           fallbackIcon="📺"
           isFavorite={isFav}
           onToggleFavorite={(ch) => void handleToggleFavorite(ch)}
-          details={(ch) => (
-            <>
-              <div class="buntu-insp-heading">
-                <span class="buntu-ch-num">{ch.chno || ''}</span>
-                <h3 class="buntu-inspector-title">{ch.name_clean || cleanMediaTitle(ch.name).clean}</h3>
-                <Show when={detectChannelQuality(ch.name)}>
-                  <span class={`buntu-q-badge ${detectChannelQuality(ch.name) === '4K' ? 'uhd' : ''}`}>
-                    {detectChannelQuality(ch.name)}
-                  </span>
-                </Show>
-              </div>
-              <Show when={ch.group_title}>
-                <div class="buntu-ch-group">{ch.group_title}</div>
-              </Show>
+          details={(ch) => {
+            const quality = detectChannelQuality(ch.name);
+            const nowTs = () => Math.floor(Date.now() / 1000);
+            const started = () => (previewEpg()?.now ? previewEpg()!.now!.start_ts <= nowTs() : false);
+            return (
+              <>
+                <div class="buntu-insp-heading">
+                  <span class="buntu-ch-num">{ch.chno || ''}</span>
+                  <h3 class="buntu-inspector-title">{ch.name_clean || cleanMediaTitle(ch.name).clean}</h3>
+                </div>
+                <InfoChips
+                  chips={[
+                    quality ? { text: quality, tone: quality === '4K' ? 'uhd' : 'quality' } : null,
+                    ch.country ? { text: ch.country.toUpperCase() } : null,
+                    ch.language ? { text: ch.language.toUpperCase() } : null,
+                    (ch.catchup_days || 0) > 0 ? { text: `↺ Replay ${ch.catchup_days} j` } : null,
+                    ch.group_title ? { text: ch.group_title } : null,
+                  ]}
+                />
 
-              <Show
-                when={previewEpg()?.now}
-                fallback={<p class="buntu-inspector-desc">Pas de guide pour cette chaîne.</p>}
-              >
-                <div class="buntu-insp-epg">
-                  <div class="buntu-insp-epg-label">
-                    EN CE MOMENT · {fmtTime(previewEpg()!.now!.start_ts)} – {fmtTime(previewEpg()!.now!.end_ts)}
-                  </div>
-                  <div class="buntu-insp-epg-title">{previewEpg()!.now!.title}</div>
-                  <div class="buntu-epg-bar">
-                    <div class="buntu-epg-fill" style={{ width: `${epgRatio(previewEpg()!.now)}%` }} />
-                  </div>
-                  <Show when={previewEpg()!.now!.description}>
-                    <p class="buntu-inspector-desc buntu-insp-clamp">{previewEpg()!.now!.description}</p>
-                  </Show>
-                </div>
-              </Show>
-              <Show when={previewEpg()?.next}>
-                <div class="buntu-insp-next">
-                  À SUIVRE · {fmtTime(previewEpg()!.next!.start_ts)} <b>{previewEpg()!.next!.title}</b>
-                </div>
-              </Show>
-            </>
-          )}
+                <Show
+                  when={previewEpg()?.now}
+                  fallback={<p class="buntu-inspector-desc">Pas de guide pour cette chaîne.</p>}
+                >
+                  <InfoSection
+                    label={
+                      started()
+                        ? `EN CE MOMENT · ${formatClock(previewEpg()!.now!.start_ts)} – ${formatClock(previewEpg()!.now!.end_ts)}`
+                        : `BIENTÔT · ${formatClock(previewEpg()!.now!.start_ts)}`
+                    }
+                  >
+                    <div class="buntu-insp-epg-title">{previewEpg()!.now!.title}</div>
+                    <Show when={started()}>
+                      <InfoProgress percent={epgRatio(previewEpg()!.now)} />
+                    </Show>
+                    <Show when={previewEpg()!.now!.description}>
+                      <p class="buntu-inspector-desc buntu-insp-clamp">{previewEpg()!.now!.description}</p>
+                    </Show>
+                  </InfoSection>
+                </Show>
+
+                <Show when={previewUpcoming().length > 0}>
+                  <InfoSection label="À SUIVRE">
+                    <ul class="buntu-insp-upcoming">
+                      <For each={previewUpcoming().slice(0, 3)}>
+                        {(program) => (
+                          <li>
+                            <span class="when">{formatClock(program.start_ts)}</span>
+                            <span class="what">{program.title}</span>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </InfoSection>
+                </Show>
+              </>
+            );
+          }}
         />
       </div>
     </div>

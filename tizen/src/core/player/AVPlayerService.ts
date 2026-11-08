@@ -13,6 +13,8 @@
  * `setDisplayRect` set to that area. Without them the sound plays and the screen stays black.
  */
 
+import { StreamSummary, summarizeStream } from './streamInfo';
+
 export type PlayerState = 'NONE' | 'IDLE' | 'READY' | 'PLAYING' | 'PAUSED' | 'BUFFERING';
 
 export interface TrackInfo {
@@ -154,6 +156,16 @@ export class AVPlayerService {
 
   public getCurrentTime(): number {
     return this.currentTimeMs;
+  }
+
+  /** What the TV decodes right now (size, codecs, audio), or null before the stream has told. */
+  public getStreamSummary(): StreamSummary | null {
+    if (!this.avplay) return null;
+    try {
+      return summarizeStream(this.avplay.getCurrentStreamInfo?.());
+    } catch {
+      return null;
+    }
   }
 
   public getIsLive(): boolean {

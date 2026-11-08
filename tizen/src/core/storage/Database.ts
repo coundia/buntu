@@ -25,6 +25,10 @@ export interface SourceRecord {
 }
 
 export const FAVORITES_CATEGORY = '★ Favoris';
+/** Virtual category: the items watched most recently, newest first (kept in the engine, not in the database). */
+export const RECENT_CATEGORY = '🕒 Récemment vus';
+/** How many recently watched items are remembered per kind. */
+export const RECENT_LIMIT = 50;
 
 export interface ItemRecord {
   id: number;
@@ -300,6 +304,37 @@ export class Database {
     return results;
   }
 
+  /**
+   * The item after (or before) `fromId` of this kind, optionally inside a group, in catalog order;
+   * wraps around at the ends. Reads only what it needs, so it is cheap even in a huge catalog.
+   */
+  public async getNeighbourItem(
+    kind: 'live' | 'movie' | 'series',
+    groupTitle: string | undefined,
+    fromId: number,
+    direction: 'next' | 'prev'
+  ): Promise<ItemRecord | null> {
+    if (!this.db) return null;
+    const forward = direction === 'next';
+    const scan = (range: IDBKeyRange | undefined) =>
+      new Promise<ItemRecord | null>((resolve, reject) => {
+        const req = this.db!
+          .transaction(['items'], 'readonly')
+          .objectStore('items')
+          .openCursor(range, forward ? 'next' : 'prev');
+        req.onsuccess = (ev: any) => {
+          const cursor: IDBCursorWithValue | null = ev.target.result;
+          if (!cursor) return resolve(null);
+          const item = cursor.value as ItemRecord;
+          if (item.kind === kind && (!groupTitle || item.group_title === groupTitle)) return resolve(item);
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+      });
+    const beyond = await scan(forward ? IDBKeyRange.lowerBound(fromId, true) : IDBKeyRange.upperBound(fromId, true));
+    return beyond ?? scan(undefined);
+  }
+
   public async countItemsByKindAndGroup(
     kind: 'live' | 'movie' | 'series',
     groupTitle?: string
@@ -541,16 +576,27 @@ export class Database {
     });
   }
 
-  public async getEpgNowNext(channelTvgId: string, nowTs: number): Promise<{ now?: EpgProgramRecord; next?: EpgProgramRecord }> {
-    const all = await this.getAll<EpgProgramRecord>('epg');
-    const matching = all
-      .filter((p) => p.channel_tvg_id === channelTvgId && p.end_ts > nowTs)
-      .sort((a, b) => a.start_ts - b.start_ts);
+  /** The programs of a channel that have not ended yet, in time order (read through the channel index). */
+  public async getEpgUpcoming(channelTvgId: string, nowTs: number, count = 4): Promise<EpgProgramRecord[]> {
+    const programs = await new Promise<EpgProgramRecord[]>((resolve, reject) => {
+      if (!this.db) return resolve([]);
+      const req = this.db
+        .transaction(['epg'], 'readonly')
+        .objectStore('epg')
+        .index('channel_tvg_id')
+        .getAll(IDBKeyRange.only(channelTvgId));
+      req.onsuccess = () => resolve((req.result as EpgProgramRecord[]) || []);
+      req.onerror = () => reject(req.error);
+    });
+    return programs
+      .filter((p) => p.end_ts > nowTs)
+      .sort((a, b) => a.start_ts - b.start_ts)
+      .slice(0, count);
+  }
 
-    return {
-      now: matching[0],
-      next: matching[1],
-    };
+  public async getEpgNowNext(channelTvgId: string, nowTs: number): Promise<{ now?: EpgProgramRecord; next?: EpgProgramRecord }> {
+    const matching = await this.getEpgUpcoming(channelTvgId, nowTs, 2);
+    return { now: matching[0], next: matching[1] };
   }
 
   // Generic Helpers
