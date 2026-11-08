@@ -8,6 +8,9 @@ import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollCont
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { detectChannelQuality, formatBuntuCount } from '../../core/utils/categoryMeta';
 import { announce } from '../../ui/design/a11y';
+import { createMiniPlayer } from '../../core/player/MiniPlayerController';
+import { MiniPlayerPanel } from '../../ui/components/MiniPlayerPanel';
+import { panelFocusItems, panelItemForRow, installPanelLeftReturn } from '../../ui/design/miniPlayerFocus';
 
 export interface MoviesViewProps {
   onSelectMovie: (movie: ItemRecord) => void;
@@ -28,14 +31,25 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
   const [catFilter, setCatFilter] = createSignal<string>('');
   const [showCats, setShowCats] = createSignal(true);
   const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
-  const [showInspector, setShowInspector] = createSignal(false);
+  // Bumped when a favorite flag changes (the records are mutated in place).
+  const [favTick, setFavTick] = createSignal(0);
+  // Shared mini player (same experience as Live TV): play in the panel, details of the hovered film below.
+  const mini = createMiniPlayer<ItemRecord>({
+    engine,
+    player,
+    onFullscreen: (mv) => (props.onPlayMovie ? props.onPlayMovie(mv) : props.onSelectMovie(mv)),
+    startTimeoutMs: 45000, // a film resolves its final address first, then buffers more than a channel
+    timeoutMessage: 'Le serveur ne répond pas',
+  });
+  let unsubPanelKeys: (() => void) | null = null;
 
   const [searchQuery, setSearchQuery] = createSignal<string>('');
   const [searchResults, setSearchResults] = createSignal<ItemRecord[]>([]);
 
   const [recentMovies, setRecentMovies] = createSignal<ItemRecord[]>([]);
   const [favMovies, setFavMovies] = createSignal<ItemRecord[]>([]);
-  const [previewMovie, setPreviewMovie] = createSignal<ItemRecord | null>(null);
+  const previewMovie = mini.focused; // the film under the cursor (details of the panel)
+  const setPreviewMovie = mini.focus;
   const [focusId] = spatialNav.getFocusSignal();
 
   // Last card focused in the content area: restored when BACK returns here from details/player.
@@ -47,7 +61,6 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
   });
 
   let gridRef: HTMLDivElement | undefined;
-  let viewportRef: HTMLDivElement | undefined;
   let resizeHandler: (() => void) | null = null;
 
   const isSearchMode = () => searchQuery().trim().length > 0;
@@ -84,19 +97,6 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     },
   });
 
-  const syncAvPlayRect = () => {
-    if (!showInspector() || !viewportRef) return;
-    const rect = viewportRef.getBoundingClientRect();
-    if (rect.width > 10 && rect.height > 10) {
-      player.setDisplayArea({
-        x: Math.round(rect.left),
-        y: Math.round(rect.top),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-      });
-    }
-  };
-
   const refreshShelvesAndCounts = async () => {
     const [countsData, recents, favs] = await Promise.all([
       engine.getCategoryCounts('movie'),
@@ -112,10 +112,13 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
 
   onMount(async () => {
     resizeHandler = () => {
-      syncAvPlayRect();
+      mini.syncRect();
       scheduleRebuildGrid(true);
     };
     window.addEventListener('resize', resizeHandler);
+
+    // LEFT from the panel goes back to the film the cursor came from (not to the first row).
+    unsubPanelKeys = installPanelLeftReturn('mv-insp', () => focusId(), () => lastContentFocus);
 
     // BACK from the player/details: same category, view mode and focused card as before.
     const restored = screenState.restore('movies');
@@ -196,20 +199,14 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
         scrollTop: lastScrollTop,
       },
     });
+    unsubPanelKeys?.();
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
-    document.querySelector('.app-root')?.classList.remove('preview-mode');
+    // Leaving for another screen (not for the full-screen player) frees the stream.
+    mini.dispose();
   });
 
   const toggleInspector = () => {
-    const next = !showInspector();
-    setShowInspector(next);
-    if (next) {
-      document.querySelector('.app-root')?.classList.add('preview-mode');
-      requestAnimationFrame(() => syncAvPlayRect());
-    } else {
-      document.querySelector('.app-root')?.classList.remove('preview-mode');
-      engine.stopPlayback();
-    }
+    mini.toggleVisible();
     scheduleRebuildGrid(true);
   };
 
@@ -231,25 +228,23 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     }
   };
 
+  // OK on a film: the first press plays it in the mini player, a second press on the one already
+  // playing goes full screen (shared mini player controller). The "Fiche" button opens the details page.
   const handleCardActivate = (mv: ItemRecord) => {
-    engine.recordRecent(mv);
-    setPreviewMovie(mv);
-    props.onSelectMovie(mv);
+    mini.activate(mv);
   };
 
-  const handlePlayDirect = (mv: ItemRecord) => {
+  const openDetails = (mv: ItemRecord | null) => {
+    if (!mv) return;
     engine.recordRecent(mv);
-    if (props.onPlayMovie) {
-      props.onPlayMovie(mv);
-    } else {
-      props.onSelectMovie(mv);
-    }
+    props.onSelectMovie(mv);
   };
 
   const handleToggleFavorite = async (mv: ItemRecord, e?: MouseEvent) => {
     e?.stopPropagation();
     const next = await engine.toggleFavorite(mv.id);
     mv.is_favorite = next ? 1 : 0;
+    setFavTick((t) => t + 1);
     announce(next ? 'Film ajouté aux favoris' : 'Film retiré des favoris');
     await refreshShelvesAndCounts();
     if (selectedCat() === FAVORITES_CATEGORY) {
@@ -391,7 +386,14 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       );
     }
 
-    const totalBodyRows = Math.max(catColItems.length, contentRows.length);
+    const inspectorItems: FocusableItem[] =
+      mini.visible() && previewMovie()
+        ? panelFocusItems(mini, 'mv-insp', (mv) => void handleToggleFavorite(mv), [
+            { id: 'mv-insp-details', label: 'ℹ Fiche', onSelect: () => openDetails(mini.focused()) },
+          ])
+        : [];
+
+    const totalBodyRows = Math.max(catColItems.length, contentRows.length, inspectorItems.length);
     for (let r = 0; r < totalBodyRows; r++) {
       const row: FocusableItem[] = [];
       if (catColItems.length > 0) {
@@ -400,19 +402,18 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       if (contentRows.length > 0) {
         row.push(...contentRows[Math.min(r, contentRows.length - 1)]);
       }
-      if (showInspector() && previewMovie()) {
-        if (r === 0) {
-          row.push({ id: 'mv-insp-play', onSelect: () => handlePlayDirect(previewMovie()!) });
-        } else if (r === 1) {
-          row.push({ id: 'mv-insp-details', onSelect: () => handleCardActivate(previewMovie()!) });
-        } else if (r === 2) {
-          row.push({ id: 'mv-insp-fav', onSelect: () => void handleToggleFavorite(previewMovie()!) });
-        }
-      }
+      // The panel is reachable with RIGHT from every row.
+      const panelItem = panelItemForRow(inspectorItems, r);
+      if (panelItem) row.push(panelItem);
       if (row.length > 0) grid.push(row);
     }
 
     spatialNav.setGrid(grid, 1, catColItems.length > 0 ? 1 : 0, preserveFocus);
+  };
+
+  const isFav = (mv: ItemRecord) => {
+    favTick();
+    return mv.is_favorite === 1;
   };
 
   const renderMovieCard = (mv: ItemRecord, cardId: string) => {
@@ -462,11 +463,11 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
             <button
               type="button"
               tabindex="-1"
-              class={`buntu-vod-star-overlay ${mv.is_favorite === 1 ? 'fav' : ''}`}
+              class={`buntu-vod-star-overlay ${isFav(mv) ? 'fav' : ''}`}
               title="Favori"
               onClick={(e) => void handleToggleFavorite(mv, e)}
             >
-              {mv.is_favorite === 1 ? '★' : '☆'}
+              {isFav(mv) ? '★' : '☆'}
             </button>
           </Show>
         </div>
@@ -481,10 +482,10 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
               <button
                 type="button"
                 tabindex="-1"
-                class={`buntu-ch-star ${mv.is_favorite === 1 ? 'fav' : ''}`}
+                class={`buntu-ch-star ${isFav(mv) ? 'fav' : ''}`}
                 onClick={(e) => void handleToggleFavorite(mv, e)}
               >
-                {mv.is_favorite === 1 ? '★' : '☆'}
+                {isFav(mv) ? '★' : '☆'}
               </button>
             </Show>
           </div>
@@ -494,7 +495,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
   };
 
   return (
-    <div class={`buntu-page ${showInspector() ? 'with-preview' : ''}`}>
+    <div class={`buntu-page ${mini.status() === 'playing' ? 'with-preview' : ''}`}>
       {/* Top Toolbar */}
       <header class="buntu-toolbar">
         <div class="buntu-toolbar-left">
@@ -548,7 +549,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
             id="mv-toggle-inspector"
             type="button"
             tabindex="-1"
-            class={`buntu-tool-btn ${showInspector() ? 'active' : ''} ${focusId() === 'mv-toggle-inspector' ? 'focused' : ''}`}
+            class={`buntu-tool-btn ${mini.visible() ? 'active' : ''} ${focusId() === 'mv-toggle-inspector' ? 'focused' : ''}`}
             onClick={toggleInspector}
           >
             ◫
@@ -736,55 +737,46 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
           </div>
         </section>
 
-        {/* Optional Inspector Pane */}
-        <Show when={showInspector() && previewMovie()}>
-          <aside class="buntu-inspector-pane" aria-label="Aperçu film">
-            <div ref={viewportRef} class="buntu-inspector-viewport" style={{ background: '#111318' }}>
-              <Show when={previewMovie()?.logo_url} fallback={<div class="tv-mini-mock-screen">🎬</div>}>
-                <img
-                  src={previewMovie()!.logo_url}
-                  alt=""
-                  style={{ width: '100%', height: '100%', 'object-fit': 'cover' }}
-                />
-              </Show>
-            </div>
-            <h3 class="buntu-inspector-title">
-              {previewMovie()!.name_clean || previewMovie()!.name}
-            </h3>
-            <p class="buntu-inspector-desc">
-              {previewMovie()!.plot || previewMovie()!.group_title || 'Film VOD disponible en haute définition.'}
-            </p>
-            <div class="buntu-inspector-actions">
-              <button
-                id="mv-insp-play"
-                type="button"
-                tabindex="-1"
-                class={`buntu-action-primary ${focusId() === 'mv-insp-play' ? 'focused' : ''}`}
-                onClick={() => handlePlayDirect(previewMovie()!)}
-              >
-                ▶ Regarder
-              </button>
-              <button
-                id="mv-insp-details"
-                type="button"
-                tabindex="-1"
-                class={`buntu-action-secondary ${focusId() === 'mv-insp-details' ? 'focused' : ''}`}
-                onClick={() => handleCardActivate(previewMovie()!)}
-              >
-                ℹ Fiche
-              </button>
-              <button
-                id="mv-insp-fav"
-                type="button"
-                tabindex="-1"
-                class={`buntu-action-secondary ${focusId() === 'mv-insp-fav' ? 'focused' : ''}`}
-                onClick={() => void handleToggleFavorite(previewMovie()!)}
-              >
-                {previewMovie()!.is_favorite === 1 ? '★' : '☆'}
-              </button>
-            </div>
-          </aside>
-        </Show>
+        {/* Shared mini player panel (preview, details of the focused film, actions) */}
+        <MiniPlayerPanel
+          ctl={mini}
+          idPrefix="mv-insp"
+          focusId={focusId}
+          posterUrl={(mv) => mv.logo_url}
+          titleOf={(mv) => mv.name_clean || cleanMediaTitle(mv.name).clean}
+          fallbackIcon="🎬"
+          idleHint="▶ Lecture"
+          isFavorite={isFav}
+          onToggleFavorite={(mv) => void handleToggleFavorite(mv)}
+          extraActions={[{ id: 'mv-insp-details', label: 'ℹ Fiche', onSelect: () => openDetails(mini.focused()) }]}
+          details={(mv) => {
+            const parsed = cleanMediaTitle(mv.name);
+            const year = mv.year || parsed.year;
+            return (
+              <>
+                <div class="buntu-insp-heading">
+                  <h3 class="buntu-inspector-title">
+                    {mv.name_clean && mv.name_clean !== mv.name ? mv.name_clean : parsed.clean}
+                  </h3>
+                  <Show when={detectChannelQuality(mv.name)}>
+                    <span class={`buntu-q-badge ${detectChannelQuality(mv.name) === '4K' ? 'uhd' : ''}`}>
+                      {detectChannelQuality(mv.name)}
+                    </span>
+                  </Show>
+                  <Show when={mv.imdb_rating && mv.imdb_rating > 0}>
+                    <span class="buntu-q-badge">★ {mv.imdb_rating!.toFixed(1)}</span>
+                  </Show>
+                </div>
+                <div class="buntu-ch-group">
+                  {year ? `${year}${mv.group_title ? ' · ' + mv.group_title : ''}` : mv.group_title || 'VOD'}
+                </div>
+                <p class="buntu-inspector-desc buntu-insp-clamp buntu-insp-plot">
+                  {mv.plot || 'Film VOD disponible en haute définition.'}
+                </p>
+              </>
+            );
+          }}
+        />
       </div>
     </div>
   );

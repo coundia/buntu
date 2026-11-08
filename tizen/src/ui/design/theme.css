@@ -3312,19 +3312,19 @@ html, body, #root {
 /* Live TV panel: the video shows through the preview area, so nothing may paint behind it.
    The preview sits flush at the top of the panel with no background around it; only the details
    below get a solid background. (A translucent panel background used to dim the video.) */
-.buntu-inspector-pane.live-panel {
+.buntu-inspector-pane.mini-panel {
   padding: 0;
   gap: 0;
   background: transparent;
   border-left: 0;
   overflow: hidden;
 }
-.live-panel .buntu-inspector-viewport {
+.mini-panel .buntu-inspector-viewport {
   width: 100%;
   border: 0;
   border-radius: 0;
 }
-.live-panel .buntu-inspector-viewport.focused {
+.mini-panel .buntu-inspector-viewport.focused {
   box-shadow: inset 0 0 0 5px #FFFFFF, inset 0 0 0 9px var(--buntu-accent);
 }
 .buntu-insp-body {
@@ -3347,3 +3347,14 @@ html, body, #root {
   color: rgba(255, 255, 255, 0.6);
   text-align: center;
 }
+
+/* Name of the channel running in the mini player (the details below belong to the focused channel) */
+.buntu-insp-live {
+  max-width: 88%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Film synopsis in the mini player panel: more room than a program description */
+.buntu-insp-plot { -webkit-line-clamp: 7; }
