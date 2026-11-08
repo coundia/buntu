@@ -14,12 +14,15 @@ struct LiveTvView: View {
     var onAddToMultiView: ((IptvItemRecord) -> Void)? = nil
     var onOpenMultiView: (() -> Void)? = nil
     var onStartOver: ((IptvItemRecord, EpgProgramRecord) -> Void)? = nil
+    /// A country, a theme or a correction changed what the catalogue shows (PRD-33).
+    var onCategoriesChanged: () -> Void = {}
     @Binding var searchRequest: String?
 
     @AppStorage("live.viewMode") private var viewModeRaw = LiveViewMode.grid.rawValue
     @AppStorage("live.categoryAxis") private var axisRaw = CategoryAxis.theme.storageValue
     @State private var mirrorTarget: IptvItemRecord?
     @State private var mirrorList: [IptvItemRecord] = []
+    @State private var correction: TaxonomyCorrectionModel?
     init(
         engine: CndEngine,
         revision: Int,
@@ -33,6 +36,7 @@ struct LiveTvView: View {
         onAddToMultiView: ((IptvItemRecord) -> Void)? = nil,
         onOpenMultiView: (() -> Void)? = nil,
         onStartOver: ((IptvItemRecord, EpgProgramRecord) -> Void)? = nil,
+        onCategoriesChanged: @escaping () -> Void = {},
         searchRequest: Binding<String?> = .constant(nil)
     ) {
         let model = LiveTvModel(engine: engine)
@@ -48,6 +52,7 @@ struct LiveTvView: View {
         self.onAddToMultiView = onAddToMultiView
         self.onOpenMultiView = onOpenMultiView
         self.onStartOver = onStartOver
+        self.onCategoriesChanged = onCategoriesChanged
         _searchRequest = searchRequest
     }
 
@@ -111,6 +116,36 @@ struct LiveTvView: View {
         axis == .country ? themeBinding(filter) : countryBinding(filter)
     }
 
+    /// Context menu of a column row: hide a country or theme, or classify a provider category.
+    private func rowMenu(for key: String) -> AnyView {
+        switch axis {
+        case .country:
+            return AnyView(Button("Masquer ce pays", systemImage: "eye.slash") { hide(kind: "country:live", key: key) })
+        case .theme:
+            return AnyView(Button("Masquer ce thème", systemImage: "eye.slash") { hide(kind: "theme:live", key: key) })
+        case .provider:
+            return AnyView(Button("Classer cette catégorie…", systemImage: "globe.europe.africa") {
+                correction = TaxonomyCorrectionModel(engine: model.engine, target: .providerCategory(key))
+            })
+        }
+    }
+
+    /// Hides a country or a theme for the active profile; the bouquet editor shows it again.
+    private func hide(kind: String, key: String) {
+        try? model.engine.hideGroup(profileId: model.engine.activeProfileId(), kind: kind, group: key)
+        if axis == .country, model.filter.country == key { model.filter.country = nil }
+        if axis == .theme, model.filter.theme == key { model.filter.theme = nil; model.filter.subtheme = nil }
+        categoriesChanged()
+    }
+
+    private func categoriesChanged() {
+        onCategoriesChanged()
+        Task {
+            await model.reload(revision: revision)
+            await model.reloadTaxonomyFacets()
+        }
+    }
+
     /// Chips of the other axis, the optional sub-theme row and the title of the selection.
     @ViewBuilder
     private func crossFilters(_ filter: SearchFilterState) -> some View {
@@ -171,7 +206,10 @@ struct LiveTvView: View {
                 }
             },
             startOver: onStartOver,
-            showGuide: onShowGuide
+            showGuide: onShowGuide,
+            correctCategory: { item in
+                correction = TaxonomyCorrectionModel(engine: model.engine, target: .channel(stableHash: item.stableHash, name: item.name))
+            }
         )
     }
 
@@ -185,6 +223,7 @@ struct LiveTvView: View {
             label: { CategoryText.label($0, axis: axis) },
             icon: { CategoryText.icon($0, axis: axis) },
             axisPicker: axisPicker,
+            rowMenu: { key in rowMenu(for: key) },
             selection: columnSelection(model.filter)
         ) {
             VStack(spacing: 0) {
@@ -241,6 +280,12 @@ struct LiveTvView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
                 model.refreshEpg()
+            }
+        }
+        .sheet(item: $correction) { model in
+            TaxonomyCorrectionSheet(model: model) { changed in
+                correction = nil
+                if changed { categoriesChanged() }
             }
         }
         .sheet(item: Binding(

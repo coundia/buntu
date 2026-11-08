@@ -192,7 +192,7 @@ impl DatabaseManager {
             let hidden_clause = if include_hidden {
                 ""
             } else {
-                " AND NOT EXISTS (SELECT 1 FROM hidden_groups h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.kind = ?2 AND h.group_key = LOWER(TRIM(group_title))) AND (((SELECT show_adult FROM temp.catalog_flags) = 1 AND (SELECT kids_only FROM temp.catalog_flags) = 0) OR NOT is_adult_group(group_title)) AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND k.kind = ?2 AND k.group_key = LOWER(TRIM(group_title))))"
+                " AND (NOT EXISTS (SELECT 1 FROM hidden_groups tx WHERE tx.profile_id = (SELECT id FROM temp.active_profile) AND (tx.kind LIKE 'country:%' OR tx.kind LIKE 'theme:%')) OR NOT EXISTS (SELECT 1 FROM hidden_groups tg WHERE tg.profile_id = (SELECT id FROM temp.active_profile) AND ((tg.kind = 'country:' || ?2 AND tg.group_key = LOWER(COALESCE(tx_country, ''))) OR (tg.kind = 'theme:' || ?2 AND tg.group_key = LOWER(COALESCE(tx_theme, '')))))) AND NOT EXISTS (SELECT 1 FROM hidden_groups h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.kind = ?2 AND h.group_key = LOWER(TRIM(group_title))) AND (((SELECT show_adult FROM temp.catalog_flags) = 1 AND (SELECT kids_only FROM temp.catalog_flags) = 0) OR NOT is_adult_group(group_title)) AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND ((k.kind = ?2 AND k.group_key = LOWER(TRIM(group_title))) OR (k.kind = 'theme:' || ?2 AND k.group_key = LOWER(COALESCE(tx_theme, '')) AND COALESCE(tx_theme, '') != 'adult'))))"
             };
 
             let sql = if kind == "series" {
@@ -293,9 +293,10 @@ impl DatabaseManager {
             let hidden_clause = if filter.include_hidden {
                 ""
             } else {
-                "AND NOT EXISTS (SELECT 1 FROM hidden_items h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.stable_hash = i.stable_hash) \
+                "AND (NOT EXISTS (SELECT 1 FROM hidden_groups tx WHERE tx.profile_id = (SELECT id FROM temp.active_profile) AND (tx.kind LIKE 'country:%' OR tx.kind LIKE 'theme:%')) OR NOT EXISTS (SELECT 1 FROM hidden_groups tg WHERE tg.profile_id = (SELECT id FROM temp.active_profile) AND ((tg.kind = 'country:' || i.kind AND tg.group_key = LOWER(COALESCE(i.tx_country, ''))) OR (tg.kind = 'theme:' || i.kind AND tg.group_key = LOWER(COALESCE(i.tx_theme, '')))))) \
+                 AND NOT EXISTS (SELECT 1 FROM hidden_items h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.stable_hash = i.stable_hash) \
                  AND (i.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = i.kind AND g.group_key = LOWER(TRIM(i.group_title)))) \
-                 AND (((SELECT show_adult FROM temp.catalog_flags) = 1 AND (SELECT kids_only FROM temp.catalog_flags) = 0) OR NOT is_adult_group(i.group_title)) AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND k.kind = i.kind AND k.group_key = LOWER(TRIM(i.group_title))))"
+                 AND (((SELECT show_adult FROM temp.catalog_flags) = 1 AND (SELECT kids_only FROM temp.catalog_flags) = 0) OR NOT is_adult_group(i.group_title)) AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND ((k.kind = i.kind AND k.group_key = LOWER(TRIM(i.group_title))) OR (k.kind = 'theme:' || i.kind AND k.group_key = LOWER(COALESCE(i.tx_theme, '')) AND COALESCE(i.tx_theme, '') != 'adult'))))"
             };
 
             let trimmed_q = filter.query.trim();
@@ -436,8 +437,9 @@ impl DatabaseManager {
             let hidden_clause = if filter.include_hidden {
                 ""
             } else {
-                "AND (sc.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = 'series' AND g.group_key = LOWER(TRIM(sc.group_title)))) \
-                 AND (((SELECT show_adult FROM temp.catalog_flags) = 1 AND (SELECT kids_only FROM temp.catalog_flags) = 0) OR NOT is_adult_group(sc.group_title)) AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND k.kind = 'series' AND k.group_key = LOWER(TRIM(sc.group_title))))"
+                "AND (NOT EXISTS (SELECT 1 FROM hidden_groups tx WHERE tx.profile_id = (SELECT id FROM temp.active_profile) AND (tx.kind LIKE 'country:%' OR tx.kind LIKE 'theme:%')) OR NOT EXISTS (SELECT 1 FROM hidden_groups tg WHERE tg.profile_id = (SELECT id FROM temp.active_profile) AND ((tg.kind = 'country:' || 'series' AND tg.group_key = LOWER(COALESCE(sc.tx_country, ''))) OR (tg.kind = 'theme:' || 'series' AND tg.group_key = LOWER(COALESCE(sc.tx_theme, '')))))) \
+                 AND (sc.group_title IS NULL OR NOT EXISTS (SELECT 1 FROM hidden_groups g WHERE g.profile_id = (SELECT id FROM temp.active_profile) AND g.kind = 'series' AND g.group_key = LOWER(TRIM(sc.group_title)))) \
+                 AND (((SELECT show_adult FROM temp.catalog_flags) = 1 AND (SELECT kids_only FROM temp.catalog_flags) = 0) OR NOT is_adult_group(sc.group_title)) AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND ((k.kind = 'series' AND k.group_key = LOWER(TRIM(sc.group_title))) OR (k.kind = 'theme:' || 'series' AND k.group_key = LOWER(COALESCE(sc.tx_theme, '')) AND COALESCE(sc.tx_theme, '') != 'adult'))))"
             };
 
             let trimmed_q = filter.query.trim();

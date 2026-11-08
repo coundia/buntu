@@ -117,6 +117,19 @@ pub fn country_in_phrase(text: &str) -> Option<&'static str> {
     None
 }
 
+/// Names under which a country is searched: its first two names (English, French), or the
+/// international words for `INT`.
+pub fn country_terms(code: &str) -> String {
+    if code == INTERNATIONAL {
+        return "international monde".to_string();
+    }
+    COUNTRIES
+        .iter()
+        .find(|(c, _)| *c == code)
+        .map(|(_, names)| names.iter().take(2).copied().collect::<Vec<_>>().join(" "))
+        .unwrap_or_default()
+}
+
 fn is_international_phrase(text: &str) -> bool {
     let phrase = normalize_phrase(text);
     let words: Vec<&str> = phrase.split(' ').collect();

@@ -84,6 +84,21 @@ enum CategoryText {
         }
     }
 
+    /// Every country a correction can pick, by localised name, with "International" first.
+    static func allCountryCodes(locale: Locale = .current) -> [String] {
+        let codes = Locale.Region.isoRegions.map(\.identifier).filter { $0.count == 2 && $0.allSatisfy(\.isLetter) }
+        let named = codes.filter { locale.localizedString(forRegionCode: $0) != nil }
+        let sorted = named.sorted { countryName($0, locale: locale).compare(countryName($1, locale: locale), locale: locale) == .orderedAscending }
+        return [internationalKey] + sorted
+    }
+
+    /// Themes a user can assign by hand: `adult` is derived from the provider's label only and `other`
+    /// means "no theme".
+    static let assignableThemes = [
+        "general", "news", "sports", "entertainment", "movies", "series", "kids", "music",
+        "documentary", "lifestyle", "education", "religious", "institutional", "shopping",
+    ]
+
     // MARK: Themes
 
     static func themeName(_ id: String) -> String {

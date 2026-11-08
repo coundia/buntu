@@ -97,6 +97,13 @@ fn name_dictionary() -> &'static Dictionary {
     DICT.get_or_init(|| Dictionary::build(NAME_KEYWORDS))
 }
 
+/// Theme named by one word of a spoken request ("info", "sport", "films"), for the assistant
+/// (PRD-33 lot 33.4). `general`, `other` and `adult` are never guessed from a word.
+pub fn theme_for_word(word: &str) -> Option<(Theme, Option<&'static str>)> {
+    let (theme, subtheme) = label_dictionary().word(&normalize_phrase(word))?;
+    (!matches!(theme, Theme::General | Theme::Other | Theme::Adult)).then_some((theme, subtheme))
+}
+
 /// The label without a leading country, language or region code: `FR| SPORTS` -> `SPORTS`.
 fn without_leading_code(label: &str) -> &str {
     match leading_code(label) {

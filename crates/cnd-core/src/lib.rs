@@ -34,7 +34,9 @@ pub use db::library_repo::{
 pub use db::profile_repo::{FavoriteFolderRecord, ProfileRecord};
 pub use db::recording_repo::{NewRecordingRequest, RecordingRecord, SeriesRuleRecord};
 pub use db::catalog_repo::{CatalogFilter, FacetCount, SeasonSummary, SeriesRecord, SortField};
-pub use db::taxonomy_repo::{CategoryAxis, CategoryFacet, TaxonomyFilter, TaxonomyStatus};
+pub use db::taxonomy_repo::{
+    CategoryAxis, CategoryFacet, ItemTaxonomy, TaxonomyCorrection, TaxonomyFilter, TaxonomyOverrideSummary, TaxonomyStatus,
+};
 pub use db::download_repo::{
     DownloadLogRecord, DownloadPartRecord, DownloadTaskRecord, NewDownloadRequest,
 };
@@ -848,6 +850,42 @@ impl CndEngine {
 
     pub fn clear_taxonomy_override(&self, stable_hash: String) -> Result<(), CndError> {
         Ok(self.db.clear_taxonomy_override(&stable_hash)?)
+    }
+
+    /// Classifies every item of a provider category the same way (PRD-33 § 7).
+    pub fn set_taxonomy_group_override(
+        &self,
+        group_title: String,
+        country: Option<String>,
+        themes: Option<Vec<String>>,
+    ) -> Result<(), CndError> {
+        Ok(self.db.set_taxonomy_group_override(&group_title, country.as_deref(), themes.as_deref())?)
+    }
+
+    pub fn clear_taxonomy_group_override(&self, group_title: String) -> Result<(), CndError> {
+        Ok(self.db.clear_taxonomy_group_override(&group_title)?)
+    }
+
+    /// Country and themes of an item as stored, and whether a correction or a category rule applies.
+    pub fn get_item_taxonomy(&self, stable_hash: String) -> Result<Option<ItemTaxonomy>, CndError> {
+        Ok(self.db.get_item_taxonomy(&stable_hash)?)
+    }
+
+    pub fn get_taxonomy_override(&self, stable_hash: String) -> Result<Option<TaxonomyCorrection>, CndError> {
+        Ok(self.db.get_taxonomy_override(&stable_hash)?)
+    }
+
+    pub fn get_taxonomy_group_override(&self, group_title: String) -> Result<Option<TaxonomyCorrection>, CndError> {
+        Ok(self.db.get_taxonomy_group_override(&group_title)?)
+    }
+
+    pub fn taxonomy_override_summary(&self) -> Result<TaxonomyOverrideSummary, CndError> {
+        Ok(self.db.taxonomy_override_summary()?)
+    }
+
+    /// Forgets every correction; returns how many were removed.
+    pub fn reset_taxonomy_overrides(&self) -> Result<u32, CndError> {
+        Ok(self.db.reset_taxonomy_overrides()?)
     }
 
     pub fn taxonomy_status(&self) -> Result<TaxonomyStatus, CndError> {

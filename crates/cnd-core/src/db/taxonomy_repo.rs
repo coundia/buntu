@@ -3,6 +3,7 @@
 //! No classification rule lives here: they are in `crate::taxonomy`.
 
 use crate::db::catalog_repo::FacetCount;
+use crate::db::profile_repo::normalize_group_key;
 use crate::db::{chrono_now_ts, DatabaseManager, DbError};
 use crate::taxonomy::{
     classify_with_override, ClassifyInput, Theme, ThemeSource, TaxonomyOverride, TAXONOMY_VERSION,
@@ -91,6 +92,32 @@ pub struct TaxonomyStatus {
     pub live_without_theme: u32,
 }
 
+/// A correction as stored: `None` keeps the computed value.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TaxonomyCorrection {
+    pub country: Option<String>,
+    pub themes: Vec<String>,
+}
+
+/// What the classifier decided for one item, and whether the user corrected it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ItemTaxonomy {
+    /// ISO code, `INT`, or `None` when unknown.
+    pub country: Option<String>,
+    pub themes: Vec<String>,
+    /// The item has its own correction.
+    pub corrected: bool,
+    /// A rule on its provider category applies to it.
+    pub category_rule: bool,
+}
+
+/// Corrections made by the user (PRD-33 § 7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct TaxonomyOverrideSummary {
+    pub items: u32,
+    pub groups: u32,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ClassifyReport {
     pub items: u64,
@@ -114,15 +141,21 @@ enum Scope {
     Source(i64),
     SeriesEpisodes(i64),
     Hash(String),
+    /// Every item of a provider category, by its normalised label.
+    Group(String),
 }
 
+/// `(source, series, hash, group_key)`: the `NULL` ones do not restrict the scope.
+type ScopeParams<'a> = (Option<i64>, Option<i64>, Option<&'a str>, Option<&'a str>);
+
 impl Scope {
-    fn params(&self) -> (Option<i64>, Option<i64>, Option<&str>) {
+    fn params(&self) -> ScopeParams<'_> {
         match self {
-            Scope::All => (None, None, None),
-            Scope::Source(id) => (Some(*id), None, None),
-            Scope::SeriesEpisodes(id) => (None, Some(*id), None),
-            Scope::Hash(h) => (None, None, Some(h)),
+            Scope::All => (None, None, None, None),
+            Scope::Source(id) => (Some(*id), None, None, None),
+            Scope::SeriesEpisodes(id) => (None, Some(*id), None, None),
+            Scope::Hash(h) => (None, None, Some(h), None),
+            Scope::Group(g) => (None, None, None, Some(g)),
         }
     }
 }
@@ -137,13 +170,24 @@ fn series_theme_sql(alias: &str) -> String {
 fn visibility_sql(alias: &str, kind_literal: &str) -> String {
     format!(
         " AND NOT EXISTS (SELECT 1 FROM hidden_groups h WHERE h.profile_id = (SELECT id FROM temp.active_profile) AND h.kind = {kind_literal} AND h.group_key = LOWER(TRIM({alias}.group_title))) \
+         AND (NOT EXISTS (SELECT 1 FROM hidden_groups tx WHERE tx.profile_id = (SELECT id FROM temp.active_profile) AND (tx.kind LIKE 'country:%' OR tx.kind LIKE 'theme:%')) OR NOT EXISTS (SELECT 1 FROM hidden_groups tg WHERE tg.profile_id = (SELECT id FROM temp.active_profile) AND ((tg.kind = 'country:' || {kind_literal} AND tg.group_key = LOWER(COALESCE({alias}.tx_country, ''))) OR (tg.kind = 'theme:' || {kind_literal} AND tg.group_key = LOWER(COALESCE({alias}.tx_theme, '')))))) \
          AND (((SELECT show_adult FROM temp.catalog_flags) = 1 AND (SELECT kids_only FROM temp.catalog_flags) = 0) OR NOT is_adult_group({alias}.group_title)) \
-         AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND k.kind = {kind_literal} AND k.group_key = LOWER(TRIM({alias}.group_title))))"
+         AND ((SELECT kids_only FROM temp.catalog_flags) = 0 OR EXISTS (SELECT 1 FROM kids_allowed_groups k WHERE k.profile_id = (SELECT id FROM temp.active_profile) AND ((k.kind = {kind_literal} AND k.group_key = LOWER(TRIM({alias}.group_title))) OR (k.kind = 'theme:' || {kind_literal} AND k.group_key = LOWER(COALESCE({alias}.tx_theme, '')) AND COALESCE({alias}.tx_theme, '') != 'adult'))))"
     )
 }
 
+/// Corrections of single items, by `stable_hash`.
 fn load_overrides(conn: &Connection) -> Result<HashMap<String, TaxonomyOverride>, DbError> {
-    let mut stmt = conn.prepare("SELECT stable_hash, country, themes FROM taxonomy_overrides")?;
+    load_override_table(conn, "SELECT stable_hash, country, themes FROM taxonomy_overrides")
+}
+
+/// Corrections of a whole provider category, by normalised label. An item's own correction wins.
+fn load_group_overrides(conn: &Connection) -> Result<HashMap<String, TaxonomyOverride>, DbError> {
+    load_override_table(conn, "SELECT group_key, country, themes FROM taxonomy_group_overrides")
+}
+
+fn load_override_table(conn: &Connection, sql: &str) -> Result<HashMap<String, TaxonomyOverride>, DbError> {
+    let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<String>>(2)?))
     })?;
@@ -154,6 +198,13 @@ fn load_overrides(conn: &Connection) -> Result<HashMap<String, TaxonomyOverride>
         out.insert(hash, TaxonomyOverride { country, themes });
     }
     Ok(out)
+}
+
+fn correction_record(c: TaxonomyOverride) -> TaxonomyCorrection {
+    TaxonomyCorrection {
+        country: c.country,
+        themes: c.themes.unwrap_or_default().into_iter().map(|t| t.as_str().to_string()).collect(),
+    }
 }
 
 fn stored_version(conn: &Connection) -> u32 {
@@ -180,16 +231,18 @@ impl DatabaseManager {
         progress: &dyn Fn(u64, u64),
         cancel: &AtomicBool,
     ) -> Result<u64, DbError> {
-        let (source, series, hash) = scope.params();
+        let (source, series, hash, group) = scope.params();
         let total: i64 = self.with_conn(|conn| {
             Ok(conn.query_row(
                 "SELECT COUNT(*) FROM iptv_items
-                 WHERE (?1 IS NULL OR source_id = ?1) AND (?2 IS NULL OR series_id = ?2) AND (?3 IS NULL OR stable_hash = ?3)",
-                params![source, series, hash],
+                 WHERE (?1 IS NULL OR source_id = ?1) AND (?2 IS NULL OR series_id = ?2) AND (?3 IS NULL OR stable_hash = ?3)
+                   AND (?4 IS NULL OR LOWER(TRIM(group_title)) = ?4)",
+                params![source, series, hash, group],
                 |r| r.get(0),
             )?)
         })?;
         let overrides = self.with_conn(load_overrides)?;
+        let group_overrides = self.with_conn(load_group_overrides)?;
         let (mut last_id, mut done) = (0i64, 0u64);
         loop {
             if cancel.load(Ordering::Relaxed) {
@@ -201,9 +254,10 @@ impl DatabaseManager {
                     let mut stmt = tx.prepare_cached(
                         "SELECT id, stable_hash, kind, group_title, tvg_id, name, country FROM iptv_items
                          WHERE id > ?4 AND (?1 IS NULL OR source_id = ?1) AND (?2 IS NULL OR series_id = ?2) AND (?3 IS NULL OR stable_hash = ?3)
+                           AND (?6 IS NULL OR LOWER(TRIM(group_title)) = ?6)
                          ORDER BY id LIMIT ?5",
                     )?;
-                    let mapped = stmt.query_map(params![source, series, hash, last_id, PAGE_SIZE], |r| {
+                    let mapped = stmt.query_map(params![source, series, hash, last_id, PAGE_SIZE, group], |r| {
                         Ok(StoredItem {
                             id: r.get(0)?,
                             stable_hash: r.get(1)?,
@@ -219,7 +273,7 @@ impl DatabaseManager {
                 {
                     let mut delete = tx.prepare_cached("DELETE FROM item_themes WHERE item_id = ?1")?;
                     let mut update = tx.prepare_cached(
-                        "UPDATE iptv_items SET tx_country = ?2, tx_country_src = ?3, tx_theme = ?4 WHERE id = ?1",
+                        "UPDATE iptv_items SET tx_country = ?2, tx_country_src = ?3, tx_theme = ?4, tx_terms = ?5 WHERE id = ?1",
                     )?;
                     let mut insert = tx.prepare_cached(
                         "INSERT INTO item_themes (item_id, theme, subtheme, src) VALUES (?1, ?2, ?3, ?4)",
@@ -234,13 +288,17 @@ impl DatabaseManager {
                                 name: &item.name,
                                 country_attr: item.country.as_deref().filter(|c| !c.trim().is_empty()),
                             },
-                            overrides.get(&item.stable_hash),
+                            overrides.get(&item.stable_hash).or_else(|| {
+                                item.group_title.as_deref().and_then(|g| group_overrides.get(&normalize_group_key(g)))
+                            }),
                         );
+                        let terms = c.search_terms();
                         update.execute(params![
                             id,
                             c.country.as_ref().map(|m| m.code.as_str()),
                             c.country.as_ref().map(|m| m.source.as_str()),
-                            c.primary_theme().as_str()
+                            c.primary_theme().as_str(),
+                            (!terms.is_empty()).then_some(terms)
                         ])?;
                         delete.execute(params![id])?;
                         for tag in &c.themes {
@@ -264,19 +322,21 @@ impl DatabaseManager {
 
     /// Series rows carry a country and a main theme only.
     fn classify_series(&self, scope: &Scope) -> Result<u64, DbError> {
-        let (source, _, hash) = scope.params();
+        let (source, _, hash, group) = scope.params();
         if matches!(scope, Scope::SeriesEpisodes(_)) {
             return Ok(0);
         }
         let overrides = self.with_conn(load_overrides)?;
+        let group_overrides = self.with_conn(load_group_overrides)?;
         self.with_conn_mut(|conn| {
             let tx = conn.transaction()?;
             let rows: Vec<(i64, String, Option<String>, String)> = {
                 let mut stmt = tx.prepare_cached(
                     "SELECT id, stable_hash, group_title, title FROM series_catalog
-                     WHERE (?1 IS NULL OR source_id = ?1) AND (?2 IS NULL OR stable_hash = ?2)",
+                     WHERE (?1 IS NULL OR source_id = ?1) AND (?2 IS NULL OR stable_hash = ?2)
+                       AND (?3 IS NULL OR LOWER(TRIM(group_title)) = ?3)",
                 )?;
-                let mapped = stmt.query_map(params![source, hash], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+                let mapped = stmt.query_map(params![source, hash, group], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
                 mapped.collect::<Result<_, _>>()?
             };
             {
@@ -284,7 +344,9 @@ impl DatabaseManager {
                 for (id, stable_hash, group, title) in &rows {
                     let c = classify_with_override(
                         &ClassifyInput { kind: "series", group_title: group.as_deref(), tvg_id: None, name: title, country_attr: None },
-                        overrides.get(stable_hash),
+                        overrides
+                            .get(stable_hash)
+                            .or_else(|| group.as_deref().and_then(|g| group_overrides.get(&normalize_group_key(g)))),
                     );
                     update.execute(params![id, c.country.as_ref().map(|m| m.code.as_str()), c.primary_theme().as_str()])?;
                 }
@@ -439,14 +501,9 @@ impl DatabaseManager {
         })
     }
 
-    /// Stores (or replaces) a correction and applies it to the item at once. `themes` are theme ids;
-    /// unknown ids are refused so the closed list stays closed.
-    pub fn set_taxonomy_override(
-        &self,
-        stable_hash: &str,
-        country: Option<&str>,
-        themes: Option<&[String]>,
-    ) -> Result<(), DbError> {
+    /// Checks a correction and writes it in the storage format: an upper-case code or `INT`, and
+    /// a comma-separated list of theme ids. Unknown values are refused so the closed list stays closed.
+    fn validate_correction(country: Option<&str>, themes: Option<&[String]>) -> Result<(Option<String>, Option<String>), DbError> {
         let country = country.map(|c| c.trim().to_ascii_uppercase()).filter(|c| !c.is_empty());
         if let Some(c) = &country {
             if !(c == "INT" || (c.len() == 2 && c.chars().all(|ch| ch.is_ascii_uppercase()))) {
@@ -464,6 +521,17 @@ impl DatabaseManager {
                 (!ids.is_empty()).then(|| ids.join(","))
             }
         };
+        Ok((country, themes))
+    }
+
+    /// Stores (or replaces) a correction and applies it to the item at once. `themes` are theme ids.
+    pub fn set_taxonomy_override(
+        &self,
+        stable_hash: &str,
+        country: Option<&str>,
+        themes: Option<&[String]>,
+    ) -> Result<(), DbError> {
+        let (country, themes) = Self::validate_correction(country, themes)?;
         if country.is_none() && themes.is_none() {
             return self.clear_taxonomy_override(stable_hash);
         }
@@ -484,6 +552,112 @@ impl DatabaseManager {
             Ok(())
         })?;
         self.reclassify_hash(stable_hash)
+    }
+
+    /// Classifies every item of a provider category the same way ("Classer cette catégorie…",
+    /// PRD-33 § 7). The rule survives refreshes; an item's own correction still wins over it.
+    pub fn set_taxonomy_group_override(
+        &self,
+        group_title: &str,
+        country: Option<&str>,
+        themes: Option<&[String]>,
+    ) -> Result<(), DbError> {
+        let key = normalize_group_key(group_title);
+        if key.is_empty() {
+            return Err(DbError::Query("A category rule needs a category name".to_string()));
+        }
+        let (country, themes) = Self::validate_correction(country, themes)?;
+        if country.is_none() && themes.is_none() {
+            return self.clear_taxonomy_group_override(group_title);
+        }
+        self.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO taxonomy_group_overrides (group_key, country, themes, updated_at) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(group_key) DO UPDATE SET country = excluded.country, themes = excluded.themes, updated_at = excluded.updated_at",
+                params![key, country, themes, chrono_now_ts()],
+            )?;
+            Ok(())
+        })?;
+        self.reclassify_group(&key)
+    }
+
+    pub fn clear_taxonomy_group_override(&self, group_title: &str) -> Result<(), DbError> {
+        let key = normalize_group_key(group_title);
+        self.with_conn(|conn| {
+            conn.execute("DELETE FROM taxonomy_group_overrides WHERE group_key = ?1", params![key])?;
+            Ok(())
+        })?;
+        self.reclassify_group(&key)
+    }
+
+    fn reclassify_group(&self, key: &str) -> Result<(), DbError> {
+        self.classify_scope(Scope::Group(key.to_string()), &|_, _| {}, &AtomicBool::new(false))?;
+        Ok(())
+    }
+
+    /// Country and themes stored for an item, with where they come from (for the correction sheet).
+    pub fn get_item_taxonomy(&self, stable_hash: &str) -> Result<Option<ItemTaxonomy>, DbError> {
+        self.with_conn(|conn| {
+            let row: Option<(i64, Option<String>, Option<String>)> = conn
+                .query_row(
+                    "SELECT id, tx_country, group_title FROM iptv_items WHERE stable_hash = ?1",
+                    params![stable_hash],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .ok();
+            let Some((id, country, group)) = row else { return Ok(None) };
+            let mut stmt = conn.prepare("SELECT theme FROM item_themes WHERE item_id = ?1 ORDER BY (theme = (SELECT tx_theme FROM iptv_items WHERE id = ?1)) DESC, theme")?;
+            let themes = stmt.query_map(params![id], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
+            let corrected: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM taxonomy_overrides WHERE stable_hash = ?1)",
+                params![stable_hash],
+                |r| r.get(0),
+            )?;
+            let category_rule: bool = match group.as_deref().map(normalize_group_key) {
+                Some(key) => conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM taxonomy_group_overrides WHERE group_key = ?1)",
+                    params![key],
+                    |r| r.get(0),
+                )?,
+                None => false,
+            };
+            Ok(Some(ItemTaxonomy { country, themes, corrected, category_rule }))
+        })
+    }
+
+    /// The correction stored for one item, if any.
+    pub fn get_taxonomy_override(&self, stable_hash: &str) -> Result<Option<TaxonomyCorrection>, DbError> {
+        self.with_conn(|conn| Ok(load_overrides(conn)?.remove(stable_hash).map(correction_record)))
+    }
+
+    /// The rule stored for a provider category, if any.
+    pub fn get_taxonomy_group_override(&self, group_title: &str) -> Result<Option<TaxonomyCorrection>, DbError> {
+        let key = normalize_group_key(group_title);
+        self.with_conn(|conn| Ok(load_group_overrides(conn)?.remove(&key).map(correction_record)))
+    }
+
+    /// How many corrections the user made: of single items, and of whole provider categories.
+    pub fn taxonomy_override_summary(&self) -> Result<TaxonomyOverrideSummary, DbError> {
+        self.with_conn(|conn| {
+            let items: u32 = conn.query_row("SELECT COUNT(*) FROM taxonomy_overrides", [], |r| r.get(0))?;
+            let groups: u32 = conn.query_row("SELECT COUNT(*) FROM taxonomy_group_overrides", [], |r| r.get(0))?;
+            Ok(TaxonomyOverrideSummary { items, groups })
+        })
+    }
+
+    /// Forgets every correction and classifies the whole catalogue again ("Réinitialiser mes
+    /// corrections de catégories"). Returns how many corrections were removed.
+    pub fn reset_taxonomy_overrides(&self) -> Result<u32, DbError> {
+        let summary = self.taxonomy_override_summary()?;
+        self.with_conn(|conn| {
+            conn.execute("DELETE FROM taxonomy_overrides", [])?;
+            conn.execute("DELETE FROM taxonomy_group_overrides", [])?;
+            Ok(())
+        })?;
+        if summary.items + summary.groups > 0 {
+            self.reclassify_all(&|_, _| {}, &AtomicBool::new(false))?;
+        }
+        Ok(summary.items + summary.groups)
     }
 
     fn reclassify_hash(&self, stable_hash: &str) -> Result<(), DbError> {
@@ -550,10 +724,14 @@ impl DatabaseManager {
                         })?;
                         return Ok(rows.collect::<Result<Vec<_>, _>>()?);
                     }
+                    // A theme the profile hid is not listed, even for channels that carry it as a second theme.
                     let sql = format!(
                         "SELECT t.theme, t.subtheme, COUNT(*) FROM iptv_items {alias}
                          JOIN item_themes t ON t.item_id = {alias}.id
                          WHERE {kind_filter}(?1 IS NULL OR {alias}.source_id = ?1){extra}{visibility}
+                           AND (NOT EXISTS (SELECT 1 FROM hidden_groups tx WHERE tx.profile_id = (SELECT id FROM temp.active_profile) AND tx.kind LIKE 'theme:%')
+                                OR NOT EXISTS (SELECT 1 FROM hidden_groups ht WHERE ht.profile_id = (SELECT id FROM temp.active_profile)
+                                               AND ht.kind = 'theme:{kind}' AND ht.group_key = t.theme))
                          GROUP BY t.theme, t.subtheme"
                     );
                     let mut stmt = conn.prepare(&sql)?;
@@ -935,6 +1113,210 @@ http://iptv.local/live/3.ts\n";
             .expect("second ingest");
         let status = engine.taxonomy_status().expect("status");
         assert_eq!((status.live_total, status.live_without_country), (3, 0));
+    }
+
+    // ---- Lot 33.4 -------------------------------------------------------------------------
+
+    fn query_names(db: &DatabaseManager, query: &str) -> Vec<String> {
+        let mut f = catalog_filter("live");
+        f.query = query.to_string();
+        db.query_catalog_with(&f, &TaxonomyFilter::default()).expect("search").into_iter().map(|i| i.name).collect()
+    }
+
+    #[test]
+    fn a_country_or_a_theme_can_be_hidden_per_profile_on_every_axis() {
+        let (db, source) = sample();
+        db.classify_source(source).unwrap();
+        let all = TaxonomyFilter::default();
+        db.hide_group(2, "country:live", "FR").unwrap();
+        db.hide_group(2, "theme:live", "music").unwrap();
+        assert_eq!(names(&db, &all).len(), 7, "profile 1 still sees everything");
+
+        db.set_active_profile(2).unwrap();
+        assert_eq!(names(&db, &all), vec!["Kids UK", "Mystery", "Rai 1", "Sky News"], "France is gone; Kids UK stays: its main theme is kids, music is only its second");
+        let countries = facets(&db, CategoryAxis::Country, &all);
+        assert!(!countries.iter().any(|(k, _)| k == "FR"), "{countries:?}");
+        let themes = facets(&db, CategoryAxis::Theme, &all);
+        assert!(!themes.iter().any(|(k, _)| k == "music" || k == "general"), "{themes:?}");
+        assert!(db.get_groups("live", None, false).unwrap().iter().all(|g| !g.value.starts_with("FR|")), "provider categories of a hidden country are gone too");
+        db.set_active_profile(1).unwrap();
+        assert_eq!(names(&db, &all).len(), 7);
+
+        db.unhide_group(2, "country:live", "FR").unwrap();
+        db.set_active_profile(2).unwrap();
+        assert!(names(&db, &all).contains(&"TF1".to_string()));
+    }
+
+    #[test]
+    fn a_hidden_country_also_hides_channels_without_a_provider_label() {
+        let (db, source) = db_with(&[live("a", "Orphan FR", "", "x.fr"), live("b", "Other", "General", "y.de")]);
+        db.with_conn(|c| Ok(c.execute("UPDATE iptv_items SET group_title = NULL WHERE stable_hash = 'a'", [])?)).unwrap();
+        db.classify_source(source).unwrap();
+        db.hide_group(1, "country:live", "FR").unwrap();
+        assert_eq!(names(&db, &TaxonomyFilter::default()), vec!["Other"]);
+    }
+
+    #[test]
+    fn a_kids_profile_can_be_given_a_whole_theme_but_never_the_adult_one() {
+        let (db, source) = db_with(&[
+            live("a", "Cartoon", "|UK| KIDS", ""),
+            live("b", "Docs", "|UK| DOCUMENTARY", ""),
+            live("c", "News", "|UK| NEWS", ""),
+            live("d", "Night", "|UK| ADULTS +18", ""),
+        ]);
+        db.classify_source(source).unwrap();
+        let kid = db.create_profile("Kid", "person.crop.circle", true).unwrap();
+        db.set_active_profile(kid.id).unwrap();
+        assert!(names(&db, &TaxonomyFilter::default()).is_empty());
+
+        db.allow_group(kid.id, "theme:live", "kids").unwrap();
+        db.allow_group(kid.id, "theme:live", "documentary").unwrap();
+        assert_eq!(names(&db, &TaxonomyFilter::default()), vec!["Cartoon", "Docs"]);
+        assert_eq!(facets(&db, CategoryAxis::Theme, &TaxonomyFilter::default()).len(), 2);
+        assert_eq!(facets(&db, CategoryAxis::Country, &TaxonomyFilter::default()), vec![("GB".into(), 2)]);
+
+        assert!(db.allow_group(kid.id, "theme:live", "adult").is_err());
+        assert!(db.allow_group(kid.id, "theme:live", " ADULT ").is_err());
+        // An adult channel is out of reach whatever else is allowed.
+        db.set_active_profile(1).unwrap();
+        db.allow_group(kid.id, "live", "|UK| ADULTS +18").unwrap();
+        db.set_active_profile(kid.id).unwrap();
+        assert!(!names(&db, &TaxonomyFilter::default()).contains(&"Night".to_string()));
+    }
+
+    #[test]
+    fn a_provider_category_can_be_classified_once_for_all_its_channels() {
+        let (db, source) = db_with(&[
+            live("a", "Rai 1", "Italy", ""),
+            live("b", "Rai 2", "Italy", ""),
+            live("c", "TF1", "FR| GENERALISTES", ""),
+        ]);
+        db.classify_source(source).unwrap();
+        let italy = TaxonomyFilter { country: Some("IT".into()), theme: Some("sports".into()), subtheme: None };
+        assert!(names(&db, &italy).is_empty());
+
+        db.set_taxonomy_group_override("  ITALY ", None, Some(&["sports".to_string()])).unwrap();
+        assert_eq!(names(&db, &italy), vec!["Rai 1", "Rai 2"], "the rule applies to the whole category, whatever its spelling");
+        assert_eq!(names(&db, &TaxonomyFilter { theme: Some("sports".into()), ..Default::default() }).len(), 2);
+
+        // An item's own correction wins over the category rule.
+        db.set_taxonomy_override("b", None, Some(&["music".to_string()])).unwrap();
+        assert_eq!(names(&db, &italy), vec!["Rai 1"]);
+
+        // The rule survives a refresh of the source and a full reclassification.
+        db.classify_source(source).unwrap();
+        db.reclassify_all(&|_, _| {}, &AtomicBool::new(false)).unwrap();
+        assert_eq!(names(&db, &italy), vec!["Rai 1"]);
+        assert_eq!(db.taxonomy_override_summary().unwrap(), TaxonomyOverrideSummary { items: 1, groups: 1 });
+
+        db.clear_taxonomy_group_override("Italy").unwrap();
+        assert!(names(&db, &italy).is_empty());
+        assert!(db.set_taxonomy_group_override("Italy", Some("Italia"), None).is_err());
+        assert!(db.set_taxonomy_group_override("  ", None, Some(&["sports".to_string()])).is_err());
+        assert!(db.set_taxonomy_group_override("Italy", None, Some(&["nope".to_string()])).is_err());
+    }
+
+    #[test]
+    fn resetting_the_corrections_restores_the_computed_values() {
+        let (db, source) = sample();
+        db.classify_source(source).unwrap();
+        assert_eq!(db.reset_taxonomy_overrides().unwrap(), 0, "nothing to reset");
+        db.set_taxonomy_override("g", Some("BE"), Some(&["sports".to_string()])).unwrap();
+        db.set_taxonomy_group_override("Italy", None, Some(&["sports".to_string()])).unwrap();
+        assert_eq!(db.taxonomy_override_summary().unwrap(), TaxonomyOverrideSummary { items: 1, groups: 1 });
+
+        assert_eq!(db.reset_taxonomy_overrides().unwrap(), 2);
+        assert_eq!(db.taxonomy_override_summary().unwrap(), TaxonomyOverrideSummary { items: 0, groups: 0 });
+        assert!(names(&db, &TaxonomyFilter { country: Some("BE".into()), ..Default::default() }).is_empty());
+        assert_eq!(names(&db, &TaxonomyFilter { country: Some("".into()), ..Default::default() }), vec!["Mystery"]);
+        assert_eq!(names(&db, &TaxonomyFilter { country: Some("IT".into()), theme: Some("sports".into()), subtheme: None }).len(), 0);
+    }
+
+    #[test]
+    fn search_finds_channels_by_the_words_of_their_country_and_theme() {
+        let (db, source) = db_with(&[
+            live("a", "L'Equipe", "FR| SPORTS", ""),
+            live("b", "Sky Sports", "|UK| SPORTS", ""),
+            live("c", "BFM", "FR| INFOS", ""),
+            live("d", "Night", "FR| ADULTS +18", ""),
+        ]);
+        db.classify_source(source).unwrap();
+        assert_eq!(query_names(&db, "sport france"), vec!["L'Equipe"]);
+        assert_eq!(query_names(&db, "sport Royaume-Uni"), vec!["Sky Sports"]);
+        assert_eq!(query_names(&db, "infos france"), vec!["BFM"]);
+        assert_eq!(query_names(&db, "news"), vec!["BFM"], "English theme words work too");
+        let both = query_names(&db, "sport");
+        assert!(both.contains(&"L'Equipe".to_string()) && both.contains(&"Sky Sports".to_string()));
+        assert!(!query_names(&db, "adult").iter().any(|n| n == "Night"), "adult words are not indexed as theme terms");
+        // Name and provider label still work.
+        assert_eq!(query_names(&db, "Equipe"), vec!["L'Equipe"]);
+    }
+
+    #[test]
+    fn corrections_are_searchable_at_once() {
+        let (db, source) = sample();
+        db.classify_source(source).unwrap();
+        assert!(query_names(&db, "Mystery sport").is_empty());
+        db.set_taxonomy_override("g", Some("BE"), Some(&["sports".to_string()])).unwrap();
+        assert_eq!(query_names(&db, "sport belgique"), vec!["Mystery"]);
+    }
+
+    #[test]
+    fn an_index_without_the_taxonomy_column_is_rebuilt_once_and_keeps_its_content() {
+        let dir = std::env::temp_dir().join(format!("cnd-fts-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("old.db");
+        {
+            let db = DatabaseManager::open(&path).unwrap();
+            let source = db.add_source("S", "m3u", Some("http://x/l.m3u"), None, None, None).unwrap();
+            insert(&db, source, &[live("a", "L'Equipe", "FR| SPORTS", ""), live("b", "BFM", "FR| INFOS", "")]);
+            db.classify_source(source).unwrap();
+        }
+        // Back to the previous index definition, as an older version left it.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "DROP TRIGGER trg_items_ai; DROP TRIGGER trg_items_ad; DROP TRIGGER trg_items_au; DROP TABLE iptv_items_fts;
+                 CREATE VIRTUAL TABLE iptv_items_fts USING fts5(name, group_title, tvg_name, content='iptv_items', content_rowid='id', tokenize='unicode61 remove_diacritics 2');
+                 INSERT INTO iptv_items_fts(iptv_items_fts) VALUES ('rebuild');",
+            )
+            .unwrap();
+        }
+        let db = DatabaseManager::open(&path).unwrap();
+        assert_eq!(query_names(&db, "Equipe"), vec!["L'Equipe"], "existing names are still searchable");
+        assert_eq!(query_names(&db, "sport france"), vec!["L'Equipe"], "the words stored before the upgrade are indexed");
+        // And a later open does not rebuild again nor break anything.
+        drop(db);
+        let db = DatabaseManager::open(&path).unwrap();
+        assert_eq!(query_names(&db, "infos"), vec!["BFM"]);
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_correction_sheet_can_read_what_is_stored_and_where_it_comes_from() {
+        let (db, source) = sample();
+        db.classify_source(source).unwrap();
+        let t = db.get_item_taxonomy("e").unwrap().expect("known item");
+        assert_eq!((t.country.as_deref(), t.corrected, t.category_rule), (Some("GB"), false, false));
+        assert_eq!(t.themes, vec!["kids", "music"]);
+        assert!(db.get_item_taxonomy("nope").unwrap().is_none());
+        assert!(db.get_taxonomy_override("e").unwrap().is_none());
+
+        db.set_taxonomy_override("e", Some("be"), Some(&["sports".to_string()])).unwrap();
+        db.set_taxonomy_group_override("Animation;Kids;Music", None, Some(&["education".to_string()])).unwrap();
+        let t = db.get_item_taxonomy("e").unwrap().unwrap();
+        assert_eq!((t.country.as_deref(), t.corrected, t.category_rule), (Some("BE"), true, true));
+        assert_eq!(t.themes, vec!["sports"]);
+        assert_eq!(
+            db.get_taxonomy_override("e").unwrap(),
+            Some(TaxonomyCorrection { country: Some("BE".into()), themes: vec!["sports".into()] })
+        );
+        assert_eq!(
+            db.get_taxonomy_group_override(" animation;kids;music ").unwrap(),
+            Some(TaxonomyCorrection { country: None, themes: vec!["education".into()] })
+        );
+        assert!(db.get_taxonomy_group_override("Italy").unwrap().is_none());
     }
 
     /// Migrates and reclassifies a real catalogue and prints what the category column would show.

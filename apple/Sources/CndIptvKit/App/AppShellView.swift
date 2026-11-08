@@ -159,6 +159,7 @@ private struct LoadedShellView: View {
         _recordingsModel = State(initialValue: RecordingsModel(backend: engine))
         let settings = SettingsModel(engine: engine, directory: state.downloadDirectory)
         settings.onConsoleVisibilityChanged = { [weak state] visible in state?.showNetworkConsole = visible }
+        settings.onCategoriesChanged = { [weak state] in state?.reloadSnapshot() }
         _settingsModel = State(initialValue: settings)
         _consoleModel = State(initialValue: ConsoleModel(engine: engine))
         #if !os(tvOS)
@@ -801,6 +802,7 @@ private struct LoadedShellView: View {
                     onAddToMultiView: addToMultiView,
                     onOpenMultiView: openMultiView,
                     onStartOver: { channel, program in startOver(channel: channel, program: program) },
+                    onCategoriesChanged: { state.reloadSnapshot() },
                     searchRequest: $liveSearchRequest
                 )
             case .guide:

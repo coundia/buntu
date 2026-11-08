@@ -15,7 +15,7 @@ pub use country::{CountryMatch, CountrySource};
 pub use theme::{ThemeSource, ThemeTag};
 
 /// Version of the rules and the dictionaries (PRD-33 § 4.3).
-pub const TAXONOMY_VERSION: u32 = 1;
+pub const TAXONOMY_VERSION: u32 = 2;
 
 /// The closed list of themes (PRD-33 § 3). Stored by `as_str`, never by position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -122,6 +122,21 @@ impl Classification {
 
     pub fn has_theme(&self, theme: Theme) -> bool {
         self.themes.iter().any(|t| t.theme == theme)
+    }
+
+    /// Country and theme names, indexed for search (PRD-33 lot 33.4): "france sport infos news…".
+    pub fn search_terms(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(country) = &self.country {
+            parts.push(country::country_terms(&country.code));
+        }
+        for tag in &self.themes {
+            if let Some((_, terms)) = data::themes::THEME_TERMS.iter().find(|(t, _)| *t == tag.theme) {
+                parts.push((*terms).to_string());
+            }
+        }
+        parts.retain(|p| !p.is_empty());
+        parts.join(" ")
     }
 }
 

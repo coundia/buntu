@@ -268,3 +268,22 @@ pub const NAME_KEYWORDS: &[(&str, Theme, Option<&str>)] = &[
 /// Sub-themes that qualify another theme rather than name one (PRD-33 § 3): `Classic;News` is
 /// news, `Family;Religious` is religious. They only count when the label has no other theme.
 pub const QUALIFIER_SUBTHEMES: &[&str] = &["classic", "family", "interactive"];
+
+/// Words indexed for search next to a channel's theme (PRD-33 lot 33.4), French and English, so
+/// "sport italie" finds Italian sports channels. `adult` is deliberately absent.
+pub const THEME_TERMS: &[(Theme, &str)] = &[
+    (General, "generaliste general"),
+    (News, "infos info news actualites"),
+    (Sports, "sport sports"),
+    (Entertainment, "divertissement entertainment"),
+    (Movies, "cinema films movies"),
+    (Series, "series feuilletons"),
+    (Kids, "jeunesse enfants kids"),
+    (Music, "musique music"),
+    (Documentary, "documentaires documentary"),
+    (Lifestyle, "lifestyle art de vivre"),
+    (Education, "education"),
+    (Religious, "religion religious"),
+    (Institutional, "institutionnel"),
+    (Shopping, "teleachat shopping"),
+];

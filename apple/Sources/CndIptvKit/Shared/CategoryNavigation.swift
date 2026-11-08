@@ -13,6 +13,8 @@ struct CategoryNavigation<Content: View>: View {
     var icon: (String) -> String? = { _ in nil }
     /// Pays · Thèmes · Fournisseur switch, shown above the column, the chips and in the sheet.
     var axisPicker: AnyView? = nil
+    /// Context menu of a row (hide a country or theme, classify a provider category…).
+    var rowMenu: ((String) -> AnyView)? = nil
     @Binding var selection: String?
     @ViewBuilder var content: () -> Content
 
@@ -156,9 +158,9 @@ struct CategoryNavigation<Content: View>: View {
     @ViewBuilder
     private func row(_ group: FacetCount) -> some View {
         if let symbol = icon(group.value) {
-            Label(label(group.value), systemImage: symbol).lineLimit(1)
+            Label(label(group.value), systemImage: symbol).lineLimit(1).rowMenu(rowMenu, key: group.value)
         } else {
-            Text(label(group.value)).lineLimit(1)
+            Text(label(group.value)).lineLimit(1).rowMenu(rowMenu, key: group.value)
         }
     }
 
@@ -244,5 +246,13 @@ struct CategoryNavigation<Content: View>: View {
                 .foregroundStyle(selected ? Color.white : Color.primary)
         }
         .buttonStyle(.plain)
+    }
+}
+
+private extension View {
+    /// Adds the row's context menu when the screen provides one.
+    @ViewBuilder
+    func rowMenu(_ menu: ((String) -> AnyView)?, key: String) -> some View {
+        if let menu { contextMenu { menu(key) } } else { self }
     }
 }

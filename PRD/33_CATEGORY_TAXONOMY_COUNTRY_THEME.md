@@ -263,7 +263,7 @@ fn is_reclassifying_categories() -> bool;
 | **33.1** | Module `taxonomy/` : données pays et thèmes, `tokenize`, `country`, `theme`, `classify`. Aucun branchement. | Tests unitaires sur un **jeu de libellés réels** (les 242 catégories de la base locale, des libellés Xtream courants, des `tvg-id` iptv-org) avec le résultat attendu. |
 | **33.2** ✅ | Schéma, migrations, classement en fin d'actualisation (M3U et Xtream), reclassement en arrière-plan, **thème emprunté à une autre chaîne de même `tvg-id`** quand le libellé n'en donne pas (502 chaînes de la base locale), requêtes de facettes et filtres croisés, exports UniFFI, XCFramework. | Tests Rust de bout en bout et SLA ; `get_groups` inchangé. |
 | **33.3** ✅ | Interface : sélecteur d'axe, colonnes Pays et Thèmes, chips croisées, titres, iPhone et Apple TV. | Essai à l'écran sur la base locale. |
-| **33.4** | Corrections de l'utilisateur, masquage de pays / thèmes, thèmes autorisés des profils enfants, recherche FTS par pays et thème, assistant ⌘K. | Tests Rust et Swift ; essai à l'écran. |
+| **33.4** ✅ | Corrections de l'utilisateur, masquage de pays / thèmes, thèmes autorisés des profils enfants, recherche FTS par pays et thème, assistant ⌘K. | Tests Rust et Swift ; essai à l'écran. |
 | **33.5** | VOD : genres de films et séries (même moteur, sous-thèmes `comedy`, `family`, `classic`, `action`…), indice XMLTV `<category>` pour les chaînes non classées. | Tests et essai à l'écran. |
 
 ---
@@ -336,7 +336,7 @@ fn is_reclassifying_categories() -> bool;
 
 ## 15. Statut d'Implémentation & Validation
 
-**Lots 33.1 à 33.3 terminés** (branche `feat/category-taxonomy`). Lots 33.4 et 33.5 non commencés.
+**Lots 33.1 à 33.4 terminés** (branche `feat/category-taxonomy`). Lot 33.5 non commencé.
 
 - **Module `crates/cnd-core/src/taxonomy/`**, fonctions pures sans SQLite ni réseau, non branché sur l'ingestion :
   - `data/countries.rs` : 213 pays et territoires ISO avec noms anglais, français et locaux, codes non ISO (`uk`, `usa`, `uae`, `ksa`), préfixes de langue, mots « international » ;
@@ -377,3 +377,14 @@ fn is_reclassifying_categories() -> bool;
 - **Tests** : 16 nouveaux (`CategoryAxisTests.swift`) : drapeaux et noms, tri des pays et des thèmes, libellés des 16 thèmes et des sous-thèmes, titre de sélection, stockage de l'axe, et le modèle Live TV contre un vrai moteur (colonne, chips, compteurs, recherche, axe Fournisseur). Suite Swift complète : 426 tests au vert.
 - **Vérification visuelle** : aucun affichage n'est disponible dans l'environnement de développement (la capture d'écran échoue), l'app lancée n'a donc pas pu être vue. La colonne a été **rendue hors écran** (macOS, mode sombre, 900 × 520) pour les axes Thèmes et Pays : mise en page, icônes, drapeaux et chips conformes. **Non compilé pour iOS, tvOS et visionOS** (les plateformes ne sont pas installées sur cette machine ; seul macOS a été compilé et testé). **Non vérifiés à l'écran** : la mise en page étroite (feuille « Catégories » et chips sur iPhone), Apple TV (`focusSection` du sélecteur) et le mode clair.
 - **Hors lot** : Films et Séries gardent l'axe Fournisseur jusqu'au lot 33.5.
+
+### Lot 33.4 : corrections, masquage, profils enfants, recherche, assistant
+
+- **Corrections** (§ 7) : menu d'une chaîne « Changer le pays ou le thème… » et menu d'une catégorie du fournisseur « Classer cette catégorie… » (axe Fournisseur) ouvrent une feuille (pays, 14 thèmes assignables ; `adult` et `other` ne s'assignent pas à la main). Une correction de chaîne l'emporte sur la règle de catégorie ; les deux survivent aux actualisations et aux reclassements. Table `taxonomy_group_overrides` (clé = libellé normalisé). Lecture pour la feuille : `get_item_taxonomy`, `get_taxonomy_override`, `get_taxonomy_group_override`. Réinitialisation : Réglages > Catégories (`reset_taxonomy_overrides`, avec confirmation et compteurs).
+- **Masquage** : clic droit sur un pays ou un thème de la colonne (« Masquer ce pays / ce thème »), par profil, stocké dans `hidden_groups` avec les types `country:live` et `theme:live` (donc synchronisé par iCloud comme les bouquets). Un thème masqué cache les chaînes dont c'est le **thème principal**, et disparaît de la liste des thèmes ; un pays masqué cache aussi les chaînes sans libellé de fournisseur. Réaffichage : éditeur de bouquets, section « Pays et thèmes masqués ». Appliqué aux listes, aux séries, aux facettes et aux recommandations.
+- **Profils enfants** : l'écran des catégories autorisées propose les **thèmes** (Chaînes seulement) ; autoriser un thème autorise ses chaînes, sauf celles des catégories adultes. `allow_group` refuse `theme:*` + `adult`.
+- **Recherche** : l'index plein texte couvre les noms du pays et des thèmes (`tx_terms`, FR et EN, `adult` exclu) : « sport italie », « infos france ». Un index sans cette colonne est reconstruit une fois à l'ouverture (testé sur une base à l'ancienne définition) ; `TAXONOMY_VERSION` passe à 2 pour remplir les mots des bases existantes.
+- **Assistant ⌘K** : un thème et un pays dans la demande (« le sport en France », « une chaîne d'info en anglais », la langue donnant ses pays) interrogent le classement et passent juste après ce que le moteur local a déjà trouvé. Un thème seul ou un pays seul n'ajoute rien (la recherche par mots profite déjà des nouveaux mots indexés).
+- **Vitesse** : les contrôles de masquage sont gardés par un test évalué une fois (le profil masque-t-il un pays ou un thème ?) : listes à 88 ms pour deux requêtes sur 50 000 éléments, comme avant le lot ; reclassement 1,2 s.
+- **Tests** : Rust, 49 tests de taxonomie (dont masquage par profil, thèmes enfants, règles de catégorie, réinitialisation, recherche, mise à niveau de l'index, assistant) ; Swift, 9 nouveaux (`CategoryCorrectionTests.swift`), 435 au total au vert. Feuille de correction rendue hors écran (macOS, mode sombre) : conforme.
+- **Non fait** : ordre personnalisé des pays par glisser-déposer (l'ordre reste : pays de l'appareil, puis alphabétique) ; recherche par pays et thème des séries (elle cherche encore dans le titre et le libellé) ; thèmes des enfants pour films et séries (lot 33.5). **Non vérifié à l'écran** : menus contextuels de la colonne et des chaînes, feuille sur iPhone, Réglages ; **non compilé** pour iOS, tvOS et visionOS.
