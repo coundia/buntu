@@ -37,7 +37,8 @@ Cela doit marcher sur **Samsung (Tizen)**, **Android TV / Google TV** et **Apple
 - **Apple :** l'envoi Mac → iPhone/iPad par réseau local existe (`PRD-26`, lot 26.3), mais l'Apple TV n'a **pas d'écran « Recevoir »**.
 
 **Hors périmètre :**
-- envoi de favoris, d'historique, de profils ou de clés d'IA (seulement les sources et leurs réglages : EPG, User-Agent, en-têtes) ;
+- envoi de favoris, d'historique ou de profils (seulement les sources et leurs réglages : EPG, User-Agent, en-têtes) ;
+- envoi de **clés d'IA** et de texte : traité par le `PRD-40` (§ 4.2), qui ajoute deux types de message scellé à ce protocole ;
 - playlists locales (`file://`), trop lourdes pour ce canal : elles passent par le fichier `.cndshare` du `PRD-26` ;
 - appareils sur des réseaux différents (voir le relais facultatif, § 9).
 
