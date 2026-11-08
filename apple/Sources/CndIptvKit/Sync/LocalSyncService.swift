@@ -160,14 +160,51 @@ public struct DiscoveredPeer: Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
     public let deviceType: String
+    public let canPlay: Bool
+    public let capabilities: [String]
+    public let state: String
     public let lastSeen: Date
 
-    public init(id: String, name: String, deviceType: String, lastSeen: Date = Date()) {
+    public init(
+        id: String,
+        name: String,
+        deviceType: String,
+        canPlay: Bool = true,
+        capabilities: [String] = [],
+        state: String = "idle",
+        lastSeen: Date = Date()
+    ) {
         self.id = id
         self.name = name
         self.deviceType = deviceType
+        self.canPlay = canPlay
+        self.capabilities = capabilities
+        self.state = state
         self.lastSeen = lastSeen
     }
+}
+
+public struct PlayRequestDTO: Codable, Sendable {
+    public var target_device_id: String
+    public var request_id: String
+    public var content_key: String
+    public var source_key: String?
+    public var item_kind: String
+    public var provider_ref: String?
+    public var title: String?
+    public var position_ms: UInt64
+    public var profile_uuid: String?
+    public var replace: Bool
+}
+
+public struct PlaybackStateDTO: Codable, Sendable {
+    public var device_id: String
+    public var content_key: String?
+    public var title: String?
+    public var state: String
+    public var position_ms: UInt64
+    public var duration_ms: UInt64
+    public var controls: [String]?
 }
 
 /// Serverless local network continuity transport over Bonjour (_buntu-sync._tcp) + TCP (PRD-41 Lot 41.4).
@@ -184,6 +221,17 @@ public final class LocalSyncService: @unchecked Sendable {
 
     public var onPlayRemote: (@Sendable (_ contentKey: String, _ positionMs: UInt64, _ title: String?, _ sourceKey: String?) -> Void)?
     public var onDeltaImported: (@Sendable () -> Void)?
+
+    // PRD-42 Handoff Callbacks
+    public var onPlayRequest: (@Sendable (_ req: PlayRequestDTO) -> Void)?
+    public var onPlayReady: (@Sendable (_ requestId: String) -> Void)?
+    public var onPlayRefused: (@Sendable (_ requestId: String, _ reason: String) -> Void)?
+    public var onPlayGo: (@Sendable (_ requestId: String, _ positionMs: UInt64) -> Void)?
+    public var onPlaybackState: (@Sendable (_ state: PlaybackStateDTO) -> Void)?
+    public var onPlaybackControl: (@Sendable (_ action: String, _ value: Int64?) -> Void)?
+    public var onReleaseStream: (@Sendable (_ sourceKey: String) -> Void)?
+    public var onReleaseRequest: (@Sendable (_ requestId: String) -> Void)?
+    public var onReleaseDone: (@Sendable (_ requestId: String, _ contentKey: String?, _ positionMs: UInt64) -> Void)?
 
     @ObservationIgnored private let engine: CndEngine?
     @ObservationIgnored private let store: HouseholdStore
@@ -374,6 +422,85 @@ public final class LocalSyncService: @unchecked Sendable {
                 }
             }
 
+        case "play_request":
+            if let req = try? JSONDecoder().decode(PlayRequestDTO.self, from: jsonData) {
+                let localId = store.deviceId
+                if req.target_device_id.isEmpty || req.target_device_id == localId || req.target_device_id.hasPrefix(localId.prefix(6)) {
+                    Task { @MainActor in
+                        self.onPlayRequest?(req)
+                    }
+                }
+            }
+
+        case "play_ready":
+            if let reqId = root["request_id"] as? String {
+                Task { @MainActor in
+                    self.onPlayReady?(reqId)
+                }
+            }
+
+        case "play_refused":
+            if let reqId = root["request_id"] as? String,
+               let reason = root["reason"] as? String {
+                Task { @MainActor in
+                    self.onPlayRefused?(reqId, reason)
+                }
+            }
+
+        case "play_go":
+            if let reqId = root["request_id"] as? String,
+               let pos = root["position_ms"] as? UInt64 {
+                Task { @MainActor in
+                    self.onPlayGo?(reqId, pos)
+                }
+            }
+
+        case "playback_state":
+            if let stateDto = try? JSONDecoder().decode(PlaybackStateDTO.self, from: jsonData) {
+                Task { @MainActor in
+                    self.onPlaybackState?(stateDto)
+                }
+            }
+
+        case "playback_control":
+            if let targetId = root["target_device_id"] as? String,
+               let action = root["action"] as? String {
+                let localId = store.deviceId
+                if targetId.isEmpty || targetId == localId || targetId.hasPrefix(localId.prefix(6)) {
+                    let value = (root["value"] as? NSNumber)?.int64Value
+                    Task { @MainActor in
+                        self.onPlaybackControl?(action, value)
+                    }
+                }
+            }
+
+        case "release_stream":
+            if let sourceKey = root["source_key"] as? String {
+                Task { @MainActor in
+                    self.onReleaseStream?(sourceKey)
+                }
+            }
+
+        case "release_request":
+            if let reqId = root["request_id"] as? String,
+               let targetId = root["target_device_id"] as? String {
+                let localId = store.deviceId
+                if targetId.isEmpty || targetId == localId || targetId.hasPrefix(localId.prefix(6)) {
+                    Task { @MainActor in
+                        self.onReleaseRequest?(reqId)
+                    }
+                }
+            }
+
+        case "release_done":
+            if let reqId = root["request_id"] as? String,
+               let pos = root["position_ms"] as? UInt64 {
+                let cKey = root["content_key"] as? String
+                Task { @MainActor in
+                    self.onReleaseDone?(reqId, cKey, pos)
+                }
+            }
+
         case "ping":
             let pongJson = "{\"type\":\"pong\"}"
             if let sealed = try? sealMessage(pongJson) {
@@ -524,7 +651,18 @@ public final class LocalSyncService: @unchecked Sendable {
         }
     }
 
-    private func broadcastMessage(_ messageJson: String) {
+    public func sendToPeer(peerId: String, messageJson: String) {
+        guard let sealed = try? sealMessage(messageJson) else { return }
+        for (name, conn) in connections {
+            if name.contains(peerId) || peerEndpoints[name]?.debugDescription.contains(peerId) == true {
+                sendEnvelope(sealed, on: conn)
+                return
+            }
+        }
+        broadcastMessage(messageJson)
+    }
+
+    public func broadcastMessage(_ messageJson: String) {
         guard let sealed = try? sealMessage(messageJson) else { return }
         for (_, conn) in connections {
             sendEnvelope(sealed, on: conn)

@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "messages": {
+    "play_request": {
+      "json": "{\"type\":\"play_request\",\"target_device_id\":\"dev_tv_samsung_01\",\"request_id\":\"req_abc123\",\"content_key\":\"eeeb12e4004a2cc37dbf6b5a296d06cf9540088628158a4ed8eb2cbec359ebfe\",\"source_key\":\"09aaef741e3cdf73c3d8422cc78912c9d9e31c389e3438539833056f8f3fcb42\",\"item_kind\":\"movie\",\"provider_ref\":\"5002\",\"title\":\"Inception\",\"position_ms\":45200,\"profile_uuid\":\"u_dad\",\"replace\":true}",
+      "expected_type": "play_request",
+      "expected_target": "dev_tv_samsung_01",
+      "expected_position_ms": 45200
+    },
+    "play_ready": {
+      "json": "{\"type\":\"play_ready\",\"request_id\":\"req_abc123\"}",
+      "expected_type": "play_ready",
+      "expected_request_id": "req_abc123"
+    },
+    "play_refused": {
+      "json": "{\"type\":\"play_refused\",\"request_id\":\"req_abc123\",\"reason\":\"rate_limited\"}",
+      "expected_type": "play_refused",
+      "expected_reason": "rate_limited"
+    },
+    "play_go": {
+      "json": "{\"type\":\"play_go\",\"request_id\":\"req_abc123\",\"position_ms\":46100}",
+      "expected_type": "play_go",
+      "expected_position_ms": 46100
+    },
+    "playback_state": {
+      "json": "{\"type\":\"playback_state\",\"device_id\":\"dev_tv_samsung_01\",\"content_key\":\"eeeb12e4004a2cc37dbf6b5a296d06cf9540088628158a4ed8eb2cbec359ebfe\",\"title\":\"Inception\",\"state\":\"playing\",\"position_ms\":46100,\"duration_ms\":8880000,\"controls\":[\"pause\",\"resume\",\"seek_to\",\"stop\"]}",
+      "expected_type": "playback_state",
+      "expected_state": "playing",
+      "expected_position_ms": 46100
+    },
+    "playback_control": {
+      "json": "{\"type\":\"playback_control\",\"target_device_id\":\"dev_tv_samsung_01\",\"action\":\"seek_by\",\"value\":30000}",
+      "expected_type": "playback_control",
+      "expected_action": "seek_by",
+      "expected_value": 30000
+    },
+    "release_request": {
+      "json": "{\"type\":\"release_request\",\"target_device_id\":\"dev_tv_samsung_01\",\"request_id\":\"req_rel_789\"}",
+      "expected_type": "release_request",
+      "expected_target": "dev_tv_samsung_01"
+    },
+    "release_done": {
+      "json": "{\"type\":\"release_done\",\"request_id\":\"req_rel_789\",\"content_key\":\"eeeb12e4004a2cc37dbf6b5a296d06cf9540088628158a4ed8eb2cbec359ebfe\",\"position_ms\":98200}",
+      "expected_type": "release_done",
+      "expected_position_ms": 98200
+    },
+    "release_stream": {
+      "json": "{\"type\":\"release_stream\",\"source_key\":\"09aaef741e3cdf73c3d8422cc78912c9d9e31c389e3438539833056f8f3fcb42\"}",
+      "expected_type": "release_stream",
+      "expected_source_key": "09aaef741e3cdf73c3d8422cc78912c9d9e31c389e3438539833056f8f3fcb42"
+    },
+    "device_announce_extended": {
+      "json": "{\"type\":\"device_announce\",\"device_id\":\"dev_tv_01\",\"device_name\":\"Salon TV\",\"device_type\":\"tv\",\"app_version\":\"1.0.0\",\"can_play\":true,\"capabilities\":[\"seek\",\"background\"],\"state\":\"idle\",\"profile_uuid\":\"u_main\",\"kids\":false}",
+      "expected_type": "device_announce",
+      "expected_can_play": true,
+      "expected_state": "idle"
+    }
+  },
+  "single_stream_checks": [
+    {
+      "current_source_key": "09aaef741e3cdf73c3d8422cc78912c9d9e31c389e3438539833056f8f3fcb42",
+      "release_source_key": "09aaef741e3cdf73c3d8422cc78912c9d9e31c389e3438539833056f8f3fcb42",
+      "must_stop": true
+    },
+    {
+      "current_source_key": "09aaef741e3cdf73c3d8422cc78912c9d9e31c389e3438539833056f8f3fcb42",
+      "release_source_key": "50da872e2da3b988f27f58dcbb926897ce56a8349fcc842b8a00352799fd8f82",
+      "must_stop": false
+    },
+    {
+      "current_source_key": null,
+      "release_source_key": "09aaef741e3cdf73c3d8422cc78912c9d9e31c389e3438539833056f8f3fcb42",
+      "must_stop": false
+    }
+  ],
+  "xtream_url_reconstruction": [
+    {
+      "server": "http://my-iptv-server.com:8080/",
+      "username": "user123",
+      "password": "pass456_fake_placeholder",
+      "kind": "live",
+      "provider_ref": "1001",
+      "container_ext": null,
+      "expected_url": "http://my-iptv-server.com:8080/live/user123/pass456_fake_placeholder/1001.ts"
+    },
+    {
+      "server": "http://my-iptv-server.com:8080",
+      "username": "user123",
+      "password": "pass456_fake_placeholder",
+      "kind": "movie",
+      "provider_ref": "5002",
+      "container_ext": "mkv",
+      "expected_url": "http://my-iptv-server.com:8080/movie/user123/pass456_fake_placeholder/5002.mkv"
+    },
+    {
+      "server": "http://my-iptv-server.com:8080",
+      "username": "user123",
+      "password": "pass456_fake_placeholder",
+      "kind": "episode",
+      "provider_ref": "9001",
+      "container_ext": "mp4",
+      "expected_url": "http://my-iptv-server.com:8080/series/user123/pass456_fake_placeholder/9001.mp4"
+    }
+  ],
+  "content_key_verification": [
+    {
+      "source_key": "09aaef741e3cdf73c3d8422cc78912c9d9e31c389e3438539833056f8f3fcb42",
+      "kind": "live",
+      "provider_id": "1001",
+      "expected_content_key": "eeeb12e4004a2cc37dbf6b5a296d06cf9540088628158a4ed8eb2cbec359ebfe"
+    },
+    {
+      "source_key": "09aaef741e3cdf73c3d8422cc78912c9d9e31c389e3438539833056f8f3fcb42",
+      "kind": "movie",
+      "provider_id": "5002",
+      "expected_content_key": "f842040521748226742432154eb9904ccd45b2e598bd8b42bfca99dd1e62237b"
+    }
+  ]
+}
+

@@ -26,6 +26,7 @@ import { NavigationHistory, NavEntry } from '../core/navigation/NavigationHistor
 import { screenState } from '../core/navigation/ScreenState';
 import { zapContext } from '../core/navigation/ZapContext';
 import { LocalSyncService } from '../core/sync/LocalSyncService';
+import { RemotePlaybackCoordinator } from '../core/remote/RemotePlayback';
 
 export type ScreenRoute =
   | 'onboarding'
@@ -160,8 +161,9 @@ export const App: Component = () => {
       setEngineReady(true);
     }
 
-    // Start local household continuity sync (PRD-41)
+    // Start local household continuity sync (PRD-41 & PRD-42)
     void LocalSyncService.getInstance().start();
+    RemotePlaybackCoordinator.getInstance().init();
 
     unsubRemotePlay = LocalSyncService.getInstance().onPlayRemote(async (event) => {
       console.log('[Continuity] Remote play received:', event);
@@ -187,6 +189,8 @@ export const App: Component = () => {
         play: 'PLAY',
         pause: 'PAUSE',
         play_pause: 'PLAY_PAUSE',
+        channel_up: 'CHANNEL_UP',
+        channel_down: 'CHANNEL_DOWN',
         red: 'RED',
         green: 'GREEN',
         yellow: 'YELLOW',
@@ -322,6 +326,7 @@ export const App: Component = () => {
     }
     setSelectedItem(item);
     setCurrentRoute('player');
+    RemotePlaybackCoordinator.getInstance().setLocalPlaying(item);
     // What already plays in a mini player (live channel or film) keeps running, not reopened.
     await engine.play(item, { force: item.kind !== 'live' && !engine.isPlayingItem(item) });
   };

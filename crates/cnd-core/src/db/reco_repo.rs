@@ -223,6 +223,121 @@ impl DatabaseManager {
         })
     }
 
+    pub fn item_by_content_key(
+        &self,
+        content_key: &str,
+        source_key: Option<&str>,
+        provider_ref: Option<&str>,
+    ) -> Result<Option<IptvItemRecord>, DbError> {
+        // 1. Direct match on stable_hash
+        if let Some(item) = self.item_by_stable_hash(content_key)? {
+            return Ok(Some(item));
+        }
+
+        // 2. Suffix match (Tizen compatibility & migrated keys)
+        let candidate: Option<IptvItemRecord> = self.with_conn(|conn| {
+            let sql = format!(
+                "SELECT {ITEM_SELECT_COLUMNS} {ITEM_JOINS} WHERE i.stable_hash LIKE '%' || ?1 LIMIT 1"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            Ok(stmt.query_row(params![content_key], map_item_row).optional()?)
+        })?;
+        if candidate.is_some() {
+            return Ok(candidate);
+        }
+
+        // 3. Fallback: match by provider_ref in stream_url
+        if let Some(pref) = provider_ref {
+            let candidate_ref: Option<IptvItemRecord> = self.with_conn(|conn| {
+                let pattern1 = format!("%/{pref}.%");
+                let pattern2 = format!("%/{pref}");
+                let sql = format!(
+                    "SELECT {ITEM_SELECT_COLUMNS} {ITEM_JOINS} WHERE i.stream_url LIKE ?1 OR i.stream_url LIKE ?2 LIMIT 1"
+                );
+                let mut stmt = conn.prepare(&sql)?;
+                Ok(stmt.query_row(params![pattern1, pattern2], map_item_row).optional()?)
+            })?;
+            if candidate_ref.is_some() {
+                return Ok(candidate_ref);
+            }
+        }
+
+        // 4. Fallback Xtream reconstruction (PRD-42 § 6.2)
+        if let (Some(s_key), Some(pref)) = (source_key, provider_ref) {
+            let source_info: Option<(i64, String, String, String, String)> = self.with_conn(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT id, source_type, server, username, password_ref FROM iptv_sources WHERE server IS NOT NULL"
+                )?;
+                let rows = stmt.query_map([], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                        r.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                        r.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                    ))
+                })?;
+                for row in rows.flatten() {
+                    let computed_key = cnd_domain::identity::compute_source_key(&row.1, &row.2, Some(&row.3));
+                    if computed_key.eq_ignore_ascii_case(s_key) {
+                        return Ok(Some(row));
+                    }
+                }
+                Ok(None)
+            })?;
+
+            if let Some((src_id, src_type, server, username, password_ref)) = source_info {
+                if src_type.eq_ignore_ascii_case("xtream") {
+                    let stream_url = cnd_domain::remote::resolve::reconstruct_xtream_url(
+                        &server,
+                        &username,
+                        &password_ref,
+                        "movie",
+                        pref,
+                        Some("mp4"),
+                    );
+                    if !stream_url.is_empty() {
+                        return Ok(Some(IptvItemRecord {
+                            id: 0,
+                            source_id: src_id,
+                            series_id: None,
+                            stable_hash: content_key.to_string(),
+                            kind: "movie".to_string(),
+                            season_num: None,
+                            episode_num: None,
+                            name: format!("Item {pref}"),
+                            name_clean: format!("Item {pref}"),
+                            year: None,
+                            group_title: None,
+                            tvg_id: None,
+                            logo_url: None,
+                            chno: None,
+                            host: server,
+                            container_ext: Some("mp4".to_string()),
+                            stream_url,
+                            user_agent: None,
+                            referer: None,
+                            headers_json: None,
+                            catchup_type: None,
+                            catchup_source: None,
+                            catchup_days: None,
+                            plot: None,
+                            imdb_id: None,
+                            imdb_rating: None,
+                            is_favorite: false,
+                            is_broken: false,
+                            resume_position_ms: 0,
+                            duration_ms: 0,
+                            is_completed: false,
+                        }));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
     pub fn series_by_stable_hash(&self, hash: &str) -> Result<Option<SeriesRecord>, DbError> {
         self.with_conn(|conn| {
             let sql = format!("{SERIES_SELECT} WHERE sc.stable_hash = ?1");
