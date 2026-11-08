@@ -228,3 +228,64 @@ fn test_content_key_verification_from_vectors() {
     }
 }
 
+
+#[test]
+fn test_running_playback_is_never_replaced_without_consent() {
+    let mut limiter = RateLimiter::new();
+
+    // "Open" target that is already playing, sender says replace = true:
+    // the sender's flag is not a permission, the user of the target must be asked.
+    let mut target = TargetHandoffSession::new();
+    let eval = target.evaluate_request(
+        "sender_1", "req_300", "ck", Some("sk"), Some("Film"),
+        TargetAccessPolicy::Open, true, true, true, false, false, &mut limiter, 1000,
+    );
+    assert!(matches!(eval, TargetEvaluation::NeedsUserPrompt { .. }));
+    assert_eq!(target.state, TargetState::Idle, "nothing reserved before the user answers");
+
+    // Without `replace` an "Open" target answers `busy`.
+    let eval = target.evaluate_request(
+        "sender_2", "req_301", "ck", Some("sk"), Some("Film"),
+        TargetAccessPolicy::Open, true, true, false, false, false, &mut limiter, 5000,
+    );
+    assert!(matches!(
+        eval,
+        TargetEvaluation::Refused { reason: PlayRefuseReason::Busy, .. }
+    ));
+}
+
+#[test]
+fn test_second_request_cannot_steal_a_pending_reservation() {
+    let mut limiter = RateLimiter::new();
+    let mut target = TargetHandoffSession::new();
+
+    let first = target.evaluate_request(
+        "sender_1", "req_400", "ck1", Some("sk"), None,
+        TargetAccessPolicy::Open, true, false, false, false, false, &mut limiter, 1000,
+    );
+    assert!(matches!(first, TargetEvaluation::Ready { .. }));
+
+    // Another device asks while the first origin is about to stop its playback.
+    let second = target.evaluate_request(
+        "sender_2", "req_401", "ck2", Some("sk"), None,
+        TargetAccessPolicy::Open, true, false, false, false, false, &mut limiter, 3000,
+    );
+    assert!(matches!(
+        second,
+        TargetEvaluation::Refused { reason: PlayRefuseReason::Busy, .. }
+    ));
+    // The first handoff still completes.
+    assert!(target.on_play_go("req_400", 0).is_ok());
+
+    // An expired reservation (> 10 s) no longer blocks anybody.
+    let mut target = TargetHandoffSession::new();
+    let _ = target.evaluate_request(
+        "sender_1", "req_410", "ck1", Some("sk"), None,
+        TargetAccessPolicy::Open, true, false, false, false, false, &mut limiter, 20_000,
+    );
+    let later = target.evaluate_request(
+        "sender_2", "req_411", "ck2", Some("sk"), None,
+        TargetAccessPolicy::Open, true, false, false, false, false, &mut limiter, 40_000,
+    );
+    assert!(matches!(later, TargetEvaluation::Ready { .. }));
+}

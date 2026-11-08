@@ -731,7 +731,7 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
      */
     func isLocalAiProvider(config: AiProviderConfig)  -> Bool
     
-    func itemByContentKey(contentKey: String, sourceKey: String?, providerRef: String?) throws  -> IptvItemRecord?
+    func itemByContentKey(contentKey: String, sourceKey: String?, providerRef: String?, itemKind: String?) throws  -> IptvItemRecord?
     
     func itemByStableHash(hash: String) throws  -> IptvItemRecord?
     
@@ -1641,12 +1641,13 @@ open func isLocalAiProvider(config: AiProviderConfig) -> Bool  {
 })
 }
     
-open func itemByContentKey(contentKey: String, sourceKey: String?, providerRef: String?)throws  -> IptvItemRecord?  {
+open func itemByContentKey(contentKey: String, sourceKey: String?, providerRef: String?, itemKind: String?)throws  -> IptvItemRecord?  {
     return try  FfiConverterOptionTypeIptvItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_method_cndengine_item_by_content_key(self.uniffiClonePointer(),
         FfiConverterString.lower(contentKey),
         FfiConverterOptionString.lower(sourceKey),
-        FfiConverterOptionString.lower(providerRef),$0
+        FfiConverterOptionString.lower(providerRef),
+        FfiConverterOptionString.lower(itemKind),$0
     )
 })
 }
@@ -14551,7 +14552,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_cnd_core_checksum_method_cndengine_is_local_ai_provider() != 25045) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_cnd_core_checksum_method_cndengine_item_by_content_key() != 42909) {
+    if (uniffi_cnd_core_checksum_method_cndengine_item_by_content_key() != 26404) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_item_by_stable_hash() != 58225) {

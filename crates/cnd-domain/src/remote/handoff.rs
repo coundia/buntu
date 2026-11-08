@@ -354,8 +354,30 @@ impl TargetHandoffSession {
             };
         }
 
-        // Busy check or prompt needed
-        if is_playing && !replace_requested {
+        // Another handoff is already waiting for its `PlayGo`: do not let a second
+        // request overwrite the reservation (the first origin would stop for nothing).
+        if let TargetState::Reserved { request_id: held, reserved_at_ms, .. } = &self.state {
+            if held != request_id && now_ms.saturating_sub(*reserved_at_ms) <= 10_000 {
+                return TargetEvaluation::Refused {
+                    reply: SyncMessage::PlayRefused {
+                        request_id: request_id.to_string(),
+                        reason: PlayRefuseReason::Busy,
+                    },
+                    reason: PlayRefuseReason::Busy,
+                };
+            }
+        }
+
+        // A running playback is NEVER replaced without the user's consent on the target
+        // screen (PRD-42 § 5.3), whatever the policy and whatever the sender's `replace` flag
+        // says: `replace` only means "the origin accepts to be told yes/no", it is not a permission.
+        if is_playing {
+            if replace_requested {
+                return TargetEvaluation::NeedsUserPrompt {
+                    request_id: request_id.to_string(),
+                    title: title.map(|t| t.to_string()),
+                };
+            }
             if policy == TargetAccessPolicy::AlwaysAsk {
                 return TargetEvaluation::NeedsUserPrompt {
                     request_id: request_id.to_string(),

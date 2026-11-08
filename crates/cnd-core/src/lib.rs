@@ -1149,11 +1149,13 @@ impl CndEngine {
         content_key: String,
         source_key: Option<String>,
         provider_ref: Option<String>,
+        item_kind: Option<String>,
     ) -> Result<Option<db::IptvItemRecord>, CndError> {
         Ok(self.db.item_by_content_key(
             &content_key,
             source_key.as_deref(),
             provider_ref.as_deref(),
+            item_kind.as_deref(),
         )?)
     }
 
