@@ -274,4 +274,21 @@ flowchart LR
 
 ## 15. Statut d'Implémentation & Validation
 
-**Non commencé.** Seules les mesures du § 9 ont été faites, sans modification du code.
+**Implémenté et validé (Rust `cnd-domain`, `cnd-core`, `cnd-domain-wasm`, Apple iOS/macOS, Android, et Tizen).**
+- **41.1 (Identité commune)** : `crates/cnd-domain/src/identity.rs` implémente `normalize_xtream_server`, `normalize_m3u_endpoint`, `compute_source_key`, et `compute_content_key` avec blake3. Validé par les vecteurs déterministes.
+- **41.2 (Modèle de synchronisation)** : `crates/cnd-domain/src/sync/` (`clock.rs`, `records.rs`, `merge.rs`, `envelope.rs`). Horloge HLC ordonnée, résolution de conflit LWW, propagation des tombstones, test de convergence à 3 appareils avec désynchronisation physique de 10 minutes (`test_three_devices_convergence_with_clock_skew_and_unordered_delivery`).
+- **41.3 (Foyer & Appairage)** : Extension de `crates/cnd-domain/src/pairing.rs` avec `SealedPayload::HouseholdJoin`. Clé de foyer 256 bits (`HouseholdKey`) chiffrée avec WebCrypto AES-GCM dans `HouseholdStore` (IndexedDB `cnd_household_vault`). Enveloppes sécurisées avec AAD et compteur de séquence anti-rejeu.
+- **41.4 (Transport local & Exports UniFFI / Wasm)** :
+  - Exports UniFFI dans `crates/cnd-core/src/lib.rs` : `sync_create_household`, `sync_derive_household_id`, `sync_seal_envelope`, `sync_open_envelope`, `sync_compute_source_key`, `sync_compute_content_key`. XCFramework Apple et liaisons Kotlin régénérés.
+  - Apple (`apple/Sources/CndIptvKit/Sync/`) : `HouseholdStore.swift` (Trousseau / Keychain), `LocalSyncService.swift` (Bonjour `_buntu-sync._tcp` + TCP avec framing de longueur, chiffrement AES-256-GCM, échange de deltas et `play_remote`).
+  - Android (`android/core/platform/.../sync/`) : `HouseholdStore.kt` (Android KeyStore via `SecretStore`), `LocalSyncService.kt` (mDNS/NSD `_buntu-sync._tcp.` avec `MulticastLock`, serveur/client TCP, chiffrement AES-256-GCM). Contrat dans `core:domain` (`HouseholdSyncRepository`) et implémentation dans `core:data` (`RustHouseholdSyncRepository`).
+  - Tizen : Exports WebAssembly 1.0 MVP et client WebSocket canal Samsung.
+- **41.5 (Interface utilisateur)** :
+  - Apple : Section « Continuité & Foyer (Réseau Local) » dans `SettingsView.swift` avec statut, affichage des appareils pairs, création/rejoindre foyer, synchronisation manuelle et quitter.
+  - Tizen : Section « Appareils de la maison & Continuité » dans `SettingsView.tsx`.
+- **Tests & Parité inter-plateformes** :
+  - Rust : 61 tests unitaires passés avec succès (`cargo test -p cnd-domain`), Clippy 0 avertissement (`cargo clippy --workspace --all-targets -- -D warnings`).
+  - Apple : 509 tests XCTest + 15 tests Swift Testing + 7 tests de parité (`SyncParityTests`) passés avec 0 échec (`swift test`). Schémas Xcode `CndIPTV-macOS` et `CndIPTV-iOS` compilés avec succès.
+  - Android : Tests de parité (`SyncParityTest`), tests unitaires `:core:data`, `:core:platform` et `:app:testDebugUnitTest` passés avec 0 échec (`BUILD SUCCESSFUL`).
+  - Tizen : 26 suites et 138 tests passés avec succès (`npm test`).
+  - Contrôle des secrets : `./scripts/check-secrets.sh` propre (`secrets check: clean`).
