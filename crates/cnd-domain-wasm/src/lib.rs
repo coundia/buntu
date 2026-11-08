@@ -354,3 +354,152 @@ pub fn wasm_ai_resolve_local(
     let outcome = cnd_domain::ai::resolve_local(command, &candidates, &context);
     serde_json::to_string(&outcome).map_err(|e| JsValue::from_str(&e.to_string()))
 }
+
+// -----------------------------------------------------------------------------
+// PRD 41 — Continuité Multi-Appareils & Identité Commune
+// -----------------------------------------------------------------------------
+
+#[wasm_bindgen]
+pub fn wasm_source_key(source_type: &str, server_or_url: &str, username: &str) -> String {
+    let user_opt = if username.trim().is_empty() {
+        None
+    } else {
+        Some(username)
+    };
+    cnd_domain::identity::compute_source_key(source_type, server_or_url, user_opt)
+}
+
+#[wasm_bindgen]
+pub fn wasm_content_key(source_key: &str, kind: &str, provider_id: &str) -> String {
+    cnd_domain::identity::compute_content_key(source_key, kind, provider_id)
+}
+
+fn parse_hex_32(hex_str: &str) -> Result<[u8; 32], JsValue> {
+    let s = hex_str.trim();
+    if s.len() != 64 {
+        return Err(JsValue::from_str("la clé doit contenir 64 caractères hexadécimaux (32 octets)"));
+    }
+    let mut key = [0u8; 32];
+    for (i, chunk) in s.as_bytes().chunks(2).enumerate() {
+        let chunk_str = std::str::from_utf8(chunk).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        key[i] = u8::from_str_radix(chunk_str, 16)
+            .map_err(|_| JsValue::from_str("caractère hexadécimal invalide dans la clé"))?;
+    }
+    Ok(key)
+}
+
+fn parse_hex_12(hex_str: &str) -> Result<[u8; 12], JsValue> {
+    let s = hex_str.trim();
+    if s.len() != 24 {
+        return Err(JsValue::from_str("le nonce doit contenir 24 caractères hexadécimaux (12 octets)"));
+    }
+    let mut nonce = [0u8; 12];
+    for (i, chunk) in s.as_bytes().chunks(2).enumerate() {
+        let chunk_str = std::str::from_utf8(chunk).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        nonce[i] = u8::from_str_radix(chunk_str, 16)
+            .map_err(|_| JsValue::from_str("caractère hexadécimal invalide dans le nonce"))?;
+    }
+    Ok(nonce)
+}
+
+#[wasm_bindgen]
+pub fn wasm_sync_create_household(entropy_hex: &str) -> Result<String, JsValue> {
+    let entropy = parse_hex_32(entropy_hex)?;
+    let household_key = cnd_domain::sync::create_household_key(&entropy);
+    let key_bytes = parse_hex_32(&household_key)?;
+    let household_id = cnd_domain::sync::derive_household_id(&key_bytes);
+
+    let res = serde_json::json!({
+        "household_key": household_key,
+        "household_id": household_id
+    });
+    serde_json::to_string(&res).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn wasm_sync_seal_envelope(
+    household_key_hex: &str,
+    sender_id: &str,
+    sequence: f64,
+    nonce_hex: &str,
+    message_json: &str,
+) -> Result<String, JsValue> {
+    let key = parse_hex_32(household_key_hex)?;
+    let nonce = parse_hex_12(nonce_hex)?;
+    let message: cnd_domain::sync::SyncMessage = serde_json::from_str(message_json)
+        .map_err(|e| JsValue::from_str(&format!("format message invalide : {e}")))?;
+
+    let envelope = cnd_domain::sync::seal_envelope(&key, sender_id, sequence as u64, &nonce, &message)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    serde_json::to_string(&envelope).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn wasm_sync_open_envelope(
+    household_key_hex: &str,
+    envelope_json: &str,
+    last_seen_sequence: f64,
+) -> Result<String, JsValue> {
+    let key = parse_hex_32(household_key_hex)?;
+    let envelope: cnd_domain::sync::HouseholdEnvelope = serde_json::from_str(envelope_json)
+        .map_err(|e| JsValue::from_str(&format!("format enveloppe invalide : {e}")))?;
+
+    let message = cnd_domain::sync::open_envelope(&key, &envelope, last_seen_sequence as u64)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    serde_json::to_string(&message).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn wasm_sync_merge_delta(
+    local_state_json: &str,
+    incoming_delta_json: &str,
+) -> Result<String, JsValue> {
+    let mut state: cnd_domain::sync::HouseholdState = if local_state_json.trim().is_empty() {
+        cnd_domain::sync::HouseholdState::new()
+    } else {
+        serde_json::from_str(local_state_json)
+            .map_err(|e| JsValue::from_str(&format!("état local invalide : {e}")))?
+    };
+
+    let delta: cnd_domain::sync::SyncDelta = serde_json::from_str(incoming_delta_json)
+        .map_err(|e| JsValue::from_str(&format!("delta invalide : {e}")))?;
+
+    let report = state.apply_delta(&delta);
+    let res = serde_json::json!({
+        "state": state,
+        "report": report
+    });
+    serde_json::to_string(&res).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn wasm_sync_export_delta(
+    local_state_json: &str,
+    from_hlc_str: &str,
+    current_node_id: &str,
+    current_physical_ms: f64,
+) -> Result<String, JsValue> {
+    let state: cnd_domain::sync::HouseholdState = if local_state_json.trim().is_empty() {
+        cnd_domain::sync::HouseholdState::new()
+    } else {
+        serde_json::from_str(local_state_json)
+            .map_err(|e| JsValue::from_str(&format!("état local invalide : {e}")))?
+    };
+
+    let from_hlc = if from_hlc_str.trim().is_empty() {
+        None
+    } else {
+        cnd_domain::sync::HlcTimestamp::parse_compact(from_hlc_str.trim())
+    };
+
+    let to_hlc = cnd_domain::sync::HlcTimestamp::new(
+        current_physical_ms as u64,
+        0,
+        current_node_id,
+    );
+
+    let delta = state.export_delta(from_hlc.as_ref(), to_hlc);
+    serde_json::to_string(&delta).map_err(|e| JsValue::from_str(&e.to_string()))
+}

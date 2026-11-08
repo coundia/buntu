@@ -1746,6 +1746,175 @@ pub fn pairing_open_reply(reply_key: String, session: String, reply: String) -> 
     Ok(PairingReply { result: b.result, count: b.count })
 }
 
+// MARK: - Multi-Device Continuity & Household Sync (PRD-41)
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HouseholdCredentials {
+    pub household_id: String,
+    pub household_key_hex: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HouseholdSealedEnvelope {
+    pub household_id: String,
+    pub sender_device_id: String,
+    pub sequence: u64,
+    pub nonce_hex: String,
+    pub ciphertext_hex: String,
+}
+
+#[uniffi::export]
+pub fn sync_create_household(entropy: Vec<u8>) -> Result<HouseholdCredentials, CndError> {
+    if entropy.len() < 32 {
+        return Err(CndError::Internal {
+            message: "Entropy must be at least 32 bytes".to_string(),
+        });
+    }
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&entropy[..32]);
+    let key_hex = cnd_domain::sync::create_household_key(&arr);
+    let mut key_bytes = [0u8; 32];
+    for (i, chunk) in key_hex.as_bytes().chunks(2).enumerate() {
+        let s = std::str::from_utf8(chunk).map_err(|e| CndError::Internal {
+            message: e.to_string(),
+        })?;
+        key_bytes[i] = u8::from_str_radix(s, 16).map_err(|e| CndError::Internal {
+            message: e.to_string(),
+        })?;
+    }
+    let household_id = cnd_domain::sync::derive_household_id(&key_bytes);
+    Ok(HouseholdCredentials {
+        household_id,
+        household_key_hex: key_hex,
+    })
+}
+
+#[uniffi::export]
+pub fn sync_derive_household_id(household_key_hex: String) -> Result<String, CndError> {
+    if household_key_hex.len() != 64 {
+        return Err(CndError::Internal {
+            message: "Invalid household key hex length".to_string(),
+        });
+    }
+    let mut key_bytes = [0u8; 32];
+    for (i, chunk) in household_key_hex.as_bytes().chunks(2).enumerate() {
+        let s = std::str::from_utf8(chunk).map_err(|e| CndError::Internal {
+            message: e.to_string(),
+        })?;
+        key_bytes[i] = u8::from_str_radix(s, 16).map_err(|e| CndError::Internal {
+            message: e.to_string(),
+        })?;
+    }
+    Ok(cnd_domain::sync::derive_household_id(&key_bytes))
+}
+
+#[uniffi::export]
+pub fn sync_seal_envelope(
+    household_key_hex: String,
+    sender_device_id: String,
+    sequence: u64,
+    nonce_bytes: Vec<u8>,
+    message_json: String,
+) -> Result<HouseholdSealedEnvelope, CndError> {
+    let mut key_bytes = [0u8; 32];
+    if household_key_hex.len() != 64 {
+        return Err(CndError::Internal {
+            message: "Invalid household key hex length".to_string(),
+        });
+    }
+    for (i, chunk) in household_key_hex.as_bytes().chunks(2).enumerate() {
+        let s = std::str::from_utf8(chunk).map_err(|e| CndError::Internal {
+            message: e.to_string(),
+        })?;
+        key_bytes[i] = u8::from_str_radix(s, 16).map_err(|e| CndError::Internal {
+            message: e.to_string(),
+        })?;
+    }
+    let mut nonce = [0u8; 12];
+    if nonce_bytes.len() < 12 {
+        return Err(CndError::Internal {
+            message: "Invalid nonce length".to_string(),
+        });
+    }
+    nonce.copy_from_slice(&nonce_bytes[..12]);
+    let msg: cnd_domain::sync::SyncMessage = serde_json::from_str(&message_json)
+        .map_err(|e| CndError::Internal {
+            message: format!("Invalid sync message json: {e}"),
+        })?;
+
+    let env = cnd_domain::sync::seal_envelope(&key_bytes, &sender_device_id, sequence, &nonce, &msg)
+        .map_err(|e| CndError::Internal {
+            message: e.to_string(),
+        })?;
+
+    Ok(HouseholdSealedEnvelope {
+        household_id: env.household_id,
+        sender_device_id: env.sender_device_id,
+        sequence: env.sequence,
+        nonce_hex: env.nonce_hex,
+        ciphertext_hex: env.ciphertext_hex,
+    })
+}
+
+#[uniffi::export]
+pub fn sync_open_envelope(
+    household_key_hex: String,
+    envelope: HouseholdSealedEnvelope,
+    last_seen_sequence: u64,
+) -> Result<String, CndError> {
+    let mut key_bytes = [0u8; 32];
+    if household_key_hex.len() != 64 {
+        return Err(CndError::Internal {
+            message: "Invalid household key hex length".to_string(),
+        });
+    }
+    for (i, chunk) in household_key_hex.as_bytes().chunks(2).enumerate() {
+        let s = std::str::from_utf8(chunk).map_err(|e| CndError::Internal {
+            message: e.to_string(),
+        })?;
+        key_bytes[i] = u8::from_str_radix(s, 16).map_err(|e| CndError::Internal {
+            message: e.to_string(),
+        })?;
+    }
+    let domain_env = cnd_domain::sync::HouseholdEnvelope {
+        household_id: envelope.household_id,
+        sender_device_id: envelope.sender_device_id,
+        sequence: envelope.sequence,
+        nonce_hex: envelope.nonce_hex,
+        ciphertext_hex: envelope.ciphertext_hex,
+    };
+    let msg = cnd_domain::sync::open_envelope(&key_bytes, &domain_env, last_seen_sequence)
+        .map_err(|e| CndError::Internal {
+            message: e.to_string(),
+        })?;
+
+    serde_json::to_string(&msg).map_err(|e| CndError::Internal {
+        message: e.to_string(),
+    })
+}
+
+#[uniffi::export]
+pub fn sync_compute_source_key(
+    source_type: String,
+    server_or_url: String,
+    username: Option<String>,
+) -> String {
+    cnd_domain::identity::compute_source_key(
+        &source_type,
+        &server_or_url,
+        username.as_deref(),
+    )
+}
+
+#[uniffi::export]
+pub fn sync_compute_content_key(
+    source_key: String,
+    item_kind: String,
+    provider_id: String,
+) -> String {
+    cnd_domain::identity::compute_content_key(&source_key, &item_kind, &provider_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
