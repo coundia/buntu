@@ -933,7 +933,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             Fermer l'application
           </h3>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            Quitte complètement l'application CND IPTV et libère la mémoire et les décodeurs matériels de la télévision.
+            Quitte complètement l'application Buntu et libère la mémoire et les décodeurs matériels de la télévision.
           </p>
           <button
             id="btn-exit-app"
@@ -941,7 +941,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             class={`tv-btn tv-btn-danger ${focusId() === 'btn-exit-app' ? 'focused' : ''}`}
             onClick={handleExit}
           >
-            ⏻ Fermer CND IPTV
+            ⏻ Fermer Buntu
           </button>
         </div>
       </div>

@@ -112,6 +112,14 @@ tasks:
     cmds:
       - ./scripts/run-android.sh --tv {{if .DEVICE}}--device "{{.DEVICE}}"{{end}}
 
+  run:web:
+    desc: Run the Samsung TV app (Buntu, Tizen) in the browser with hot reload (PORT=5173); no AVPlay video, no Samsung channel
+    aliases: [web, tizen:web]
+    dir: tizen
+    cmds:
+      - '[ -d node_modules ] || npm install'
+      - npx vite --host --port {{.PORT | default "5173"}} --open
+
   # ---------------------------------------------------------------- tizen
   tizen:build:
     desc: Build WebAssembly domain and package the Samsung Smart TV app (.wgt)

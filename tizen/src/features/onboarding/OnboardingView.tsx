@@ -20,7 +20,7 @@ export const OnboardingView: Component<OnboardingProps> = (props) => {
       </Show>
       <Show when={!isManualInput()}>
         <PairingView
-          title="Bienvenue sur CND IPTV"
+          title="Bienvenue sur Buntu"
           subtitle="Ajoutez votre abonnement depuis votre smartphone en scannant le QR code."
           onSuccess={() => props.onComplete()}
           onBack={() => props.onComplete()}

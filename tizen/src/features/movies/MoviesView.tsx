@@ -31,6 +31,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
   const [recentCount, setRecentCount] = createSignal(0);
 
   const [selectedCat, setSelectedCat] = createSignal<string>('');
+  const [catFilter, setCatFilter] = createSignal<string>('');
   const [showCats, setShowCats] = createSignal(true);
   const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
   // Bumped when a favorite flag changes (the records are mutated in place).
@@ -71,7 +72,9 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
 
   const filteredCategories = createMemo(() => {
     const raw = categories().filter((c) => c !== FAVORITES_CATEGORY && c !== 'Favoris');
-    return raw;
+    const q = catFilter().trim().toLowerCase();
+    if (!q) return raw;
+    return raw.filter((c) => c.toLowerCase().includes(q));
   });
 
   const scroller = createInfiniteScroller<ItemRecord>({
@@ -318,6 +321,17 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     // Left Category Column
     const catColItems: FocusableItem[] = [];
     if (showCats()) {
+      catColItems.push({
+        id: 'mv-cat-home',
+        onSelect: () => {
+          setCatFilter('');
+          void handleSelectCategory('');
+        },
+      });
+      catColItems.push({
+        id: 'mv-cat-filter',
+        onSelect: () => focusDomInput('mv-cat-filter'),
+      });
       catColItems.push({
         id: 'movie-cat-recent',
         onSelect: () => void handleSelectCategory(RECENT_CATEGORY),
@@ -579,6 +593,33 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       <div class="buntu-body-split">
         <Show when={showCats()}>
           <aside class="buntu-cat-pane" aria-label="Catégories Films">
+            <div class="buntu-cat-filter-bar">
+              <button
+                id="mv-cat-home"
+                type="button"
+                tabindex="-1"
+                class={`buntu-cat-home-btn ${focusId() === 'mv-cat-home' ? 'focused' : ''}`}
+                title="Toutes les catégories"
+                onClick={() => {
+                  setCatFilter('');
+                  void handleSelectCategory('');
+                }}
+              >
+                ⌂
+              </button>
+              <input
+                id="mv-cat-filter"
+                type="text"
+                value={catFilter()}
+                placeholder="Filtrer les catégories"
+                class={`buntu-cat-filter-input ${focusId() === 'mv-cat-filter' ? 'focused' : ''}`}
+                onInput={(e) => {
+                  setCatFilter(e.currentTarget.value);
+                  scheduleRebuildGrid(true);
+                }}
+              />
+            </div>
+
             <div class="buntu-cat-list">
               {/* Récemment vus */}
               <div
