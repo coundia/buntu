@@ -1049,6 +1049,18 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1077,6 +1089,18 @@ fun uniffi_cnd_core_checksum_func_pairing_parse_link(
 fun uniffi_cnd_core_checksum_func_pairing_seal(
 ): Short
 fun uniffi_cnd_core_checksum_func_pairing_seal_reply(
+): Short
+fun uniffi_cnd_core_checksum_func_sync_compute_content_key(
+): Short
+fun uniffi_cnd_core_checksum_func_sync_compute_source_key(
+): Short
+fun uniffi_cnd_core_checksum_func_sync_create_household(
+): Short
+fun uniffi_cnd_core_checksum_func_sync_derive_household_id(
+): Short
+fun uniffi_cnd_core_checksum_func_sync_open_envelope(
+): Short
+fun uniffi_cnd_core_checksum_func_sync_seal_envelope(
 ): Short
 fun uniffi_cnd_core_checksum_method_cndengine_active_profile_id(
 ): Short
@@ -1773,6 +1797,18 @@ fun uniffi_cnd_core_fn_func_pairing_seal(`link`: RustBuffer.ByValue,`entropy`: R
 ): RustBuffer.ByValue
 fun uniffi_cnd_core_fn_func_pairing_seal_reply(`replyKey`: RustBuffer.ByValue,`session`: RustBuffer.ByValue,`entropy`: RustBuffer.ByValue,`result`: RustBuffer.ByValue,`count`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_sync_compute_content_key(`sourceKey`: RustBuffer.ByValue,`itemKind`: RustBuffer.ByValue,`providerId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_sync_compute_source_key(`sourceType`: RustBuffer.ByValue,`serverOrUrl`: RustBuffer.ByValue,`username`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_sync_create_household(`entropy`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_sync_derive_household_id(`householdKeyHex`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_sync_open_envelope(`householdKeyHex`: RustBuffer.ByValue,`envelope`: RustBuffer.ByValue,`lastSeenSequence`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_sync_seal_envelope(`householdKeyHex`: RustBuffer.ByValue,`senderDeviceId`: RustBuffer.ByValue,`sequence`: Long,`nonceBytes`: RustBuffer.ByValue,`messageJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun ffi_cnd_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun ffi_cnd_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1918,6 +1954,24 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cnd_core_checksum_func_pairing_seal_reply() != 43626.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_sync_compute_content_key() != 51681.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_sync_compute_source_key() != 47800.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_sync_create_household() != 45972.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_sync_derive_household_id() != 40074.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_sync_open_envelope() != 21125.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_sync_seal_envelope() != 40491.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cnd_core_checksum_method_cndengine_active_profile_id() != 12118.toShort()) {
@@ -6524,6 +6578,82 @@ public object FfiConverterTypeFavoriteFolderRecord: FfiConverterRustBuffer<Favor
             FfiConverterInt.write(value.`position`, buf)
             FfiConverterLong.write(value.`createdAt`, buf)
             FfiConverterUInt.write(value.`itemCount`, buf)
+    }
+}
+
+
+
+data class HouseholdCredentials (
+    var `householdId`: kotlin.String, 
+    var `householdKeyHex`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeHouseholdCredentials: FfiConverterRustBuffer<HouseholdCredentials> {
+    override fun read(buf: ByteBuffer): HouseholdCredentials {
+        return HouseholdCredentials(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: HouseholdCredentials) = (
+            FfiConverterString.allocationSize(value.`householdId`) +
+            FfiConverterString.allocationSize(value.`householdKeyHex`)
+    )
+
+    override fun write(value: HouseholdCredentials, buf: ByteBuffer) {
+            FfiConverterString.write(value.`householdId`, buf)
+            FfiConverterString.write(value.`householdKeyHex`, buf)
+    }
+}
+
+
+
+data class HouseholdSealedEnvelope (
+    var `householdId`: kotlin.String, 
+    var `senderDeviceId`: kotlin.String, 
+    var `sequence`: kotlin.ULong, 
+    var `nonceHex`: kotlin.String, 
+    var `ciphertextHex`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeHouseholdSealedEnvelope: FfiConverterRustBuffer<HouseholdSealedEnvelope> {
+    override fun read(buf: ByteBuffer): HouseholdSealedEnvelope {
+        return HouseholdSealedEnvelope(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: HouseholdSealedEnvelope) = (
+            FfiConverterString.allocationSize(value.`householdId`) +
+            FfiConverterString.allocationSize(value.`senderDeviceId`) +
+            FfiConverterULong.allocationSize(value.`sequence`) +
+            FfiConverterString.allocationSize(value.`nonceHex`) +
+            FfiConverterString.allocationSize(value.`ciphertextHex`)
+    )
+
+    override fun write(value: HouseholdSealedEnvelope, buf: ByteBuffer) {
+            FfiConverterString.write(value.`householdId`, buf)
+            FfiConverterString.write(value.`senderDeviceId`, buf)
+            FfiConverterULong.write(value.`sequence`, buf)
+            FfiConverterString.write(value.`nonceHex`, buf)
+            FfiConverterString.write(value.`ciphertextHex`, buf)
     }
 }
 
@@ -12442,6 +12572,64 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
     uniffiRustCallWithError(CndException) { _status ->
     UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_pairing_seal_reply(
         FfiConverterString.lower(`replyKey`),FfiConverterString.lower(`session`),FfiConverterByteArray.lower(`entropy`),FfiConverterString.lower(`result`),FfiConverterUInt.lower(`count`),_status)
+}
+    )
+    }
+    
+ fun `syncComputeContentKey`(`sourceKey`: kotlin.String, `itemKind`: kotlin.String, `providerId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_sync_compute_content_key(
+        FfiConverterString.lower(`sourceKey`),FfiConverterString.lower(`itemKind`),FfiConverterString.lower(`providerId`),_status)
+}
+    )
+    }
+    
+ fun `syncComputeSourceKey`(`sourceType`: kotlin.String, `serverOrUrl`: kotlin.String, `username`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_sync_compute_source_key(
+        FfiConverterString.lower(`sourceType`),FfiConverterString.lower(`serverOrUrl`),FfiConverterOptionalString.lower(`username`),_status)
+}
+    )
+    }
+    
+
+    @Throws(CndException::class) fun `syncCreateHousehold`(`entropy`: kotlin.ByteArray): HouseholdCredentials {
+            return FfiConverterTypeHouseholdCredentials.lift(
+    uniffiRustCallWithError(CndException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_sync_create_household(
+        FfiConverterByteArray.lower(`entropy`),_status)
+}
+    )
+    }
+    
+
+    @Throws(CndException::class) fun `syncDeriveHouseholdId`(`householdKeyHex`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(CndException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_sync_derive_household_id(
+        FfiConverterString.lower(`householdKeyHex`),_status)
+}
+    )
+    }
+    
+
+    @Throws(CndException::class) fun `syncOpenEnvelope`(`householdKeyHex`: kotlin.String, `envelope`: HouseholdSealedEnvelope, `lastSeenSequence`: kotlin.ULong): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(CndException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_sync_open_envelope(
+        FfiConverterString.lower(`householdKeyHex`),FfiConverterTypeHouseholdSealedEnvelope.lower(`envelope`),FfiConverterULong.lower(`lastSeenSequence`),_status)
+}
+    )
+    }
+    
+
+    @Throws(CndException::class) fun `syncSealEnvelope`(`householdKeyHex`: kotlin.String, `senderDeviceId`: kotlin.String, `sequence`: kotlin.ULong, `nonceBytes`: kotlin.ByteArray, `messageJson`: kotlin.String): HouseholdSealedEnvelope {
+            return FfiConverterTypeHouseholdSealedEnvelope.lift(
+    uniffiRustCallWithError(CndException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_sync_seal_envelope(
+        FfiConverterString.lower(`householdKeyHex`),FfiConverterString.lower(`senderDeviceId`),FfiConverterULong.lower(`sequence`),FfiConverterByteArray.lower(`nonceBytes`),FfiConverterString.lower(`messageJson`),_status)
 }
     )
     }
