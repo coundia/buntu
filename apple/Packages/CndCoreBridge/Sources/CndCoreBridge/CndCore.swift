@@ -4434,6 +4434,170 @@ public func FfiConverterTypeFavoriteFolderRecord_lower(_ value: FavoriteFolderRe
 }
 
 
+public struct HouseholdCredentials {
+    public var householdId: String
+    public var householdKeyHex: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(householdId: String, householdKeyHex: String) {
+        self.householdId = householdId
+        self.householdKeyHex = householdKeyHex
+    }
+}
+
+#if compiler(>=6)
+extension HouseholdCredentials: Sendable {}
+#endif
+
+
+extension HouseholdCredentials: Equatable, Hashable {
+    public static func ==(lhs: HouseholdCredentials, rhs: HouseholdCredentials) -> Bool {
+        if lhs.householdId != rhs.householdId {
+            return false
+        }
+        if lhs.householdKeyHex != rhs.householdKeyHex {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(householdId)
+        hasher.combine(householdKeyHex)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHouseholdCredentials: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HouseholdCredentials {
+        return
+            try HouseholdCredentials(
+                householdId: FfiConverterString.read(from: &buf), 
+                householdKeyHex: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HouseholdCredentials, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.householdId, into: &buf)
+        FfiConverterString.write(value.householdKeyHex, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHouseholdCredentials_lift(_ buf: RustBuffer) throws -> HouseholdCredentials {
+    return try FfiConverterTypeHouseholdCredentials.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHouseholdCredentials_lower(_ value: HouseholdCredentials) -> RustBuffer {
+    return FfiConverterTypeHouseholdCredentials.lower(value)
+}
+
+
+public struct HouseholdSealedEnvelope {
+    public var householdId: String
+    public var senderDeviceId: String
+    public var sequence: UInt64
+    public var nonceHex: String
+    public var ciphertextHex: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(householdId: String, senderDeviceId: String, sequence: UInt64, nonceHex: String, ciphertextHex: String) {
+        self.householdId = householdId
+        self.senderDeviceId = senderDeviceId
+        self.sequence = sequence
+        self.nonceHex = nonceHex
+        self.ciphertextHex = ciphertextHex
+    }
+}
+
+#if compiler(>=6)
+extension HouseholdSealedEnvelope: Sendable {}
+#endif
+
+
+extension HouseholdSealedEnvelope: Equatable, Hashable {
+    public static func ==(lhs: HouseholdSealedEnvelope, rhs: HouseholdSealedEnvelope) -> Bool {
+        if lhs.householdId != rhs.householdId {
+            return false
+        }
+        if lhs.senderDeviceId != rhs.senderDeviceId {
+            return false
+        }
+        if lhs.sequence != rhs.sequence {
+            return false
+        }
+        if lhs.nonceHex != rhs.nonceHex {
+            return false
+        }
+        if lhs.ciphertextHex != rhs.ciphertextHex {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(householdId)
+        hasher.combine(senderDeviceId)
+        hasher.combine(sequence)
+        hasher.combine(nonceHex)
+        hasher.combine(ciphertextHex)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHouseholdSealedEnvelope: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HouseholdSealedEnvelope {
+        return
+            try HouseholdSealedEnvelope(
+                householdId: FfiConverterString.read(from: &buf), 
+                senderDeviceId: FfiConverterString.read(from: &buf), 
+                sequence: FfiConverterUInt64.read(from: &buf), 
+                nonceHex: FfiConverterString.read(from: &buf), 
+                ciphertextHex: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HouseholdSealedEnvelope, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.householdId, into: &buf)
+        FfiConverterString.write(value.senderDeviceId, into: &buf)
+        FfiConverterUInt64.write(value.sequence, into: &buf)
+        FfiConverterString.write(value.nonceHex, into: &buf)
+        FfiConverterString.write(value.ciphertextHex, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHouseholdSealedEnvelope_lift(_ buf: RustBuffer) throws -> HouseholdSealedEnvelope {
+    return try FfiConverterTypeHouseholdSealedEnvelope.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHouseholdSealedEnvelope_lower(_ value: HouseholdSealedEnvelope) -> RustBuffer {
+    return FfiConverterTypeHouseholdSealedEnvelope.lower(value)
+}
+
+
 public struct IptvItemRecord {
     public var id: Int64
     public var sourceId: Int64
@@ -14087,6 +14251,58 @@ public func pairingSealReply(replyKey: String, session: String, entropy: Data, r
     )
 })
 }
+public func syncComputeContentKey(sourceKey: String, itemKind: String, providerId: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_cnd_core_fn_func_sync_compute_content_key(
+        FfiConverterString.lower(sourceKey),
+        FfiConverterString.lower(itemKind),
+        FfiConverterString.lower(providerId),$0
+    )
+})
+}
+public func syncComputeSourceKey(sourceType: String, serverOrUrl: String, username: String?) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_cnd_core_fn_func_sync_compute_source_key(
+        FfiConverterString.lower(sourceType),
+        FfiConverterString.lower(serverOrUrl),
+        FfiConverterOptionString.lower(username),$0
+    )
+})
+}
+public func syncCreateHousehold(entropy: Data)throws  -> HouseholdCredentials  {
+    return try  FfiConverterTypeHouseholdCredentials_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_func_sync_create_household(
+        FfiConverterData.lower(entropy),$0
+    )
+})
+}
+public func syncDeriveHouseholdId(householdKeyHex: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_func_sync_derive_household_id(
+        FfiConverterString.lower(householdKeyHex),$0
+    )
+})
+}
+public func syncOpenEnvelope(householdKeyHex: String, envelope: HouseholdSealedEnvelope, lastSeenSequence: UInt64)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_func_sync_open_envelope(
+        FfiConverterString.lower(householdKeyHex),
+        FfiConverterTypeHouseholdSealedEnvelope_lower(envelope),
+        FfiConverterUInt64.lower(lastSeenSequence),$0
+    )
+})
+}
+public func syncSealEnvelope(householdKeyHex: String, senderDeviceId: String, sequence: UInt64, nonceBytes: Data, messageJson: String)throws  -> HouseholdSealedEnvelope  {
+    return try  FfiConverterTypeHouseholdSealedEnvelope_lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_func_sync_seal_envelope(
+        FfiConverterString.lower(householdKeyHex),
+        FfiConverterString.lower(senderDeviceId),
+        FfiConverterUInt64.lower(sequence),
+        FfiConverterData.lower(nonceBytes),
+        FfiConverterString.lower(messageJson),$0
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -14122,6 +14338,24 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_func_pairing_seal_reply() != 43626) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_sync_compute_content_key() != 51681) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_sync_compute_source_key() != 47800) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_sync_create_household() != 45972) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_sync_derive_household_id() != 40074) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_sync_open_envelope() != 21125) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_sync_seal_envelope() != 40491) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_active_profile_id() != 12118) {

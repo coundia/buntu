@@ -1083,6 +1083,36 @@ RustBuffer uniffi_cnd_core_fn_func_pairing_seal(RustBuffer link, RustBuffer entr
 RustBuffer uniffi_cnd_core_fn_func_pairing_seal_reply(RustBuffer reply_key, RustBuffer session, RustBuffer entropy, RustBuffer result, uint32_t count, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_SYNC_COMPUTE_CONTENT_KEY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_SYNC_COMPUTE_CONTENT_KEY
+RustBuffer uniffi_cnd_core_fn_func_sync_compute_content_key(RustBuffer source_key, RustBuffer item_kind, RustBuffer provider_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_SYNC_COMPUTE_SOURCE_KEY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_SYNC_COMPUTE_SOURCE_KEY
+RustBuffer uniffi_cnd_core_fn_func_sync_compute_source_key(RustBuffer source_type, RustBuffer server_or_url, RustBuffer username, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_SYNC_CREATE_HOUSEHOLD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_SYNC_CREATE_HOUSEHOLD
+RustBuffer uniffi_cnd_core_fn_func_sync_create_household(RustBuffer entropy, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_SYNC_DERIVE_HOUSEHOLD_ID
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_SYNC_DERIVE_HOUSEHOLD_ID
+RustBuffer uniffi_cnd_core_fn_func_sync_derive_household_id(RustBuffer household_key_hex, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_SYNC_OPEN_ENVELOPE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_SYNC_OPEN_ENVELOPE
+RustBuffer uniffi_cnd_core_fn_func_sync_open_envelope(RustBuffer household_key_hex, RustBuffer envelope, uint64_t last_seen_sequence, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_SYNC_SEAL_ENVELOPE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_FUNC_SYNC_SEAL_ENVELOPE
+RustBuffer uniffi_cnd_core_fn_func_sync_seal_envelope(RustBuffer household_key_hex, RustBuffer sender_device_id, uint64_t sequence, RustBuffer nonce_bytes, RustBuffer message_json, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_FFI_CND_CORE_RUSTBUFFER_ALLOC
 #define UNIFFI_FFIDEF_FFI_CND_CORE_RUSTBUFFER_ALLOC
 RustBuffer ffi_cnd_core_rustbuffer_alloc(uint64_t size, RustCallStatus *_Nonnull out_status
@@ -1402,6 +1432,42 @@ uint16_t uniffi_cnd_core_checksum_func_pairing_seal(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_SEAL_REPLY
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_PAIRING_SEAL_REPLY
 uint16_t uniffi_cnd_core_checksum_func_pairing_seal_reply(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_SYNC_COMPUTE_CONTENT_KEY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_SYNC_COMPUTE_CONTENT_KEY
+uint16_t uniffi_cnd_core_checksum_func_sync_compute_content_key(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_SYNC_COMPUTE_SOURCE_KEY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_SYNC_COMPUTE_SOURCE_KEY
+uint16_t uniffi_cnd_core_checksum_func_sync_compute_source_key(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_SYNC_CREATE_HOUSEHOLD
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_SYNC_CREATE_HOUSEHOLD
+uint16_t uniffi_cnd_core_checksum_func_sync_create_household(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_SYNC_DERIVE_HOUSEHOLD_ID
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_SYNC_DERIVE_HOUSEHOLD_ID
+uint16_t uniffi_cnd_core_checksum_func_sync_derive_household_id(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_SYNC_OPEN_ENVELOPE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_SYNC_OPEN_ENVELOPE
+uint16_t uniffi_cnd_core_checksum_func_sync_open_envelope(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_SYNC_SEAL_ENVELOPE
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_FUNC_SYNC_SEAL_ENVELOPE
+uint16_t uniffi_cnd_core_checksum_func_sync_seal_envelope(void
     
 );
 #endif
