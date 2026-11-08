@@ -10,6 +10,7 @@ pub mod recorder;
 pub mod recommend;
 pub mod sharing;
 pub mod subtitles;
+pub mod taxonomy;
 pub mod telemetry;
 
 pub use recommend::{

@@ -254,7 +254,7 @@ fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'�
 | Lot | Contenu | Livrable validable seul |
 |---|---|---|
 | **33.1** | Module `taxonomy/` : données pays et thèmes, `tokenize`, `country`, `domain`, `classify`. Aucun branchement. | Tests unitaires sur un **jeu de libellés réels** (les 242 catégories de la base locale, des libellés Xtream courants, des `tvg-id` iptv-org) avec le résultat attendu. |
-| **33.2** | Schéma, migrations, classement à l'ingestion (M3U et Xtream), reclassement en arrière-plan, requêtes de facettes et filtres croisés, exports UniFFI, XCFramework. | Tests Rust de bout en bout et SLA ; `get_groups` inchangé. |
+| **33.2** | Schéma, migrations, classement à l'ingestion (M3U et Xtream), reclassement en arrière-plan, **thème emprunté à une autre chaîne de même `tvg-id`** quand le libellé n'en donne pas (502 chaînes de la base locale), requêtes de facettes et filtres croisés, exports UniFFI, XCFramework. | Tests Rust de bout en bout et SLA ; `get_groups` inchangé. |
 | **33.3** | Interface : sélecteur d'axe, colonnes Pays et Thèmes, chips croisées, titres, iPhone et Apple TV. | Essai à l'écran sur la base locale. |
 | **33.4** | Corrections de l'utilisateur, masquage de pays / thèmes, thèmes autorisés des profils enfants, recherche FTS par pays et thème, assistant ⌘K. | Tests Rust et Swift ; essai à l'écran. |
 | **33.5** | VOD : genres de films et séries (même moteur, sous-thèmes `comedy`, `family`, `classic`, `action`…), indice XMLTV `<category>` pour les chaînes non classées. | Tests et essai à l'écran. |
@@ -308,7 +308,8 @@ fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'�
    - `Italy` → `IT`, aucun thème issu du libellé ; `UK` → `GB` ; `USA` → `US` ;
    - `tvg-id="DHA.tr@SD"` → `TR` ; `BBCOne.uk` → `GB` ; `Foo.tv` → aucun pays ;
    - `Undefined` → `other` ; `General` → `general` ;
-   - **≥ 95 %** des chaînes de la base locale ont un pays, **≤ 15 %** sont `other` (aujourd'hui : 1 547 `Undefined` sur 12 229).
+   - **≥ 95 %** des chaînes de la base locale ont un pays (lot 33.1) ;
+   - **≤ 15 %** restent `other` **après les lots 33.2 et 33.5** : un libellé `Undefined` ou un simple nom de pays ne porte aucun thème, le classement seul ne peut pas faire mieux (mesure du lot 33.1 : 27,2 %).
 2. **Base et requêtes (lot 33.2) :** migration d'une base existante, reclassement < 2 s pour 50 000 éléments, facettes < 50 ms, filtres croisés, surcharges conservées après actualisation d'une source, `get_groups` identique à avant.
 3. **Contrôle parental :** test qui compare l'ensemble des éléments visibles avant et après, pour un profil adulte verrouillé et un profil enfant.
 4. **Interface (lot 33.3) :** la colonne de la capture d'écran du ticket n'affiche plus de combinaison à point-virgule dans les axes Pays et Thèmes ; « France → Sport » et « Sport → France » donnent la même liste.
@@ -328,4 +329,22 @@ fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'�
 
 ## 15. Statut d'Implémentation & Validation
 
-**Non commencé.** Plan rédigé sur la branche `feat/category-taxonomy`. Mesures de départ relevées sur la base locale (2 sources M3U) : 242 catégories Live brutes, 453 chaînes dans des combinaisons à point-virgule, 1 907 / 12 229 chaînes avec un pays, 10 233 `tvg-id` porteurs d'un pays, 1 547 chaînes `Undefined`.
+**Lot 33.1 terminé** (branche `feat/category-taxonomy`). Lots 33.2 à 33.5 non commencés.
+
+- **Module `crates/cnd-core/src/taxonomy/`**, fonctions pures sans SQLite ni réseau, non branché sur l'ingestion :
+  - `data/countries.rs` : 213 pays et territoires ISO avec noms anglais, français et locaux, codes non ISO (`uk`, `usa`, `uae`, `ksa`), préfixes de langue, mots « international » ;
+  - `data/domains.rs` : dictionnaire de mots-clés en 8 langues vers les 16 thèmes, mots-clés des noms de chaînes, sous-thèmes « qualificatifs » ;
+  - `tokenize.rs`, `country.rs`, `domain.rs`, `mod.rs` (`classify`, `classify_with_override`, `TAXONOMY_VERSION = 1`).
+- **Décisions prises pour avancer** (questions de la § 14, modifiables) :
+  - `Classic`, `Family` et `Interactive` qualifient un autre thème : `Classic;News` → Infos ; seuls, `Classic` → `movies/classic` et `Family` → `kids/family` ;
+  - `Public` (iptv-org : chaîne de service public) → `general/public`, pas `institutional` ; `Legislative` reste `institutional` ;
+  - `Animation;Comedy` sans `Kids` → `entertainment/comedy` ;
+  - préfixes `AR`, `EN`, `LATINO`, `ARABIC` = langue, jamais un pays ; `IN |` = Inde ; `EXYU`, `AFRICA` = `INT` ;
+  - suffixes de `tvg-id` ignorés : `.tv`, `.fm`, `.io`, `.cc`, `.ws` ; `.uk` → `GB`.
+- **Tests :** 24 tests, dont un **fichier de référence relu** (`crates/cnd-core/tests/fixtures/category_labels.tsv`) : les 278 libellés réels de la base locale et 44 libellés Xtream courants avec pays et thèmes attendus. Mise à jour : `TAXONOMY_BLESS=1 cargo test -p cnd-core --lib taxonomy::tests`.
+- **Mesures sur la base locale** (test ignoré `coverage_on_a_real_catalogue`, lecture seule) :
+  - pays trouvé pour **99,9 %** des 12 229 chaînes (avant : 15,6 %) : 10 292 par le `tvg-id`, 1 907 par l'attribut, 15 par le nom de la catégorie ;
+  - thème `other` pour **27,2 %** : 1 536 `Undefined` et 1 795 chaînes rangées sous un simple nom de pays. 502 de ces dernières ont un thème dans l'autre playlist par leur `tvg-id` (lot 33.2).
+- **Validation :** `cargo clippy -p cnd-core --all-targets -- -D warnings` au vert ; `cargo test --workspace --release` : tous les tests du lot au vert.
+  - **Hors lot, déjà rouge sur `main`** : `recommend::tests::test_recommendations_sla_50k_items` (55 ms pour 50 ms) ;
+  - `test_50k_streaming_m3u_ingestion_sla` échoue quand toute la suite tourne en parallèle et passe seul, comme indiqué dans le README.
