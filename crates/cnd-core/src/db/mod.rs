@@ -446,6 +446,8 @@ impl DatabaseManager {
             "CREATE INDEX IF NOT EXISTS idx_series_country_theme ON series_catalog(tx_country, tx_theme)",
             // PRD-33 lot 33.4: words of the country and themes, indexed for search; rules per provider category.
             "ALTER TABLE iptv_items ADD COLUMN tx_terms TEXT",
+            // PRD-33 lot 33.5: genre of a series (sub-theme of its main theme).
+            "ALTER TABLE series_catalog ADD COLUMN tx_subtheme TEXT",
             "CREATE TABLE IF NOT EXISTS taxonomy_group_overrides (
                 group_key TEXT PRIMARY KEY,
                 country TEXT,

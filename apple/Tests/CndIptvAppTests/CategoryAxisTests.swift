@@ -49,7 +49,8 @@ final class CategoryTextTests: XCTestCase {
     }
 
     func testSubThemesHaveFrenchNames() {
-        for id in ["business", "weather", "football", "motorsport", "combat", "comedy", "animation", "family", "classic", "cooking", "travel"] {
+        for id in ["business", "weather", "football", "motorsport", "combat", "comedy", "animation", "family", "classic", "cooking", "travel",
+                   "action", "adventure", "crime", "drama", "fantasy", "horror", "mystery", "romance", "scifi", "thriller", "war", "western", "biography"] {
             XCTAssertNotEqual(CategoryText.subthemeName(id), id, id)
         }
     }

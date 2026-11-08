@@ -12,10 +12,10 @@ pub mod tokenize;
 mod tests;
 
 pub use country::{CountryMatch, CountrySource};
-pub use theme::{ThemeSource, ThemeTag};
+pub use theme::{theme_from_epg_categories, ThemeSource, ThemeTag};
 
 /// Version of the rules and the dictionaries (PRD-33 § 4.3).
-pub const TAXONOMY_VERSION: u32 = 2;
+pub const TAXONOMY_VERSION: u32 = 3;
 
 /// The closed list of themes (PRD-33 § 3). Stored by `as_str`, never by position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -138,6 +138,11 @@ impl Classification {
         parts.retain(|p| !p.is_empty());
         parts.join(" ")
     }
+}
+
+/// Search words of one theme (used when a theme is added after the first classification).
+pub fn theme_terms(theme: Theme) -> &'static str {
+    data::themes::THEME_TERMS.iter().find(|(t, _)| *t == theme).map_or("", |(_, terms)| terms)
 }
 
 pub fn classify(input: &ClassifyInput<'_>) -> Classification {

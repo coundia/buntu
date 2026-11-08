@@ -820,11 +820,13 @@ private struct LoadedShellView: View {
                 SourcesListView(engine: engine, sources: state.sources, model: sourcesModel)
             case .movies:
                 vodScreen(MoviesCatalogView(
-                    engine: engine, revision: state.catalogRevision, totalMovies: Int(state.stats?.totalMovies ?? 0)
+                    engine: engine, revision: state.catalogRevision, totalMovies: Int(state.stats?.totalMovies ?? 0),
+                    onCategoriesChanged: { state.reloadSnapshot() }
                 ))
             case .series:
                 vodScreen(SeriesCatalogView(
-                    engine: engine, revision: state.catalogRevision, totalSeries: Int(state.stats?.totalSeries ?? 0)
+                    engine: engine, revision: state.catalogRevision, totalSeries: Int(state.stats?.totalSeries ?? 0),
+                    onCategoriesChanged: { state.reloadSnapshot() }
                 ))
             case .downloads:
                 DownloadsDashboardView(model: downloadsModel, directory: state.downloadDirectory, onPlay: playDownload)

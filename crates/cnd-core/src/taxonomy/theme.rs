@@ -3,7 +3,7 @@
 
 use crate::db::profile_repo::is_adult_category;
 use crate::taxonomy::country::prefix_meaning;
-use crate::taxonomy::data::themes::{KEYWORDS, NAME_KEYWORDS, QUALIFIER_SUBTHEMES};
+use crate::taxonomy::data::themes::{EPG_KEYWORDS, GENRE_KEYWORDS, KEYWORDS, NAME_KEYWORDS, QUALIFIER_SUBTHEMES};
 use crate::taxonomy::tokenize::{leading_code, meaningful_words, normalize_phrase, split_segments};
 use crate::taxonomy::{ClassifyInput, Theme};
 use std::collections::HashMap;
@@ -18,6 +18,8 @@ pub enum ThemeSource {
     Name,
     /// Borrowed from another channel with the same `tvg-id` (stored by the database layer).
     TvgId,
+    /// The `<category>` of the channel's programmes in the guide (lot 33.5).
+    Epg,
     Fallback,
 }
 
@@ -29,6 +31,7 @@ impl ThemeSource {
             ThemeSource::Kind => "kind",
             ThemeSource::Name => "name",
             ThemeSource::TvgId => "tvg_id",
+            ThemeSource::Epg => "epg",
             ThemeSource::Fallback => "fallback",
         }
     }
@@ -79,10 +82,17 @@ impl Dictionary {
 
     /// Themes of one segment, in reading order.
     fn segment(&self, phrase: &str) -> Vec<Entry> {
-        let padded = format!(" {phrase} ");
-        let mut out: Vec<Entry> =
-            self.phrases.iter().filter(|(p, _)| padded.contains(&format!(" {p} "))).map(|(_, e)| *e).collect();
-        out.extend(meaningful_words(phrase).into_iter().filter_map(|w| self.word(w)));
+        let mut padded = format!(" {phrase} ");
+        let mut out: Vec<Entry> = Vec::new();
+        for (p, entry) in &self.phrases {
+            let needle = format!(" {p} ");
+            if padded.contains(&needle) {
+                out.push(*entry);
+                // The words of a phrase are not read again alone: `science fiction` is not `science`.
+                padded = padded.replace(&needle, "  ");
+            }
+        }
+        out.extend(meaningful_words(padded.trim()).into_iter().filter_map(|w| self.word(w)));
         out
     }
 }
@@ -95,6 +105,47 @@ fn label_dictionary() -> &'static Dictionary {
 fn name_dictionary() -> &'static Dictionary {
     static DICT: OnceLock<Dictionary> = OnceLock::new();
     DICT.get_or_init(|| Dictionary::build(NAME_KEYWORDS))
+}
+
+fn vod_dictionary() -> &'static Dictionary {
+    static DICT: OnceLock<Dictionary> = OnceLock::new();
+    DICT.get_or_init(|| {
+        let all: Vec<_> = KEYWORDS.iter().chain(GENRE_KEYWORDS).copied().collect();
+        Dictionary::build(&all)
+    })
+}
+
+fn epg_dictionary() -> &'static Dictionary {
+    static DICT: OnceLock<Dictionary> = OnceLock::new();
+    DICT.get_or_init(|| {
+        let all: Vec<_> = KEYWORDS.iter().chain(EPG_KEYWORDS).copied().collect();
+        Dictionary::build(&all)
+    })
+}
+
+/// Theme of a channel from the `(category, number of programmes)` pairs of its guide (PRD-33 lot 33.5).
+/// The theme most programmes agree on, when at least three programmes name one and they are at
+/// least half of the programmes that name any. `general`, `other` and `adult` are never proposed:
+/// a guide cannot make a channel adult.
+pub fn theme_from_epg_categories(categories: &[(String, u32)]) -> Option<Theme> {
+    let dict = epg_dictionary();
+    let mut counts: HashMap<Theme, u32> = HashMap::new();
+    for (category, n) in categories {
+        let mut seen: Vec<Theme> = Vec::new();
+        for segment in split_segments(category) {
+            for (theme, _) in dict.segment(&normalize_phrase(segment)) {
+                if !matches!(theme, Theme::General | Theme::Other | Theme::Adult) && !seen.contains(&theme) {
+                    seen.push(theme);
+                }
+            }
+        }
+        for theme in seen {
+            *counts.entry(theme).or_default() += n;
+        }
+    }
+    let total: u32 = counts.values().sum();
+    let (theme, top) = counts.into_iter().max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.as_str().cmp(a.0.as_str())))?;
+    (top >= 3 && top * 2 >= total).then_some(theme)
 }
 
 /// Theme named by one word of a spoken request ("info", "sport", "films"), for the assistant
@@ -114,7 +165,10 @@ fn without_leading_code(label: &str) -> &str {
 
 fn push(tags: &mut Vec<ThemeTag>, (theme, subtheme): Entry, source: ThemeSource) {
     if let Some(existing) = tags.iter_mut().find(|t| t.theme == theme) {
-        if existing.subtheme.is_none() {
+        // A genre or a precise sub-theme replaces a qualifier: `Classic;Comedy;Movies` is movies/comedy.
+        let existing_is_qualifier = existing.subtheme.is_some_and(|s| QUALIFIER_SUBTHEMES.contains(&s));
+        let new_is_qualifier = subtheme.is_some_and(|s| QUALIFIER_SUBTHEMES.contains(&s));
+        if existing.subtheme.is_none() || (existing_is_qualifier && subtheme.is_some() && !new_is_qualifier) {
             existing.subtheme = subtheme;
         }
     } else {
@@ -130,8 +184,7 @@ fn is_weak((theme, _): &Entry) -> bool {
     matches!(theme, Theme::General | Theme::Other)
 }
 
-fn from_group(label: &str) -> Vec<ThemeTag> {
-    let dict = label_dictionary();
+fn from_group(label: &str, dict: &Dictionary) -> Vec<ThemeTag> {
     let mut entries: Vec<Entry> = Vec::new();
     for segment in split_segments(without_leading_code(label)) {
         entries.extend(dict.segment(&normalize_phrase(segment)));
@@ -162,16 +215,34 @@ fn only_weak(tags: &[ThemeTag]) -> bool {
     tags.iter().all(|t| matches!(t.theme, Theme::General | Theme::Other))
 }
 
+/// A film is never a "series" theme and the other way round: `Movies;Series` on an episode is series.
+fn align_with_kind(tags: &mut Vec<ThemeTag>, kind_theme: Theme) {
+    let wrong = if kind_theme == Theme::Movies { Theme::Series } else { Theme::Movies };
+    if !tags.iter().any(|t| t.theme == wrong) {
+        return;
+    }
+    let mut merged: Vec<ThemeTag> = Vec::new();
+    for tag in tags.drain(..) {
+        let theme = if tag.theme == wrong { kind_theme } else { tag.theme };
+        push(&mut merged, (theme, tag.subtheme), tag.source);
+    }
+    *tags = merged;
+}
+
 /// All themes of an item, first one = order of the label (PRD-33 § 4.2).
 /// User overrides are applied by `taxonomy::classify`.
 pub fn resolve_themes(input: &ClassifyInput<'_>) -> Vec<ThemeTag> {
-    let mut tags = input.group_title.map(from_group).unwrap_or_default();
-
     let kind_theme = match input.kind {
         "movie" => Some(Theme::Movies),
         "episode" | "series" => Some(Theme::Series),
         _ => None,
     };
+    // Films and series also read the genre words (lot 33.5); live channels do not.
+    let dict = if kind_theme.is_some() { vod_dictionary() } else { label_dictionary() };
+    let mut tags = input.group_title.map(|label| from_group(label, dict)).unwrap_or_default();
+    if let Some(theme) = kind_theme {
+        align_with_kind(&mut tags, theme);
+    }
     if let Some(theme) = kind_theme {
         if only_weak(&tags) {
             tags.clear();
@@ -263,7 +334,40 @@ mod tests {
     fn kind_fills_vod_without_a_theme() {
         assert_eq!(themes("movie", Some("VOD Italy"), "Film"), vec![t("movies", None)]);
         assert_eq!(themes("episode", Some("Undefined"), "S01E01"), vec![t("series", None)]);
-        assert_eq!(themes("movie", Some("Comedy;Movies"), "x"), vec![t("entertainment", Some("comedy")), t("movies", None)]);
+        assert_eq!(themes("movie", Some("Comedy;Movies"), "x"), vec![t("movies", Some("comedy"))]);
+    }
+
+    #[test]
+    fn vod_genres_are_sub_themes_of_the_kind() {
+        assert_eq!(themes("movie", Some("Action"), "x"), vec![t("movies", Some("action"))]);
+        assert_eq!(themes("movie", Some("FR| FILMS THRILLER"), "x"), vec![t("movies", Some("thriller"))]);
+        assert_eq!(themes("movie", Some("Sci-Fi & Fantasy"), "x"), vec![t("movies", Some("scifi"))]);
+        assert_eq!(themes("movie", Some("Science Fiction"), "x"), vec![t("movies", Some("scifi"))]);
+        assert_eq!(themes("movie", Some("Horreur"), "x"), vec![t("movies", Some("horror"))]);
+        assert_eq!(themes("movie", Some("Family;Movies"), "x"), vec![t("movies", Some("family"))]);
+        assert_eq!(themes("movie", Some("Classic;Movies"), "x"), vec![t("movies", Some("classic"))]);
+        // A series genre is a series sub-theme, and "Movies;Series" on an episode is series.
+        assert_eq!(themes("episode", Some("Drama;Series"), "x"), vec![t("series", Some("drama"))]);
+        assert_eq!(themes("series", Some("Comedy"), "x"), vec![t("series", Some("comedy"))]);
+        assert_eq!(themes("episode", Some("Movies;Series"), "x"), vec![t("series", None)]);
+        // Other themes stay themes.
+        assert_eq!(themes("movie", Some("Documentary"), "x"), vec![t("documentary", None)]);
+        assert_eq!(themes("movie", Some("Kids;Animation"), "x"), vec![t("kids", Some("animation"))]);
+        // Live channels do not read genres.
+        assert_eq!(live("Action"), vec![t("other", None)]);
+        assert_eq!(live("Comedy"), vec![t("entertainment", Some("comedy"))]);
+    }
+
+    #[test]
+    fn a_guide_names_a_channel_theme_only_when_programmes_agree() {
+        let cats = |v: &[(&str, u32)]| v.iter().map(|(c, n)| (c.to_string(), *n)).collect::<Vec<_>>();
+        assert_eq!(theme_from_epg_categories(&cats(&[("Informazione", 40), ("Magazine", 10)])), Some(Theme::News));
+        assert_eq!(theme_from_epg_categories(&cats(&[("Cartoni Animati", 30), ("Per i bimbi piccoli", 20)])), Some(Theme::Kids));
+        assert_eq!(theme_from_epg_categories(&cats(&[("Nieuws", 5)])), Some(Theme::News));
+        assert_eq!(theme_from_epg_categories(&cats(&[("Sport", 2)])), None, "too few programmes");
+        assert_eq!(theme_from_epg_categories(&cats(&[("Sport", 10), ("Informazione", 10), ("Sarjat", 10)])), None, "no majority");
+        assert_eq!(theme_from_epg_categories(&cats(&[("Magazine", 99)])), None);
+        assert_eq!(theme_from_epg_categories(&cats(&[("Adult", 50), ("XXX", 50)])), None);
     }
 
     #[test]

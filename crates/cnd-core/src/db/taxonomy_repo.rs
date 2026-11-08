@@ -6,7 +6,8 @@ use crate::db::catalog_repo::FacetCount;
 use crate::db::profile_repo::normalize_group_key;
 use crate::db::{chrono_now_ts, DatabaseManager, DbError};
 use crate::taxonomy::{
-    classify_with_override, ClassifyInput, Theme, ThemeSource, TaxonomyOverride, TAXONOMY_VERSION,
+    classify_with_override, theme_from_epg_categories, theme_terms, ClassifyInput, TaxonomyOverride, Theme, ThemeSource,
+    TAXONOMY_VERSION,
 };
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
@@ -21,7 +22,7 @@ pub struct TaxonomyFilter {
     /// ISO code, `INT`, or an empty string for "country unknown".
     pub country: Option<String>,
     pub theme: Option<String>,
-    /// Only with `theme`. Ignored for series, which keep their main theme only.
+    /// Only with `theme`. A series keeps the sub-theme of its main theme (its genre).
     pub subtheme: Option<String>,
 }
 
@@ -48,7 +49,16 @@ impl TaxonomyFilter {
         if let Some(theme) = &self.theme {
             match Theme::parse(theme.trim()) {
                 None => out.push_str(" AND 1 = 0"),
-                Some(theme) if series => out.push_str(&format!(" AND {alias}.tx_theme = '{}'", theme.as_str())),
+                Some(theme) if series => {
+                    out.push_str(&format!(" AND {alias}.tx_theme = '{}'", theme.as_str()));
+                    match self.subtheme.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                        None => {}
+                        Some(s) if s.chars().all(|c| c.is_ascii_lowercase()) => {
+                            out.push_str(&format!(" AND {alias}.tx_subtheme = '{s}'"));
+                        }
+                        Some(_) => out.push_str(" AND 1 = 0"),
+                    }
+                }
                 Some(theme) => {
                     let sub = match self.subtheme.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
                         None => String::new(),
@@ -123,6 +133,8 @@ pub struct ClassifyReport {
     pub items: u64,
     pub series: u64,
     pub borrowed: u64,
+    /// Channels that took a theme from the categories of their guide (lot 33.5).
+    pub hinted: u64,
 }
 
 /// The columns the classifier reads from a stored item.
@@ -158,11 +170,6 @@ impl Scope {
             Scope::Group(g) => (None, None, None, Some(g)),
         }
     }
-}
-
-/// `tx_theme` of a series row: the main theme only (series have no `item_themes` rows).
-fn series_theme_sql(alias: &str) -> String {
-    format!("{alias}.tx_theme")
 }
 
 /// Same visibility rules as `get_groups` / `query_catalog` (hidden bouquets, adult, kids profile),
@@ -320,7 +327,7 @@ impl DatabaseManager {
         Ok(done)
     }
 
-    /// Series rows carry a country and a main theme only.
+    /// Series rows carry a country, a main theme and its sub-theme (the genre).
     fn classify_series(&self, scope: &Scope) -> Result<u64, DbError> {
         let (source, _, hash, group) = scope.params();
         if matches!(scope, Scope::SeriesEpisodes(_)) {
@@ -340,7 +347,8 @@ impl DatabaseManager {
                 mapped.collect::<Result<_, _>>()?
             };
             {
-                let mut update = tx.prepare_cached("UPDATE series_catalog SET tx_country = ?2, tx_theme = ?3 WHERE id = ?1")?;
+                let mut update =
+                    tx.prepare_cached("UPDATE series_catalog SET tx_country = ?2, tx_theme = ?3, tx_subtheme = ?4 WHERE id = ?1")?;
                 for (id, stable_hash, group, title) in &rows {
                     let c = classify_with_override(
                         &ClassifyInput { kind: "series", group_title: group.as_deref(), tvg_id: None, name: title, country_attr: None },
@@ -348,7 +356,9 @@ impl DatabaseManager {
                             .get(stable_hash)
                             .or_else(|| group.as_deref().and_then(|g| group_overrides.get(&normalize_group_key(g)))),
                     );
-                    update.execute(params![id, c.country.as_ref().map(|m| m.code.as_str()), c.primary_theme().as_str()])?;
+                    let main = c.primary_theme();
+                    let genre = c.themes.iter().find(|t| t.theme == main).and_then(|t| t.subtheme);
+                    update.execute(params![id, c.country.as_ref().map(|m| m.code.as_str()), main.as_str(), genre])?;
                 }
             }
             tx.commit()?;
@@ -391,7 +401,9 @@ impl DatabaseManager {
             let tx = conn.transaction()?;
             let mut borrowed = 0u64;
             {
-                let mut update = tx.prepare_cached("UPDATE iptv_items SET tx_theme = ?2 WHERE id = ?1")?;
+                let mut update = tx.prepare_cached(
+                    "UPDATE iptv_items SET tx_theme = ?2, tx_terms = TRIM(COALESCE(tx_terms, '') || ' ' || ?3) WHERE id = ?1",
+                )?;
                 let mut delete = tx.prepare_cached("DELETE FROM item_themes WHERE item_id = ?1")?;
                 let mut insert = tx.prepare_cached(
                     "INSERT INTO item_themes (item_id, theme, subtheme, src) VALUES (?1, ?2, NULL, ?3)",
@@ -400,7 +412,7 @@ impl DatabaseManager {
                     let Some(counts) = tvg_key(&tvg_id).and_then(|k| donors.get(&k)) else { continue };
                     // Most frequent theme; ties broken by name so the result never depends on map order.
                     let Some((theme, _)) = counts.iter().max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0))) else { continue };
-                    update.execute(params![id, theme])?;
+                    update.execute(params![id, theme, Theme::parse(theme).map_or("", theme_terms)])?;
                     delete.execute(params![id])?;
                     insert.execute(params![id, theme, ThemeSource::TvgId.as_str()])?;
                     borrowed += 1;
@@ -411,11 +423,80 @@ impl DatabaseManager {
         })
     }
 
+    /// A channel still without a theme (`other`) takes the one its programmes agree on in the guide
+    /// (PRD-33 lot 33.5), e.g. "Informazione" on most of its programmes -> news. Runs after the
+    /// guide is imported and after every classification. Never gives `adult`; items the user
+    /// corrected are left alone.
+    pub fn apply_epg_theme_hints(&self) -> Result<u64, DbError> {
+        let receivers: Vec<(i64, String)> = self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, tvg_id FROM iptv_items
+                 WHERE kind = 'live' AND tx_theme = 'other' AND tvg_id IS NOT NULL AND tvg_id != ''
+                   AND stable_hash NOT IN (SELECT stable_hash FROM taxonomy_overrides)",
+            )?;
+            let mapped = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            Ok(mapped.collect::<Result<_, _>>()?)
+        })?;
+        if receivers.is_empty() {
+            return Ok(0);
+        }
+        let wanted: std::collections::HashSet<String> = receivers.iter().filter_map(|(_, t)| tvg_key(t)).collect();
+        let mut categories: HashMap<String, Vec<(String, u32)>> = HashMap::new();
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT channel_tvg_id, category, COUNT(*) FROM epg_programs
+                 WHERE category IS NOT NULL AND category != '' GROUP BY channel_tvg_id, category",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, u32>(2)?)))?;
+            for row in rows {
+                let (channel, category, n) = row?;
+                if let Some(key) = tvg_key(&channel).filter(|k| wanted.contains(k)) {
+                    categories.entry(key).or_default().push((category, n));
+                }
+            }
+            Ok(())
+        })?;
+        if categories.is_empty() {
+            return Ok(0);
+        }
+        self.with_conn_mut(|conn| {
+            let tx = conn.transaction()?;
+            let mut hinted = 0u64;
+            {
+                let mut update = tx.prepare_cached(
+                    "UPDATE iptv_items SET tx_theme = ?2, tx_terms = TRIM(COALESCE(tx_terms, '') || ' ' || ?3) WHERE id = ?1",
+                )?;
+                let mut delete = tx.prepare_cached("DELETE FROM item_themes WHERE item_id = ?1")?;
+                let mut insert = tx.prepare_cached(
+                    "INSERT INTO item_themes (item_id, theme, subtheme, src) VALUES (?1, ?2, NULL, ?3)",
+                )?;
+                for (id, tvg_id) in receivers {
+                    let Some(theme) = tvg_key(&tvg_id)
+                        .and_then(|k| categories.get(&k))
+                        .and_then(|c| theme_from_epg_categories(c))
+                    else {
+                        continue;
+                    };
+                    update.execute(params![id, theme.as_str(), theme_terms(theme)])?;
+                    delete.execute(params![id])?;
+                    insert.execute(params![id, theme.as_str(), ThemeSource::Epg.as_str()])?;
+                    hinted += 1;
+                }
+            }
+            tx.commit()?;
+            Ok(hinted)
+        })
+    }
+
     fn classify_scope(&self, scope: Scope, progress: &dyn Fn(u64, u64), cancel: &AtomicBool) -> Result<ClassifyReport, DbError> {
         let items = self.classify_items(&scope, progress, cancel)?;
         let series = self.classify_series(&scope)?;
-        let borrowed = if matches!(scope, Scope::Hash(_) | Scope::SeriesEpisodes(_)) { 0 } else { self.borrow_themes_by_tvg_id()? };
-        Ok(ClassifyReport { items, series, borrowed })
+        let (borrowed, hinted) = if matches!(scope, Scope::Hash(_) | Scope::SeriesEpisodes(_)) {
+            (0, 0)
+        } else {
+            (self.borrow_themes_by_tvg_id()?, self.apply_epg_theme_hints()?)
+        };
+        Ok(ClassifyReport { items, series, borrowed, hinted })
     }
 
     /// Called at the end of an M3U or Xtream refresh of `source_id`.
@@ -664,6 +745,7 @@ impl DatabaseManager {
         self.classify_scope(Scope::Hash(stable_hash.to_string()), &|_, _| {}, &AtomicBool::new(false))?;
         // Without the donor pass an uncorrected channel would lose a borrowed theme here.
         self.borrow_themes_by_tvg_id()?;
+        self.apply_epg_theme_hints()?;
         Ok(())
     }
 
@@ -712,17 +794,16 @@ impl DatabaseManager {
                 let extra = narrowed.sql(alias, series);
                 self.with_conn(|conn| {
                     if series {
-                        let theme = series_theme_sql(alias);
                         let sql = format!(
-                            "SELECT COALESCE({theme}, 'other'), COUNT(*) FROM {table} {alias}
+                            "SELECT COALESCE({alias}.tx_theme, 'other'), {alias}.tx_subtheme, COUNT(*) FROM {table} {alias}
                              WHERE (?1 IS NULL OR {alias}.source_id = ?1){extra}{visibility}
-                             GROUP BY 1 ORDER BY 2 DESC, 1"
+                             GROUP BY 1, 2"
                         );
                         let mut stmt = conn.prepare(&sql)?;
                         let rows = stmt.query_map(params![source_id], |r| {
-                            Ok(CategoryFacet { key: r.get(0)?, count: r.get(1)?, subkeys: Vec::new() })
+                            Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, u32>(2)?))
                         })?;
-                        return Ok(rows.collect::<Result<Vec<_>, _>>()?);
+                        return Ok(theme_facets(rows.collect::<Result<Vec<_>, _>>()?));
                     }
                     // A theme the profile hid is not listed, even for channels that carry it as a second theme.
                     let sql = format!(
@@ -738,32 +819,41 @@ impl DatabaseManager {
                     let rows = stmt.query_map(params![source_id], |r| {
                         Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, u32>(2)?))
                     })?;
-                    // An item has at most one sub-theme per theme (primary key `(item_id, theme)`), so
-                    // the rows of one theme add up to its total.
-                    let mut totals: HashMap<String, u32> = HashMap::new();
-                    let mut subs: HashMap<String, Vec<FacetCount>> = HashMap::new();
+                    let mut counted = Vec::new();
                     for row in rows {
-                        let (theme, sub, count) = row?;
-                        *totals.entry(theme.clone()).or_default() += count;
-                        if let Some(sub) = sub {
-                            subs.entry(theme).or_default().push(FacetCount { value: sub, count });
-                        }
+                        counted.push(row?);
                     }
-                    let mut out: Vec<CategoryFacet> = totals
-                        .into_iter()
-                        .map(|(key, count)| {
-                            let mut subkeys = subs.remove(&key).unwrap_or_default();
-                            subkeys.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
-                            CategoryFacet { key, count, subkeys }
-                        })
-                        .collect();
-                    out.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.key.cmp(&b.key)));
-                    Ok(out)
+                    Ok(theme_facets(counted))
                 })
             }
         }
     }
 }
+
+/// Facets of the theme axis from `(theme, sub-theme, count)` rows: one entry per theme, its
+/// sub-themes inside, most populated first. An item has at most one sub-theme per theme, so the
+/// rows of one theme add up to its total.
+fn theme_facets(rows: Vec<(String, Option<String>, u32)>) -> Vec<CategoryFacet> {
+    let mut totals: HashMap<String, u32> = HashMap::new();
+    let mut subs: HashMap<String, Vec<FacetCount>> = HashMap::new();
+    for (theme, sub, count) in rows {
+        *totals.entry(theme.clone()).or_default() += count;
+        if let Some(sub) = sub {
+            subs.entry(theme).or_default().push(FacetCount { value: sub, count });
+        }
+    }
+    let mut out: Vec<CategoryFacet> = totals
+        .into_iter()
+        .map(|(key, count)| {
+            let mut subkeys = subs.remove(&key).unwrap_or_default();
+            subkeys.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
+            CategoryFacet { key, count, subkeys }
+        })
+        .collect();
+    out.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.key.cmp(&b.key)));
+    out
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -1027,6 +1117,123 @@ mod tests {
             .unwrap();
         // A series whose label gives no theme is a `series` by kind.
         assert_eq!(found.iter().map(|s| s.title.as_str()).collect::<Vec<_>>(), vec!["Dix pour cent", "Mystery"]);
+    }
+
+    fn movie<'a>(hash: &'a str, name: &'a str, group: &'a str) -> Row<'a> {
+        Row { hash, kind: "movie", name, group, tvg_id: "", country: "" }
+    }
+
+    #[test]
+    fn films_and_series_are_browsed_by_genre() {
+        let (db, source) = db_with(&[
+            movie("m1", "Heat", "FR| ACTION"),
+            movie("m2", "Die Hard", "Action"),
+            movie("m3", "Scream", "Horreur"),
+            movie("m4", "Amélie", "Movies"),
+            movie("m5", "Planet", "Documentary"),
+        ]);
+        db.with_conn(|c| {
+            for (i, (title, group)) in [("Lost", "Drama;Series"), ("Friends", "Comedy;Series"), ("Dallas", "Drama")].iter().enumerate() {
+                c.execute(
+                    "INSERT INTO series_catalog (source_id, canonical_key, stable_hash, title, group_title, episode_count, season_count, updated_at)
+                     VALUES (?1, ?2, ?2, ?3, ?4, 0, 0, 0)",
+                    params![source, format!("s{i}"), title, group],
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        db.classify_source(source).unwrap();
+
+        // Movies: the "movies" theme unfolds into genres, "documentary" stays its own theme.
+        let themes = db.get_category_facets("movie", CategoryAxis::Theme, None, &TaxonomyFilter::default()).unwrap();
+        let movies = themes.iter().find(|f| f.key == "movies").expect("movies");
+        assert_eq!(movies.count, 4);
+        assert_eq!(
+            movies.subkeys.iter().map(|s| (s.value.as_str(), s.count)).collect::<Vec<_>>(),
+            vec![("action", 2), ("horror", 1)]
+        );
+        assert!(themes.iter().any(|f| f.key == "documentary"));
+        let action = db
+            .query_catalog_with(
+                &catalog_filter("movie"),
+                &TaxonomyFilter { theme: Some("movies".into()), subtheme: Some("action".into()), ..Default::default() },
+            )
+            .unwrap();
+        assert_eq!(action.len(), 2);
+
+        // Series carry their genre too, and a profile-independent filter finds them.
+        let series = db.get_category_facets("series", CategoryAxis::Theme, None, &TaxonomyFilter::default()).unwrap();
+        let main = series.iter().find(|f| f.key == "series").expect("series");
+        assert_eq!(main.count, 3);
+        assert_eq!(
+            main.subkeys.iter().map(|s| (s.value.as_str(), s.count)).collect::<Vec<_>>(),
+            vec![("drama", 2), ("comedy", 1)]
+        );
+        let drama = db
+            .query_series_with(
+                &catalog_filter("series"),
+                &TaxonomyFilter { theme: Some("series".into()), subtheme: Some("drama".into()), ..Default::default() },
+            )
+            .unwrap();
+        assert_eq!(drama.len(), 2);
+        let hostile = db
+            .query_series_with(
+                &catalog_filter("series"),
+                &TaxonomyFilter { theme: Some("series".into()), subtheme: Some("x' OR 1=1 --".into()), ..Default::default() },
+            )
+            .unwrap();
+        assert!(hostile.is_empty());
+    }
+
+    fn add_guide(db: &DatabaseManager, tvg_id: &str, category: &str, programmes: i64) {
+        db.with_conn(|c| {
+            for n in 0..programmes {
+                c.execute(
+                    "INSERT INTO epg_programs (channel_tvg_id, start_ts, end_ts, title, category) VALUES (?1, ?2, ?3, 'P', ?4)",
+                    params![tvg_id, (category.len() as i64 * 1_000 + n) * 100, (category.len() as i64 * 1_000 + n) * 100 + 50, category],
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn a_channel_without_a_theme_takes_the_one_its_guide_agrees_on() {
+        let (db, source) = db_with(&[
+            live("a", "Canale 5", "Italy", "c5.it@SD"),
+            live("b", "Mystery TV", "Italy", "mystery.it"),
+            live("c", "Mixed", "Italy", "mixed.it"),
+            live("d", "Corrected", "Italy", "corrected.it"),
+            live("e", "Bare", "Italy", "bare.it"),
+        ]);
+        add_guide(&db, "c5.it", "Informazione", 20);
+        add_guide(&db, "mystery.it", "Magazine", 20);
+        add_guide(&db, "mixed.it", "Sport", 5);
+        add_guide(&db, "mixed.it", "Informazione", 5);
+        add_guide(&db, "mixed.it", "Cartoni Animati", 5);
+        add_guide(&db, "corrected.it", "Informazione", 20);
+        db.set_taxonomy_override("d", None, Some(&["music".to_string()])).unwrap();
+        db.classify_source(source).unwrap();
+
+        let theme_of = |hash: &str| db.get_item_taxonomy(hash).unwrap().unwrap().themes[0].clone();
+        assert_eq!(theme_of("a"), "news", "most programmes are news");
+        assert_eq!(theme_of("b"), "other", "'Magazine' names no theme");
+        assert_eq!(theme_of("c"), "other", "no theme has a majority");
+        assert_eq!(theme_of("d"), "music", "the user's correction wins");
+        assert_eq!(theme_of("e"), "other", "no guide, no hint");
+
+        // The hint is a real theme: listed, filterable, searchable, and kept by a full reclassification.
+        let found = db
+            .query_catalog_with(&catalog_filter("live"), &TaxonomyFilter { theme: Some("news".into()), ..Default::default() })
+            .unwrap();
+        assert_eq!(found.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(), vec!["Canale 5"]);
+        db.reclassify_all(&|_, _| {}, &AtomicBool::new(false)).unwrap();
+        assert_eq!(theme_of("a"), "news");
+        let mut searched = catalog_filter("live");
+        searched.query = "infos".into();
+        assert_eq!(db.query_catalog_with(&searched, &TaxonomyFilter::default()).unwrap().len(), 1);
     }
 
     #[test]

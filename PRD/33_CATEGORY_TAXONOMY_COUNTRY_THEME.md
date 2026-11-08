@@ -237,7 +237,7 @@ fn is_reclassifying_categories() -> bool;
 
 ### 8.1. Colonne des catégories
 
-- En tête de `CategoryNavigation`, un sélecteur segmenté : **Pays · Thèmes · Fournisseur**. Le choix est mémorisé par écran (`@AppStorage`). Valeur par défaut : **Thèmes** en Live TV, **Fournisseur** en VOD jusqu'au lot 33.5.
+- En tête de `CategoryNavigation`, un sélecteur segmenté : **Pays · Thèmes · Fournisseur**. Le choix est mémorisé par écran (`@AppStorage`). Valeur par défaut : **Thèmes** en Live TV, en Films et en Séries (lot 33.5).
 - **Axe Pays** : drapeau (émoji régional calculé depuis le code), nom localisé par `Locale.current.localizedString(forRegionCode:)`, compteur. En tête : « Tous les pays », puis le pays de l'appareil, puis l'ordre alphabétique localisé ; « International » et « Pays inconnu » en fin de liste.
 - **Axe Thèmes** : icône SF Symbol par thème, libellé, compteur ; un thème se déplie sur ses sous-thèmes. « Non classé » en fin de liste.
 - **Axe Fournisseur** : liste actuelle, inchangée.
@@ -336,7 +336,7 @@ fn is_reclassifying_categories() -> bool;
 
 ## 15. Statut d'Implémentation & Validation
 
-**Lots 33.1 à 33.4 terminés** (branche `feat/category-taxonomy`). Lot 33.5 non commencé.
+**Lots 33.1 à 33.5 terminés** (branche `feat/category-taxonomy`).
 
 - **Module `crates/cnd-core/src/taxonomy/`**, fonctions pures sans SQLite ni réseau, non branché sur l'ingestion :
   - `data/countries.rs` : 213 pays et territoires ISO avec noms anglais, français et locaux, codes non ISO (`uk`, `usa`, `uae`, `ksa`), préfixes de langue, mots « international » ;
@@ -376,7 +376,7 @@ fn is_reclassifying_categories() -> bool;
 - **Accessibilité** : chips lues « titre, nombre », état sélectionné annoncé, sélecteur d'axe nommé.
 - **Tests** : 16 nouveaux (`CategoryAxisTests.swift`) : drapeaux et noms, tri des pays et des thèmes, libellés des 16 thèmes et des sous-thèmes, titre de sélection, stockage de l'axe, et le modèle Live TV contre un vrai moteur (colonne, chips, compteurs, recherche, axe Fournisseur). Suite Swift complète : 426 tests au vert.
 - **Vérification visuelle** : aucun affichage n'est disponible dans l'environnement de développement (la capture d'écran échoue), l'app lancée n'a donc pas pu être vue. La colonne a été **rendue hors écran** (macOS, mode sombre, 900 × 520) pour les axes Thèmes et Pays : mise en page, icônes, drapeaux et chips conformes. **Non compilé pour iOS, tvOS et visionOS** (les plateformes ne sont pas installées sur cette machine ; seul macOS a été compilé et testé). **Non vérifiés à l'écran** : la mise en page étroite (feuille « Catégories » et chips sur iPhone), Apple TV (`focusSection` du sélecteur) et le mode clair.
-- **Hors lot** : Films et Séries gardent l'axe Fournisseur jusqu'au lot 33.5.
+- **Hors lot** : Films et Séries gardent l'axe Fournisseur jusqu'au lot 33.5 (fait).
 
 ### Lot 33.4 : corrections, masquage, profils enfants, recherche, assistant
 
@@ -388,3 +388,15 @@ fn is_reclassifying_categories() -> bool;
 - **Vitesse** : les contrôles de masquage sont gardés par un test évalué une fois (le profil masque-t-il un pays ou un thème ?) : listes à 88 ms pour deux requêtes sur 50 000 éléments, comme avant le lot ; reclassement 1,2 s.
 - **Tests** : Rust, 49 tests de taxonomie (dont masquage par profil, thèmes enfants, règles de catégorie, réinitialisation, recherche, mise à niveau de l'index, assistant) ; Swift, 9 nouveaux (`CategoryCorrectionTests.swift`), 435 au total au vert. Feuille de correction rendue hors écran (macOS, mode sombre) : conforme.
 - **Non fait** : ordre personnalisé des pays par glisser-déposer (l'ordre reste : pays de l'appareil, puis alphabétique) ; recherche par pays et thème des séries (elle cherche encore dans le titre et le libellé) ; thèmes des enfants pour films et séries (lot 33.5). **Non vérifié à l'écran** : menus contextuels de la colonne et des chaînes, feuille sur iPhone, Réglages ; **non compilé** pour iOS, tvOS et visionOS.
+
+### Lot 33.5 : genres des films et séries, indice du guide
+
+- **Genres** : pour les éléments `movie`, `episode` et `series` seulement, un second dictionnaire (`GENRE_KEYWORDS`, 8 langues) donne un **genre en sous-thème** : action, aventure, comédie, policier, drame, famille, fantastique, horreur, mystère, romance, science-fiction, thriller, guerre, western, biographie (+ `classic` et `animation` déjà existants). Le thème reste `movies` (ou `series` pour une série ou un épisode) : « Cinéma » se déplie en genres comme « Sport » en sous-thèmes. `Documentary`, `Kids`, `Music`, `News`… restent des thèmes à part entière. Un film n'a jamais le thème `series` ni l'inverse : `Movies;Series` sur un épisode donne `series`. Les chaînes Live ne lisent pas les genres (`Action` reste `other`, `Comedy` reste `entertainment/comedy`).
+  - Un genre précis remplace un qualificatif (`Classic;Comedy;Movies` → `movies/comedy`). Un élément n'a qu'un genre par thème (clé primaire `(item_id, theme)`) : `Action;Comedy` donne le premier.
+  - Les mots d'une expression reconnue ne sont plus relus seuls (`science fiction` n'est pas `science`).
+- **Séries** : colonne `series_catalog.tx_subtheme` (genre du thème principal) ; `TaxonomyFilter.subtheme` s'applique aux séries ; les facettes de séries déplient les genres comme celles des films. `TAXONOMY_VERSION` passe à **3** (reclassement unique au prochain lancement).
+- **Indice du guide (XMLTV `<category>`)** : une chaîne encore `other` qui a un `tvg-id` prend le thème sur lequel **la majorité** de ses programmes s'accordent (au moins 3 programmes, au moins la moitié de ceux qui nomment un thème). Dictionnaire `EPG_KEYWORDS` (« Informazione », « Cartoni Animati », « Nieuws », « Sarjat »… et genres de films → `movies`). Jamais `adult`, `general` ni `other` ; ne touche ni une correction de l'utilisateur ni un thème déjà trouvé ; provenance `epg`. Lancé à la fin de l'import du guide et après chaque classement (donc conservé par un reclassement complet) ; les mots du thème sont ajoutés à la recherche, y compris pour le thème emprunté par `tvg-id` (oubli du lot 33.2 corrigé).
+- **Interface** : Films et Séries ont le sélecteur **Pays · Thèmes · Fournisseur** (par défaut Thèmes, choix mémorisé dans `movies.categoryAxis` et `series.categoryAxis`), les chips de l'autre axe, la rangée de genres et le titre « Cinéma (Action) · France ». « Classer cette catégorie… » (axe Fournisseur) y est disponible. Le moteur de colonne est celui du Live TV.
+- **Mesures sur une copie de la base locale** (12 229 chaînes, 889 films, 540 épisodes, 540 séries) : reclassement complet 2,7 s en `debug` ; **67 chaînes** classées par le guide (le guide de cette base ne donne une catégorie qu'à 82 chaînes) ; thème `other` : 2 866 chaînes soit **23,4 %** (24,0 % au lot 33.2). **L'objectif ≤ 15 % n'est pas atteint** sur cette base : 1 536 chaînes `Undefined` et la plupart des chaînes rangées sous un simple nom de pays n'ont ni thème, ni `tvg-id` partagé, ni guide qui nomme un thème. Les films et séries de cette base ont des libellés iptv-org (`Movies`, `Series`, `Comedy;Series`) : seul `comedy` y apparaît (12 séries) ; les genres se verront avec un fournisseur Xtream qui nomme ses catégories (`FR| ACTION`).
+- **Tests** : Rust, 53 tests de taxonomie (genres des films et séries, remplacement du qualificatif, expression `science fiction`, majorité du guide, seuils, correction prioritaire, conservation par un reclassement complet, recherche, facettes et filtre de genre des films et séries, valeur de genre hostile) ; fichier de référence relu : 11 libellés VOD changés (`Comedy;Movies` → `movies/comedy`, `FR| FILMS ACTION` → `movies/action`…) ; Swift, 3 nouveaux (`VodGenreTests`), **438 tests au vert**. `cargo clippy --workspace --all-targets` sans avertissement. Le test `test_50k_streaming_m3u_ingestion_sla` échoue toujours quand toute la suite tourne en parallèle et passe seul.
+- **Non fait** : thèmes des profils enfants pour films et séries (le moteur sait filtrer `theme:movie` / `theme:series`, mais l'écran des catégories autorisées ne les propose que pour les chaînes) ; masquer un pays ou un genre en Films et Séries (pas d'écran pour les réafficher) ; recherche des séries par pays et thème ; plusieurs genres par film ; ordre personnalisé des pays. **Non vérifié à l'écran** : Films et Séries avec l'axe Thèmes et la rangée de genres (aucun affichage disponible dans l'environnement) ; **non compilé** pour iOS, tvOS et visionOS.

@@ -647,6 +647,19 @@ impl CndEngine {
             }
         }
 
+        // Channels without a theme take the one their guide agrees on (PRD-33 lot 33.5).
+        if total_imported > 0 {
+            match self.db.apply_epg_theme_hints() {
+                Ok(0) => {}
+                Ok(n) => {
+                    self.telemetry.info("Categories", format!("{n} channel(s) classified from their guide"));
+                }
+                Err(e) => {
+                    self.telemetry.warn("Categories", format!("EPG theme hints failed: {e}"));
+                }
+            }
+        }
+
         let elapsed_ms = started.elapsed().as_millis() as u64;
         self.telemetry.info(
             "EPG",

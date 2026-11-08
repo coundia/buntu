@@ -42,20 +42,20 @@ live	Chile	CL	other
 live	China	CN	other
 live	Classic	-	movies/classic
 live	Classic;Comedy	-	entertainment/comedy
-episode	Classic;Comedy;Public;Series	-	entertainment/comedy,general/public,series
+episode	Classic;Comedy;Public;Series	-	series/comedy,general/public
 movie	Classic;Movies	-	movies/classic
 live	Classic;Music	-	music
 live	Classic;News	-	news
 episode	Classic;Series	-	series
 live	Classic;Shop	-	shopping
 live	Comedy	-	entertainment/comedy
-movie	Comedy;Family;Movies	-	entertainment/comedy,movies
-episode	Comedy;Family;Series	-	entertainment/comedy,series
+movie	Comedy;Family;Movies	-	movies/comedy
+episode	Comedy;Family;Series	-	series/comedy
 live	Comedy;Kids	-	entertainment/comedy,kids
-movie	Comedy;Movies	-	entertainment/comedy,movies
-episode	Comedy;Movies;Series	-	entertainment/comedy,movies,series
-episode	Comedy;Movies;Series;Sports	-	entertainment/comedy,movies,series,sports
-episode	Comedy;Series	-	entertainment/comedy,series
+movie	Comedy;Movies	-	movies/comedy
+episode	Comedy;Movies;Series	-	series/comedy
+episode	Comedy;Movies;Series;Sports	-	series/comedy,sports
+episode	Comedy;Series	-	series/comedy
 live	Cooking	-	lifestyle/cooking
 live	Cooking;Documentary	-	lifestyle/cooking,documentary
 live	Cooking;Education	-	lifestyle/cooking,education
@@ -143,9 +143,9 @@ live	Entertainment;Travel	-	entertainment,lifestyle/travel
 live	Estonia	EE	other
 live	Family	-	kids/family
 live	Family;General	-	kids/family,general
-movie	Family;General;Movies	-	general,movies
+movie	Family;General;Movies	-	movies/family,general
 live	Family;Kids	-	kids/family
-movie	Family;Movies	-	movies
+movie	Family;Movies	-	movies/family
 live	Family;Music;Religious	-	music,religious
 live	Family;Religious	-	religious
 episode	Family;Series	-	series
@@ -214,7 +214,7 @@ movie	Movies	-	movies
 movie	Movies;Music	-	movies,music
 movie	Movies;News	-	movies,news
 movie	Movies;Religious	-	movies,religious
-episode	Movies;Series	-	movies,series
+episode	Movies;Series	-	series
 movie	Movies;Shop	-	movies,shopping
 live	Music	-	music
 live	Music (EN)	-	music
@@ -316,7 +316,7 @@ live	24/7 | SERIES	-	series
 live	ADULTS +18	-	adult
 live	XXX | Adult	-	adult
 movie	VOD FRANCE	FR	movies
-movie	FR| FILMS ACTION	FR	movies
+movie	FR| FILMS ACTION	FR	movies/action
 movie	|EN| MOVIES 2024	-	movies
 series	FR| SÉRIES NETFLIX	FR	series
 series	EN| SERIES KIDS	-	series,kids

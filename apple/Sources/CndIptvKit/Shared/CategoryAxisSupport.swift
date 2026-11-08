@@ -170,6 +170,20 @@ enum CategoryText {
         case "fashion": return "Mode"
         case "legislative": return "Parlement"
         case "public": return "Service public"
+        // Genres of films and series (PRD-33 lot 33.5).
+        case "action": return "Action"
+        case "adventure": return "Aventure"
+        case "crime": return "Policier"
+        case "drama": return "Drame"
+        case "fantasy": return "Fantastique"
+        case "horror": return "Horreur"
+        case "mystery": return "Mystère"
+        case "romance": return "Romance"
+        case "scifi": return "Science-fiction"
+        case "thriller": return "Thriller"
+        case "war": return "Guerre"
+        case "western": return "Western"
+        case "biography": return "Biographie"
         default: return id
         }
     }
