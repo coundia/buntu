@@ -110,7 +110,28 @@ export function isDuplicate(candidate: SharedSource, existing: SourceRecord[]): 
   });
 }
 
-/** What the confirmation shows. A duplicate is listed but not added again. */
+/** Finds the existing source record matching the candidate if it is a duplicate. */
+export function findDuplicate(candidate: SharedSource, existing: SourceRecord[]): SourceRecord | undefined {
+  return existing.find((e) => {
+    if (candidate.type === 'xtream') {
+      return (
+        e.source_type === 'xtream' &&
+        normalizeServer(e.server ?? '') === normalizeServer(candidate.server ?? '') &&
+        (e.username ?? '') === (candidate.username ?? '')
+      );
+    }
+    return e.source_type === 'm3u' && normalizeUrl(e.url ?? '') === normalizeUrl(candidate.url ?? '');
+  });
+}
+
+export interface ApplyShareOptions {
+  /** When true, existing duplicate accounts are deleted and replaced by the new ones. */
+  replaceDuplicates?: boolean;
+  /** Optional existing sources list (defaults to querying Database). */
+  existingSources?: SourceRecord[];
+}
+
+/** What the confirmation shows. A duplicate is listed but not added again unless replaceDuplicates is set. */
 export function previewShare(json: string, existing: SourceRecord[], options: ParseShareOptions = {}): SharePreview {
   const all = parseShareDocument(json, options);
   const sources: PreviewSource[] = [];
@@ -129,19 +150,27 @@ export function previewShare(json: string, existing: SourceRecord[], options: Pa
   return { sources, pending };
 }
 
-/** Adds the sources that are not duplicates and starts their synchronisation. Returns how many. */
+/** Adds the sources and starts their synchronisation. Returns how many. */
 export async function applyShare(
   preview: SharePreview,
   engine: CndEngine = CndEngine.getInstance(),
-  onProgress?: ImportProgressCallback
+  onProgress?: ImportProgressCallback,
+  options: ApplyShareOptions = {}
 ): Promise<number> {
+  const existing = options.existingSources ?? (await Database.getInstance().getSources());
   let added = 0;
   const actionable = preview.sources
     .map((meta, i) => ({ meta, source: preview.pending[i] }))
-    .filter(({ meta, source }) => !meta.duplicate && (source.type !== 'xtream' || !!source.password));
+    .filter(({ meta, source }) => (!meta.duplicate || options.replaceDuplicates) && (source.type !== 'xtream' || !!source.password));
 
   for (let idx = 0; idx < actionable.length; idx++) {
-    const { source: s } = actionable[idx];
+    const { meta, source: s } = actionable[idx];
+    if (meta.duplicate && options.replaceDuplicates) {
+      const dup = findDuplicate(s, existing);
+      if (dup?.id) {
+        await engine.deleteSource(dup.id);
+      }
+    }
     const prefix = actionable.length > 1 ? `[${idx + 1}/${actionable.length}] ` : '';
     const forwardProgress: ImportProgressCallback = (msg, pct) => {
       const overallPct =
