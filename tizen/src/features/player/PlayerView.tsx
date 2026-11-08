@@ -13,6 +13,7 @@ import { detectChannelQuality } from '../../core/utils/categoryMeta';
 import { formatClock, formatDuration, formatRuntime, percentOf } from '../../core/utils/timeFormat';
 import { createPlayerInfo } from './playerInfo';
 import { AssistantModal } from '../assistant/AssistantModal';
+import { LocalSyncService } from '../../core/sync/LocalSyncService';
 
 export interface PlayerViewProps {
   item: ItemRecord;
@@ -76,6 +77,8 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   let osdTimer: any = null;
   let hudTimer: any = null;
   let keyUnsub: (() => void) | null = null;
+  let hasResumed = false;
+  let lastBroadcastMs = 0;
 
   const updateGrid = () => {
     if (playerError()) {
@@ -139,10 +142,23 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       onBufferingComplete: () => {
         setIsBuffering(false);
         setIsPlaying(true);
+        if (!hasResumed && props.item.playback_position_ms && props.item.playback_position_ms > 0 && props.item.kind !== 'live') {
+          hasResumed = true;
+          player.seekTo(props.item.playback_position_ms);
+        }
       },
       onCurrentPlayTime: (ms) => {
         setCurrentTimeMs(ms);
         setDurationMs(player.getDuration());
+        if (props.item.kind !== 'live' && Math.abs(ms - lastBroadcastMs) >= 15000) {
+          lastBroadcastMs = ms;
+          void LocalSyncService.getInstance().broadcastProgress(
+            props.item.stable_hash,
+            ms,
+            player.getDuration(),
+            false
+          );
+        }
       },
       onError: (err) => {
         console.error('Player error:', err);
@@ -167,6 +183,12 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       },
       onStreamCompleted: () => {
         if (props.item.kind !== 'live') {
+          void LocalSyncService.getInstance().broadcastProgress(
+            props.item.stable_hash,
+            durationMs(),
+            durationMs(),
+            true
+          );
           announce('Lecture terminée');
           props.onExit();
         }
@@ -191,6 +213,14 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   });
 
   onCleanup(() => {
+    if (props.item.kind !== 'live' && currentTimeMs() > 0) {
+      void LocalSyncService.getInstance().broadcastProgress(
+        props.item.stable_hash,
+        currentTimeMs(),
+        durationMs(),
+        false
+      );
+    }
     if (keyUnsub) keyUnsub();
     if (osdTimer) clearTimeout(osdTimer);
     if (hudTimer) clearTimeout(hudTimer);
@@ -220,6 +250,14 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       player.pause();
       setIsPlaying(false);
       announce('Pause');
+      if (props.item.kind !== 'live') {
+        void LocalSyncService.getInstance().broadcastProgress(
+          props.item.stable_hash,
+          currentTimeMs(),
+          durationMs(),
+          false
+        );
+      }
     } else {
       player.play();
       setIsPlaying(true);

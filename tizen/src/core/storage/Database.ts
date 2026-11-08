@@ -557,6 +557,34 @@ export class Database {
     return this.getById<ItemRecord>('items', id);
   }
 
+  public async getItemByStableHash(stableHash: string): Promise<ItemRecord | null> {
+    if (!this.db || !stableHash) return null;
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(['items'], 'readonly');
+      const store = tx.objectStore('items');
+      const index = store.index('stable_hash');
+      const req = index.get(stableHash);
+      req.onsuccess = () => {
+        if (req.result) return resolve(req.result);
+        const scanReq = store.openCursor();
+        scanReq.onsuccess = (ev: any) => {
+          const cursor = ev.target.result as IDBCursorWithValue;
+          if (cursor) {
+            const val = cursor.value as ItemRecord;
+            if (val.stable_hash && (val.stable_hash === stableHash || val.stable_hash.endsWith(`_${stableHash}`))) {
+              return resolve(val);
+            }
+            cursor.continue();
+          } else {
+            resolve(null);
+          }
+        };
+        scanReq.onerror = () => resolve(null);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
   public async getItemsByIds(ids: number[]): Promise<ItemRecord[]> {
     if (!this.db || ids.length === 0) return [];
     const results: ItemRecord[] = [];

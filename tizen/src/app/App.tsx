@@ -25,6 +25,7 @@ import { AssistantModal } from '../features/assistant/AssistantModal';
 import { NavigationHistory, NavEntry } from '../core/navigation/NavigationHistory';
 import { screenState } from '../core/navigation/ScreenState';
 import { zapContext } from '../core/navigation/ZapContext';
+import { LocalSyncService } from '../core/sync/LocalSyncService';
 
 export type ScreenRoute =
   | 'onboarding'
@@ -56,6 +57,9 @@ export const App: Component = () => {
   const [focusId] = spatialNav.getFocusSignal();
 
   let keyUnsub: (() => void) | null = null;
+  let unsubRemotePlay: (() => void) | null = null;
+  let unsubRemoteKey: (() => void) | null = null;
+  let unsubRemoteText: (() => void) | null = null;
 
   const IPTV_NAV_ITEMS: { route: ScreenRoute; label: string; icon: string; countKey?: 'live' | 'movie' | 'series' }[] = [
     { route: 'live', label: 'Live TV', icon: '📺', countKey: 'live' },
@@ -155,10 +159,61 @@ export const App: Component = () => {
     } finally {
       setEngineReady(true);
     }
+
+    // Start local household continuity sync (PRD-41)
+    void LocalSyncService.getInstance().start();
+
+    unsubRemotePlay = LocalSyncService.getInstance().onPlayRemote(async (event) => {
+      console.log('[Continuity] Remote play received:', event);
+      const item = await Database.getInstance().getItemByStableHash(event.content_key);
+      if (item) {
+        if (event.position_ms > 0) {
+          item.playback_position_ms = event.position_ms;
+        }
+        await handlePlayItem(item);
+      }
+    });
+
+    unsubRemoteKey = LocalSyncService.getInstance().onRemoteKey((keyName) => {
+      const keyMap: Record<string, RemoteKey> = {
+        up: 'UP',
+        down: 'DOWN',
+        left: 'LEFT',
+        right: 'RIGHT',
+        select: 'ENTER',
+        enter: 'ENTER',
+        ok: 'ENTER',
+        back: 'BACK',
+        play: 'PLAY',
+        pause: 'PAUSE',
+        play_pause: 'PLAY_PAUSE',
+        red: 'RED',
+        green: 'GREEN',
+        yellow: 'YELLOW',
+        blue: 'BLUE',
+      };
+      const mapped = keyMap[keyName.toLowerCase()];
+      if (mapped) {
+        handleGlobalKey(mapped);
+      }
+    });
+
+    unsubRemoteText = LocalSyncService.getInstance().onRemoteText((text) => {
+      const active = document.activeElement;
+      if (active && (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)) {
+        active.value = text;
+        active.dispatchEvent(new Event('input', { bubbles: true }));
+        active.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
   });
 
   onCleanup(() => {
     if (keyUnsub) keyUnsub();
+    if (unsubRemotePlay) unsubRemotePlay();
+    if (unsubRemoteKey) unsubRemoteKey();
+    if (unsubRemoteText) unsubRemoteText();
+    LocalSyncService.getInstance().stop();
     document.removeEventListener('visibilitychange', handleVisibilityChange);
   });
 
