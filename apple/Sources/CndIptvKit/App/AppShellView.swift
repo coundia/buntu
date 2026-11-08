@@ -964,12 +964,14 @@ private struct LoadedShellView: View {
                 #if !os(tvOS)
                 SettingsView(
                     model: settingsModel, directory: state.downloadDirectory, stats: state.stats, sync: state.cloudSync,
+                    localSync: state.localSync,
                     ai: state.aiSettings, assistant: assistant, upNext: state.upNext,
                     forYou: state.forYou, library: libraryModel
                 )
                 #else
                 SettingsView(
                     model: settingsModel, directory: state.downloadDirectory, stats: state.stats, sync: state.cloudSync,
+                    localSync: state.localSync,
                     ai: state.aiSettings, assistant: assistant, upNext: state.upNext,
                     forYou: state.forYou
                 )

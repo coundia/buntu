@@ -65,6 +65,7 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_cndiptv._tcp</string>
+		<string>_buntu-sync._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Pour scanner le QR code affiché par votre TV et lui envoyer vos comptes.</string>

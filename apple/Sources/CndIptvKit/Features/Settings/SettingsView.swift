@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Bindable var directory: DownloadDirectoryManager
     let stats: DbStats?
     var sync: CloudKitSyncManager?
+    var localSync: LocalSyncService?
     var ai: AiProviderSettings?
     var assistant: AssistantModel?
     var upNext: UpNextModel?
@@ -29,6 +30,9 @@ struct SettingsView: View {
     @AppStorage("downloads.keepAwake.enabled") private var keepScreenAwakeOnDownload = false
     @State private var showingProfilesManagement = false
     @State private var showingAdultUnlock = false
+    @State private var showingJoinHousehold = false
+    @State private var joinKeyInput = ""
+    @State private var householdStore = HouseholdStore.shared
     @State private var parental = ParentalControlManager.shared
 
     var body: some View {
@@ -57,6 +61,7 @@ struct SettingsView: View {
             omdbSection
             if let ai, let assistant { assistantSection(ai, assistant) }
             if let sync { iCloudSection(sync) }
+            householdSection
             diagnosticSection
             aboutSection
         }
@@ -540,6 +545,95 @@ struct SettingsView: View {
             Text("Synchronisation iCloud")
         } footer: {
             Text("Seuls les sources, les favoris et la progression de lecture sont synchronisés. Le catalogue et le guide sont reconstruits sur chaque appareil. Les mots de passe restent sur cet appareil, sauf si vous activez l'option : ils passent alors par le Trousseau iCloud de votre compte Apple (chiffré de bout en bout), à condition qu'il soit activé sur vos appareils.")
+        }
+    }
+
+    private var householdSection: some View {
+        Section {
+            if householdStore.isJoined {
+                LabeledContent("Identifiant du foyer") {
+                    Text(householdStore.householdId ?? "")
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent("Appareil local") {
+                    Text("\(householdStore.deviceName) (\(householdStore.deviceType))")
+                        .foregroundStyle(.secondary)
+                }
+                if let localSync {
+                    LabeledContent("Statut réseau") {
+                        Text(localSync.syncStatusMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let lastSync = localSync.lastSyncDate {
+                        LabeledContent("Dernière synchronisation") {
+                            Text(lastSync.formatted(date: .omitted, time: .standard))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    if !localSync.activePeers.isEmpty {
+                        ForEach(localSync.activePeers) { peer in
+                            Label("\(peer.name) (\(peer.deviceType))", systemImage: peer.deviceType == "tv" ? "tv" : (peer.deviceType == "desktop" ? "laptopcomputer" : "iphone"))
+                                .font(.subheadline)
+                        }
+                    } else {
+                        Text("En attente d'autres appareils sur le Wi-Fi...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button("Synchroniser maintenant") {
+                        localSync.syncNow()
+                    }
+                }
+                #if os(macOS)
+                Button("Copier la clé du foyer") {
+                    if let keyHex = householdStore.currentHouseholdKeyHex() {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(keyHex, forType: .string)
+                    }
+                }
+                #elseif os(iOS)
+                Button("Copier la clé du foyer") {
+                    if let keyHex = householdStore.currentHouseholdKeyHex() {
+                        UIPasteboard.general.string = keyHex
+                    }
+                }
+                #endif
+                Button("Quitter le foyer", role: .destructive) {
+                    householdStore.leaveHousehold()
+                    localSync?.stop()
+                }
+            } else {
+                Text("Synchronisez vos favoris, reprises de lecture et comptes IPTV avec vos autres appareils (Android, Mac, iPhone, TV Samsung) sur le Wi-Fi de la maison, sans aucun serveur.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Button("Créer un foyer") {
+                    _ = try? householdStore.createHousehold()
+                    localSync?.start()
+                }
+                Button("Rejoindre un foyer existant...") {
+                    showingJoinHousehold = true
+                }
+            }
+        } header: {
+            Text("Continuité & Foyer (Réseau Local)")
+        } footer: {
+            Text("Chiffrement de bout en bout AES-256-GCM. Aucun serveur central ni relais internet : tout reste sur votre réseau local privé.")
+        }
+        .alert("Rejoindre un foyer", isPresented: $showingJoinHousehold) {
+            TextField("Clé hexadécimale (64 caractères)", text: $joinKeyInput)
+            Button("Rejoindre") {
+                _ = try? householdStore.joinHousehold(keyHex: joinKeyInput)
+                joinKeyInput = ""
+                localSync?.start()
+            }
+            Button("Annuler", role: .cancel) {
+                joinKeyInput = ""
+            }
+        } message: {
+            Text("Collez la clé à 64 caractères affichée dans les réglages de continuité d'un autre appareil du foyer.")
         }
     }
 
