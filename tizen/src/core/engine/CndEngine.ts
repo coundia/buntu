@@ -11,6 +11,8 @@ import { Database, ItemRecord, SourceRecord, FAVORITES_CATEGORY, RECENT_CATEGORY
 import { HttpClient } from '../net/HttpClient';
 import { AVPlayerService } from '../player/AVPlayerService';
 import { WorkerBridge } from '../../worker/worker-bridge';
+import { AiClient, AiTaskResult } from '../ai/AiClient';
+import { gatherCommandCandidates, buildRecommendationCandidates } from '../ai/candidates';
 
 import { cleanMediaTitle } from '../utils/titleCleaner';
 
@@ -108,6 +110,15 @@ export class CndEngine {
       return true;
     }
     return false;
+  }
+
+  public getDatabase(): Database {
+    return this.db;
+  }
+
+  public async deleteSource(sourceId: number): Promise<void> {
+    await this.db.deleteSource(sourceId);
+    this.categoriesMemCache.clear();
   }
 
   /**
@@ -819,6 +830,133 @@ export class CndEngine {
     }));
 
     return this.worker.rankSearch(parsedQuery, searchCandidates);
+  }
+
+  /**
+   * Resolves a voice or text command locally or with AI assistant (PRD 40 § 6.2).
+   */
+  public async resolveAiCommand(command: string): Promise<AiTaskResult & { resolvedItem?: ItemRecord }> {
+    const aiClient = AiClient.getInstance();
+    const recents = await this.visibleRecents('live');
+    const recentIds = recents.map((i: ItemRecord) => i.id);
+    const candidates = await gatherCommandCandidates(command, recentIds);
+
+    // 1. Try local resolution first (< 50ms)
+    const local = await aiClient.resolveLocal(command, candidates, {
+      playing_stable_hash: this.currentPlayingItem?.stable_hash,
+      locale: 'fr-FR',
+    });
+
+    if (local.action) {
+      let resolvedItem: ItemRecord | undefined;
+      const itemId = local.action.play_channel?.item_id || (local.action.play ? local.action.play.item_id : undefined);
+      if (typeof itemId === 'number') {
+        resolvedItem = (await this.db.getItemById(itemId)) || undefined;
+      }
+      return {
+        ok: true,
+        action: local.action,
+        reply: resolvedItem ? `${resolvedItem.name}` : undefined,
+        resolvedItem,
+      };
+    }
+
+    // 2. Fall back to configured AI provider
+    const aiRes = await aiClient.executeTask(
+      'command',
+      {
+        locale: 'fr-FR',
+        command,
+        playing: this.currentPlayingItem?.name,
+        candidates,
+      },
+      { isKidsProfile: this.activeProfile.isKids }
+    );
+
+    let resolvedItem: ItemRecord | undefined;
+    const itemId = aiRes.action?.play_channel?.item_id || (aiRes.action?.play ? aiRes.action.play.item_id : undefined);
+    if (typeof itemId === 'number') {
+      resolvedItem = (await this.db.getItemById(itemId)) || undefined;
+    }
+
+    return {
+      ...aiRes,
+      resolvedItem,
+    };
+  }
+
+  /**
+   * Understands a universal search request with AI (PRD 40 § 6.1).
+   */
+  public async understandSearchWithAi(query: string): Promise<AiTaskResult> {
+    const aiClient = AiClient.getInstance();
+    return aiClient.executeTask(
+      'understand_search',
+      {
+        locale: 'fr-FR',
+        command: query,
+        now_local: new Date().toISOString().slice(0, 16).replace('T', ' '),
+        catalog_has: ['live', 'movie', 'series'],
+        only: [],
+      },
+      { isKidsProfile: this.activeProfile.isKids }
+    );
+  }
+
+  /**
+   * Re-ranks recommendations shelf using AI (PRD 40 § 6.3).
+   */
+  public async refineRecommendationsWithAi(
+    kind: 'movie' | 'series' | 'live',
+    items: ItemRecord[]
+  ): Promise<ItemRecord[]> {
+    if (items.length < 3 || this.activeProfile.isKids) {
+      return items;
+    }
+
+    const prefix = kind === 'movie' ? 'm' : kind === 'series' ? 's' : 't';
+    const { candidates, idToItemMap } = buildRecommendationCandidates(items, prefix);
+    const aiClient = AiClient.getInstance();
+
+    const res = await aiClient.executeTask(
+      'recommend',
+      {
+        locale: 'fr-FR',
+        kind,
+        taste: '',
+        recent: [],
+        candidates,
+        now_local: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      },
+      { isKidsProfile: this.activeProfile.isKids }
+    );
+
+    if (!res.ok || !res.recommendations?.picks || res.recommendations.picks.length === 0) {
+      return items;
+    }
+
+    const reordered: ItemRecord[] = [];
+    const seen = new Set<number>();
+
+    for (const pick of res.recommendations.picks) {
+      const item = idToItemMap.get(pick.id);
+      if (item && !seen.has(item.id)) {
+        seen.add(item.id);
+        const copy = { ...item };
+        if (pick.reason) {
+          (copy as any).aiReason = pick.reason;
+        }
+        reordered.push(copy);
+      }
+    }
+
+    for (const item of items) {
+      if (!seen.has(item.id)) {
+        reordered.push(item);
+      }
+    }
+
+    return reordered;
   }
 }
 

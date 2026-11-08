@@ -1,8 +1,10 @@
-import { Component, createSignal, For, Show, onMount } from 'solid-js';
+import { Component, createSignal, For, Show, onMount, onCleanup } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
+import { getAiSettings } from '../../core/ai/AiSettings';
+import { PairingOffer, PairingService } from '../../core/pairing/PairingService';
 
 export interface SearchViewProps {
   onSelectResult: (item: ItemRecord) => void;
@@ -14,6 +16,15 @@ export const SearchView: Component<SearchViewProps> = (props) => {
   const [selectedKind, setSelectedKind] = createSignal<'all' | 'live' | 'movie' | 'series'>('all');
   const [results, setResults] = createSignal<any[]>([]);
   const [focusId] = spatialNav.getFocusSignal();
+
+  // AI assistant status & progressive loading
+  const [isAiLoading, setIsAiLoading] = createSignal(false);
+  const [aiNotice, setAiNotice] = createSignal('');
+  const [pairingActive, setPairingActive] = createSignal(false);
+  const [qrOffer, setQrOffer] = createSignal<PairingOffer | null>(null);
+
+  let pairingService: PairingService | null = null;
+  let typingTimer: any = null;
 
   const FILTER_TABS: { key: 'all' | 'live' | 'movie' | 'series'; label: string }[] = [
     { key: 'all', label: 'Tout' },
@@ -27,10 +38,16 @@ export const SearchView: Component<SearchViewProps> = (props) => {
     ['G', 'H', 'I', 'J', 'K', 'L', '4', '5', '6'],
     ['M', 'N', 'O', 'P', 'Q', 'R', '7', '8', '9'],
     ['S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0'],
-    ['ESPACE', 'EFFACER', 'RECHERCHER'],
+    ['ESPACE', 'EFFACER', 'RECHERCHER', '✨ ASSISTANT IA', '📱 TÉLÉPHONE'],
   ];
 
   const rebuildGrid = (resList: any[]) => {
+    if (pairingActive()) {
+      spatialNav.setGrid([[{ id: 'btn-search-close-qr', onSelect: stopPairing }]]);
+      spatialNav.setFocusById('btn-search-close-qr');
+      return;
+    }
+
     const prevFocus = spatialNav.getCurrentFocusId();
 
     // Row 0: Filter Tabs
@@ -38,7 +55,7 @@ export const SearchView: Component<SearchViewProps> = (props) => {
       id: `search-tab-${tab.key}`,
       onSelect: () => {
         setSelectedKind(tab.key);
-        void performSearch();
+        void performLocalSearch();
       },
     }));
 
@@ -64,27 +81,36 @@ export const SearchView: Component<SearchViewProps> = (props) => {
     }
   };
 
-  onMount(() => {
-    rebuildGrid([]);
-  });
-
   const handleKeyClick = async (char: string) => {
+    if (char === '✨ ASSISTANT IA') {
+      await performAiSearch();
+      return;
+    }
+    if (char === '📱 TÉLÉPHONE') {
+      await startPhonePairing();
+      return;
+    }
     let next = query();
     if (char === 'ESPACE') {
       next += ' ';
     } else if (char === 'EFFACER') {
       next = next.slice(0, -1);
     } else if (char === 'RECHERCHER') {
-      await performSearch();
+      await performLocalSearch();
       return;
     } else {
       next += char;
     }
     setQuery(next);
-    await performSearch();
+
+    // Debounced instant local suggestions (< 150ms SLA)
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => {
+      void performLocalSearch();
+    }, 120);
   };
 
-  const performSearch = async () => {
+  const performLocalSearch = async () => {
     const q = query().trim();
     if (!q) {
       setResults([]);
@@ -97,26 +123,128 @@ export const SearchView: Component<SearchViewProps> = (props) => {
     rebuildGrid(res);
   };
 
+  const performAiSearch = async () => {
+    const q = query().trim();
+    if (!q) {
+      setAiNotice('Saisissez une phrase avant de demander à l’assistant');
+      return;
+    }
+
+    // Local results stay on screen while AI processes
+    setIsAiLoading(true);
+    setAiNotice('L’assistant réfléchit…');
+
+    try {
+      const aiRes = await engine.understandSearchWithAi(q);
+      setIsAiLoading(false);
+
+      if (aiRes.ok && aiRes.understanding) {
+        const u = aiRes.understanding;
+        setAiNotice(u.reply || 'Résultats affinés par l’assistant');
+
+        // If title guesses exist, search catalog for them
+        if (Array.isArray(u.title_guesses) && u.title_guesses.length > 0) {
+          const kindFilter = selectedKind() === 'all' ? undefined : (selectedKind() as 'live' | 'movie' | 'series');
+          const matched: any[] = [];
+          const seen = new Set<number>();
+
+          for (const guess of u.title_guesses.slice(0, 15)) {
+            const hits = await engine.searchCatalog(guess.title, kindFilter, 3);
+            for (const h of hits) {
+              if (!seen.has(h.id)) {
+                seen.add(h.id);
+                matched.push({
+                  candidate: h,
+                  aiReason: u.similar_to ? `Similaire à ${u.similar_to}` : 'Suggéré par l’assistant',
+                });
+              }
+            }
+          }
+
+          // Merge with local results
+          if (matched.length > 0) {
+            const merged = [...matched, ...results().filter((r) => !seen.has(r.candidate.id))];
+            setResults(merged);
+            rebuildGrid(merged);
+          }
+        }
+      } else {
+        setAiNotice(`Assistant indisponible (${aiRes.error || 'repli local'}) : résultats locaux`);
+      }
+    } catch (err: any) {
+      setIsAiLoading(false);
+      setAiNotice('Assistant indisponible : résultats locaux conservés');
+    }
+  };
+
+  const startPhonePairing = async () => {
+    try {
+      setPairingActive(true);
+      pairingService = new PairingService({
+        onRequest: () => {},
+        onTextReceived: (text) => {
+          stopPairing();
+          setQuery(text);
+          void performLocalSearch();
+        },
+        onClosed: () => {
+          stopPairing();
+        },
+        onError: (err) => {
+          setAiNotice(`Erreur appairage : ${err}`);
+        },
+      });
+
+      const offer = await pairingService.start();
+      setQrOffer(offer);
+      rebuildGrid(results());
+    } catch (e: any) {
+      setPairingActive(false);
+      setAiNotice(e?.message || 'Impossible de démarrer l’appairage');
+      rebuildGrid(results());
+    }
+  };
+
+  const stopPairing = () => {
+    pairingService?.stop();
+    pairingService = null;
+    setPairingActive(false);
+    setQrOffer(null);
+    rebuildGrid(results());
+  };
+
+  onMount(() => {
+    rebuildGrid([]);
+  });
+
+  onCleanup(() => {
+    clearTimeout(typingTimer);
+    pairingService?.stop();
+  });
+
+  const aiSettings = getAiSettings();
+  const hasAi = aiSettings.provider !== 'local_only';
+
   return (
     <div
       style={{
-        width: "100%",
-        height: "100%",
-        padding: "24px 40px",
-        "box-sizing": "border-box",
-        overflow: "hidden",
-        display: "flex",
-        "flex-direction": "column"
+        width: '100%',
+        height: '100%',
+        padding: '24px 40px',
+        'box-sizing': 'border-box',
+        overflow: 'hidden',
+        display: 'flex',
+        'flex-direction': 'column',
       }}
     >
       {/* Header */}
       <div class="tv-live-header">
         <h1 class="tv-live-title">
-          <span>Recherche Globale IPTV</span>
+          <span>Recherche Universelle & IA</span>
         </h1>
 
         {/* Filter Pills */}
-        <div style={{ display: "flex", "margin-left": "24px" }} role="tablist" aria-label="Filtres de recherche">
+        <div style={{ display: 'flex', 'margin-left': '24px' }} role="tablist" aria-label="Filtres de recherche">
           <For each={FILTER_TABS}>
             {(tab) => (
               <button
@@ -127,7 +255,7 @@ export const SearchView: Component<SearchViewProps> = (props) => {
                 class={`tv-category-pill ${selectedKind() === tab.key ? 'active' : ''} ${focusId() === `search-tab-${tab.key}` ? 'focused' : ''}`}
                 onClick={() => {
                   setSelectedKind(tab.key);
-                  void performSearch();
+                  void performLocalSearch();
                 }}
               >
                 {tab.label}
@@ -141,44 +269,130 @@ export const SearchView: Component<SearchViewProps> = (props) => {
         </div>
       </div>
 
-      <div style={{ display: "flex", flex: 1, "overflow-y": "hidden" }}>
+      {/* AI Notification Banner */}
+      <Show when={aiNotice()}>
+        <div
+          style={{
+            background: isAiLoading() ? 'rgba(212, 160, 23, 0.2)' : 'rgba(30, 41, 59, 0.8)',
+            border: '1px solid var(--buntu-gold)',
+            padding: '10px 20px',
+            'border-radius': '8px',
+            'font-size': '16px',
+            color: '#FFFFFF',
+            'margin-bottom': '16px',
+            display: 'flex',
+            'align-items': 'center',
+            gap: '10px',
+          }}
+        >
+          <Show when={isAiLoading()}>
+            <span>⏳</span>
+          </Show>
+          <span>{aiNotice()}</span>
+        </div>
+      </Show>
+
+      {/* QR Code Phone Mode Modal */}
+      <Show when={pairingActive() && qrOffer()}>
+        <div
+          style={{
+            background: 'var(--buntu-slate)',
+            padding: '24px',
+            'border-radius': '16px',
+            border: '2px solid var(--buntu-gold)',
+            display: 'flex',
+            'flex-direction': 'column',
+            'align-items': 'center',
+            gap: '16px',
+            'margin-bottom': '20px',
+          }}
+        >
+          <h3 style={{ 'font-size': '20px', margin: 0, color: 'var(--buntu-gold)' }}>
+            Scannez pour écrire depuis votre smartphone
+          </h3>
+          <p style={{ color: 'var(--buntu-text-muted)', margin: 0, 'font-size': '16px' }}>
+            Tapez votre recherche sur le téléphone : elle sera transmise automatiquement à la TV.
+          </p>
+          <div style={{ background: '#FFFFFF', padding: '12px', 'border-radius': '12px' }}>
+            <canvas
+              ref={(el) => {
+                if (!el || !qrOffer()) return;
+                const offer = qrOffer()!;
+                const ctx = el.getContext('2d');
+                if (!ctx) return;
+                const size = offer.qrSize;
+                const scale = 4;
+                el.width = size * scale;
+                el.height = size * scale;
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, el.width, el.height);
+                ctx.fillStyle = '#000000';
+                for (let r = 0; r < size; r++) {
+                  for (let c = 0; c < size; c++) {
+                    if (offer.qrModules[r * size + c] === '1') {
+                      ctx.fillRect(c * scale, r * scale, scale, scale);
+                    }
+                  }
+                }
+              }}
+            />
+          </div>
+          <button
+            id="btn-search-close-qr"
+            tabindex="-1"
+            class={`tv-btn ${focusId() === 'btn-search-close-qr' ? 'focused' : ''}`}
+            onClick={stopPairing}
+          >
+            Fermer l’appairage téléphone
+          </button>
+        </div>
+      </Show>
+
+      <div style={{ display: 'flex', flex: 1, 'overflow-y': 'hidden' }}>
         {/* On-Screen Keyboard */}
-        <div style={{ width: "620px", "margin-right": "32px", "flex-shrink": 0 }} role="group" aria-label="Clavier virtuel">
+        <div style={{ width: '640px', 'margin-right': '32px', 'flex-shrink': 0 }} role="group" aria-label="Clavier virtuel">
           {/* Query input display */}
-          <div style={{
-            background: "var(--buntu-slate)",
-            padding: "14px 24px",
-            "border-radius": "12px",
-            "font-size": "24px",
-            "font-weight": "700",
-            border: "2px solid var(--buntu-border)",
-            "margin-bottom": "20px",
-            color: query() ? "#FFFFFF" : "var(--buntu-text-muted)"
-          }}>
-            {query() || 'Saisissez votre recherche...'}
+          <div
+            style={{
+              background: 'var(--buntu-slate)',
+              padding: '14px 24px',
+              'border-radius': '12px',
+              'font-size': '24px',
+              'font-weight': '700',
+              border: '2px solid var(--buntu-border)',
+              'margin-bottom': '20px',
+              color: query() ? '#FFFFFF' : 'var(--buntu-text-muted)',
+            }}
+          >
+            {query() || 'Saisissez ou demandez à l’assistant…'}
           </div>
 
           <For each={KEYBOARD_ROWS}>
             {(row) => (
-              <div style={{ display: "flex", "margin-bottom": "8px" }}>
+              <div style={{ display: 'flex', 'margin-bottom': '8px', gap: '8px' }}>
                 <For each={row}>
-                  {(k) => (
-                    <button
-                      id={`key-${k}`}
-                      tabindex="-1"
-                      aria-label={`Touche ${k === 'ESPACE' ? 'Espace' : k === 'EFFACER' ? 'Effacer un caractère' : k === 'RECHERCHER' ? 'Lancer la recherche' : k}`}
-                      class={`tv-btn ${focusId() === `key-${k}` ? 'focused' : ''}`}
-                      style={{
-                        padding: k.length > 1 ? "12px 24px" : "12px 20px",
-                        "font-size": "18px",
-                        "min-width": k.length === 1 ? "54px" : "auto",
-                        "margin-right": "8px",
-                      }}
-                      onClick={() => void handleKeyClick(k)}
-                    >
-                      {k}
-                    </button>
-                  )}
+                  {(k) => {
+                    const isSpecial = k.length > 1;
+                    const isAi = k.includes('ASSISTANT');
+                    return (
+                      <button
+                        id={`key-${k}`}
+                        tabindex="-1"
+                        aria-label={`Touche ${k}`}
+                        class={`tv-btn ${focusId() === `key-${k}` ? 'focused' : ''}`}
+                        style={{
+                          padding: isSpecial ? '12px 16px' : '12px 20px',
+                          'font-size': isSpecial ? '15px' : '18px',
+                          'min-width': isSpecial ? 'auto' : '52px',
+                          color: isAi ? 'var(--buntu-gold)' : undefined,
+                          'font-weight': isAi ? '700' : undefined,
+                        }}
+                        onClick={() => void handleKeyClick(k)}
+                      >
+                        {k}
+                      </button>
+                    );
+                  }}
                 </For>
               </div>
             )}
@@ -186,37 +400,35 @@ export const SearchView: Component<SearchViewProps> = (props) => {
         </div>
 
         {/* Search Results List */}
-        <div
-          role="list"
-          aria-label="Résultats de recherche"
-          class="tv-live-channels"
-        >
+        <div role="list" aria-label="Résultats de recherche" class="tv-live-channels">
           <For each={results()}>
             {(res, idx) => {
-              const candName = res.candidate.name_clean && res.candidate.name_clean !== res.candidate.name
-                ? res.candidate.name_clean
-                : cleanMediaTitle(res.candidate.name).clean;
+              const cand = res.candidate;
+              const candName = cand.name_clean && cand.name_clean !== cand.name ? cand.name_clean : cleanMediaTitle(cand.name).clean;
+              const aiReason = res.aiReason;
+
               return (
                 <div
                   id={`search-res-${idx()}`}
                   role="button"
                   tabindex="-1"
-                  aria-label={`Résultat: ${candName}, catégorie ${res.candidate.group_title || 'générale'}, type ${res.candidate.kind}`}
+                  aria-label={`Résultat: ${candName}, catégorie ${cand.group_title || 'générale'}, type ${cand.kind}`}
                   class={`tv-channel-row ${focusId() === `search-res-${idx()}` ? 'focused' : ''}`}
-                  onClick={() => props.onSelectResult(res.candidate as any)}
+                  onClick={() => props.onSelectResult(cand as any)}
                 >
                   {/* Kind Badge */}
-                  <div class="tv-channel-num" style={{ "font-size": "14px", "min-width": "80px" }}>
-                    {res.candidate.kind === 'live' ? 'DIRECT' : res.candidate.kind === 'series' ? 'SÉRIE' : 'FILM'}
+                  <div class="tv-channel-num" style={{ 'font-size': '14px', 'min-width': '80px' }}>
+                    {cand.kind === 'live' ? 'DIRECT' : cand.kind === 'series' ? 'SÉRIE' : 'FILM'}
                   </div>
 
                   {/* Candidate Info */}
                   <div class="tv-channel-info">
-                    <div class="tv-channel-name">
-                      {candName}
-                    </div>
+                    <div class="tv-channel-name">{candName}</div>
                     <div class="tv-channel-meta">
-                      {res.candidate.group_title || 'Général'} • {res.candidate.year || '2024'}
+                      {cand.group_title || 'Général'} • {cand.year || '2024'}
+                      <Show when={aiReason}>
+                        <span style={{ color: 'var(--buntu-gold)', 'margin-left': '12px' }}>✨ {aiReason}</span>
+                      </Show>
                     </div>
                   </div>
 
@@ -232,9 +444,14 @@ export const SearchView: Component<SearchViewProps> = (props) => {
             }}
           </For>
 
-          <Show when={results().length === 0 && query().trim().length > 0}>
-            <div style={{ "text-align": "center", color: "var(--buntu-text-muted)", padding: "48px 0", "font-size": "20px" }}>
+          <Show when={results().length === 0 && query().trim().length > 0 && !isAiLoading()}>
+            <div style={{ 'text-align': 'center', color: 'var(--buntu-text-muted)', padding: '48px 0', 'font-size': '20px' }}>
               Aucun résultat trouvé pour "{query()}" dans {selectedKind() === 'all' ? 'le catalogue' : selectedKind()}.
+              <Show when={hasAi}>
+                <div style={{ 'margin-top': '12px', color: 'var(--buntu-gold)', 'font-size': '16px' }}>
+                  Essayez « ✨ ASSISTANT IA » pour chercher par description ou comparaison.
+                </div>
+              </Show>
             </div>
           </Show>
         </div>

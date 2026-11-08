@@ -7,37 +7,14 @@
 use crate::ai::intent::{AiAction, AiCommandContext};
 use crate::db::catalog_repo::{CatalogFilter, SortField, ITEM_SELECT_COLUMNS};
 use crate::db::{DatabaseManager, DbError, IptvItemRecord};
-use crate::iptv::normalizer::fold_diacritics_ascii;
 use rusqlite::params;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-/// Words that only phrase the request ("mets", "sur", "la chaîne"...), in French and English.
-const FILLER: &[&str] = &[
-    "mets", "met", "mettre", "mettez", "lance", "lancer", "passe", "passer", "va", "vas", "aller",
-    "sur", "la", "le", "les", "l", "un", "une", "des", "du", "de", "d", "en", "et", "au", "aux", "a",
-    "chaine", "chaines", "tv", "channel", "play", "watch", "switch", "to", "the", "on", "please",
-    "stp", "svp", "s", "il", "vous", "plait", "moi", "me", "je", "veux", "voir", "regarder",
-    "regarde", "jouer", "ouvre", "ouvrir", "affiche", "afficher", "donne", "show", "open", "put",
-    "go", "numero", "n", "no",
-];
-
-/// Words that describe a programme in general rather than name it.
-const GENERIC: &[&str] = &[
-    "match", "film", "serie", "series", "emission", "programme", "direct", "live", "ce", "soir",
-    "maintenant", "actuellement", "cours", "aujourd", "hui",
-];
-
-const NEXT: &[&str] = &["suivante", "suivant", "next", "apres", "prochaine", "prochain"];
-const PREVIOUS: &[&str] = &["precedente", "precedent", "previous", "prev"];
-const BACK: &[&str] = &["retour", "reviens", "revenir", "avant", "back", "derniere", "dernier"];
-
-/// Tokens that describe a stream rather than name a channel.
-const QUALITY_NOISE: &[&str] = &["hd", "fhd", "uhd", "4k", "sd", "hevc", "h265", "h264", "raw", "backup"];
-const COUNTRY_NOISE: &[&str] = &[
-    "fr", "uk", "us", "en", "de", "es", "it", "pt", "be", "ch", "ca", "nl", "ar", "tr",
-];
-
-pub const CONFIDENT: f32 = 0.85;
+pub use cnd_domain::ai::matcher::{
+    channel_name_tokens, distinctive_tokens, fts_variants, name_score, significant_tokens,
+    significant_words, split_letters_digits, strip_country_prefix, tokens, without_noise, words,
+    BACK, CONFIDENT, COUNTRY_NOISE, FILLER, GENERIC, NEXT, PREVIOUS, QUALITY_NOISE,
+};
 
 #[derive(Debug, Clone)]
 pub struct LocalOutcome {
@@ -57,131 +34,6 @@ impl LocalOutcome {
     fn candidates(candidates: Vec<IptvItemRecord>) -> Self {
         Self { action: None, candidates, note: None }
     }
-}
-
-/// Lower-case ASCII words of a phrase, `4k` and `h265` normalised so they survive splitting.
-pub fn words(text: &str) -> Vec<String> {
-    fold_diacritics_ascii(text)
-        .to_lowercase()
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|t| !t.is_empty())
-        .map(|w| match w {
-            "4k" => "uhd".to_string(),
-            "h265" | "h264" => "hevc".to_string(),
-            other => other.to_string(),
-        })
-        .collect()
-}
-
-/// `"france2"` -> `["france", "2"]`, `"tf1"` -> `["tf", "1"]`: letters and digits are separated so
-/// that "France 2", "france2" and "FRANCE-2" all give the same tokens.
-fn split_letters_digits(word: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut current = String::new();
-    let mut last_is_digit: Option<bool> = None;
-    for ch in word.chars() {
-        let is_digit = ch.is_ascii_digit();
-        if let Some(previous) = last_is_digit {
-            if previous != is_digit {
-                out.push(std::mem::take(&mut current));
-            }
-        }
-        current.push(ch);
-        last_is_digit = Some(is_digit);
-    }
-    if !current.is_empty() {
-        out.push(current);
-    }
-    out
-}
-
-/// Tokens used for comparing a command with channel names: `"Mets France2 !"` -> `["mets", "france", "2"]`.
-pub fn tokens(text: &str) -> Vec<String> {
-    words(text).iter().flat_map(|w| split_letters_digits(w)).collect()
-}
-
-/// Drops stream tags ("hd", "fr"...) unless nothing else would be left: a channel is not named by them.
-fn without_noise(tokens: Vec<String>) -> Vec<String> {
-    let kept: Vec<String> = tokens
-        .iter()
-        .filter(|t| !QUALITY_NOISE.contains(&t.as_str()) && !COUNTRY_NOISE.contains(&t.as_str()))
-        .cloned()
-        .collect();
-    if kept.is_empty() { tokens } else { kept }
-}
-
-/// The meaningful words of a command, not split (what a playlist's own tokens look like): `["tf1"]`.
-pub fn significant_words(command: &str) -> Vec<String> {
-    without_noise(
-        words(command)
-            .into_iter()
-            .filter(|w| !FILLER.contains(&w.as_str()))
-            .collect(),
-    )
-}
-
-/// Search strings for the full-text index: the words as typed, and split at letter/digit borders,
-/// because a playlist may name a channel "TF1" or "France 2" and the index does not know they match.
-pub fn fts_variants(command: &str) -> Vec<String> {
-    let joined = significant_words(command).join(" ");
-    let split = significant_tokens(command).join(" ");
-    let mut out = vec![joined];
-    if !out.contains(&split) {
-        out.push(split);
-    }
-    out.retain(|q| !q.trim().is_empty());
-    out
-}
-
-/// Meaningful words that name something, not just describe a programme in general.
-pub fn distinctive_tokens(command: &str) -> Vec<String> {
-    significant_tokens(command)
-        .into_iter()
-        .filter(|t| !GENERIC.contains(&t.as_str()))
-        .collect()
-}
-
-/// The words of the command that carry meaning (filler removed).
-pub fn significant_tokens(command: &str) -> Vec<String> {
-    without_noise(
-        tokens(command)
-            .into_iter()
-            .filter(|t| !FILLER.contains(&t.as_str()))
-            .collect(),
-    )
-}
-
-/// Name of a channel reduced to what identifies it: country prefix (`FR: `), quality and country
-/// tags removed. Falls back to the plain tokens if that would leave nothing.
-pub fn channel_name_tokens(name: &str) -> Vec<String> {
-    let trimmed = strip_country_prefix(name);
-    let all = tokens(trimmed);
-    let kept: Vec<String> = all
-        .iter()
-        .filter(|t| !QUALITY_NOISE.contains(&t.as_str()) && !COUNTRY_NOISE.contains(&t.as_str()))
-        .cloned()
-        .collect();
-    if kept.is_empty() { all } else { kept }
-}
-
-/// `"FR: TF1"`, `"FR | TF1"`, `"UK - BBC One"` -> the part after the separator.
-fn strip_country_prefix(name: &str) -> &str {
-    let trimmed = name.trim_start();
-    let mut letters = 0;
-    for (idx, ch) in trimmed.char_indices() {
-        if ch.is_ascii_alphabetic() && letters < 3 {
-            letters += 1;
-            continue;
-        }
-        if (2..=3).contains(&letters) {
-            let rest = trimmed[idx..].trim_start();
-            if let Some(after) = rest.strip_prefix(['|', ':', '-']) {
-                return after.trim_start();
-            }
-        }
-        break;
-    }
-    trimmed
 }
 
 fn all_in(tokens: &[String], vocabulary: &[&str]) -> bool {
@@ -212,18 +64,6 @@ fn dedupe_by_name(items: Vec<IptvItemRecord>) -> Vec<IptvItemRecord> {
         }
     }
     order.into_iter().filter_map(|key| best.remove(&key)).collect()
-}
-
-fn name_score(query: &[String], name: &str) -> f32 {
-    let name_tokens = channel_name_tokens(name);
-    if name_tokens == query {
-        return 1.0;
-    }
-    let set: HashSet<&String> = name_tokens.iter().collect();
-    if query.iter().all(|t| set.contains(t)) {
-        return if name_tokens.len() <= query.len() + 1 { 0.9 } else { 0.6 };
-    }
-    0.3
 }
 
 pub fn resolve_local(

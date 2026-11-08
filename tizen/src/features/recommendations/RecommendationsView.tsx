@@ -19,6 +19,23 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
     setMovieRecs(movies);
     setSeriesRecs(series);
 
+    // Asynchronous progressive AI re-ranking (PRD 40 § 6.3)
+    void (async () => {
+      try {
+        const refinedMovies = await engine.refineRecommendationsWithAi('movie', movies);
+        if (refinedMovies && refinedMovies.length > 0) {
+          setMovieRecs(refinedMovies);
+        }
+      } catch {}
+
+      try {
+        const refinedSeries = await engine.refineRecommendationsWithAi('series', series);
+        if (refinedSeries && refinedSeries.length > 0) {
+          setSeriesRecs(refinedSeries);
+        }
+      } catch {}
+    })();
+
     const grid: FocusableItem[][] = [];
     if (movies.length > 0) {
       grid.push(
@@ -116,6 +133,11 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
                     </div>
                     <div class="tv-poster-body">
                       <div class="tv-poster-title">{title}</div>
+                      <Show when={(movie as any).aiReason}>
+                        <div style={{ color: "var(--buntu-gold)", "font-size": "13px", "margin-top": "2px", "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis" }}>
+                          ✨ {(movie as any).aiReason}
+                        </div>
+                      </Show>
                       <div class="tv-poster-sub">
                         <span>{movie.year || 'Film'}</span>
                         <Show when={movie.imdb_rating}>
@@ -188,6 +210,11 @@ export const RecommendationsView: Component<RecommendationsViewProps> = (props) 
                     </div>
                     <div class="tv-poster-body">
                       <div class="tv-poster-title">{title}</div>
+                      <Show when={(series as any).aiReason}>
+                        <div style={{ color: "var(--buntu-gold)", "font-size": "13px", "margin-top": "2px", "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis" }}>
+                          ✨ {(series as any).aiReason}
+                        </div>
+                      </Show>
                       <div class="tv-poster-sub">
                         <span>Série TV</span>
                         <span style={{ color: "var(--buntu-cyan)", "font-weight": "700" }}>

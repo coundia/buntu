@@ -21,6 +21,7 @@ import { SourcesView } from '../features/sources/SourcesView';
 import { ProfilesView } from '../features/profiles/ProfilesView';
 import { SettingsView } from '../features/settings/SettingsView';
 import { OnboardingView } from '../features/onboarding/OnboardingView';
+import { AssistantModal } from '../features/assistant/AssistantModal';
 import { NavigationHistory, NavEntry } from '../core/navigation/NavigationHistory';
 import { screenState } from '../core/navigation/ScreenState';
 import { zapContext } from '../core/navigation/ZapContext';
@@ -49,6 +50,7 @@ export const App: Component = () => {
   const [selectedItem, setSelectedItem] = createSignal<ItemRecord | null>(null);
   const [hasSources, setHasSources] = createSignal(true);
   const [showExitDialog, setShowExitDialog] = createSignal(false);
+  const [showAssistantModal, setShowAssistantModal] = createSignal(false);
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
   const [globalCounts, setGlobalCounts] = createSignal({ live: 0, movie: 0, series: 0, sources: 0 });
   const [focusId] = spatialNav.getFocusSignal();
@@ -225,6 +227,10 @@ export const App: Component = () => {
     }
 
     if (key === 'BACK') {
+      if (showAssistantModal()) {
+        setShowAssistantModal(false);
+        return true;
+      }
       if (showExitDialog()) {
         closeExitDialog();
         return true;
@@ -511,6 +517,21 @@ export const App: Component = () => {
             </div>
           </div>
         </div>
+      </Show>
+
+      {/* Assistant Modal */}
+      <Show when={showAssistantModal()}>
+        <AssistantModal
+          onClose={() => setShowAssistantModal(false)}
+          onPlayItem={(item) => {
+            setShowAssistantModal(false);
+            handlePlayItem(item);
+          }}
+          onSearchQuery={() => {
+            setShowAssistantModal(false);
+            navigateTo('search');
+          }}
+        />
       </Show>
     </div>
   );

@@ -318,13 +318,49 @@ pub fn seal(
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Opened {
-    /// The sources document, in clear. Preview it, ask the user, and only then import.
+    /// The document or message, in clear (sources document, ai-config, or text).
     pub share_json: String,
     pub from: String,
     /// Key to answer the phone with `seal_reply`.
     pub reply_key: String,
     /// The new session state (one use, failures counted): the TV stores it in place of the old one.
     pub state: String,
+}
+
+/// Payload sent from phone to TV to configure an AI provider (PRD 40 § 4.2).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AiConfigPayload {
+    pub provider: String,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    pub api_key: String,
+}
+
+/// Text input sent from phone to TV for search or assistant (PRD 40 § 4.2).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TextPayload {
+    pub text: String,
+}
+
+/// Envelope recognizing the type of message sent to the TV.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum SealedPayload {
+    #[serde(rename = "cnd-source-share")]
+    SourceShare,
+    AiConfig {
+        provider: String,
+        #[serde(default)]
+        model: Option<String>,
+        #[serde(default)]
+        base_url: Option<String>,
+        api_key: String,
+    },
+    Text {
+        text: String,
+    },
 }
 
 /// What `open` did to the session when it did not produce a document.

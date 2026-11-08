@@ -78,7 +78,7 @@ pub async fn resolve_saga_with_llm(
         .json(&request.body);
 
     for (k, v) in &request.headers {
-        builder = builder.header(*k, v.as_str());
+        builder = builder.header(k.as_str(), v.as_str());
     }
 
     let res = builder.send().await.map_err(|e| format!("LLM request failed: {e}"))?;
