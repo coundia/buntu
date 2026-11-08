@@ -3,15 +3,15 @@
 
 use crate::db::profile_repo::is_adult_category;
 use crate::taxonomy::country::prefix_meaning;
-use crate::taxonomy::data::domains::{KEYWORDS, NAME_KEYWORDS, QUALIFIER_SUBDOMAINS};
+use crate::taxonomy::data::themes::{KEYWORDS, NAME_KEYWORDS, QUALIFIER_SUBTHEMES};
 use crate::taxonomy::tokenize::{leading_code, meaningful_words, normalize_phrase, split_segments};
-use crate::taxonomy::{ClassifyInput, Domain};
+use crate::taxonomy::{ClassifyInput, Theme};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 /// Where a theme came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DomainSource {
+pub enum ThemeSource {
     User,
     Group,
     Kind,
@@ -19,26 +19,26 @@ pub enum DomainSource {
     Fallback,
 }
 
-impl DomainSource {
+impl ThemeSource {
     pub fn as_str(self) -> &'static str {
         match self {
-            DomainSource::User => "user",
-            DomainSource::Group => "group",
-            DomainSource::Kind => "kind",
-            DomainSource::Name => "name",
-            DomainSource::Fallback => "fallback",
+            ThemeSource::User => "user",
+            ThemeSource::Group => "group",
+            ThemeSource::Kind => "kind",
+            ThemeSource::Name => "name",
+            ThemeSource::Fallback => "fallback",
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DomainTag {
-    pub domain: Domain,
-    pub subdomain: Option<&'static str>,
-    pub source: DomainSource,
+pub struct ThemeTag {
+    pub theme: Theme,
+    pub subtheme: Option<&'static str>,
+    pub source: ThemeSource,
 }
 
-type Entry = (Domain, Option<&'static str>);
+type Entry = (Theme, Option<&'static str>);
 
 struct Dictionary {
     exact: HashMap<String, Entry>,
@@ -47,10 +47,10 @@ struct Dictionary {
 }
 
 impl Dictionary {
-    fn build(keywords: &[(&str, Domain, Option<&'static str>)]) -> Self {
+    fn build(keywords: &[(&str, Theme, Option<&'static str>)]) -> Self {
         let mut dict = Dictionary { exact: HashMap::new(), stems: Vec::new(), phrases: Vec::new() };
-        for (keyword, domain, sub) in keywords {
-            let entry = (*domain, *sub);
+        for (keyword, theme, sub) in keywords {
+            let entry = (*theme, *sub);
             if let Some(stem) = keyword.strip_suffix('*') {
                 dict.stems.push((normalize_phrase(stem), entry));
             } else {
@@ -102,25 +102,25 @@ fn without_leading_code(label: &str) -> &str {
     }
 }
 
-fn push(tags: &mut Vec<DomainTag>, (domain, subdomain): Entry, source: DomainSource) {
-    if let Some(existing) = tags.iter_mut().find(|t| t.domain == domain) {
-        if existing.subdomain.is_none() {
-            existing.subdomain = subdomain;
+fn push(tags: &mut Vec<ThemeTag>, (theme, subtheme): Entry, source: ThemeSource) {
+    if let Some(existing) = tags.iter_mut().find(|t| t.theme == theme) {
+        if existing.subtheme.is_none() {
+            existing.subtheme = subtheme;
         }
     } else {
-        tags.push(DomainTag { domain, subdomain, source });
+        tags.push(ThemeTag { theme, subtheme, source });
     }
 }
 
 fn is_qualifier((_, sub): &Entry) -> bool {
-    sub.is_some_and(|s| QUALIFIER_SUBDOMAINS.contains(&s))
+    sub.is_some_and(|s| QUALIFIER_SUBTHEMES.contains(&s))
 }
 
-fn is_weak((domain, _): &Entry) -> bool {
-    matches!(domain, Domain::General | Domain::Other)
+fn is_weak((theme, _): &Entry) -> bool {
+    matches!(theme, Theme::General | Theme::Other)
 }
 
-fn from_group(label: &str) -> Vec<DomainTag> {
+fn from_group(label: &str) -> Vec<ThemeTag> {
     let dict = label_dictionary();
     let mut entries: Vec<Entry> = Vec::new();
     for segment in split_segments(without_leading_code(label)) {
@@ -128,52 +128,52 @@ fn from_group(label: &str) -> Vec<DomainTag> {
     }
     // A qualifier (`Classic`, `Family`, `Interactive`) only stays when nothing else names a theme,
     // or when it refines a theme the label also names (`Classic;Movies` -> movies/classic).
-    let core: Vec<Domain> = entries.iter().filter(|e| !is_weak(e) && !is_qualifier(e)).map(|e| e.0).collect();
+    let core: Vec<Theme> = entries.iter().filter(|e| !is_weak(e) && !is_qualifier(e)).map(|e| e.0).collect();
     if !core.is_empty() {
         entries.retain(|e| !is_qualifier(e) || core.contains(&e.0));
     }
-    let explicit_kids = entries.contains(&(Domain::Kids, None));
+    let explicit_kids = entries.contains(&(Theme::Kids, None));
     let mut tags = Vec::new();
     for entry in entries {
-        push(&mut tags, entry, DomainSource::Group);
+        push(&mut tags, entry, ThemeSource::Group);
     }
     // `Animation;Comedy` without `Kids` is adult animation (PRD-33 § 14): entertainment, not kids.
-    let has_comedy = tags.iter().any(|t| t.subdomain == Some("comedy"));
+    let has_comedy = tags.iter().any(|t| t.subtheme == Some("comedy"));
     if has_comedy && !explicit_kids {
-        tags.retain(|t| !(t.domain == Domain::Kids && t.subdomain == Some("animation")));
+        tags.retain(|t| !(t.theme == Theme::Kids && t.subtheme == Some("animation")));
     }
     if is_adult_category(label) {
-        push(&mut tags, (Domain::Adult, None), DomainSource::Group);
+        push(&mut tags, (Theme::Adult, None), ThemeSource::Group);
     }
     tags
 }
 
-fn only_weak(tags: &[DomainTag]) -> bool {
-    tags.iter().all(|t| matches!(t.domain, Domain::General | Domain::Other))
+fn only_weak(tags: &[ThemeTag]) -> bool {
+    tags.iter().all(|t| matches!(t.theme, Theme::General | Theme::Other))
 }
 
 /// All themes of an item, first one = order of the label (PRD-33 § 4.2).
 /// User overrides are applied by `taxonomy::classify`.
-pub fn resolve_domains(input: &ClassifyInput<'_>) -> Vec<DomainTag> {
+pub fn resolve_themes(input: &ClassifyInput<'_>) -> Vec<ThemeTag> {
     let mut tags = input.group_title.map(from_group).unwrap_or_default();
 
-    let kind_domain = match input.kind {
-        "movie" => Some(Domain::Movies),
-        "episode" | "series" => Some(Domain::Series),
+    let kind_theme = match input.kind {
+        "movie" => Some(Theme::Movies),
+        "episode" | "series" => Some(Theme::Series),
         _ => None,
     };
-    if let Some(domain) = kind_domain {
+    if let Some(theme) = kind_theme {
         if only_weak(&tags) {
             tags.clear();
-            tags.push(DomainTag { domain, subdomain: None, source: DomainSource::Kind });
+            tags.push(ThemeTag { theme, subtheme: None, source: ThemeSource::Kind });
         }
     }
 
-    if tags.iter().all(|t| t.domain == Domain::Other) {
+    if tags.iter().all(|t| t.theme == Theme::Other) {
         let dict = name_dictionary();
         let mut from_name = Vec::new();
         for entry in dict.segment(&normalize_phrase(input.name)) {
-            push(&mut from_name, entry, DomainSource::Name);
+            push(&mut from_name, entry, ThemeSource::Name);
         }
         if !from_name.is_empty() {
             tags = from_name;
@@ -181,22 +181,22 @@ pub fn resolve_domains(input: &ClassifyInput<'_>) -> Vec<DomainTag> {
     }
 
     if tags.is_empty() {
-        tags.push(DomainTag { domain: Domain::Other, subdomain: None, source: DomainSource::Fallback });
+        tags.push(ThemeTag { theme: Theme::Other, subtheme: None, source: ThemeSource::Fallback });
     }
     tags
 }
 
 /// Theme used to sort and display an item: adult first (safety), then the first real theme,
 /// then `general`, then `other`.
-pub fn primary_domain(tags: &[DomainTag]) -> Domain {
-    if tags.iter().any(|t| t.domain == Domain::Adult) {
-        return Domain::Adult;
+pub fn primary_theme(tags: &[ThemeTag]) -> Theme {
+    if tags.iter().any(|t| t.theme == Theme::Adult) {
+        return Theme::Adult;
     }
     tags.iter()
-        .map(|t| t.domain)
-        .find(|d| !matches!(d, Domain::General | Domain::Other))
-        .or_else(|| tags.iter().map(|t| t.domain).find(|d| *d == Domain::General))
-        .unwrap_or(Domain::Other)
+        .map(|t| t.theme)
+        .find(|d| !matches!(d, Theme::General | Theme::Other))
+        .or_else(|| tags.iter().map(|t| t.theme).find(|d| *d == Theme::General))
+        .unwrap_or(Theme::Other)
 }
 
 #[cfg(test)]
@@ -205,15 +205,15 @@ mod tests {
 
     fn themes(kind: &str, group: Option<&str>, name: &str) -> Vec<(String, Option<&'static str>)> {
         let input = ClassifyInput { kind, group_title: group, tvg_id: None, name, country_attr: None };
-        resolve_domains(&input).into_iter().map(|t| (t.domain.as_str().to_string(), t.subdomain)).collect()
+        resolve_themes(&input).into_iter().map(|t| (t.theme.as_str().to_string(), t.subtheme)).collect()
     }
 
     fn live(group: &str) -> Vec<(String, Option<&'static str>)> {
         themes("live", Some(group), "Channel")
     }
 
-    fn t(domain: &str, sub: Option<&'static str>) -> (String, Option<&'static str>) {
-        (domain.to_string(), sub)
+    fn t(theme: &str, sub: Option<&'static str>) -> (String, Option<&'static str>) {
+        (theme.to_string(), sub)
     }
 
     #[test]
@@ -266,16 +266,16 @@ mod tests {
     #[test]
     fn adult_uses_the_parental_rule_and_wins_the_primary_theme() {
         let input = ClassifyInput { kind: "live", group_title: Some("Movies +18"), tvg_id: None, name: "x", country_attr: None };
-        let tags = resolve_domains(&input);
-        assert!(tags.iter().any(|t| t.domain == Domain::Adult));
-        assert_eq!(primary_domain(&tags), Domain::Adult);
+        let tags = resolve_themes(&input);
+        assert!(tags.iter().any(|t| t.theme == Theme::Adult));
+        assert_eq!(primary_theme(&tags), Theme::Adult);
     }
 
     #[test]
     fn primary_skips_general_and_other() {
         let input = ClassifyInput { kind: "live", group_title: Some("General;News"), tvg_id: None, name: "x", country_attr: None };
-        assert_eq!(primary_domain(&resolve_domains(&input)), Domain::News);
+        assert_eq!(primary_theme(&resolve_themes(&input)), Theme::News);
         let input = ClassifyInput { kind: "live", group_title: Some("General"), tvg_id: None, name: "x", country_attr: None };
-        assert_eq!(primary_domain(&resolve_domains(&input)), Domain::General);
+        assert_eq!(primary_theme(&resolve_themes(&input)), Theme::General);
     }
 }

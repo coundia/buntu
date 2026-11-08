@@ -4,11 +4,11 @@
 //! `*` matches every word that starts with it ("sport*" matches "sports", "sportivo").
 //! Languages: English, French, Spanish, Italian, German, Portuguese, Turkish, Arabic.
 
-use crate::taxonomy::Domain;
-use Domain::*;
+use crate::taxonomy::Theme;
+use Theme::*;
 
 /// `(keyword, theme, sub-theme)`.
-pub const KEYWORDS: &[(&str, Domain, Option<&str>)] = &[
+pub const KEYWORDS: &[(&str, Theme, Option<&str>)] = &[
     // General
     ("general", General, None),
     ("generaliste", General, None),
@@ -246,7 +246,7 @@ pub const KEYWORDS: &[(&str, Domain, Option<&str>)] = &[
 
 /// Words a channel *name* may carry that give a theme when its category gives none
 /// (weak hint, PRD-33 § 4.2 step 4). Kept short: names are full of brand words.
-pub const NAME_KEYWORDS: &[(&str, Domain, Option<&str>)] = &[
+pub const NAME_KEYWORDS: &[(&str, Theme, Option<&str>)] = &[
     ("sport", Sports, None),
     ("sports", Sports, None),
     ("deportes", Sports, None),
@@ -267,4 +267,4 @@ pub const NAME_KEYWORDS: &[(&str, Domain, Option<&str>)] = &[
 
 /// Sub-themes that qualify another theme rather than name one (PRD-33 § 3): `Classic;News` is
 /// news, `Family;Religious` is religious. They only count when the label has no other theme.
-pub const QUALIFIER_SUBDOMAINS: &[&str] = &["classic", "family", "interactive"];
+pub const QUALIFIER_SUBTHEMES: &[&str] = &["classic", "family", "interactive"];

@@ -54,11 +54,11 @@ La valeur brute `group_title` **n'est jamais modifiée** : bouquets masqués, or
 | Module | Seule responsabilité | Ne fait pas |
 |---|---|---|
 | `taxonomy/data/countries.rs` | Table des pays : code ISO, alias (EN, FR, langue locale, abréviations `UK`, `USA`), TLD. Données pures, générées. | Aucune logique. |
-| `taxonomy/data/domains.rs` | Liste fermée des thèmes et sous-thèmes, et dictionnaire de mots-clés multilingue → thème. Données pures. | Aucune logique. |
+| `taxonomy/data/themes.rs` | Liste fermée des thèmes et sous-thèmes, et dictionnaire de mots-clés multilingue → thème. Données pures. | Aucune logique. |
 | `taxonomy/tokenize.rs` | Découper un libellé de catégorie en segments et mots (`;`, `|`, `/`, ` - `, `[ ]`, `( )`), retirer le bruit (`FHD`, `HD`, `4K`, `VIP`, `24/7`, émojis, drapeaux). | Ne connaît ni pays ni thèmes. |
 | `taxonomy/country.rs` | Déduire le pays d'un élément à partir des indices (§ 4.1), avec sa provenance. | Ne touche pas aux thèmes. |
-| `taxonomy/domain.rs` | Déduire les thèmes d'un élément à partir des indices (§ 4.2), avec leur provenance. | Ne touche pas au pays. |
-| `taxonomy/mod.rs` | Façade `classify(&ClassifyInput) -> Classification` : appelle `country` et `domain`, applique les surcharges de l'utilisateur. | Pas d'accès SQLite. |
+| `taxonomy/theme.rs` | Déduire les thèmes d'un élément à partir des indices (§ 4.2), avec leur provenance. | Ne touche pas au pays. |
+| `taxonomy/mod.rs` | Façade `classify(&ClassifyInput) -> Classification` : appelle `country` et `theme`, applique les surcharges de l'utilisateur. | Pas d'accès SQLite. |
 | `db/taxonomy_repo.rs` | Écrire et lire les classements, facettes et filtres croisés ; reclassement en masse. | Pas de règle de classement. |
 | `lib.rs` | Exports UniFFI. | — |
 | `Shared/CategoryNavigation.swift` | Afficher l'axe choisi et les chips de l'autre axe. | Aucun calcul de classement côté Swift. |
@@ -71,7 +71,7 @@ Le classement est une **fonction pure** (mêmes entrées → même résultat), t
 
 Identifiants stables en anglais (stockés), libellés traduits dans l'interface.
 
-| `domain` | Libellé FR | Sous-thèmes (`subdomain`) | Exemples de libellés source reconnus |
+| `theme` | Libellé FR | Sous-thèmes (`subtheme`) | Exemples de libellés source reconnus |
 |---|---|---|---|
 | `general` | Généralistes | — | General, Généraliste, Generalista |
 | `news` | Infos | `business`, `weather`, `politics` | News, Info, Actualités, Noticias, Notizie, Nachrichten, أخبار, Business, Weather, Météo |
@@ -142,29 +142,29 @@ Un élément peut avoir **plusieurs thèmes** (`Animation;Kids;Music` → `kids/
 -- Pays et thème principal sur l'élément : facettes et tri sans jointure.
 ALTER TABLE iptv_items ADD COLUMN tx_country TEXT;          -- 'FR', 'INT' ou NULL
 ALTER TABLE iptv_items ADD COLUMN tx_country_src TEXT;      -- 'attribute' | 'group_prefix' | … | 'user'
-ALTER TABLE iptv_items ADD COLUMN tx_domain TEXT;           -- thème principal
+ALTER TABLE iptv_items ADD COLUMN tx_theme TEXT;           -- thème principal
 ALTER TABLE series_catalog ADD COLUMN tx_country TEXT;
-ALTER TABLE series_catalog ADD COLUMN tx_domain TEXT;
+ALTER TABLE series_catalog ADD COLUMN tx_theme TEXT;
 
 -- Tous les thèmes d'un élément (multi-valué).
-CREATE TABLE IF NOT EXISTS item_domains (
+CREATE TABLE IF NOT EXISTS item_themes (
     item_id INTEGER NOT NULL REFERENCES iptv_items(id) ON DELETE CASCADE,
-    domain TEXT NOT NULL,
-    subdomain TEXT,
+    theme TEXT NOT NULL,
+    subtheme TEXT,
     src TEXT NOT NULL,
-    PRIMARY KEY (item_id, domain)
+    PRIMARY KEY (item_id, theme)
 ) WITHOUT ROWID;
 
 -- Surcharges de l'utilisateur, par stable_hash pour survivre aux actualisations.
 CREATE TABLE IF NOT EXISTS taxonomy_overrides (
     stable_hash TEXT PRIMARY KEY,
     country TEXT,
-    domains TEXT,           -- liste 'sports,news' ; NULL = pas de surcharge
+    themes TEXT,           -- liste 'sports,news' ; NULL = pas de surcharge
     updated_at INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_items_kind_country_domain ON iptv_items(kind, tx_country, tx_domain, name);
-CREATE INDEX IF NOT EXISTS idx_item_domains_domain ON item_domains(domain, item_id);
+CREATE INDEX IF NOT EXISTS idx_items_kind_country_theme ON iptv_items(kind, tx_country, tx_theme, name);
+CREATE INDEX IF NOT EXISTS idx_item_themes_theme ON item_themes(theme, item_id);
 ```
 
 - Migrations ajoutées à `apply_incremental_migrations` (`db/mod.rs`), qui ignore déjà les colonnes existantes.
@@ -177,26 +177,26 @@ CREATE INDEX IF NOT EXISTS idx_item_domains_domain ON item_domains(domain, item_
 
 ### 5.3. Reclassement
 
-- `reclassify_all(progress)` lit `group_title`, `tvg_id`, `name`, `country`, `kind` par pages de 5 000 et réécrit les colonnes `tx_*` et `item_domains`. Annulable, rapporte sa progression.
+- `reclassify_all(progress)` lit `group_title`, `tvg_id`, `name`, `country`, `kind` par pages de 5 000 et réécrit les colonnes `tx_*` et `item_themes`. Annulable, rapporte sa progression.
 - Déclenché par : migration, changement de `TAXONOMY_VERSION`, surcharge de l'utilisateur (élément seul).
 
 ### 5.4. Requêtes et API UniFFI (extrait)
 
 ```rust
-enum CategoryAxis { Country, Domain, Provider }
+enum CategoryAxis { Country, Theme, Provider }
 
 fn get_category_facets(kind: String, axis: CategoryAxis, source_id: Option<i64>,
-                       country: Option<String>, domain: Option<String>) -> Vec<CategoryFacet>;
+                       country: Option<String>, theme: Option<String>) -> Vec<CategoryFacet>;
 // CategoryFacet { key: String, subkeys: Vec<FacetCount>, count: i64 }
 //   axis Country : key = 'FR' | 'INT' | '' (inconnu)
-//   axis Domain  : key = 'sports', subkeys = sous-thèmes
+//   axis Theme  : key = 'sports', subkeys = sous-thèmes
 //   axis Provider: key = group_title brut (comportement actuel de get_groups)
 
-fn get_items_by_taxonomy(kind: String, country: Option<String>, domain: Option<String>,
-                         subdomain: Option<String>, source_id: Option<i64>,
+fn get_items_by_taxonomy(kind: String, country: Option<String>, theme: Option<String>,
+                         subtheme: Option<String>, source_id: Option<i64>,
                          offset: i64, limit: i64) -> Vec<IptvItemRecord>;
 
-fn set_taxonomy_override(stable_hash: String, country: Option<String>, domains: Option<Vec<String>>);
+fn set_taxonomy_override(stable_hash: String, country: Option<String>, themes: Option<Vec<String>>);
 fn clear_taxonomy_override(stable_hash: String);
 fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'éléments sans pays / 'other'
 ```
@@ -208,11 +208,11 @@ fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'�
 
 ## 6. Interactions avec l'existant
 
-- **Bouquets masqués et ordre personnalisé (`PRD-20`)** : restent sur `group_title` (axe Fournisseur). Lot 33.4 : masquer aussi un pays ou un thème entier (`hidden_groups.kind` = `country:live` / `domain:live`), et ordre personnalisé des pays (France en premier par défaut selon la région de l'appareil).
+- **Bouquets masqués et ordre personnalisé (`PRD-20`)** : restent sur `group_title` (axe Fournisseur). Lot 33.4 : masquer aussi un pays ou un thème entier (`hidden_groups.kind` = `country:live` / `theme:live`), et ordre personnalisé des pays (France en premier par défaut selon la région de l'appareil).
 - **Catégories adultes** : un élément est adulte si `is_adult_group(group_title)` **ou** s'il porte le thème `adult`. Rien ne devient visible qui était masqué.
 - **Profils enfants** : en plus des catégories autorisées, un parent peut autoriser des **thèmes** (`kids`, `education`, `documentary`). Le thème `adult` ne peut jamais être autorisé.
 - **Recherche (FTS5)** : les libellés traduits du pays et du thème principal sont ajoutés à l'index (« sport italie » trouve les chaînes sportives italiennes). Changement de schéma FTS : reconstruction de l'index au premier lancement.
-- **Assistant ⌘K (`PRD-13`)** : « une chaîne d'info en anglais », « le sport en Espagne » utilisent `tx_domain` et `tx_country` au lieu de mots cherchés dans `group_title`.
+- **Assistant ⌘K (`PRD-13`)** : « une chaîne d'info en anglais », « le sport en Espagne » utilisent `tx_theme` et `tx_country` au lieu de mots cherchés dans `group_title`.
 - **Recommandations (`PRD-27`)** et **miroirs (`PRD-17`)** : peuvent s'appuyer sur `tx_country` pour départager des homonymes ; hors périmètre de ce PRD, simple possibilité.
 - **iCloud** : le catalogue n'est pas synchronisé ; les surcharges de l'utilisateur non plus dans ce PRD (§ 11).
 
@@ -253,7 +253,7 @@ fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'�
 
 | Lot | Contenu | Livrable validable seul |
 |---|---|---|
-| **33.1** | Module `taxonomy/` : données pays et thèmes, `tokenize`, `country`, `domain`, `classify`. Aucun branchement. | Tests unitaires sur un **jeu de libellés réels** (les 242 catégories de la base locale, des libellés Xtream courants, des `tvg-id` iptv-org) avec le résultat attendu. |
+| **33.1** | Module `taxonomy/` : données pays et thèmes, `tokenize`, `country`, `theme`, `classify`. Aucun branchement. | Tests unitaires sur un **jeu de libellés réels** (les 242 catégories de la base locale, des libellés Xtream courants, des `tvg-id` iptv-org) avec le résultat attendu. |
 | **33.2** | Schéma, migrations, classement à l'ingestion (M3U et Xtream), reclassement en arrière-plan, **thème emprunté à une autre chaîne de même `tvg-id`** quand le libellé n'en donne pas (502 chaînes de la base locale), requêtes de facettes et filtres croisés, exports UniFFI, XCFramework. | Tests Rust de bout en bout et SLA ; `get_groups` inchangé. |
 | **33.3** | Interface : sélecteur d'axe, colonnes Pays et Thèmes, chips croisées, titres, iPhone et Apple TV. | Essai à l'écran sur la base locale. |
 | **33.4** | Corrections de l'utilisateur, masquage de pays / thèmes, thèmes autorisés des profils enfants, recherche FTS par pays et thème, assistant ⌘K. | Tests Rust et Swift ; essai à l'écran. |
@@ -264,7 +264,7 @@ fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'�
 ## 10. Fichiers à Créer / Modifier
 
 - **Rust :**
-  - `crates/cnd-core/src/taxonomy/` *(nouveau)* : `mod.rs`, `tokenize.rs`, `country.rs`, `domain.rs`, `data/countries.rs`, `data/domains.rs`, `tests.rs` + `tests/fixtures/category_labels.tsv` ;
+  - `crates/cnd-core/src/taxonomy/` *(nouveau)* : `mod.rs`, `tokenize.rs`, `country.rs`, `theme.rs`, `data/countries.rs`, `data/themes.rs`, `tests.rs` + `tests/fixtures/category_labels.tsv` ;
   - `db/schema.rs`, `db/mod.rs` *(migrations)*, `db/ingestion_writer.rs`, `db/taxonomy_repo.rs` *(nouveau)*, `db/catalog_repo.rs` *(filtres partagés)* ;
   - `iptv/xtream.rs` *(classement par catégorie)* ;
   - `ai/local_matcher.rs`, `ai/candidates.rs` *(lot 33.4)* ;
@@ -333,8 +333,8 @@ fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'�
 
 - **Module `crates/cnd-core/src/taxonomy/`**, fonctions pures sans SQLite ni réseau, non branché sur l'ingestion :
   - `data/countries.rs` : 213 pays et territoires ISO avec noms anglais, français et locaux, codes non ISO (`uk`, `usa`, `uae`, `ksa`), préfixes de langue, mots « international » ;
-  - `data/domains.rs` : dictionnaire de mots-clés en 8 langues vers les 16 thèmes, mots-clés des noms de chaînes, sous-thèmes « qualificatifs » ;
-  - `tokenize.rs`, `country.rs`, `domain.rs`, `mod.rs` (`classify`, `classify_with_override`, `TAXONOMY_VERSION = 1`).
+  - `data/themes.rs` : dictionnaire de mots-clés en 8 langues vers les 16 thèmes, mots-clés des noms de chaînes, sous-thèmes « qualificatifs » ;
+  - `tokenize.rs`, `country.rs`, `theme.rs`, `mod.rs` (`classify`, `classify_with_override`, `TAXONOMY_VERSION = 1`).
 - **Décisions prises pour avancer** (questions de la § 14, modifiables) :
   - `Classic`, `Family` et `Interactive` qualifient un autre thème : `Classic;News` → Infos ; seuls, `Classic` → `movies/classic` et `Family` → `kids/family` ;
   - `Public` (iptv-org : chaîne de service public) → `general/public`, pas `institutional` ; `Legislative` reste `institutional` ;

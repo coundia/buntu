@@ -16,11 +16,11 @@ fn describe(kind: &str, label: &str) -> (String, String) {
     let c = classify(&ClassifyInput { kind, group_title: Some(label), tvg_id: None, name: "", country_attr: None });
     let country = c.country_code().unwrap_or("-").to_string();
     let themes = c
-        .domains
+        .themes
         .iter()
-        .map(|t| match t.subdomain {
-            Some(sub) => format!("{}/{}", t.domain.as_str(), sub),
-            None => t.domain.as_str().to_string(),
+        .map(|t| match t.subtheme {
+            Some(sub) => format!("{}/{}", t.theme.as_str(), sub),
+            None => t.theme.as_str().to_string(),
         })
         .collect::<Vec<_>>()
         .join(",");
@@ -65,24 +65,24 @@ fn no_combined_label_stays_unclassified_when_one_part_is_known() {
 
 #[test]
 fn every_theme_round_trips_through_its_stored_name() {
-    for domain in Domain::ALL {
-        assert_eq!(Domain::parse(domain.as_str()), Some(domain));
+    for theme in Theme::ALL {
+        assert_eq!(Theme::parse(theme.as_str()), Some(theme));
     }
-    assert_eq!(Domain::parse("weather"), None);
+    assert_eq!(Theme::parse("weather"), None);
 }
 
 #[test]
 fn a_user_correction_replaces_the_values_but_never_drops_adult() {
     let input = ClassifyInput { kind: "live", group_title: Some("News"), tvg_id: Some("X.fr"), name: "x", country_attr: None };
-    let correction = TaxonomyOverride { country: Some("BE".into()), domains: Some(vec![Domain::Sports]) };
+    let correction = TaxonomyOverride { country: Some("BE".into()), themes: Some(vec![Theme::Sports]) };
     let c = classify_with_override(&input, Some(&correction));
     assert_eq!(c.country, Some(CountryMatch { code: "BE".into(), source: CountrySource::User }));
-    assert_eq!(c.primary_domain(), Domain::Sports);
+    assert_eq!(c.primary_theme(), Theme::Sports);
 
     let adult = ClassifyInput { kind: "live", group_title: Some("XXX"), tvg_id: None, name: "x", country_attr: None };
-    let c = classify_with_override(&adult, Some(&TaxonomyOverride { country: None, domains: Some(vec![Domain::Kids]) }));
-    assert!(c.has_domain(Domain::Adult));
-    assert_eq!(c.primary_domain(), Domain::Adult);
+    let c = classify_with_override(&adult, Some(&TaxonomyOverride { country: None, themes: Some(vec![Theme::Kids]) }));
+    assert!(c.has_theme(Theme::Adult));
+    assert_eq!(c.primary_theme(), Theme::Adult);
 }
 
 /// SLA: < 5 µs per item (PRD-33). Timed only in optimised builds (`cargo test --release`).
@@ -152,7 +152,7 @@ fn coverage_on_a_real_catalogue() {
             with_country += 1;
             *by_source.entry(m.source.as_str()).or_default() += 1;
         }
-        if c.primary_domain() == Domain::Other {
+        if c.primary_theme() == Theme::Other {
             other += 1;
             *unclassified.entry(group.unwrap_or_default()).or_default() += 1;
         }
