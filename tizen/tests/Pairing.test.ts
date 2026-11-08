@@ -6,7 +6,7 @@ import init, {
   wasm_pairing_seal, wasm_pairing_seal_reply, wasm_qr_matrix,
 } from '../src/wasm/pkg/cnd_domain_wasm.js';
 import { PairingService, PairingEnv, PairingRequest } from '../src/core/pairing/PairingService';
-import { parseShareDocument, previewShare } from '../src/core/pairing/ShareImport';
+import { parseShareDocument, previewShare, findDuplicate, applyShare } from '../src/core/pairing/ShareImport';
 import { SourceRecord } from '../src/core/storage/Database';
 
 const WASM = resolve(__dirname, '../src/wasm/pkg/cnd_domain_wasm_bg.wasm');
@@ -217,5 +217,60 @@ describe('share document import (preview before anything is added)', () => {
     const out = parseShareDocument(JSON.stringify({ format: 'cnd-source-share', version: 1, sources: many }));
     expect(out).toHaveLength(20);
     expect(out[0].name).toBe('S0');
+  });
+
+  it('finds existing duplicate sources accurately for both Xtream and M3U', () => {
+    const existingList: SourceRecord[] = [
+      { id: 10, uuid: 'u1', name: 'Existing Xtream', source_type: 'xtream', server: 'http://srv.example:8080/', username: 'alice', item_count: 5 } as SourceRecord,
+      { id: 20, uuid: 'u2', name: 'Existing M3U', source_type: 'm3u', url: 'http://lists.example/a.m3u/', item_count: 12 } as SourceRecord,
+    ];
+    const matchXtream = findDuplicate(
+      { name: 'New Xtream', type: 'xtream', server: 'http://SRV.example:8080', username: 'alice' },
+      existingList
+    );
+    expect(matchXtream?.id).toBe(10);
+
+    const matchM3u = findDuplicate(
+      { name: 'New M3U', type: 'm3u', url: 'http://lists.example/a.m3u' },
+      existingList
+    );
+    expect(matchM3u?.id).toBe(20);
+
+    const nonMatch = findDuplicate(
+      { name: 'Other', type: 'm3u', url: 'http://lists.example/other.m3u' },
+      existingList
+    );
+    expect(nonMatch).toBeUndefined();
+  });
+
+  it('applyShare supports replaceDuplicates option', async () => {
+    const existingList: SourceRecord[] = [
+      { id: 1, uuid: 'u', name: 'Déjà', source_type: 'xtream', server: 'http://srv.example:8080', username: 'alice', item_count: 1 } as SourceRecord,
+    ];
+    const preview = previewShare(SHARE, existingList);
+
+    const deletedIds: number[] = [];
+    const syncedNames: string[] = [];
+    const mockEngine: any = {
+      deleteSource: async (id: number) => { deletedIds.push(id); },
+      syncXtreamSource: async (name: string) => { syncedNames.push(name); return 10; },
+      syncM3uSource: async (name: string) => { syncedNames.push(name); return 5; },
+    };
+
+    // When replaceDuplicates is false: duplicate is skipped
+    const addedDefault = await applyShare(preview, mockEngine, undefined, { replaceDuplicates: false, existingSources: existingList });
+    expect(addedDefault).toBe(1); // Only 'Liste'
+    expect(syncedNames).toEqual(['Liste']);
+    expect(deletedIds).toEqual([]);
+
+    // Reset
+    syncedNames.length = 0;
+    deletedIds.length = 0;
+
+    // When replaceDuplicates is true: duplicate is replaced
+    const addedReplaced = await applyShare(preview, mockEngine, undefined, { replaceDuplicates: true, existingSources: existingList });
+    expect(addedReplaced).toBe(2); // Both 'Premium' and 'Liste'
+    expect(deletedIds).toEqual([1]);
+    expect(syncedNames).toEqual(['Premium', 'Liste']);
   });
 });

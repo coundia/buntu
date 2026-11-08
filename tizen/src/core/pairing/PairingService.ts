@@ -11,7 +11,9 @@
 import { WorkerBridge } from '../../worker/worker-bridge';
 import { MsfChannel } from './MsfChannel';
 import { SourceRecord } from '../storage/Database';
-import { ImportProgressCallback, SharePreview, applyShare, existingSources, previewShare } from './ShareImport';
+import { ApplyShareOptions, ImportProgressCallback, SharePreview, applyShare, existingSources, previewShare } from './ShareImport';
+import { AiKeyStore } from '../ai/AiKeyStore';
+import { getAiSettings, saveAiSettings } from '../ai/AiSettings';
 
 export interface PairingOffer {
   link: string;
@@ -21,17 +23,30 @@ export interface PairingOffer {
   qrModules: string;
   host: string;
   port: number;
+  tvName: string;
 }
 
 export interface PairingRequest {
   from: string;
   preview: SharePreview;
-  accept(onProgress?: ImportProgressCallback): Promise<number>;
+  accept(onProgress?: ImportProgressCallback, options?: ApplyShareOptions): Promise<number>;
+  refuse(): Promise<void>;
+}
+
+export interface AiConfigRequest {
+  from: string;
+  provider: string;
+  model?: string;
+  baseUrl?: string;
+  maskedKey: string;
+  accept(): Promise<void>;
   refuse(): Promise<void>;
 }
 
 export interface PairingEvents {
   onRequest(request: PairingRequest): void;
+  onAiConfigRequest?(request: AiConfigRequest): void;
+  onTextReceived?(text: string, from: string): void;
   /** The session ended (expired, closed after errors, or served): show a new QR code. */
   onClosed(reason: 'expired' | 'closed' | 'done' | 'channel'): void;
   onError(message: string): void;
@@ -55,17 +70,22 @@ export function defaultEnv(): PairingEnv {
     },
     tvName: () => {
       try {
-        return `Samsung ${w.webapis?.productinfo?.getRealModel?.() ?? 'TV'}`;
-      } catch {
-        return 'Samsung TV';
-      }
+        const model = w.webapis?.productinfo?.getRealModel?.();
+        if (model) return `Samsung ${model}`;
+      } catch {}
+      return 'Samsung TV';
     },
     tvIp: () => {
       try {
-        return w.webapis?.network?.getIp?.() || null;
-      } catch {
-        return null;
-      }
+        const ip = w.webapis?.network?.getIp?.();
+        if (ip && ip !== '0.0.0.0') return ip;
+      } catch {}
+      try {
+        if (typeof window !== 'undefined' && window.location?.hostname && window.location.hostname !== 'localhost') {
+          return window.location.hostname;
+        }
+      } catch {}
+      return null;
     },
   };
 }
@@ -76,13 +96,13 @@ const CHANNEL_PORT = 8001;
 export interface PairingDeps {
   channel(name: string): Pick<MsfChannel, 'setHandlers' | 'connect' | 'reply' | 'close'>;
   existingSources(): Promise<SourceRecord[]>;
-  apply(preview: SharePreview, onProgress?: ImportProgressCallback): Promise<number>;
+  apply(preview: SharePreview, onProgress?: ImportProgressCallback, options?: ApplyShareOptions): Promise<number>;
 }
 
 export const defaultDeps: PairingDeps = {
   channel: (name) => new MsfChannel(name, [CHANNEL_PORT]),
   existingSources,
-  apply: (preview, onProgress) => applyShare(preview, undefined, onProgress),
+  apply: (preview, onProgress, options) => applyShare(preview, undefined, onProgress, options),
 };
 
 export class PairingService {
@@ -108,8 +128,9 @@ export class PairingService {
     if (!host) throw new Error('La TV ne connaît pas son adresse réseau : vérifiez le Wi-Fi ou le câble');
 
     const now = this.env.now();
+    const tvName = this.env.tvName();
     const offer = JSON.parse(
-      await this.bridge.pairingCreateOffer(this.env.entropy(40), this.env.tvName(), 'msf', host, CHANNEL_PORT, now)
+      await this.bridge.pairingCreateOffer(this.env.entropy(40), tvName, 'msf', host, CHANNEL_PORT, now)
     );
     this.state = offer.state;
     this.session = offer.session;
@@ -141,6 +162,7 @@ export class PairingService {
       qrModules: modules,
       host,
       port: CHANNEL_PORT,
+      tvName,
     };
   }
 
@@ -160,6 +182,60 @@ export class PairingService {
     }
     const opened = result.opened;
     this.state = opened.state; // the session served its one message
+
+    // Check if the payload is an AI configuration or text input (PRD 40 § 4.2)
+    try {
+      const parsed = JSON.parse(opened.share_json);
+      if (parsed?.type === 'ai-config' && parsed.api_key) {
+        const provider = parsed.provider || 'gemini';
+        const apiKey = parsed.api_key;
+        const maskedKey = apiKey.length > 4 ? `••••••••${apiKey.slice(-4)}` : '••••';
+
+        if (this.events.onAiConfigRequest) {
+          this.events.onAiConfigRequest({
+            from: opened.from,
+            provider,
+            model: parsed.model,
+            baseUrl: parsed.base_url,
+            maskedKey,
+            accept: async () => {
+              try {
+                await AiKeyStore.getInstance().setApiKey(apiKey);
+                const current = getAiSettings();
+                saveAiSettings({
+                  provider: provider as any,
+                  model: parsed.model || current.model,
+                  baseUrl: parsed.base_url || current.baseUrl,
+                });
+                await this.answer(opened.reply_key, from, 'added', 1);
+                this.finish('done');
+              } catch (e: any) {
+                await this.answer(opened.reply_key, from, 'error', 0);
+                this.events.onError(e?.message ?? 'Enregistrement de la clé impossible');
+                this.finish('closed');
+              }
+            },
+            refuse: async () => {
+              await this.answer(opened.reply_key, from, 'refused', 0);
+              this.finish('done');
+            },
+          });
+          return;
+        }
+      }
+
+      if (parsed?.type === 'text' && typeof parsed.text === 'string') {
+        if (this.events.onTextReceived) {
+          this.events.onTextReceived(parsed.text, opened.from);
+        }
+        await this.answer(opened.reply_key, from, 'added', 1);
+        this.finish('done');
+        return;
+      }
+    } catch {
+      // Not an AI JSON object, continue with standard source sharing
+    }
+
     let preview: SharePreview;
     try {
       // Session expiry was already verified against the TV's own clock by `pairingOpen`;
@@ -174,9 +250,9 @@ export class PairingService {
     this.events.onRequest({
       from: opened.from,
       preview,
-      accept: async (onProgress?: ImportProgressCallback) => {
+      accept: async (onProgress?: ImportProgressCallback, options?: ApplyShareOptions) => {
         try {
-          const count = await this.deps.apply(preview, onProgress);
+          const count = await this.deps.apply(preview, onProgress, options);
           await this.answer(opened.reply_key, from, count > 0 ? 'added' : 'error', count);
           this.finish(count > 0 ? 'done' : 'closed');
           return count;
