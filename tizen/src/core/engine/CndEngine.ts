@@ -522,7 +522,7 @@ export class CndEngine {
 
   /**
    * Playback. Several calls may overlap (zapping in the Live TV list): only the last one opens its stream.
-   * The same live channel already playing (preview → full screen) is not reopened unless `force`.
+   * The same item already playing (mini player → full screen) is not reopened unless `force`.
    */
   public async play(item: ItemRecord, options: { force?: boolean } = {}): Promise<void> {
     this.recordRecent(item);
@@ -530,7 +530,6 @@ export class CndEngine {
     const isLive = item.kind === 'live';
     const alreadyPlaying =
       !options.force &&
-      isLive &&
       this.currentPlayingItem?.id === item.id &&
       this.player.isActive();
     this.currentPlayingItem = item;
@@ -554,6 +553,11 @@ export class CndEngine {
     await this.player.open(streamUrl, isLive);
     if (token !== this.playToken) return;
     this.player.play();
+  }
+
+  /** True when this very item is the one currently playing (not merely selected). */
+  public isPlayingItem(item: ItemRecord): boolean {
+    return this.currentPlayingItem?.id === item.id && this.player.isActive();
   }
 
   /** Stops the video and frees the provider's connection. */
