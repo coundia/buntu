@@ -227,7 +227,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
         {/* Header */}
         <div style={{ display: 'flex', 'justify-content': 'space-between', 'align-items': 'center' }}>
           <div>
-            <h2 style={{ 'font-size': '32px', color: 'var(--buntu-gold)', margin: 0 }}>✨ Assistant CND IPTV</h2>
+            <h2 style={{ 'font-size': '32px', color: 'var(--buntu-gold)', margin: 0 }}>✨ Assistant Buntu</h2>
             <div style={{ color: 'var(--buntu-text-muted)', 'font-size': '16px', 'margin-top': '4px' }}>
               Fournisseur : <span style={{ color: 'var(--buntu-cyan)' }}>{providerLabel}</span>
             </div>

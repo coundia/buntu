@@ -88,7 +88,7 @@ export const App: Component = () => {
 
   const openExitDialog = () => {
     setShowExitDialog(true);
-    announce("Voulez-vous quitter l'application CND IPTV ?");
+    announce("Voulez-vous quitter l'application Buntu ?");
     spatialNav.openModal([
       [
         {
@@ -550,7 +550,7 @@ export const App: Component = () => {
           <div class="tv-modal-card">
             <div style={{ "font-size": "56px", color: "var(--buntu-danger)" }}>⏻</div>
             <h2 id="exit-modal-title" style={{ "font-size": "36px", "font-weight": "800", color: "var(--buntu-gold)", margin: 0 }}>
-              Quitter CND IPTV
+              Quitter Buntu
             </h2>
             <p style={{ "font-size": "22px", color: "var(--buntu-text-muted)", margin: 0, "max-width": "500px" }}>
               Voulez-vous vraiment fermer l'application et retourner au téléviseur ?
