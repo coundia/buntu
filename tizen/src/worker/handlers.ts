@@ -21,6 +21,10 @@ import init, {
   wasm_pairing_create_offer,
   wasm_pairing_open,
   wasm_pairing_seal_reply,
+  wasm_ai_build_request,
+  wasm_ai_read_response,
+  wasm_ai_validate,
+  wasm_ai_resolve_local,
 } from '../wasm/pkg/cnd_domain_wasm.js';
 
 
@@ -147,6 +151,42 @@ export async function handleRequest(type: string, payload: any): Promise<any> {
 
       case 'PAIRING_SEAL_REPLY':
         result = wasm_pairing_seal_reply(payload.replyKey, payload.session, payload.entropy, payload.result, payload.count);
+        break;
+
+      // AI assistant (PRD 40)
+      case 'AI_BUILD_REQUEST':
+        result = JSON.parse(
+          wasm_ai_build_request(
+            typeof payload.config === 'string' ? payload.config : JSON.stringify(payload.config),
+            payload.task,
+            typeof payload.payload === 'string' ? payload.payload : JSON.stringify(payload.payload)
+          )
+        );
+        break;
+
+      case 'AI_READ_RESPONSE':
+        result = JSON.parse(wasm_ai_read_response(payload.kind, payload.status, payload.body));
+        break;
+
+      case 'AI_VALIDATE':
+        result = JSON.parse(
+          wasm_ai_validate(
+            payload.task,
+            payload.text,
+            typeof payload.candidates === 'string' ? payload.candidates : JSON.stringify(payload.candidates),
+            typeof payload.profile === 'string' ? payload.profile : JSON.stringify(payload.profile || {})
+          )
+        );
+        break;
+
+      case 'AI_RESOLVE_LOCAL':
+        result = JSON.parse(
+          wasm_ai_resolve_local(
+            payload.command,
+            typeof payload.candidates === 'string' ? payload.candidates : JSON.stringify(payload.candidates),
+            typeof payload.context === 'string' ? payload.context : JSON.stringify(payload.context || {})
+          )
+        );
         break;
 
       default:

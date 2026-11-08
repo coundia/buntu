@@ -26,6 +26,44 @@ fn a_phone_and_a_tv_agree_and_the_document_comes_out_intact() {
 }
 
 #[test]
+fn ai_config_and_text_messages_seal_and_open_intact() {
+    let offer = offer();
+    let ai_payload = serde_json::to_string(&SealedPayload::AiConfig {
+        provider: "gemini".to_string(),
+        model: Some("gemini-3.5-flash-lite".to_string()),
+        base_url: None,
+        api_key: "sk-secret-ai-key-42".to_string(),
+    })
+    .unwrap();
+
+    let sealed = seal(&offer.link, &bytes(100, 44), &ai_payload, "Pixel de Paul", NOW + 5).unwrap();
+    let opened = open(&offer.state, &sealed.message, NOW + 6).expect("opens ai config");
+    assert_eq!(opened.from, "Pixel de Paul");
+
+    let parsed: SealedPayload = serde_json::from_str(&opened.share_json).expect("valid sealed payload");
+    match parsed {
+        SealedPayload::AiConfig { provider, model, base_url, api_key } => {
+            assert_eq!(provider, "gemini");
+            assert_eq!(model, Some("gemini-3.5-flash-lite".to_string()));
+            assert_eq!(base_url, None);
+            assert_eq!(api_key, "sk-secret-ai-key-42");
+        }
+        _ => panic!("expected AiConfig payload"),
+    }
+
+    // Text message test
+    let offer2 = create_offer(&bytes(50, 40), "Salon TV", "msf", "192.168.1.9", 8001, NOW).unwrap();
+    let text_payload = serde_json::to_string(&SealedPayload::Text {
+        text: "Mets France 2".to_string(),
+    })
+    .unwrap();
+    let sealed2 = seal(&offer2.link, &bytes(100, 44), &text_payload, "iPhone", NOW + 5).unwrap();
+    let opened2 = open(&offer2.state, &sealed2.message, NOW + 6).expect("opens text message");
+    let parsed2: SealedPayload = serde_json::from_str(&opened2.share_json).unwrap();
+    assert_eq!(parsed2, SealedPayload::Text { text: "Mets France 2".to_string() });
+}
+
+#[test]
 fn the_link_holds_everything_the_phone_needs_and_nothing_secret() {
     let offer = offer();
     let link = parse_link(&offer.link, NOW + 1).unwrap();

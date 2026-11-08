@@ -149,3 +149,208 @@ pub fn wasm_qr_matrix(text: &str) -> Result<String, JsValue> {
     let bits: String = code.to_colors().iter().map(|c| if *c == Color::Dark { '1' } else { '0' }).collect();
     Ok(format!("{size}:{bits}"))
 }
+
+// ---------------------------------------------------------------- AI (PRD-40)
+
+#[wasm_bindgen]
+pub fn wasm_ai_build_request(
+    config_json: &str,
+    task_name: &str,
+    payload_json: &str,
+) -> Result<String, JsValue> {
+    let config: cnd_domain::ai::AiProviderConfig = serde_json::from_str(config_json)
+        .map_err(|e| JsValue::from_str(&format!("config JSON invalide : {e}")))?;
+    let task = cnd_domain::ai::Task::parse_str(task_name)
+        .ok_or_else(|| JsValue::from_str(&format!("tâche inconnue : {task_name}")))?;
+
+    let payload: serde_json::Value = serde_json::from_str(payload_json)
+        .map_err(|e| JsValue::from_str(&format!("payload JSON invalide : {e}")))?;
+
+    let mode = match payload.get("mode").and_then(serde_json::Value::as_str) {
+        Some("light") => cnd_domain::ai::RequestMode::Light,
+        _ => cnd_domain::ai::RequestMode::Strict,
+    };
+
+    let locale = payload.get("locale").and_then(serde_json::Value::as_str).unwrap_or("fr-FR");
+
+    let req = match task {
+        cnd_domain::ai::Task::Command => {
+            let command = payload.get("command").and_then(serde_json::Value::as_str).unwrap_or("");
+            let playing = payload.get("playing").and_then(serde_json::Value::as_str);
+            let candidates: Vec<cnd_domain::ai::AiCandidate> = payload
+                .get("candidates")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let system = cnd_domain::ai::system_prompt(locale);
+            let user = cnd_domain::ai::user_prompt(command, playing, &candidates);
+            cnd_domain::ai::build_request_for(&config, &system, &user, mode, task)
+                .map_err(|e| JsValue::from_str(&e))?
+        }
+        cnd_domain::ai::Task::UnderstandSearch => {
+            let command = payload.get("command").and_then(serde_json::Value::as_str).unwrap_or("");
+            let now_local = payload.get("now_local").and_then(serde_json::Value::as_str).unwrap_or("");
+            let catalog_has: Vec<String> = payload
+                .get("catalog_has")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let only: Vec<String> = payload
+                .get("only")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let catalog_has_refs: Vec<&str> = catalog_has.iter().map(String::as_str).collect();
+            let only_refs: Vec<&str> = only.iter().map(String::as_str).collect();
+
+            let system = cnd_domain::ai::understand_system_prompt(locale);
+            let user = cnd_domain::ai::understand_user_prompt(command, now_local, &catalog_has_refs, &only_refs);
+            cnd_domain::ai::build_request_for(&config, &system, &user, mode, task)
+                .map_err(|e| JsValue::from_str(&e))?
+        }
+        cnd_domain::ai::Task::Recommend => {
+            let kind = payload.get("kind").and_then(serde_json::Value::as_str).unwrap_or("movie");
+            let taste = payload.get("taste").and_then(serde_json::Value::as_str).unwrap_or("");
+            let recent: Vec<String> = payload
+                .get("recent")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let candidates = payload
+                .get("candidates")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let now_local = payload.get("now_local").and_then(serde_json::Value::as_str).unwrap_or("");
+
+            let system = cnd_domain::ai::recommend_system_prompt(kind, locale);
+            let user = cnd_domain::ai::recommend_user_prompt(taste, &recent, &candidates, now_local);
+            cnd_domain::ai::build_request_for(&config, &system, &user, mode, task)
+                .map_err(|e| JsValue::from_str(&e))?
+        }
+    };
+
+    serde_json::to_string(&req).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn wasm_ai_read_response(kind: &str, status: u16, body: &str) -> Result<String, JsValue> {
+    let provider_kind = cnd_domain::ai::AiProviderKind::parse_str(kind)
+        .ok_or_else(|| JsValue::from_str(&format!("fournisseur inconnu : {kind}")))?;
+
+    if (200..300).contains(&status) {
+        let json_val: serde_json::Value = serde_json::from_str(body)
+            .map_err(|e| JsValue::from_str(&format!("réponse non JSON du fournisseur : {e}")))?;
+        match cnd_domain::ai::extract_text(provider_kind, &json_val) {
+            Ok(text) => serde_json::to_string(&serde_json::json!({
+                "ok": true,
+                "text": text
+            }))
+            .map_err(|e| JsValue::from_str(&e.to_string())),
+            Err(err) => serde_json::to_string(&serde_json::json!({
+                "ok": false,
+                "error": err,
+                "is_schema_rejection": false
+            }))
+            .map_err(|e| JsValue::from_str(&e.to_string())),
+        }
+    } else {
+        let explanation = cnd_domain::ai::explain_http_error(status, body, None);
+        let schema_rej = cnd_domain::ai::is_schema_rejection(status, body);
+        serde_json::to_string(&serde_json::json!({
+            "ok": false,
+            "error": explanation,
+            "is_schema_rejection": schema_rej
+        }))
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+}
+
+#[wasm_bindgen]
+pub fn wasm_ai_validate(
+    task_name: &str,
+    text: &str,
+    candidates_json: &str,
+    profile_json: &str,
+) -> Result<String, JsValue> {
+    if !profile_json.trim().is_empty() {
+        if let Ok(prof) = serde_json::from_str::<serde_json::Value>(profile_json) {
+            if prof.get("is_kids").and_then(serde_json::Value::as_bool) == Some(true) {
+                return serde_json::to_string(&serde_json::json!({
+                    "ok": false,
+                    "error": "profil Enfants : aucune IA distante"
+                }))
+                .map_err(|e| JsValue::from_str(&e.to_string()));
+            }
+        }
+    }
+
+    let task = cnd_domain::ai::Task::parse_str(task_name)
+        .ok_or_else(|| JsValue::from_str(&format!("tâche inconnue : {task_name}")))?;
+
+    match task {
+        cnd_domain::ai::Task::Command => {
+            let candidates: Vec<cnd_domain::ai::AiCandidate> = serde_json::from_str(candidates_json)
+                .map_err(|e| JsValue::from_str(&format!("candidates JSON invalide : {e}")))?;
+            match cnd_domain::ai::validate_command_text(text, &candidates) {
+                Ok((action, reply)) => serde_json::to_string(&serde_json::json!({
+                    "ok": true,
+                    "action": action,
+                    "reply": reply
+                }))
+                .map_err(|e| JsValue::from_str(&e.to_string())),
+                Err(err) => serde_json::to_string(&serde_json::json!({
+                    "ok": false,
+                    "error": err
+                }))
+                .map_err(|e| JsValue::from_str(&e.to_string())),
+            }
+        }
+        cnd_domain::ai::Task::UnderstandSearch => {
+            match cnd_domain::ai::validate_understand(text) {
+                Ok(res) => serde_json::to_string(&serde_json::json!({
+                    "ok": true,
+                    "understanding": res
+                }))
+                .map_err(|e| JsValue::from_str(&e.to_string())),
+                Err(err) => serde_json::to_string(&serde_json::json!({
+                    "ok": false,
+                    "error": err
+                }))
+                .map_err(|e| JsValue::from_str(&e.to_string())),
+            }
+        }
+        cnd_domain::ai::Task::Recommend => {
+            let candidate_ids: Vec<String> = serde_json::from_str(candidates_json)
+                .map_err(|e| JsValue::from_str(&format!("candidate_ids JSON invalide : {e}")))?;
+            let kind = "movie";
+            match cnd_domain::ai::validate_recommend(text, kind, &candidate_ids) {
+                Ok(res) => serde_json::to_string(&serde_json::json!({
+                    "ok": true,
+                    "recommendations": res
+                }))
+                .map_err(|e| JsValue::from_str(&e.to_string())),
+                Err(err) => serde_json::to_string(&serde_json::json!({
+                    "ok": false,
+                    "error": err
+                }))
+                .map_err(|e| JsValue::from_str(&e.to_string())),
+            }
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn wasm_ai_resolve_local(
+    command: &str,
+    candidates_json: &str,
+    context_json: &str,
+) -> Result<String, JsValue> {
+    let candidates: Vec<cnd_domain::ai::AiCandidate> = serde_json::from_str(candidates_json)
+        .map_err(|e| JsValue::from_str(&format!("candidates JSON invalide : {e}")))?;
+    let context: cnd_domain::ai::AiCommandContext = serde_json::from_str(context_json)
+        .unwrap_or(cnd_domain::ai::AiCommandContext {
+            playing_stable_hash: None,
+            group_title: None,
+            locale: "fr-FR".to_string(),
+        });
+
+    let outcome = cnd_domain::ai::resolve_local(command, &candidates, &context);
+    serde_json::to_string(&outcome).map_err(|e| JsValue::from_str(&e.to_string()))
+}

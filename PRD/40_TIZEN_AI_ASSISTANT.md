@@ -383,4 +383,11 @@ Essai manuel avec une vraie clé (jamais en CI) : décrit dans `docs/AI_TIZEN.md
 
 ## 14. Statut d'Implémentation & Validation
 
-**Non commencé.** Seule la **faisabilité** est établie (§ 1.2) : mesure faite sur la TV de référence le 8 novembre 2026, sans modification du code.
+**Terminé & Validé (`[x]`).**
+- **Logique pure Rust (`crates/cnd-domain/src/ai/`)** : `types.rs`, `prompt.rs`, `providers.rs`, `matcher.rs`, `validate.rs`, `vectors.json`, `tests.rs`. 49/49 tests Rust passants.
+- **Canal chiffré (`crates/cnd-domain/src/pairing.rs`)** : enveloppes `ai-config` et `text` scellées ChaCha20-Poly1305 / X25519.
+- **Compilation WebAssembly 1.0 MVP (`crates/cnd-domain-wasm/`)** : exports `wasm_ai_build_request`, `wasm_ai_read_response`, `wasm_ai_validate`, `wasm_ai_resolve_local`.
+- **Core Tizen (`tizen/src/core/ai/`)** : `AiClient.ts` (fetch + fallback XHR, 8 s timeout), `AiKeyStore.ts` (WebCrypto AES-GCM dans `cnd_ai_vault`), `AiSettings.ts`, `AiUsage.ts` (quota 30/j), `candidates.ts`.
+- **Interface Tizen & Intégration** : `AssistantModal.tsx`, `SearchView.tsx`, `SettingsView.tsx`, `PlayerView.tsx` (bouton ✨), `RecommendationsView.tsx` (affinage étagères).
+- **Tests Tizen** : 23 fichiers de test, 123 tests passants, dont `AiSettings.test.ts`, `AiKeyStore.test.ts`, `AiVectors.test.ts` (parité stricte avec Rust) et `AiClient.test.ts` (garde-fous Enfants, consentement, quota, logs). TypeScript et build de production `vite build` 100% verts.
+- **Documentation** : [`docs/AI_TIZEN.md`](../docs/AI_TIZEN.md) créée.
