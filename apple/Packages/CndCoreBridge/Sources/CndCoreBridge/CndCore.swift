@@ -9608,7 +9608,7 @@ public struct TaxonomyFilter {
     public var country: String?
     public var theme: String?
     /**
-     * Only with `theme`. Ignored for series, which keep their main theme only.
+     * Only with `theme`. A series keeps the sub-theme of its main theme (its genre).
      */
     public var subtheme: String?
 
@@ -9619,7 +9619,7 @@ public struct TaxonomyFilter {
          * ISO code, `INT`, or an empty string for "country unknown".
          */country: String?, theme: String?, 
         /**
-         * Only with `theme`. Ignored for series, which keep their main theme only.
+         * Only with `theme`. A series keeps the sub-theme of its main theme (its genre).
          */subtheme: String?) {
         self.country = country
         self.theme = theme
