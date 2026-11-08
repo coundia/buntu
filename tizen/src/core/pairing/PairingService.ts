@@ -14,6 +14,8 @@ import { SourceRecord } from '../storage/Database';
 import { ApplyShareOptions, ImportProgressCallback, SharePreview, applyShare, existingSources, previewShare } from './ShareImport';
 import { AiKeyStore } from '../ai/AiKeyStore';
 import { getAiSettings, saveAiSettings } from '../ai/AiSettings';
+import { HouseholdStore } from '../sync/HouseholdStore';
+import { LocalSyncService } from '../sync/LocalSyncService';
 
 export interface PairingOffer {
   link: string;
@@ -43,9 +45,20 @@ export interface AiConfigRequest {
   refuse(): Promise<void>;
 }
 
+export interface HouseholdJoinRequest {
+  from: string;
+  householdId: string;
+  householdName: string;
+  senderDeviceName?: string;
+  senderDeviceId?: string;
+  accept(): Promise<void>;
+  refuse(): Promise<void>;
+}
+
 export interface PairingEvents {
   onRequest(request: PairingRequest): void;
   onAiConfigRequest?(request: AiConfigRequest): void;
+  onHouseholdJoinRequest?(request: HouseholdJoinRequest): void;
   onTextReceived?(text: string, from: string): void;
   /** The session ended (expired, closed after errors, or served): show a new QR code. */
   onClosed(reason: 'expired' | 'closed' | 'done' | 'channel'): void;
@@ -231,6 +244,49 @@ export class PairingService {
         await this.answer(opened.reply_key, from, 'added', 1);
         this.finish('done');
         return;
+      }
+
+      if (parsed?.type === 'household-join' && parsed.household_id && parsed.household_key) {
+        if (this.events.onHouseholdJoinRequest) {
+          this.events.onHouseholdJoinRequest({
+            from: opened.from,
+            householdId: parsed.household_id,
+            householdName: parsed.household_name || 'Maison',
+            senderDeviceName: parsed.sender_device_name,
+            senderDeviceId: parsed.sender_device_id,
+            accept: async () => {
+              try {
+                const store = HouseholdStore.getInstance();
+                await store.setHouseholdKey(parsed.household_key);
+                store.saveHouseholdInfo({
+                  household_id: parsed.household_id,
+                  household_name: parsed.household_name || 'Maison',
+                  created_at: Date.now(),
+                });
+                if (parsed.sender_device_id) {
+                  store.recordDeviceActivity(
+                    parsed.sender_device_id,
+                    parsed.sender_device_name || opened.from,
+                    'mobile',
+                    1
+                  );
+                }
+                await this.answer(opened.reply_key, from, 'added', 1);
+                void LocalSyncService.getInstance().start();
+                this.finish('done');
+              } catch (e: any) {
+                await this.answer(opened.reply_key, from, 'error', 0);
+                this.events.onError(e?.message ?? 'Configuration du foyer impossible');
+                this.finish('closed');
+              }
+            },
+            refuse: async () => {
+              await this.answer(opened.reply_key, from, 'refused', 0);
+              this.finish('done');
+            },
+          });
+          return;
+        }
       }
     } catch {
       // Not an AI JSON object, continue with standard source sharing

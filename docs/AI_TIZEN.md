@@ -38,12 +38,18 @@ L'assistant IA sur Tizen repose sur une architecture partagée et sécurisée :
 Afin de garantir la sécurité sur un téléviseur partagé :
 1. **Chiffrement AES-GCM 256 bits** : chaque clé API est chiffrée avec un vecteur d'initialisation aléatoire (IV de 12 octets) via `crypto.subtle`.
 2. **Clé maîtresse non exportable** : générée avec `extractable: false` et stockée directement dans la base isolée IndexedDB `cnd_ai_vault`.
-3. **Réception sécurisée par QR Code (PRD 39 / PRD 40 § 4.2)** :
+3. **Saisie ou collage directement sur la TV** (Réglages → Assistant IA) :
+   - Un champ **« Coller ou saisir votre clé »** : OK à la télécommande ouvre le clavier de la TV ; un second OK (ou le bouton **💾 Enregistrer la clé**) enregistre.
+   - La clé est **nettoyée avant l'enregistrement** : espaces, retours à la ligne, guillemets, et un éventuel préfixe `Bearer` ou `x-goog-api-key:` d'une ligne collée sont retirés.
+   - Le champ est masqué (points) ; **👁 Afficher** permet de relire ce qui a été saisi avant d'enregistrer. Le compteur de caractères et un message de format (une clé Gemini commence par `AIza`, une clé Claude par `sk-ant-`) préviennent d'une clé tronquée ou du mauvais fournisseur, **sans jamais bloquer l'enregistrement**.
+   - **📋 Coller** lit le presse-papiers quand le navigateur de la TV le permet ; sinon un message l'explique.
+   - Deux champs complètent le réglage : **Modèle** (vide = modèle par défaut du fournisseur) et, pour *Compatible OpenAI*, **Adresse du serveur** (OpenAI, Groq, OpenRouter, ou un serveur de la maison). Changer de fournisseur remet ces deux champs à leurs valeurs par défaut.
+4. **Réception sécurisée par QR Code (PRD 39 / PRD 40 § 4.2)** :
    - L'utilisateur scanne le QR code affiché dans les Réglages ou la modale Assistant avec son smartphone.
    - La clé API est envoyée scellée de bout en bout via le protocole d'appairage chiffré (`ai-config` sous ChaCha20-Poly1305 / X25519).
    - La clé est immédiatement écrite dans le coffre-fort chiffré de la TV sans jamais être affichée en clair.
-4. **Masquage à l'écran** : seuls les 4 derniers caractères sont affichés (`••••••••1234`).
-5. **Zéro fuite** : la clé n'apparaît jamais dans les logs de la console, ni dans l'inspecteur WebInspector, ni dans `localStorage`.
+5. **Masquage à l'écran** : seuls les 4 derniers caractères sont affichés (`••••••••1234`).
+6. **Zéro fuite** : la clé n'apparaît jamais dans les logs de la console, ni dans l'inspecteur WebInspector, ni dans `localStorage`.
 
 ---
 
@@ -113,7 +119,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 1. Ouvrir l'application sur la TV ou dans le simulateur Tizen.
 2. Naviguer vers **Réglages → Assistant IA**.
 3. Sélectionner le fournisseur souhaité (ex. *Google Gemini*).
-4. Scanner le QR code avec l'application mobile CND IPTV pour transférer la clé API, ou la coller dans l'environnement de test.
+4. Saisir la clé dans le champ **« Coller ou saisir votre clé »** puis **Enregistrer la clé** (ou scanner le QR code avec l'application mobile CND IPTV pour la transférer).
 5. Cliquer sur **Tester la connexion** : la pastille verte indique le succès avec la latence mesurée (ex. `Connexion réussie (412 ms)`).
 6. Ouvrir la recherche universelle, taper une phrase naturelle (ex. *« films d'action spatiale »*) et valider l'affichage progressif des résultats.
 
