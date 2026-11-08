@@ -109,7 +109,7 @@ Une position ou un favori est rattaché à un **`stable_hash`**. Il doit désign
 ## 5. Le foyer : confiance et clés
 
 - **Créer le foyer :** une seule fois, sur n'importe quel appareil. Il produit une **clé de foyer** aléatoire de 256 bits.
-- **Ajouter un appareil :** QR code et échange chiffré du `PRD-39`, avec un nouveau type de message `household-join` qui transporte la clé du foyer. **Confirmation à l'écran** (à la télécommande sur une TV).
+- **Ajouter un appareil :** QR code et échange chiffré du `PRD-39`, avec un nouveau type de message `household-join` qui transporte la clé du foyer. **Confirmation à l'écran** (à la télécommande sur une TV). Le détail, dans les deux sens (le nouvel appareil scanne, ou l'inverse), est au [`PRD-43`](./43_AJOUTER_UN_APPAREIL_PAR_QR_CODE.md).
 - **Messages :** chiffrés et authentifiés avec la clé du foyer (AES-256-GCM), avec un compteur anti-rejeu. Un appareil du réseau hors du foyer, ou le canal Samsung qui relaie, ne peut ni lire ni modifier.
 - **Retirer un appareil** (perdu, vendu) : depuis un autre appareil, « Retirer » **change la clé du foyer** ; les autres la reçoivent au prochain échange, l'appareil retiré ne lit plus rien.
 - **Clé du foyer** rangée dans le coffre de chaque plateforme ; jamais affichée, jamais dans les journaux ni dans un export.
