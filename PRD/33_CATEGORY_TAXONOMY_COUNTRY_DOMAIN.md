@@ -1,0 +1,331 @@
+# PRD 33 — Catégories normalisées : regroupement par pays et par thème
+
+- **ID :** `PRD-33`
+- **Prérequis :**
+  - `PRD-02` (ingestion M3U en flux, normaliseur) ;
+  - `PRD-03` (client Xtream, catégories `get_*_categories`) ;
+  - `PRD-05` (requêtes catalogue, facettes `get_groups`) ;
+  - `PRD-09` / `PRD-10` (écrans Live TV et VOD, `CategoryNavigation`) ;
+  - `PRD-13` (assistant ⌘K, résolution locale) ;
+  - `PRD-20` (bouquets masqués, ordre personnalisé, profils enfants, catégories adultes).
+- **Couches impactées :**
+  - `Rust (crates/cnd-core/src/taxonomy/ (nouveau), iptv/, db/)` ;
+  - `UniFFI` ;
+  - `SwiftUI (Shared/CategoryNavigation, Features/LiveTV, Features/VOD, Features/Profiles)`.
+- **Plateformes :** toutes (macOS, iPhone, iPad, Apple TV, Vision Pro).
+- **Objectifs SLA :**
+  - **Classement :** < 5 µs par élément ; l'ingestion de 50 000 éléments reste **< 1,5 s** (SLA du `PRD-02`) avec le classement inclus.
+  - **Facettes :** liste des pays ou des thèmes avec compteurs, filtres croisés compris, **< 50 ms** sur 50 000 éléments.
+  - **Reclassement** d'une base existante (migration ou mise à jour du dictionnaire) : **< 2 s** pour 50 000 éléments, sans retélécharger les sources.
+
+---
+
+## 1. Contexte & Objectif
+
+### 1.1. Le problème
+
+La colonne des catégories affiche aujourd'hui la valeur brute `group_title` de chaque élément, regroupée telle quelle (`get_groups`, `catalog_repo.rs`). Sur la base locale actuelle (deux playlists M3U, 12 229 chaînes) cela donne **242 catégories** de Live TV, dont :
+
+- **453 chaînes dans des combinaisons** à point-virgule : `Animation;Kids`, `Animation;Kids;Music`, `Animation;Classic;Entertainment`… Chaque combinaison devient une catégorie à part, souvent avec **1 seule chaîne**. « Kids » existe en réalité dans 437 chaînes, réparties sur une dizaine de lignes.
+- **Deux axes mélangés dans la même liste** : la playlist 1 range par thème (`News`, `Sports`, `Music`), la playlist 2 par pays (`Italy`, `Poland`, `UK`). On lit donc « Albania, Andorra, Animation, Animation;Classic, Argentina… » dans un seul ordre alphabétique.
+- **Des valeurs vides de sens** : `Undefined` (1 547 chaînes), `General` (2 673).
+- **Le pays est presque toujours connu, mais pas utilisé** : la colonne `country` n'est remplie que pour 1 907 chaînes sur 12 229, alors que **10 233 chaînes de la playlist 1 ont un `tvg-id` qui porte le pays** (`CannesLerinsTV.fr@SD`, `DHA.tr@SD`, `OberpfalzTV.de@SD`).
+- **Les fournisseurs Xtream** ont leurs propres conventions (`FR| SPORTS`, `|UK| ENTERTAINMENT FHD`, `AR - MBC`, `VIP | BEIN SPORTS`) : pays et thème sont collés dans un même libellé, avec des préfixes et des mentions de qualité.
+
+### 1.2. L'objectif
+
+Chaque élément du catalogue reçoit, **à l'ingestion**, deux informations normalisées et stables :
+
+1. **Un pays** : code ISO 3166-1 alpha-2 (`FR`, `GB`, `US`…), ou `INT` (international / multi-pays), ou rien si inconnu.
+2. **Un ou plusieurs thèmes** pris dans une **liste fermée** (§ 3), chacun avec un sous-thème facultatif (`kids/animation`, `lifestyle/cooking`).
+
+L'interface propose alors trois façons de parcourir, avec filtres croisés :
+
+- **Par pays** (« France » → chips de thème : Infos 30, Sport 12, Jeunesse 8…) ;
+- **Par thème** (« Sport » → chips de pays : France, Royaume-Uni, Italie…) ;
+- **Catégories du fournisseur** : la liste brute actuelle, inchangée, pour ne rien perdre.
+
+La valeur brute `group_title` **n'est jamais modifiée** : bouquets masqués, ordre personnalisé, profils enfants et Xtream continuent de fonctionner dessus.
+
+---
+
+## 2. Principes d'architecture (une responsabilité par module)
+
+| Module | Seule responsabilité | Ne fait pas |
+|---|---|---|
+| `taxonomy/data/countries.rs` | Table des pays : code ISO, alias (EN, FR, langue locale, abréviations `UK`, `USA`), TLD. Données pures, générées. | Aucune logique. |
+| `taxonomy/data/domains.rs` | Liste fermée des thèmes et sous-thèmes, et dictionnaire de mots-clés multilingue → thème. Données pures. | Aucune logique. |
+| `taxonomy/tokenize.rs` | Découper un libellé de catégorie en segments et mots (`;`, `|`, `/`, ` - `, `[ ]`, `( )`), retirer le bruit (`FHD`, `HD`, `4K`, `VIP`, `24/7`, émojis, drapeaux). | Ne connaît ni pays ni thèmes. |
+| `taxonomy/country.rs` | Déduire le pays d'un élément à partir des indices (§ 4.1), avec sa provenance. | Ne touche pas aux thèmes. |
+| `taxonomy/domain.rs` | Déduire les thèmes d'un élément à partir des indices (§ 4.2), avec leur provenance. | Ne touche pas au pays. |
+| `taxonomy/mod.rs` | Façade `classify(&ClassifyInput) -> Classification` : appelle `country` et `domain`, applique les surcharges de l'utilisateur. | Pas d'accès SQLite. |
+| `db/taxonomy_repo.rs` | Écrire et lire les classements, facettes et filtres croisés ; reclassement en masse. | Pas de règle de classement. |
+| `lib.rs` | Exports UniFFI. | — |
+| `Shared/CategoryNavigation.swift` | Afficher l'axe choisi et les chips de l'autre axe. | Aucun calcul de classement côté Swift. |
+
+Le classement est une **fonction pure** (mêmes entrées → même résultat), testable sans base de données, et versionnée (`TAXONOMY_VERSION`) pour savoir quand reclasser.
+
+---
+
+## 3. Référentiel des thèmes (liste fermée)
+
+Identifiants stables en anglais (stockés), libellés traduits dans l'interface.
+
+| `domain` | Libellé FR | Sous-thèmes (`subdomain`) | Exemples de libellés source reconnus |
+|---|---|---|---|
+| `general` | Généralistes | — | General, Généraliste, Generalista |
+| `news` | Infos | `business`, `weather`, `politics` | News, Info, Actualités, Noticias, Notizie, Nachrichten, أخبار, Business, Weather, Météo |
+| `sports` | Sport | `football`, `motorsport`, `combat`, `outdoor` | Sports, Sport, Deportes, beIN, Foot, Racing, Fight |
+| `entertainment` | Divertissement | `comedy`, `reality`, `interactive` | Entertainment, Divertissement, Comedy, Humour |
+| `movies` | Cinéma | `classic` | Movies, Films, Cinéma, Cine, Classic |
+| `series` | Séries | — | Series, Séries, Feuilletons, Novelas |
+| `kids` | Jeunesse | `animation`, `family` | Kids, Enfants, Jeunesse, Cartoon, Animation, Family, Infantil |
+| `music` | Musique | `relax` | Music, Musique, Música, Clips, Radio |
+| `documentary` | Documentaires | `science`, `culture`, `nature`, `history` | Documentary, Docs, Science, Culture, Discovery |
+| `lifestyle` | Art de vivre | `cooking`, `travel`, `auto`, `fashion` | Lifestyle, Cooking, Cuisine, Travel, Auto, Outdoor |
+| `education` | Éducation | — | Education, Educativo |
+| `religious` | Religion | — | Religious, Religion, Islam, Christian, Quran |
+| `institutional` | Institutionnel | `legislative`, `public` | Legislative, Parlement, Public |
+| `shopping` | Téléachat | — | Shop, Shopping, Téléachat |
+| `adult` | Adultes | — | XXX, Adult, +18 (règle actuelle `is_adult_category`) |
+| `other` | Non classé | — | Undefined, Other, Divers, aucun indice |
+
+Correspondance des 28 catégories iptv-org relevées dans la base : *General → general ; News, Business, Weather → news ; Sports → sports ; Outdoor → lifestyle/outdoor ; Entertainment, Comedy, Interactive → entertainment ; Movies, Classic → movies ; Series → series ; Kids, Animation, Family → kids ; Music, Relax → music ; Documentary, Science, Culture → documentary ; Lifestyle, Cooking, Travel, Auto → lifestyle ; Education → education ; Religious → religious ; Legislative, Public → institutional ; Shop → shopping ; Undefined → other.*
+
+Un élément peut avoir **plusieurs thèmes** (`Animation;Kids;Music` → `kids/animation` + `music`). Un **thème principal** est retenu pour le tri et l'affichage : le premier segment reconnu, sauf `general` et `other` qui cèdent la place à tout autre thème.
+
+---
+
+## 4. Règles de classement
+
+### 4.1. Pays (première règle qui répond, provenance enregistrée)
+
+| Ordre | Indice | Exemple | Provenance |
+|---|---|---|---|
+| 0 | Surcharge de l'utilisateur (§ 7) | — | `user` |
+| 1 | Attribut M3U `tvg-country` / `country` | `tvg-country="FR"` | `attribute` |
+| 2 | Préfixe pays du libellé de catégorie | `FR| SPORTS`, `|UK| …`, `AR - MBC`, `[DE] …` | `group_prefix` |
+| 3 | Libellé de catégorie = nom de pays (alias multilingues) | `Italy`, `Royaume-Uni`, `UK`, `USA`, `Deutschland` | `group_name` |
+| 4 | Suffixe pays du `tvg-id` | `DHA.tr@SD` → `TR`, `BBCOne.uk` → `GB` | `tvg_id` |
+| 5 | Préfixe pays du nom de la chaîne | `|FR| TF1 FHD`, `FR: M6` | `name_prefix` |
+| 6 | Indice international | `International`, `World`, `Worldwide` | `INT` |
+| — | Aucun indice | — | pays vide (« Pays inconnu ») |
+
+- **Codes ambigus refusés** : `.tv`, `.com`, `.net`, `.org` ne sont pas des pays ; `uk` → `GB` ; un préfixe de 2 lettres n'est accepté que s'il est suivi d'un séparateur (`|`, `:`, ` - `, `]`) et figure dans la table des pays.
+- **Langue ≠ pays** : `tvg-language` ne sert pas à déduire un pays (l'arabe ou l'espagnol couvrent trop de pays). Il est conservé pour un futur filtre « Langue » (§ 11).
+- **Xtream** : le pays de la catégorie (`category_name`) s'applique à tous ses éléments ; les règles 2, 3 et 6 sont évaluées une seule fois par catégorie.
+
+### 4.2. Thèmes
+
+1. **Surcharge de l'utilisateur** (§ 7).
+2. **Segments du libellé de catégorie** après retrait du préfixe pays et du bruit : chaque segment est comparé au dictionnaire (mot exact, puis racine sans accents) → 0 à n thèmes. Provenance `group`.
+3. **Type d'élément** : un film sans thème reconnu reçoit `movies`, un épisode `series`. Provenance `kind`.
+4. **Nom de la chaîne** (indice faible, seulement si 2 et 3 n'ont rien donné) : mots isolés comme `Sport`, `News`, `Info`, `Kids`, `Junior`, `Music`, `Cinema`. Provenance `name`.
+5. Sinon `other`.
+
+- Un libellé qui n'est **que** un pays (`Italy`) ne donne aucun thème : la chaîne passe par l'étape 4.
+- `adult` réutilise la règle actuelle `is_adult_category` pour ne pas changer le contrôle parental (§ 6).
+- **Lot ultérieur (33.5)** : les catégories XMLTV (`<category>` des programmes) d'une chaîne peuvent proposer un thème quand les étapes 2 à 4 échouent.
+
+### 4.3. Dictionnaire et version
+
+- Dictionnaire **multilingue** : anglais, français, espagnol, italien, allemand, portugais, turc, arabe ; extensible sans changer le code (fichier de données dans la crate).
+- Toute modification du dictionnaire ou des règles **incrémente `TAXONOMY_VERSION`**. Au démarrage, si la version stockée est plus ancienne, la base est **reclassée en arrière-plan** à partir des colonnes déjà stockées (§ 5.3), sans retélécharger les sources.
+
+---
+
+## 5. Données (SQLite)
+
+### 5.1. Schéma
+
+```sql
+-- Pays et thème principal sur l'élément : facettes et tri sans jointure.
+ALTER TABLE iptv_items ADD COLUMN tx_country TEXT;          -- 'FR', 'INT' ou NULL
+ALTER TABLE iptv_items ADD COLUMN tx_country_src TEXT;      -- 'attribute' | 'group_prefix' | … | 'user'
+ALTER TABLE iptv_items ADD COLUMN tx_domain TEXT;           -- thème principal
+ALTER TABLE series_catalog ADD COLUMN tx_country TEXT;
+ALTER TABLE series_catalog ADD COLUMN tx_domain TEXT;
+
+-- Tous les thèmes d'un élément (multi-valué).
+CREATE TABLE IF NOT EXISTS item_domains (
+    item_id INTEGER NOT NULL REFERENCES iptv_items(id) ON DELETE CASCADE,
+    domain TEXT NOT NULL,
+    subdomain TEXT,
+    src TEXT NOT NULL,
+    PRIMARY KEY (item_id, domain)
+) WITHOUT ROWID;
+
+-- Surcharges de l'utilisateur, par stable_hash pour survivre aux actualisations.
+CREATE TABLE IF NOT EXISTS taxonomy_overrides (
+    stable_hash TEXT PRIMARY KEY,
+    country TEXT,
+    domains TEXT,           -- liste 'sports,news' ; NULL = pas de surcharge
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_items_kind_country_domain ON iptv_items(kind, tx_country, tx_domain, name);
+CREATE INDEX IF NOT EXISTS idx_item_domains_domain ON item_domains(domain, item_id);
+```
+
+- Migrations ajoutées à `apply_incremental_migrations` (`db/mod.rs`), qui ignore déjà les colonnes existantes.
+- `TAXONOMY_VERSION` stockée dans `app_settings`.
+
+### 5.2. Ingestion
+
+- `IngestionWriter` (`db/ingestion_writer.rs`) appelle `taxonomy::classify` pour chaque élément **pendant** l'insertion par lots, dans la même transaction.
+- Pour Xtream, le classement de la catégorie est calculé **une fois** par `category_id` puis réutilisé.
+
+### 5.3. Reclassement
+
+- `reclassify_all(progress)` lit `group_title`, `tvg_id`, `name`, `country`, `kind` par pages de 5 000 et réécrit les colonnes `tx_*` et `item_domains`. Annulable, rapporte sa progression.
+- Déclenché par : migration, changement de `TAXONOMY_VERSION`, surcharge de l'utilisateur (élément seul).
+
+### 5.4. Requêtes et API UniFFI (extrait)
+
+```rust
+enum CategoryAxis { Country, Domain, Provider }
+
+fn get_category_facets(kind: String, axis: CategoryAxis, source_id: Option<i64>,
+                       country: Option<String>, domain: Option<String>) -> Vec<CategoryFacet>;
+// CategoryFacet { key: String, subkeys: Vec<FacetCount>, count: i64 }
+//   axis Country : key = 'FR' | 'INT' | '' (inconnu)
+//   axis Domain  : key = 'sports', subkeys = sous-thèmes
+//   axis Provider: key = group_title brut (comportement actuel de get_groups)
+
+fn get_items_by_taxonomy(kind: String, country: Option<String>, domain: Option<String>,
+                         subdomain: Option<String>, source_id: Option<i64>,
+                         offset: i64, limit: i64) -> Vec<IptvItemRecord>;
+
+fn set_taxonomy_override(stable_hash: String, country: Option<String>, domains: Option<Vec<String>>);
+fn clear_taxonomy_override(stable_hash: String);
+fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'éléments sans pays / 'other'
+```
+
+- `get_groups` reste en place et sert l'axe `Provider` : aucun appel existant ne casse.
+- Les filtres « masqué », « adulte » et « profil enfant » du `PRD-20` sont appliqués à l'identique dans les nouvelles requêtes.
+
+---
+
+## 6. Interactions avec l'existant
+
+- **Bouquets masqués et ordre personnalisé (`PRD-20`)** : restent sur `group_title` (axe Fournisseur). Lot 33.4 : masquer aussi un pays ou un thème entier (`hidden_groups.kind` = `country:live` / `domain:live`), et ordre personnalisé des pays (France en premier par défaut selon la région de l'appareil).
+- **Catégories adultes** : un élément est adulte si `is_adult_group(group_title)` **ou** s'il porte le thème `adult`. Rien ne devient visible qui était masqué.
+- **Profils enfants** : en plus des catégories autorisées, un parent peut autoriser des **thèmes** (`kids`, `education`, `documentary`). Le thème `adult` ne peut jamais être autorisé.
+- **Recherche (FTS5)** : les libellés traduits du pays et du thème principal sont ajoutés à l'index (« sport italie » trouve les chaînes sportives italiennes). Changement de schéma FTS : reconstruction de l'index au premier lancement.
+- **Assistant ⌘K (`PRD-13`)** : « une chaîne d'info en anglais », « le sport en Espagne » utilisent `tx_domain` et `tx_country` au lieu de mots cherchés dans `group_title`.
+- **Recommandations (`PRD-27`)** et **miroirs (`PRD-17`)** : peuvent s'appuyer sur `tx_country` pour départager des homonymes ; hors périmètre de ce PRD, simple possibilité.
+- **iCloud** : le catalogue n'est pas synchronisé ; les surcharges de l'utilisateur non plus dans ce PRD (§ 11).
+
+---
+
+## 7. Corrections par l'utilisateur
+
+- Menu contextuel d'une chaîne : « Changer le pays… », « Changer le thème… » (liste fermée, recherche). L'élément est reclassé immédiatement ; la surcharge survit aux actualisations (clé `stable_hash`).
+- Menu contextuel d'une catégorie fournisseur : « Classer cette catégorie… » applique la surcharge à tous ses éléments (stockée comme règle sur `group_title` normalisé, table `taxonomy_group_overrides`, lot 33.4).
+- Réglages > Catalogue : « Réinitialiser mes corrections de catégories ».
+
+---
+
+## 8. Interface (SwiftUI)
+
+### 8.1. Colonne des catégories
+
+- En tête de `CategoryNavigation`, un sélecteur segmenté : **Pays · Thèmes · Fournisseur**. Le choix est mémorisé par écran (`@AppStorage`). Valeur par défaut : **Thèmes** en Live TV, **Fournisseur** en VOD jusqu'au lot 33.5.
+- **Axe Pays** : drapeau (émoji régional calculé depuis le code), nom localisé par `Locale.current.localizedString(forRegionCode:)`, compteur. En tête : « Tous les pays », puis le pays de l'appareil, puis l'ordre alphabétique localisé ; « International » et « Pays inconnu » en fin de liste.
+- **Axe Thèmes** : icône SF Symbol par thème, libellé, compteur ; un thème se déplie sur ses sous-thèmes. « Non classé » en fin de liste.
+- **Axe Fournisseur** : liste actuelle, inchangée.
+- **Plus de libellés bruts à point-virgule** dans les axes Pays et Thèmes.
+
+### 8.2. Filtre croisé
+
+- Quand un pays est choisi, une rangée de **chips de thèmes** (avec compteurs) apparaît au-dessus de la grille ; et inversement. Exemple : Pays = France → [Tous 214] [Infos 30] [Sport 12] [Jeunesse 8]…
+- Les chips à 0 sont masquées. La sélection apparaît dans le titre (« Sport · France »).
+
+### 8.3. Petits écrans et Apple TV
+
+- iPhone : les deux axes dans la feuille « Catégories » existante, en sections.
+- Apple TV : le sélecteur d'axe est une rangée focusable au-dessus de la colonne (`focusSection`).
+- Jetons de design et règles d'accessibilité des `PRD-30` et `PRD-31` (libellés VoiceOver « France, 214 chaînes »).
+
+---
+
+## 9. Lots
+
+| Lot | Contenu | Livrable validable seul |
+|---|---|---|
+| **33.1** | Module `taxonomy/` : données pays et thèmes, `tokenize`, `country`, `domain`, `classify`. Aucun branchement. | Tests unitaires sur un **jeu de libellés réels** (les 242 catégories de la base locale, des libellés Xtream courants, des `tvg-id` iptv-org) avec le résultat attendu. |
+| **33.2** | Schéma, migrations, classement à l'ingestion (M3U et Xtream), reclassement en arrière-plan, requêtes de facettes et filtres croisés, exports UniFFI, XCFramework. | Tests Rust de bout en bout et SLA ; `get_groups` inchangé. |
+| **33.3** | Interface : sélecteur d'axe, colonnes Pays et Thèmes, chips croisées, titres, iPhone et Apple TV. | Essai à l'écran sur la base locale. |
+| **33.4** | Corrections de l'utilisateur, masquage de pays / thèmes, thèmes autorisés des profils enfants, recherche FTS par pays et thème, assistant ⌘K. | Tests Rust et Swift ; essai à l'écran. |
+| **33.5** | VOD : genres de films et séries (même moteur, sous-thèmes `comedy`, `family`, `classic`, `action`…), indice XMLTV `<category>` pour les chaînes non classées. | Tests et essai à l'écran. |
+
+---
+
+## 10. Fichiers à Créer / Modifier
+
+- **Rust :**
+  - `crates/cnd-core/src/taxonomy/` *(nouveau)* : `mod.rs`, `tokenize.rs`, `country.rs`, `domain.rs`, `data/countries.rs`, `data/domains.rs`, `tests.rs` + `tests/fixtures/category_labels.tsv` ;
+  - `db/schema.rs`, `db/mod.rs` *(migrations)*, `db/ingestion_writer.rs`, `db/taxonomy_repo.rs` *(nouveau)*, `db/catalog_repo.rs` *(filtres partagés)* ;
+  - `iptv/xtream.rs` *(classement par catégorie)* ;
+  - `ai/local_matcher.rs`, `ai/candidates.rs` *(lot 33.4)* ;
+  - `lib.rs` *(exports UniFFI)*, puis `task xcframework`.
+- **Swift :**
+  - `Shared/CategoryNavigation.swift` *(axe, chips croisées)*, `Shared/CategoryAxis.swift` *(nouveau : libellés, icônes, drapeaux)* ;
+  - `Features/LiveTV/LiveTvModel.swift`, `Features/LiveTV/LiveTvView.swift` ;
+  - `Features/VOD/VodCatalogModel.swift` *(lot 33.5)* ;
+  - `Features/Profiles/KidsAllowList.swift`, `BouquetEditorModel.swift` *(lot 33.4)*.
+- **Tests :** `apple/Tests/CndIptvAppTests/CategoryAxis*Tests.swift`.
+- **Index :** `PRD/00_INDEX_ROADMAP.md`.
+
+---
+
+## 11. Contraintes Non-Négociables (Guardrails IA)
+
+- **`group_title` n'est jamais réécrit.** Les nouvelles informations vont dans des colonnes et tables séparées.
+- **Aucune régression du contrôle parental** : tout élément masqué avant (adulte, catégorie masquée, profil enfant) le reste après, quel que soit l'axe. Test dédié obligatoire.
+- **Classement 100 % local et déterministe** : aucun appel réseau, aucune IA pour classer. L'IA de l'utilisateur n'est pas sollicitée.
+- **Liste de thèmes fermée** : aucun thème inventé à partir des données ; un libellé inconnu donne `other`, jamais un nouveau thème.
+- **Pas de nouvelle dépendance lourde** : données ISO embarquées dans la crate (pas de crate de géographie, pas de fichier téléchargé).
+- **SLA d'ingestion du `PRD-02` maintenu** (test de performance existant au vert).
+- **Les cibles macOS, iOS, tvOS et visionOS restent vertes.**
+
+---
+
+## 12. Hors périmètre (PRD ultérieurs possibles)
+
+- **Filtre par langue** (`tvg-language`, pistes audio) : troisième axe possible, mêmes mécanismes.
+- **Synchronisation iCloud des corrections** de l'utilisateur.
+- **Base de chaînes externe** (API iptv-org `channels.json`) pour enrichir pays et thèmes : apporterait de la précision mais un appel réseau et une dépendance de données.
+- **Régions** (Maghreb, Afrique de l'Ouest, Amérique latine) comme regroupement de pays.
+
+---
+
+## 13. Critères d'Acceptation & Commandes de Validation
+
+1. **Classement (lot 33.1), sur le jeu de libellés réels :**
+   - `Animation;Kids;Music` → thèmes `kids/animation` + `music`, principal `kids` ;
+   - `FR| SPORTS FHD` → `FR` + `sports` ; `|UK| ENTERTAINMENT` → `GB` + `entertainment` ; les préfixes ambigus (`AR`, `IN`) suivent la décision de la § 14 et ont chacun un cas dans les fixtures ;
+   - `Italy` → `IT`, aucun thème issu du libellé ; `UK` → `GB` ; `USA` → `US` ;
+   - `tvg-id="DHA.tr@SD"` → `TR` ; `BBCOne.uk` → `GB` ; `Foo.tv` → aucun pays ;
+   - `Undefined` → `other` ; `General` → `general` ;
+   - **≥ 95 %** des chaînes de la base locale ont un pays, **≤ 15 %** sont `other` (aujourd'hui : 1 547 `Undefined` sur 12 229).
+2. **Base et requêtes (lot 33.2) :** migration d'une base existante, reclassement < 2 s pour 50 000 éléments, facettes < 50 ms, filtres croisés, surcharges conservées après actualisation d'une source, `get_groups` identique à avant.
+3. **Contrôle parental :** test qui compare l'ensemble des éléments visibles avant et après, pour un profil adulte verrouillé et un profil enfant.
+4. **Interface (lot 33.3) :** la colonne de la capture d'écran du ticket n'affiche plus de combinaison à point-virgule dans les axes Pays et Thèmes ; « France → Sport » et « Sport → France » donnent la même liste.
+5. `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, `cd apple && swift test`, `task check` au vert.
+
+---
+
+## 14. Questions ouvertes
+
+- **Axe par défaut** en Live TV : Thèmes (proposé) ou Pays ? Pour un utilisateur qui ne regarde qu'un ou deux pays, « Pays » d'abord serait plus direct.
+- **`Classic`** (iptv-org) : classé en `movies/classic` (proposé) ou `entertainment` ? Le contenu mélange films et séries anciennes.
+- **`Animation` sans `Kids`** (`Animation;Comedy`, souvent pour adultes) : `kids/animation` ou `entertainment/comedy` ? Proposé : `entertainment` quand `Comedy` est présent sans `Kids`.
+- **Préfixes Xtream à deux lettres ambigus** (`AR` = Argentine ou arabe, `IN` = Inde ou mot anglais) : faut-il une liste de préfixes « langue » (`AR`, `EN`) traités comme international, ou une détection par fournisseur ?
+- **Masquer « Pays inconnu »** quand il est vide, ou le garder visible pour expliquer le classement ?
+
+---
+
+## 15. Statut d'Implémentation & Validation
+
+**Non commencé.** Plan rédigé sur la branche `feat/category-taxonomy`. Mesures de départ relevées sur la base locale (2 sources M3U) : 242 catégories Live brutes, 453 chaînes dans des combinaisons à point-virgule, 1 907 / 12 229 chaînes avec un pays, 10 233 `tvg-id` porteurs d'un pays, 1 547 chaînes `Undefined`.
