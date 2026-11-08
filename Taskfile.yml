@@ -41,6 +41,18 @@ tasks:
     cmds:
       - ./scripts/run-macos.sh
 
+  run:macos:
+    desc: Build (debug) and launch the app on macOS
+    aliases: [macos:run]
+    cmds:
+      - ./scripts/run-macos.sh {{if .RELEASE}}--release{{end}} {{if .REBUILD_CORE}}--rebuild-core{{end}} {{if .FOREGROUND}}--foreground{{end}}
+
+  run:macos:release:
+    desc: Build (release) and launch the app on macOS
+    aliases: [macos:run:release]
+    cmds:
+      - ./scripts/run-macos.sh --release
+
   run:release:
     desc: Build (release) and launch the app on macOS
     cmds:
