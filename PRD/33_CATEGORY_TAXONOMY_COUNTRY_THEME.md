@@ -262,7 +262,7 @@ fn is_reclassifying_categories() -> bool;
 |---|---|---|
 | **33.1** | Module `taxonomy/` : données pays et thèmes, `tokenize`, `country`, `theme`, `classify`. Aucun branchement. | Tests unitaires sur un **jeu de libellés réels** (les 242 catégories de la base locale, des libellés Xtream courants, des `tvg-id` iptv-org) avec le résultat attendu. |
 | **33.2** ✅ | Schéma, migrations, classement en fin d'actualisation (M3U et Xtream), reclassement en arrière-plan, **thème emprunté à une autre chaîne de même `tvg-id`** quand le libellé n'en donne pas (502 chaînes de la base locale), requêtes de facettes et filtres croisés, exports UniFFI, XCFramework. | Tests Rust de bout en bout et SLA ; `get_groups` inchangé. |
-| **33.3** | Interface : sélecteur d'axe, colonnes Pays et Thèmes, chips croisées, titres, iPhone et Apple TV. | Essai à l'écran sur la base locale. |
+| **33.3** ✅ | Interface : sélecteur d'axe, colonnes Pays et Thèmes, chips croisées, titres, iPhone et Apple TV. | Essai à l'écran sur la base locale. |
 | **33.4** | Corrections de l'utilisateur, masquage de pays / thèmes, thèmes autorisés des profils enfants, recherche FTS par pays et thème, assistant ⌘K. | Tests Rust et Swift ; essai à l'écran. |
 | **33.5** | VOD : genres de films et séries (même moteur, sous-thèmes `comedy`, `family`, `classic`, `action`…), indice XMLTV `<category>` pour les chaînes non classées. | Tests et essai à l'écran. |
 
@@ -336,7 +336,7 @@ fn is_reclassifying_categories() -> bool;
 
 ## 15. Statut d'Implémentation & Validation
 
-**Lots 33.1 et 33.2 terminés** (branche `feat/category-taxonomy`). Lots 33.3 à 33.5 non commencés.
+**Lots 33.1 à 33.3 terminés** (branche `feat/category-taxonomy`). Lots 33.4 et 33.5 non commencés.
 
 - **Module `crates/cnd-core/src/taxonomy/`**, fonctions pures sans SQLite ni réseau, non branché sur l'ingestion :
   - `data/countries.rs` : 213 pays et territoires ISO avec noms anglais, français et locaux, codes non ISO (`uk`, `usa`, `uae`, `ksa`), préfixes de langue, mots « international » ;
@@ -365,3 +365,15 @@ fn is_reclassifying_categories() -> bool;
 - **Mesures sur une copie de la base locale** (12 229 chaînes) : migration et reclassement complet en **0,34 s** ; 180 pays et 14 thèmes dans la colonne, calculés en 11 et 12 ms ; 242 catégories fournisseur inchangées ; 15 chaînes sans pays ; thème `other` : 2 933 (27,2 % → 24,0 %, soit 398 chaînes qui ont emprunté un thème).
 - **Mesures sur 50 000 éléments** (`--release`) : reclassement ≈ 1,1 s (objectif < 2 s) ; deux requêtes de facettes ≈ 85 ms (objectif < 50 ms chacune).
 - **Tests** (14 nouveaux dans `taxonomy_repo`, dont un test d'actualisation M3U complète par le moteur) : filtres croisés, sous-thèmes, axe Fournisseur identique à `get_groups`, thème emprunté, surcharges, bouquets masqués, groupes adultes et profil enfant sur chaque axe, valeurs de filtre hostiles, séries, version stockée, annulation, lignes orphelines, SLA.
+
+### Lot 33.3 : interface Live TV
+
+- **Fichiers** : `Shared/CategoryAxisSupport.swift` (axes, libellés français, icônes, drapeaux, tri), `Shared/FacetChipsRow.swift` (chips avec compteurs), `Shared/CategoryNavigation.swift` (étendu : `label`, `icon`, `axisPicker`, valeurs par défaut : Films et Séries inchangés), `Shared/SearchFilterToolbar.swift` (`country`, `theme`, `subtheme`), `Features/LiveTV/LiveTvModel.swift` et `LiveTvView.swift`.
+- **Colonne** : sélecteur **Pays · Thèmes · Fournisseur** (choix mémorisé dans `live.categoryAxis`, **Thèmes** par défaut). Pays : drapeau, nom localisé (`Locale`), pays de l'appareil en tête, « International » et « Pays inconnu » en fin de liste. Thèmes : icône SF Symbol, plus peuplés d'abord, « Non classé » en dernier. Fournisseur : liste d'origine, inchangée.
+- **Filtre croisé** : rangée de chips de l'autre axe (compteurs du pays ou du thème choisi), rangée de sous-thèmes quand le thème en a, ligne de titre « Sport · France ». Changer d'axe efface la sélection.
+- **Compteur « Toutes les chaînes »** : total du catalogue ; sur l'axe Pays, somme des pays que laisse le thème choisi ; sur l'axe Thèmes avec un pays choisi, effectif de ce pays.
+- **Recherche** : ignore le pays et le thème choisis, comme elle ignore déjà le groupe du fournisseur, et l'écran le dit. Le filtre « Groupe » de la barre d'outils n'apparaît que sur l'axe Fournisseur.
+- **Accessibilité** : chips lues « titre, nombre », état sélectionné annoncé, sélecteur d'axe nommé.
+- **Tests** : 16 nouveaux (`CategoryAxisTests.swift`) : drapeaux et noms, tri des pays et des thèmes, libellés des 16 thèmes et des sous-thèmes, titre de sélection, stockage de l'axe, et le modèle Live TV contre un vrai moteur (colonne, chips, compteurs, recherche, axe Fournisseur). Suite Swift complète : 426 tests au vert.
+- **Vérification visuelle** : aucun affichage n'est disponible dans l'environnement de développement (la capture d'écran échoue), l'app lancée n'a donc pas pu être vue. La colonne a été **rendue hors écran** (macOS, mode sombre, 900 × 520) pour les axes Thèmes et Pays : mise en page, icônes, drapeaux et chips conformes. **Non compilé pour iOS, tvOS et visionOS** (les plateformes ne sont pas installées sur cette machine ; seul macOS a été compilé et testé). **Non vérifiés à l'écran** : la mise en page étroite (feuille « Catégories » et chips sur iPhone), Apple TV (`focusSection` du sélecteur) et le mode clair.
+- **Hors lot** : Films et Séries gardent l'axe Fournisseur jusqu'au lot 33.5.

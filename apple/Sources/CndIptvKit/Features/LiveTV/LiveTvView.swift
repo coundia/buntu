@@ -17,6 +17,7 @@ struct LiveTvView: View {
     @Binding var searchRequest: String?
 
     @AppStorage("live.viewMode") private var viewModeRaw = LiveViewMode.grid.rawValue
+    @AppStorage("live.categoryAxis") private var axisRaw = CategoryAxis.theme.storageValue
     @State private var mirrorTarget: IptvItemRecord?
     @State private var mirrorList: [IptvItemRecord] = []
     init(
@@ -61,7 +62,86 @@ struct LiveTvView: View {
 
     private var viewMode: LiveViewMode { LiveViewMode(rawValue: viewModeRaw) ?? .grid }
 
-    private var reloadKey: String { "\(model.filter.signature)#\(revision)" }
+    private var reloadKey: String { "\(model.filter.signature)#\(revision)#\(axisRaw)" }
+
+    // MARK: Categories by country / theme (PRD-33)
+
+    private var axis: CategoryAxis { CategoryAxis(storageValue: axisRaw, fallback: .theme) }
+
+    private var axisBinding: Binding<CategoryAxis> {
+        Binding(get: { axis }, set: { axisRaw = $0.storageValue })
+    }
+
+    /// Facets are re-read when the axis, the selection or the catalogue changes (not for the search text).
+    private var facetsKey: String {
+        let f = model.filter
+        return "\(axisRaw)|\(f.country ?? "-")|\(f.theme ?? "-")|\(f.subtheme ?? "-")|\(revision)"
+    }
+
+    private var axisPicker: AnyView {
+        AnyView(
+            Picker("Classer par", selection: axisBinding) {
+                ForEach(CategoryAxis.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityLabel("Classer les catégories par")
+        )
+    }
+
+    /// Selection of the column, which depends on the axis.
+    private func columnSelection(_ filter: SearchFilterState) -> Binding<String?> {
+        switch axis {
+        case .provider: return Binding(get: { filter.group }, set: { filter.group = $0 })
+        case .country: return countryBinding(filter)
+        case .theme: return themeBinding(filter)
+        }
+    }
+
+    private func countryBinding(_ filter: SearchFilterState) -> Binding<String?> {
+        Binding(get: { filter.country }, set: { filter.country = $0 })
+    }
+
+    /// Changing the theme drops the sub-theme, which belongs to the previous one.
+    private func themeBinding(_ filter: SearchFilterState) -> Binding<String?> {
+        Binding(get: { filter.theme }, set: { filter.theme = $0; filter.subtheme = nil })
+    }
+
+    private func crossSelection(_ filter: SearchFilterState) -> Binding<String?> {
+        axis == .country ? themeBinding(filter) : countryBinding(filter)
+    }
+
+    /// Chips of the other axis, the optional sub-theme row and the title of the selection.
+    @ViewBuilder
+    private func crossFilters(_ filter: SearchFilterState) -> some View {
+        if let other = axis.other {
+            VStack(alignment: .leading, spacing: 0) {
+                FacetChipsRow(
+                    allTitle: other == .theme ? "Tous les thèmes" : "Tous les pays",
+                    chips: model.crossFacets.map {
+                        FacetChip(key: $0.key, title: CategoryText.label($0.key, axis: other), count: Int($0.count))
+                    },
+                    selection: crossSelection(filter)
+                )
+                if !model.subthemeFacets.isEmpty {
+                    FacetChipsRow(
+                        allTitle: "Tous les sous-thèmes",
+                        chips: model.subthemeFacets.map {
+                            FacetChip(key: $0.value, title: CategoryText.subthemeName($0.value), count: Int($0.count))
+                        },
+                        selection: Binding(get: { filter.subtheme }, set: { filter.subtheme = $0 })
+                    )
+                }
+                if let title = CategoryText.selectionTitle(country: filter.country, theme: filter.theme, subtheme: filter.subtheme) {
+                    Text(title)
+                        .font(.headline)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 4)
+                        .accessibilityAddTraits(.isHeader)
+                }
+            }
+        }
+    }
 
     /// Hands the browsed channel list to the zapper (next/previous channel from anywhere).
     private func publishZapList() {
@@ -97,18 +177,25 @@ struct LiveTvView: View {
 
     var body: some View {
         @Bindable var filter = model.filter
+        let axis = self.axis
         return CategoryNavigation(
-            groups: model.groups,
-            totalCount: totalChannels,
+            groups: axis == .provider ? model.groups : CategoryText.asFacetCounts(model.columnFacets),
+            totalCount: axis == .provider ? totalChannels : (model.allCount ?? totalChannels),
             allTitle: "Toutes les chaînes",
-            selection: $filter.group
+            label: { CategoryText.label($0, axis: axis) },
+            icon: { CategoryText.icon($0, axis: axis) },
+            axisPicker: axisPicker,
+            selection: columnSelection(model.filter)
         ) {
-            channelContent
+            VStack(spacing: 0) {
+                crossFilters(model.filter)
+                channelContent
+            }
         }
         .navigationTitle("Live TV")
         .searchFilterToolbar(
             state: model.filter,
-            groups: model.groups,
+            groups: axis == .provider ? model.groups : [],
             hosts: model.hosts,
             sortOptions: [.channelNumber, .name, .group, .host],
             prompt: "Rechercher une chaîne"
@@ -136,7 +223,18 @@ struct LiveTvView: View {
                 .pickerStyle(.segmented)
             }
         }
-        .task(id: reloadKey) { await model.reload(revision: revision) }
+        .onChange(of: axisRaw) { _, _ in
+            model.filter.group = nil
+            model.filter.clearTaxonomy()
+        }
+        .task(id: reloadKey) {
+            model.axis = axis
+            await model.reload(revision: revision)
+        }
+        .task(id: facetsKey) {
+            model.axis = axis
+            await model.reloadTaxonomyFacets()
+        }
         .onChange(of: model.channels.count) { _, _ in publishZapList() }
         .onChange(of: model.nowNext.count) { _, _ in publishZapList() }
         .task {
