@@ -163,17 +163,19 @@ export const App: Component = () => {
 
     // Start local household continuity sync (PRD-41 & PRD-42)
     void LocalSyncService.getInstance().start();
-    RemotePlaybackCoordinator.getInstance().init();
+    const remote = RemotePlaybackCoordinator.getInstance();
+    remote.init();
+    // "Lire sur…" (PRD-42): the playback goes through the app's own path (full screen player).
+    remote.onPlayItem = async (item) => {
+      await handlePlayItem(item);
+    };
+    remote.onZap = (direction) => {
+      void zapChannel(direction);
+    };
 
+    // Deprecated PRD-41 `play_remote`: same checks as a negotiated request (profile, busy, access).
     unsubRemotePlay = LocalSyncService.getInstance().onPlayRemote(async (event) => {
-      console.log('[Continuity] Remote play received:', event);
-      const item = await Database.getInstance().getItemByStableHash(event.content_key);
-      if (item) {
-        if (event.position_ms > 0) {
-          item.playback_position_ms = event.position_ms;
-        }
-        await handlePlayItem(item);
-      }
+      await remote.playLegacyRequest(event);
     });
 
     unsubRemoteKey = LocalSyncService.getInstance().onRemoteKey((keyName) => {

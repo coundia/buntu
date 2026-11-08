@@ -2,6 +2,8 @@
 
 Ce document explique le fonctionnement, l'architecture et l'utilisation de la fonctionnalité **« Lire sur… »** de Buntu, permettant de basculer la lecture d'un média (film, série, chaîne en direct) vers n'importe quel autre appareil du foyer (TV Samsung, iPhone, Android, Mac…) **sans Cast, sans AirPlay et sans serveur central**.
 
+> **État réel (relu le 8 novembre 2026) :** le protocole (Rust) et la réception sur la TV Samsung sont codés et testés. Côté Apple, le code compile mais aucun écran ne l'utilise encore ; Android n'a pas d'implémentation ; rien n'a été essayé sur de vrais appareils. Détail : `PRD/42_LIRE_SUR_UN_AUTRE_APPAREIL.md § 14`.
+
 ---
 
 ## 1. Principes & Différences avec Cast

@@ -243,7 +243,11 @@ export class HouseholdStore {
         const devices = this.getPairedDevices();
         const existing = devices.find(d => d.device_id === deviceId);
         if (existing) {
-            existing.device_name = deviceName;
+            // A bare envelope (seq only) records the sender as 'mobile'; an announce brings the real type.
+            if (seq === 0 || deviceName !== deviceId) {
+                existing.device_name = deviceName;
+                existing.device_type = deviceType;
+            }
             existing.last_seen = Date.now();
             existing.last_seq = Math.max(existing.last_seq, seq);
         } else {

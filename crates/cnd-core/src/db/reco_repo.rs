@@ -223,118 +223,86 @@ impl DatabaseManager {
         })
     }
 
+    /// Finds the local item designated by a household `content_key` (PRD-42 § 6).
+    ///
+    /// 1. exact match on the stable hash (the common case: the keys are shared since PRD-41);
+    /// 2. fallback by the provider identifier, **only inside the source whose `source_key`
+    ///    matches** and for the same kind: the same numeric id exists in every account and for
+    ///    live, movie and series alike, so a global search would play the wrong content.
+    ///
+    /// No stream URL is ever rebuilt here: the SQLite database only holds a *reference* to the
+    /// password (`password_ref`, the Keychain entry), never the password itself.
     pub fn item_by_content_key(
         &self,
         content_key: &str,
         source_key: Option<&str>,
         provider_ref: Option<&str>,
+        item_kind: Option<&str>,
     ) -> Result<Option<IptvItemRecord>, DbError> {
-        // 1. Direct match on stable_hash
         if let Some(item) = self.item_by_stable_hash(content_key)? {
             return Ok(Some(item));
         }
 
-        // 2. Suffix match (Tizen compatibility & migrated keys)
-        let candidate: Option<IptvItemRecord> = self.with_conn(|conn| {
-            let sql = format!(
-                "SELECT {ITEM_SELECT_COLUMNS} {ITEM_JOINS} WHERE i.stable_hash LIKE '%' || ?1 LIMIT 1"
-            );
-            let mut stmt = conn.prepare(&sql)?;
-            Ok(stmt.query_row(params![content_key], map_item_row).optional()?)
-        })?;
-        if candidate.is_some() {
-            return Ok(candidate);
+        let (Some(s_key), Some(pref)) = (source_key, provider_ref) else {
+            return Ok(None);
+        };
+        let pref = pref.trim();
+        if pref.is_empty() || !pref.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+            return Ok(None);
         }
 
-        // 3. Fallback: match by provider_ref in stream_url
-        if let Some(pref) = provider_ref {
-            let candidate_ref: Option<IptvItemRecord> = self.with_conn(|conn| {
-                let pattern1 = format!("%/{pref}.%");
-                let pattern2 = format!("%/{pref}");
+        let source_ids: Vec<i64> = self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, source_type, server, url, username FROM iptv_sources",
+            )?;
+            let rows = stmt.query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    r.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                    r.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                ))
+            })?;
+            let mut ids = Vec::new();
+            for (id, source_type, server, url, username) in rows.flatten() {
+                let locator = if source_type.eq_ignore_ascii_case("xtream") { &server } else { &url };
+                let key = cnd_domain::identity::compute_source_key(&source_type, locator, Some(&username));
+                if key.eq_ignore_ascii_case(s_key.trim()) {
+                    ids.push(id);
+                }
+            }
+            Ok(ids)
+        })?;
+        if source_ids.is_empty() {
+            return Ok(None);
+        }
+
+        let kind = item_kind.unwrap_or("").trim().to_ascii_lowercase();
+        let kind_clause = match kind.as_str() {
+            "live" | "movie" | "episode" => " AND i.kind = ?4",
+            _ => "",
+        };
+        for source_id in source_ids {
+            let found: Option<IptvItemRecord> = self.with_conn(|conn| {
                 let sql = format!(
-                    "SELECT {ITEM_SELECT_COLUMNS} {ITEM_JOINS} WHERE i.stream_url LIKE ?1 OR i.stream_url LIKE ?2 LIMIT 1"
+                    "SELECT {ITEM_SELECT_COLUMNS} {ITEM_JOINS} \
+                     WHERE i.source_id = ?1 AND (i.stream_url LIKE ?2 OR i.stream_url LIKE ?3){kind_clause} LIMIT 1"
                 );
                 let mut stmt = conn.prepare(&sql)?;
-                Ok(stmt.query_row(params![pattern1, pattern2], map_item_row).optional()?)
+                let p_dot = format!("%/{pref}.%");
+                let p_end = format!("%/{pref}");
+                let row = if kind_clause.is_empty() {
+                    stmt.query_row(params![source_id, p_dot, p_end], map_item_row).optional()?
+                } else {
+                    stmt.query_row(params![source_id, p_dot, p_end, kind], map_item_row).optional()?
+                };
+                Ok(row)
             })?;
-            if candidate_ref.is_some() {
-                return Ok(candidate_ref);
+            if found.is_some() {
+                return Ok(found);
             }
         }
-
-        // 4. Fallback Xtream reconstruction (PRD-42 § 6.2)
-        if let (Some(s_key), Some(pref)) = (source_key, provider_ref) {
-            let source_info: Option<(i64, String, String, String, String)> = self.with_conn(|conn| {
-                let mut stmt = conn.prepare(
-                    "SELECT id, source_type, server, username, password_ref FROM iptv_sources WHERE server IS NOT NULL"
-                )?;
-                let rows = stmt.query_map([], |r| {
-                    Ok((
-                        r.get::<_, i64>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                        r.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                        r.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                    ))
-                })?;
-                for row in rows.flatten() {
-                    let computed_key = cnd_domain::identity::compute_source_key(&row.1, &row.2, Some(&row.3));
-                    if computed_key.eq_ignore_ascii_case(s_key) {
-                        return Ok(Some(row));
-                    }
-                }
-                Ok(None)
-            })?;
-
-            if let Some((src_id, src_type, server, username, password_ref)) = source_info {
-                if src_type.eq_ignore_ascii_case("xtream") {
-                    let stream_url = cnd_domain::remote::resolve::reconstruct_xtream_url(
-                        &server,
-                        &username,
-                        &password_ref,
-                        "movie",
-                        pref,
-                        Some("mp4"),
-                    );
-                    if !stream_url.is_empty() {
-                        return Ok(Some(IptvItemRecord {
-                            id: 0,
-                            source_id: src_id,
-                            series_id: None,
-                            stable_hash: content_key.to_string(),
-                            kind: "movie".to_string(),
-                            season_num: None,
-                            episode_num: None,
-                            name: format!("Item {pref}"),
-                            name_clean: format!("Item {pref}"),
-                            year: None,
-                            group_title: None,
-                            tvg_id: None,
-                            logo_url: None,
-                            chno: None,
-                            host: server,
-                            container_ext: Some("mp4".to_string()),
-                            stream_url,
-                            user_agent: None,
-                            referer: None,
-                            headers_json: None,
-                            catchup_type: None,
-                            catchup_source: None,
-                            catchup_days: None,
-                            plot: None,
-                            imdb_id: None,
-                            imdb_rating: None,
-                            is_favorite: false,
-                            is_broken: false,
-                            resume_position_ms: 0,
-                            duration_ms: 0,
-                            is_completed: false,
-                        }));
-                    }
-                }
-            }
-        }
-
         Ok(None)
     }
 
