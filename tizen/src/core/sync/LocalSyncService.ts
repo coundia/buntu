@@ -44,7 +44,7 @@ export class LocalSyncService {
   private playRemoteListeners: ((e: RemotePlayEvent) => void)[] = [];
   private remoteKeyListeners: ((key: string) => void)[] = [];
   private remoteTextListeners: ((text: string) => void)[] = [];
-  private genericMessageListeners: ((msg: any) => void)[] = [];
+  private genericMessageListeners: ((msg: any, senderId: string) => void)[] = [];
   private statusListeners: SyncStatusListener[] = [];
 
   public static getInstance(): LocalSyncService {
@@ -54,7 +54,7 @@ export class LocalSyncService {
     return LocalSyncService.instance;
   }
 
-  public onGenericMessage(fn: (msg: any) => void): () => void {
+  public onGenericMessage(fn: (msg: any, senderId: string) => void): () => void {
     this.genericMessageListeners.push(fn);
     return () => {
       this.genericMessageListeners = this.genericMessageListeners.filter((l) => l !== fn);
@@ -180,6 +180,28 @@ export class LocalSyncService {
     }
   }
 
+  /**
+   * Anti-replay counter, strictly increasing ACROSS app restarts.
+   * It used to restart at 1 on every launch, so after the first restart the phones (which remember
+   * the last sequence seen from this TV) rejected every message as a replay.
+   */
+  private nextSequence(): number {
+    let last = 0;
+    try {
+      last = parseInt(localStorage.getItem('cnd_sync_seq') || '0', 10) || 0;
+    } catch {
+      // storage unavailable: fall back to the clock below
+    }
+    const seq = Math.max(last + 1, Date.now());
+    try {
+      localStorage.setItem('cnd_sync_seq', String(seq));
+    } catch {
+      // ignore
+    }
+    this.localSeq = seq;
+    return seq;
+  }
+
   public async sendMessage(message: any): Promise<void> {
     const key = await this.store.getHouseholdKey();
     if (!key) return;
@@ -188,7 +210,7 @@ export class LocalSyncService {
     crypto.getRandomValues(nonce);
     const nonceHex = Array.from(nonce).map((b) => b.toString(16).padStart(2, '0')).join('');
 
-    const seq = ++this.localSeq;
+    const seq = this.nextSequence();
     const senderId = this.store.getLocalDeviceId();
 
     const envelope = await this.bridge.post('SYNC_SEAL_ENVELOPE', {
@@ -234,17 +256,17 @@ export class LocalSyncService {
         envelope.sequence
       );
 
-      this.dispatchSyncMessage(message);
+      this.dispatchSyncMessage(message, envelope.sender_device_id);
     } catch (e) {
       // Replay rejected, decryption failure, or ping message
     }
   }
 
-  private dispatchSyncMessage(message: any): void {
+  private dispatchSyncMessage(message: any, senderId: string): void {
     if (!message || !message.type) return;
 
     for (const fn of this.genericMessageListeners) {
-      fn(message);
+      fn(message, senderId);
     }
 
     switch (message.type) {
@@ -277,10 +299,10 @@ export class LocalSyncService {
 
       case 'device_announce':
         this.store.recordDeviceActivity(
-          message.device_id,
+          senderId,
           message.device_name,
           message.device_type,
-          1
+          0
         );
         this.notifyStatus();
         break;
@@ -304,36 +326,62 @@ export class LocalSyncService {
     const key = await this.store.getHouseholdKey();
     if (!key) return;
 
-    // Assemble current state from Database & storage
+    // Only the CHANGES since the last export are sent. Re-sending every favorite with a fresh
+    // timestamp each minute (the previous behaviour) made a favorite removed on another device
+    // come back, because the TV's copy always looked newer than the removal.
+    const profile = LocalSyncService.PROFILE_UUID;
     const favorites = await this.db.getFavorites();
-    const favRecords = favorites.map((f) => ({
-      profile_uuid: '00000000-0000-0000-0000-000000000001',
-      content_key: f.stable_hash,
-      item_kind: f.kind,
-      hlc: `${Date.now()}.0.${this.store.getLocalDeviceId()}`,
-    }));
+    const current = new Set(favorites.map((f) => f.stable_hash));
+    const previous = this.loadFavoriteSnapshot();
 
-    const delta = await this.bridge.post('SYNC_EXPORT_DELTA', {
-      localState: {
-        favorites: Object.fromEntries(favRecords.map((r) => [`00000000-0000-0000-0000-000000000001:${r.content_key}`, r])),
-        sources: {},
-        profiles: {},
-        progress: {},
-        recents: {},
-        last_channel: {},
-        tombstones: {},
-      },
-      fromHlcStr: this.lastSyncHlc,
-      currentNodeId: this.store.getLocalDeviceId(),
-      currentPhysicalMs: Date.now(),
+    const node = this.store.getLocalDeviceId();
+    const now = Date.now();
+    const hlc = `${now}.0.${node}`;
+
+    const added = favorites.filter((f) => !previous.has(f.stable_hash));
+    const removed = Array.from(previous).filter((k) => !current.has(k));
+    if (added.length === 0 && removed.length === 0) return;
+
+    await this.sendMessage({
+      type: 'sync_delta',
+      to_hlc: hlc,
+      sources: [],
+      profiles: [],
+      progress: [],
+      recents: [],
+      favorites: added.map((f) => ({
+        profile_uuid: profile,
+        content_key: f.stable_hash,
+        item_kind: f.kind,
+        hlc,
+      })),
+      tombstones: removed.map((k) => ({
+        kind: 'favorite',
+        key: `${profile}:${k}`,
+        hlc,
+      })),
     });
+    this.lastSyncHlc = hlc;
+    this.saveFavoriteSnapshot(current);
+  }
 
-    if (delta && (!delta.favorites || delta.favorites.length > 0)) {
-      this.lastSyncHlc = delta.to_hlc || `${Date.now()}.0.${this.store.getLocalDeviceId()}`;
-      await this.sendMessage({
-        type: 'sync_delta',
-        ...delta,
-      });
+  private static readonly PROFILE_UUID = '00000000-0000-0000-0000-000000000001';
+  private static readonly FAV_SNAPSHOT_KEY = 'cnd_sync_fav_keys';
+
+  private loadFavoriteSnapshot(): Set<string> {
+    try {
+      const raw = localStorage.getItem(LocalSyncService.FAV_SNAPSHOT_KEY);
+      return new Set<string>(raw ? JSON.parse(raw) : []);
+    } catch {
+      return new Set<string>();
+    }
+  }
+
+  private saveFavoriteSnapshot(keys: Set<string>): void {
+    try {
+      localStorage.setItem(LocalSyncService.FAV_SNAPSHOT_KEY, JSON.stringify(Array.from(keys)));
+    } catch {
+      // ignore
     }
   }
 
@@ -376,28 +424,49 @@ export class LocalSyncService {
   public async applyIncomingDelta(delta: any): Promise<void> {
     if (!delta) return;
 
-    // Apply favorites
+    const snapshot = this.loadFavoriteSnapshot();
+    let snapshotChanged = false;
+
+    // Favorites added elsewhere
     if (Array.isArray(delta.favorites)) {
       for (const fav of delta.favorites) {
-        if (fav.content_key) {
-          const item = await this.db.getItemByStableHash(fav.content_key);
-          if (item && item.is_favorite !== 1) {
-            await this.db.toggleFavorite(item.id);
-          }
+        if (!fav.content_key) continue;
+        const item = await this.db.getItemByStableHash(fav.content_key);
+        if (item && item.is_favorite !== 1) {
+          await this.db.toggleFavorite(item.id);
+        }
+        // Known to this device now: it must not be re-exported as one of its own changes.
+        if (item) {
+          snapshot.add(item.stable_hash);
+          snapshotChanged = true;
         }
       }
     }
 
-    // Apply watch progress
+    // Favorites removed elsewhere (tombstones were ignored before: removals never arrived)
+    if (Array.isArray(delta.tombstones)) {
+      for (const t of delta.tombstones) {
+        if (!t || t.kind !== 'favorite' || typeof t.key !== 'string') continue;
+        const contentKey = t.key.indexOf(':') >= 0 ? t.key.slice(t.key.indexOf(':') + 1) : t.key;
+        const item = await this.db.getItemByStableHash(contentKey);
+        if (item && item.is_favorite === 1) {
+          await this.db.toggleFavorite(item.id);
+        }
+        if (item) {
+          snapshot.delete(item.stable_hash);
+          snapshotChanged = true;
+        }
+      }
+    }
+    if (snapshotChanged) this.saveFavoriteSnapshot(snapshot);
+
+    // Watch progress (the previous code called a `put` method that does not exist: nothing was saved)
     if (Array.isArray(delta.progress)) {
       for (const prg of delta.progress) {
-        if (prg.content_key) {
-          const item = await this.db.getItemByStableHash(prg.content_key);
-          if (item) {
-            item.playback_position_ms = prg.position_ms;
-            item.duration_ms = prg.duration_ms;
-            await (this.db as any).put?.('items', item);
-          }
+        if (!prg.content_key) continue;
+        const item = await this.db.getItemByStableHash(prg.content_key);
+        if (item) {
+          await this.db.updateWatchProgress(item.id, prg.position_ms || 0, prg.duration_ms || item.duration_ms || 0);
         }
       }
     }
@@ -405,4 +474,3 @@ export class LocalSyncService {
     this.notifyStatus();
   }
 }
-

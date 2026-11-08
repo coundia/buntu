@@ -404,6 +404,12 @@ export class CndEngine {
     return items.length;
   }
 
+  /** Whether the active profile may play `item` (Kids profile or adult content locked). */
+  public async isItemAllowedForActiveProfile(item: ItemRecord): Promise<boolean> {
+    if (!this.activeProfile.isKids && this.isAdultUnlocked) return true;
+    return !(await this.checkAdultCategory(item.group_title || ''));
+  }
+
   private async checkAdultCategory(group: string): Promise<boolean> {
     if (!group) return false;
     const cached = this.adultCategoryCache.get(group);
