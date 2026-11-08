@@ -110,5 +110,6 @@ Lancer ce qui correspond aux couches touchées :
 - **IA sur la TV :** `docs/AI_TIZEN.md` (`PRD-40`).
 - **Continuité entre appareils :** `PRD/41_CONTINUITE_MULTI_APPAREILS.md`.
 - **Lire sur un autre appareil (sans Cast) :** `PRD/42_LIRE_SUR_UN_AUTRE_APPAREIL.md`.
+- **Ajouter un appareil au foyer par QR code :** `PRD/43_AJOUTER_UN_APPAREIL_PAR_QR_CODE.md`.
 - **Pilotage de la TV depuis le Mac :** `docs/TIZEN_CONTROLE_A_DISTANCE.md`.
 - **Marque Buntu :** `docs/BRANDING_BUNTU.md`.
