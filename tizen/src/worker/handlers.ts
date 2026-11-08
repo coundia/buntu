@@ -25,6 +25,13 @@ import init, {
   wasm_ai_read_response,
   wasm_ai_validate,
   wasm_ai_resolve_local,
+  wasm_source_key,
+  wasm_content_key,
+  wasm_sync_create_household,
+  wasm_sync_seal_envelope,
+  wasm_sync_open_envelope,
+  wasm_sync_merge_delta,
+  wasm_sync_export_delta,
 } from '../wasm/pkg/cnd_domain_wasm.js';
 
 
@@ -185,6 +192,76 @@ export async function handleRequest(type: string, payload: any): Promise<any> {
             payload.command,
             typeof payload.candidates === 'string' ? payload.candidates : JSON.stringify(payload.candidates),
             typeof payload.context === 'string' ? payload.context : JSON.stringify(payload.context || {})
+          )
+        );
+        break;
+
+      // PRD 41 — Continuité Multi-Appareils
+      case 'COMPUTE_SOURCE_KEY':
+        result = wasm_source_key(
+          payload.sourceType || payload.sourceKind,
+          payload.serverOrUrl || payload.serverUrl || payload.url,
+          payload.username || ''
+        );
+        break;
+
+      case 'COMPUTE_CONTENT_KEY':
+        result = wasm_content_key(
+          payload.sourceKey,
+          payload.kind || payload.itemKind,
+          payload.providerId || payload.itemId
+        );
+        break;
+
+      case 'SYNC_CREATE_HOUSEHOLD':
+        result = JSON.parse(wasm_sync_create_household(payload.entropyHex));
+        break;
+
+      case 'SYNC_SEAL_ENVELOPE':
+        result = JSON.parse(
+          wasm_sync_seal_envelope(
+            payload.householdKeyHex,
+            payload.senderId,
+            payload.sequence,
+            payload.nonceHex,
+            typeof payload.message === 'string' ? payload.message : JSON.stringify(payload.message)
+          )
+        );
+        break;
+
+      case 'SYNC_OPEN_ENVELOPE':
+        result = JSON.parse(
+          wasm_sync_open_envelope(
+            payload.householdKeyHex,
+            typeof payload.envelope === 'string' ? payload.envelope : JSON.stringify(payload.envelope),
+            payload.lastSeenSequence
+          )
+        );
+        break;
+
+      case 'SYNC_MERGE_DELTA': {
+        const state = payload.localState || payload.baseState || {};
+        const parsed = JSON.parse(
+          wasm_sync_merge_delta(
+            typeof state === 'string' ? state : JSON.stringify(state),
+            typeof payload.delta === 'string' ? payload.delta : JSON.stringify(payload.delta)
+          )
+        );
+        result = {
+          state: parsed.state,
+          merged_state: parsed.state,
+          report: parsed.report,
+        };
+        break;
+      }
+
+      case 'SYNC_EXPORT_DELTA':
+        result = JSON.parse(
+          wasm_sync_export_delta(
+            typeof payload.localState === 'string' ? payload.localState : JSON.stringify(payload.localState || {}),
+            payload.fromHlcStr || '',
+            payload.currentNodeId,
+            payload.currentPhysicalMs
           )
         );
         break;
