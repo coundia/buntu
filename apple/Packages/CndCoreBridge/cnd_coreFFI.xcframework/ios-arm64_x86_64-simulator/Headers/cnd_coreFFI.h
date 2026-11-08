@@ -559,7 +559,7 @@ int8_t uniffi_cnd_core_fn_method_cndengine_is_local_ai_provider(void*_Nonnull pt
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ITEM_BY_CONTENT_KEY
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ITEM_BY_CONTENT_KEY
-RustBuffer uniffi_cnd_core_fn_method_cndengine_item_by_content_key(void*_Nonnull ptr, RustBuffer content_key, RustBuffer source_key, RustBuffer provider_ref, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_cnd_core_fn_method_cndengine_item_by_content_key(void*_Nonnull ptr, RustBuffer content_key, RustBuffer source_key, RustBuffer provider_ref, RustBuffer item_kind, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ITEM_BY_STABLE_HASH
