@@ -361,6 +361,15 @@ pub enum SealedPayload {
     Text {
         text: String,
     },
+    HouseholdJoin {
+        household_id: String,
+        household_key: String,
+        household_name: String,
+        #[serde(default)]
+        sender_device_name: Option<String>,
+        #[serde(default)]
+        sender_device_id: Option<String>,
+    },
 }
 
 /// What `open` did to the session when it did not produce a document.

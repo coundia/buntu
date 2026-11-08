@@ -61,6 +61,28 @@ fn ai_config_and_text_messages_seal_and_open_intact() {
     let opened2 = open(&offer2.state, &sealed2.message, NOW + 6).expect("opens text message");
     let parsed2: SealedPayload = serde_json::from_str(&opened2.share_json).unwrap();
     assert_eq!(parsed2, SealedPayload::Text { text: "Mets France 2".to_string() });
+
+    // HouseholdJoin message test
+    let offer3 = create_offer(&bytes(60, 40), "Salon TV", "msf", "192.168.1.9", 8001, NOW).unwrap();
+    let hj_payload = serde_json::to_string(&SealedPayload::HouseholdJoin {
+        household_id: "hh_abc123".to_string(),
+        household_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+        household_name: "Foyer Principal".to_string(),
+        sender_device_name: Some("MacBook de Paul".to_string()),
+        sender_device_id: Some("dev_mac_1".to_string()),
+    })
+    .unwrap();
+    let sealed3 = seal(&offer3.link, &bytes(100, 44), &hj_payload, "MacBook", NOW + 5).unwrap();
+    let opened3 = open(&offer3.state, &sealed3.message, NOW + 6).expect("opens household join message");
+    let parsed3: SealedPayload = serde_json::from_str(&opened3.share_json).unwrap();
+    match parsed3 {
+        SealedPayload::HouseholdJoin { household_id, household_key, household_name, .. } => {
+            assert_eq!(household_id, "hh_abc123");
+            assert_eq!(household_name, "Foyer Principal");
+            assert_eq!(household_key.len(), 64);
+        }
+        _ => panic!("expected HouseholdJoin payload"),
+    }
 }
 
 #[test]
