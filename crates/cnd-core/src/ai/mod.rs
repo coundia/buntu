@@ -25,7 +25,6 @@ use std::time::{Duration, Instant};
 
 const MAX_ALTERNATIVES: usize = 5;
 const MAX_QUERY_CHARS: usize = 100;
-const MAX_REPLY_CHARS: usize = 140;
 const USER_AGENT: &str = "CndIPTV/1.0 (channel assistant)";
 
 #[derive(Clone, Copy)]
@@ -60,11 +59,6 @@ fn describe(engine: &CndEngine, item: &IptvItemRecord, now: i64) -> String {
         Some(title) => format!("{} — {}", item.name, title),
         None => item.name.clone(),
     }
-}
-
-fn clean_reply(text: &str) -> String {
-    let cleaned: String = text.chars().filter(|c| !c.is_control()).collect();
-    cleaned.trim().chars().take(MAX_REPLY_CHARS).collect()
 }
 
 fn base_result(action: AiAction, reply: String, resolved_by: &str, started: Instant) -> AiCommandResult {
@@ -234,46 +228,20 @@ fn offer_choice(
 
 /// Accepts the model's answer only if it names a candidate it was given.
 fn validate(decision: &ModelDecision, candidates: &[Candidate]) -> Result<(AiAction, Option<String>), String> {
-    let reply = decision.reply.as_deref().map(clean_reply).filter(|r| !r.is_empty());
-    let known = |id: i64| candidates.iter().any(|c| c.item.id == id);
-    match decision.action.trim().to_ascii_lowercase().as_str() {
-        "play" => match decision.item_id {
-            Some(id) if known(id) => Ok((AiAction::PlayChannel { item_id: id }, reply)),
-            _ => Err("réponse invalide : chaîne inconnue".to_string()),
-        },
-        "guide" => match decision.item_id {
-            Some(id) if known(id) => Ok((AiAction::ShowGuide { item_id: id }, reply)),
-            _ => Err("réponse invalide : chaîne inconnue".to_string()),
-        },
-        "search" => {
-            let query: String = decision
-                .query
-                .as_deref()
-                .unwrap_or("")
-                .chars()
-                .filter(|c| !c.is_control())
-                .take(MAX_QUERY_CHARS)
-                .collect();
-            if query.trim().is_empty() {
-                Err("réponse invalide : recherche vide".to_string())
-            } else {
-                Ok((AiAction::Search { query: query.trim().to_string() }, reply))
-            }
-        }
-        "next" => Ok((AiAction::NextChannel, reply)),
-        "previous" => Ok((AiAction::PreviousChannel, reply)),
-        "multiview" => {
-            let ids = decision.item_ids.as_deref().unwrap_or(&[]);
-            let valid_ids: Vec<i64> = ids.iter().copied().filter(|id| known(*id)).collect();
-            if valid_ids.len() >= 2 && valid_ids.len() <= 4 {
-                Ok((AiAction::MultiView { item_ids: valid_ids }, reply))
-            } else {
-                Err("réponse invalide : mosaïque avec moins de 2 chaînes valides".to_string())
-            }
-        }
-        "none" => Ok((AiAction::None, reply)),
-        _ => Err("réponse invalide : action inconnue".to_string()),
-    }
+    let domain_cands: Vec<cnd_domain::ai::AiCandidate> = candidates
+        .iter()
+        .map(|c| cnd_domain::ai::AiCandidate {
+            id: c.item.id,
+            name: c.item.name.clone(),
+            group_title: c.item.group_title.clone(),
+            chno: c.item.chno,
+            is_favorite: c.item.is_favorite,
+            current_programme: c.now.clone(),
+            next_programme: c.next.clone(),
+        })
+        .collect();
+    let (action, reply) = cnd_domain::ai::validate_command(decision, &domain_cands)?;
+    Ok((action.into(), reply))
 }
 
 /// One provider round-trip for a channel command.
@@ -344,7 +312,7 @@ async fn send(
         .header("user-agent", USER_AGENT)
         .json(&request.body);
     for (name, value) in &request.headers {
-        builder = builder.header(*name, value);
+        builder = builder.header(name.as_str(), value.as_str());
     }
 
     let started = Instant::now();

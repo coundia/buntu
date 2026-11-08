@@ -1,0 +1,177 @@
+{
+  "build_request": {
+    "gemini": {
+      "config": {
+        "kind": "gemini",
+        "model": "gemini-3.5-flash-lite",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "api_key": "sk-gemini-test-key",
+        "timeout_ms": 8000
+      },
+      "system": "SYS_PROMPT",
+      "user": "USER_PROMPT",
+      "mode": "strict",
+      "task": "command",
+      "expected_url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+      "expected_header_key": "x-goog-api-key",
+      "expected_header_val": "sk-gemini-test-key"
+    },
+    "openai": {
+      "config": {
+        "kind": "openai_compatible",
+        "model": "gpt-4o-mini",
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-openai-test-key",
+        "timeout_ms": 8000
+      },
+      "system": "SYS_PROMPT",
+      "user": "USER_PROMPT",
+      "mode": "strict",
+      "task": "command",
+      "expected_url": "https://api.openai.com/v1/chat/completions",
+      "expected_header_key": "authorization",
+      "expected_header_val": "Bearer sk-openai-test-key"
+    },
+    "anthropic": {
+      "config": {
+        "kind": "anthropic",
+        "model": "claude-haiku-5-5",
+        "base_url": "https://api.anthropic.com",
+        "api_key": "sk-ant-test-key",
+        "timeout_ms": 8000
+      },
+      "system": "SYS_PROMPT",
+      "user": "USER_PROMPT",
+      "mode": "strict",
+      "task": "command",
+      "expected_url": "https://api.anthropic.com/v1/messages",
+      "expected_header_key": "x-api-key",
+      "expected_header_val": "sk-ant-test-key"
+    }
+  },
+  "explain_error": [
+    {
+      "status": 401,
+      "body": "{\"error\":{\"message\":\"Invalid API key provided\"}}",
+      "expected_contains": "clé refusée par le fournisseur"
+    },
+    {
+      "status": 404,
+      "body": "{\"error\":{\"message\":\"Model not found\"}}",
+      "expected_contains": "modèle ou adresse introuvable"
+    },
+    {
+      "status": 429,
+      "body": "{\"error\":{\"message\":\"Rate limit exceeded\"}}",
+      "expected_contains": "quota ou limite de débit atteint"
+    },
+    {
+      "status": 500,
+      "body": "{\"error\":\"Internal server error\"}",
+      "expected_contains": "fournisseur indisponible"
+    }
+  ],
+  "extract_text": {
+    "gemini": {
+      "body": {
+        "candidates": [
+          {
+            "content": {
+              "parts": [
+                {
+                  "text": "{\"action\":\"play\",\"item_id\":42,\"query\":null,\"reply\":\"Lancement de France 2\"}"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": "{\"action\":\"play\",\"item_id\":42,\"query\":null,\"reply\":\"Lancement de France 2\"}"
+    },
+    "openai": {
+      "body": {
+        "choices": [
+          {
+            "message": {
+              "content": "{\"action\":\"play\",\"item_id\":42,\"query\":null,\"reply\":\"Lancement de France 2\"}"
+            }
+          }
+        ]
+      },
+      "expected": "{\"action\":\"play\",\"item_id\":42,\"query\":null,\"reply\":\"Lancement de France 2\"}"
+    },
+    "anthropic": {
+      "body": {
+        "content": [
+          {
+            "type": "tool_use",
+            "name": "choose_action",
+            "input": {
+              "action": "play",
+              "item_id": 42,
+              "query": null,
+              "reply": "Lancement de France 2"
+            }
+          }
+        ]
+      },
+      "expected_action": "play",
+      "expected_item_id": 42
+    }
+  },
+  "validate_command": {
+    "valid_play": {
+      "json": "{\"action\":\"play\",\"item_id\":42,\"query\":null,\"reply\":\"France 2\"}",
+      "candidates": [
+        { "id": 42, "name": "France 2", "is_favorite": true },
+        { "id": 43, "name": "France 3", "is_favorite": false }
+      ],
+      "expected_action": "play_channel",
+      "expected_item_id": 42
+    },
+    "unknown_channel": {
+      "json": "{\"action\":\"play\",\"item_id\":999,\"query\":null,\"reply\":\"Inconnu\"}",
+      "candidates": [
+        { "id": 42, "name": "France 2", "is_favorite": true }
+      ],
+      "expected_error": "réponse invalide : chaîne inconnue"
+    },
+    "valid_search": {
+      "json": "{\"action\":\"search\",\"item_id\":null,\"query\":\"documentaire nature\",\"reply\":\"Recherche nature\"}",
+      "candidates": [],
+      "expected_action": "search",
+      "expected_query": "documentaire nature"
+    }
+  },
+  "resolve_local": [
+    {
+      "command": "chaîne 5",
+      "candidates": [
+        { "id": 105, "name": "France 5", "chno": 5, "is_favorite": false },
+        { "id": 106, "name": "M6", "chno": 6, "is_favorite": false }
+      ],
+      "expected_action": "play_channel",
+      "expected_item_id": 105
+    },
+    {
+      "command": "suivante",
+      "candidates": [],
+      "expected_action": "next_channel"
+    },
+    {
+      "command": "précédente",
+      "candidates": [],
+      "expected_action": "previous_channel"
+    },
+    {
+      "command": "mets France 2",
+      "candidates": [
+        { "id": 102, "name": "France 2 FHD", "is_favorite": true },
+        { "id": 103, "name": "France 3 FHD", "is_favorite": false }
+      ],
+      "expected_action": "play_channel",
+      "expected_item_id": 102
+    }
+  ]
+}
+

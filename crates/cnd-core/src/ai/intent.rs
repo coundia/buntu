@@ -96,6 +96,66 @@ impl AiProviderConfig {
     pub fn requires_key(&self) -> bool {
         matches!(self.kind, AiProviderKind::Gemini | AiProviderKind::Anthropic)
     }
+
+    pub fn to_domain(&self) -> cnd_domain::ai::AiProviderConfig {
+        cnd_domain::ai::AiProviderConfig {
+            kind: self.kind.into(),
+            model: self.model.clone(),
+            base_url: self.base_url.clone(),
+            api_key: self.api_key.clone(),
+            timeout_ms: self.timeout_ms,
+        }
+    }
+}
+
+impl From<AiProviderKind> for cnd_domain::ai::AiProviderKind {
+    fn from(kind: AiProviderKind) -> Self {
+        match kind {
+            AiProviderKind::LocalOnly => cnd_domain::ai::AiProviderKind::LocalOnly,
+            AiProviderKind::Gemini => cnd_domain::ai::AiProviderKind::Gemini,
+            AiProviderKind::OpenAiCompatible => cnd_domain::ai::AiProviderKind::OpenAiCompatible,
+            AiProviderKind::Anthropic => cnd_domain::ai::AiProviderKind::Anthropic,
+        }
+    }
+}
+
+impl From<cnd_domain::ai::AiProviderKind> for AiProviderKind {
+    fn from(kind: cnd_domain::ai::AiProviderKind) -> Self {
+        match kind {
+            cnd_domain::ai::AiProviderKind::LocalOnly => AiProviderKind::LocalOnly,
+            cnd_domain::ai::AiProviderKind::Gemini => AiProviderKind::Gemini,
+            cnd_domain::ai::AiProviderKind::OpenAiCompatible => AiProviderKind::OpenAiCompatible,
+            cnd_domain::ai::AiProviderKind::Anthropic => AiProviderKind::Anthropic,
+        }
+    }
+}
+
+impl From<cnd_domain::ai::AiAction> for AiAction {
+    fn from(action: cnd_domain::ai::AiAction) -> Self {
+        match action {
+            cnd_domain::ai::AiAction::PlayChannel { item_id } => AiAction::PlayChannel { item_id },
+            cnd_domain::ai::AiAction::ShowGuide { item_id } => AiAction::ShowGuide { item_id },
+            cnd_domain::ai::AiAction::Search { query } => AiAction::Search { query },
+            cnd_domain::ai::AiAction::NextChannel => AiAction::NextChannel,
+            cnd_domain::ai::AiAction::PreviousChannel => AiAction::PreviousChannel,
+            cnd_domain::ai::AiAction::MultiView { item_ids } => AiAction::MultiView { item_ids },
+            cnd_domain::ai::AiAction::None => AiAction::None,
+        }
+    }
+}
+
+impl From<AiAction> for cnd_domain::ai::AiAction {
+    fn from(action: AiAction) -> Self {
+        match action {
+            AiAction::PlayChannel { item_id } => cnd_domain::ai::AiAction::PlayChannel { item_id },
+            AiAction::ShowGuide { item_id } => cnd_domain::ai::AiAction::ShowGuide { item_id },
+            AiAction::Search { query } => cnd_domain::ai::AiAction::Search { query },
+            AiAction::NextChannel => cnd_domain::ai::AiAction::NextChannel,
+            AiAction::PreviousChannel => cnd_domain::ai::AiAction::PreviousChannel,
+            AiAction::MultiView { item_ids } => cnd_domain::ai::AiAction::MultiView { item_ids },
+            AiAction::None => cnd_domain::ai::AiAction::None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, uniffi::Record)]

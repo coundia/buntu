@@ -12,6 +12,7 @@ import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { detectChannelQuality } from '../../core/utils/categoryMeta';
 import { formatClock, formatDuration, formatRuntime, percentOf } from '../../core/utils/timeFormat';
 import { createPlayerInfo } from './playerInfo';
+import { AssistantModal } from '../assistant/AssistantModal';
 
 export interface PlayerViewProps {
   item: ItemRecord;
@@ -38,6 +39,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   const [subtitleTracks, setSubtitleTracks] = createSignal<TrackInfo[]>([]);
   const [activeSubIndex, setActiveSubIndex] = createSignal(-1);
   const [showChannelHud, setShowChannelHud] = createSignal(true);
+  const [showAssistant, setShowAssistant] = createSignal(false);
   const [focusId] = spatialNav.getFocusSignal();
   const [seekToast, setSeekToast] = createSignal('');
 
@@ -109,6 +111,10 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       {
         id: 'btn-osd-sub-track',
         onSelect: cycleSubtitleTrack,
+      },
+      {
+        id: 'btn-osd-assistant',
+        onSelect: () => setShowAssistant(true),
       },
     ];
 
@@ -680,6 +686,15 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
             >
               💬 {subtitleLabel()}
             </button>
+
+            <button
+              id="btn-osd-assistant"
+              class={`tv-btn ${focusId() === 'btn-osd-assistant' ? 'focused' : ''}`}
+              onClick={() => setShowAssistant(true)}
+              aria-label="Ouvrir l'assistant IA"
+            >
+              ✨ Assistant
+            </button>
           </div>
 
           <div class="tv-osd-hints">
@@ -694,6 +709,20 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
             <span><b>RETOUR</b> quitter</span>
           </div>
         </div>
+      </Show>
+
+      <Show when={showAssistant()}>
+        <AssistantModal
+          onClose={() => {
+            setShowAssistant(false);
+            updateGrid();
+          }}
+          onPlayItem={(newItem) => {
+            setShowAssistant(false);
+            player.open(newItem.stream_url, newItem.kind === 'live');
+            player.play();
+          }}
+        />
       </Show>
     </div>
   );

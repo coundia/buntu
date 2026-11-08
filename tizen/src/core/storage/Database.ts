@@ -168,6 +168,49 @@ export class Database {
     return this.add('sources', source);
   }
 
+  public async deleteSource(sourceId: number): Promise<void> {
+    if (!this.db) return;
+    return new Promise<void>((resolve, reject) => {
+      const stores = ['sources', 'items', 'series'].filter((s) => this.db!.objectStoreNames.contains(s));
+      const tx = this.db!.transaction(stores, 'readwrite');
+      const sourcesStore = tx.objectStore('sources');
+      sourcesStore.delete(sourceId);
+
+      if (this.db!.objectStoreNames.contains('items')) {
+        const itemsStore = tx.objectStore('items');
+        if (itemsStore.indexNames.contains('source_id')) {
+          const itemIndex = itemsStore.index('source_id');
+          const itemCursorReq = itemIndex.openKeyCursor(IDBKeyRange.only(sourceId));
+          itemCursorReq.onsuccess = () => {
+            const cursor = itemCursorReq.result;
+            if (cursor) {
+              itemsStore.delete(cursor.primaryKey);
+              cursor.continue();
+            }
+          };
+        }
+      }
+
+      if (this.db!.objectStoreNames.contains('series')) {
+        const seriesStore = tx.objectStore('series');
+        if (seriesStore.indexNames.contains('source_id')) {
+          const seriesIndex = seriesStore.index('source_id');
+          const seriesCursorReq = seriesIndex.openKeyCursor(IDBKeyRange.only(sourceId));
+          seriesCursorReq.onsuccess = () => {
+            const cursor = seriesCursorReq.result;
+            if (cursor) {
+              seriesStore.delete(cursor.primaryKey);
+              cursor.continue();
+            }
+          };
+        }
+      }
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
   // Items CRUD & Queries
   public async insertItemsBatch(
     items: Omit<ItemRecord, 'id'>[],
@@ -508,6 +551,10 @@ export class Database {
   public async getFavorites(): Promise<ItemRecord[]> {
     const all = await this.getAll<ItemRecord>('items');
     return all.filter((i) => i.is_favorite === 1);
+  }
+
+  public async getItemById(id: number): Promise<ItemRecord | null> {
+    return this.getById<ItemRecord>('items', id);
   }
 
   public async getItemsByIds(ids: number[]): Promise<ItemRecord[]> {
