@@ -1061,6 +1061,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1215,6 +1219,10 @@ fun uniffi_cnd_core_checksum_method_cndengine_is_catchup_available(
 fun uniffi_cnd_core_checksum_method_cndengine_is_health_check_running(
 ): Short
 fun uniffi_cnd_core_checksum_method_cndengine_is_local_ai_provider(
+): Short
+fun uniffi_cnd_core_checksum_method_cndengine_item_by_content_key(
+): Short
+fun uniffi_cnd_core_checksum_method_cndengine_item_by_stable_hash(
 ): Short
 fun uniffi_cnd_core_checksum_method_cndengine_less_like_this(
 ): Short
@@ -1587,6 +1595,10 @@ fun uniffi_cnd_core_fn_method_cndengine_is_health_check_running(`ptr`: Pointer,u
 ): Byte
 fun uniffi_cnd_core_fn_method_cndengine_is_local_ai_provider(`ptr`: Pointer,`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_cnd_core_fn_method_cndengine_item_by_content_key(`ptr`: Pointer,`contentKey`: RustBuffer.ByValue,`sourceKey`: RustBuffer.ByValue,`providerRef`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_method_cndengine_item_by_stable_hash(`ptr`: Pointer,`hash`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_cnd_core_fn_method_cndengine_less_like_this(`ptr`: Pointer,`kind`: RustBuffer.ByValue,`stableHash`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_cnd_core_fn_method_cndengine_library_add_folder(`ptr`: Pointer,`displayName`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`bookmark`: RustBuffer.ByValue,`includeSubfolders`: Byte,`kinds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -2143,6 +2155,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cnd_core_checksum_method_cndengine_is_local_ai_provider() != 25045.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_method_cndengine_item_by_content_key() != 42909.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_method_cndengine_item_by_stable_hash() != 58225.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cnd_core_checksum_method_cndengine_less_like_this() != 21888.toShort()) {
@@ -3115,6 +3133,10 @@ public interface CndEngineInterface {
      * Whether this provider runs on this machine or the local network (nothing leaves it).
      */
     fun `isLocalAiProvider`(`config`: AiProviderConfig): kotlin.Boolean
+    
+    fun `itemByContentKey`(`contentKey`: kotlin.String, `sourceKey`: kotlin.String?, `providerRef`: kotlin.String?): IptvItemRecord?
+    
+    fun `itemByStableHash`(`hash`: kotlin.String): IptvItemRecord?
     
     /**
      * "Moins de ce genre": lowers the main feature of this content for this kind only, and hides it.
@@ -4276,6 +4298,32 @@ open class CndEngine: Disposable, AutoCloseable, CndEngineInterface
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_cnd_core_fn_method_cndengine_is_local_ai_provider(
         it, FfiConverterTypeAiProviderConfig.lower(`config`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(CndException::class)override fun `itemByContentKey`(`contentKey`: kotlin.String, `sourceKey`: kotlin.String?, `providerRef`: kotlin.String?): IptvItemRecord? {
+            return FfiConverterOptionalTypeIptvItemRecord.lift(
+    callWithPointer {
+    uniffiRustCallWithError(CndException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_method_cndengine_item_by_content_key(
+        it, FfiConverterString.lower(`contentKey`),FfiConverterOptionalString.lower(`sourceKey`),FfiConverterOptionalString.lower(`providerRef`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(CndException::class)override fun `itemByStableHash`(`hash`: kotlin.String): IptvItemRecord? {
+            return FfiConverterOptionalTypeIptvItemRecord.lift(
+    callWithPointer {
+    uniffiRustCallWithError(CndException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_method_cndengine_item_by_stable_hash(
+        it, FfiConverterString.lower(`hash`),_status)
 }
     }
     )

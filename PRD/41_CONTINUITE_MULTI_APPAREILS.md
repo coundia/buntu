@@ -171,6 +171,8 @@ flowchart LR
 
 ## 8. Regarder sur la TV, télécommande
 
+> **Étendu par le [`PRD-42`](./42_LIRE_SUR_UN_AUTRE_APPAREIL.md)** : « Lire sur… » vers n'importe quel appareil du foyer (adressage de la cible, transfert en deux temps, télécommande de lecture, rapatriement). Le message `play_remote` ci-dessous devient un alias déprécié.
+
 - **Commande `play { content_key, position }`** chiffrée, envoyée à la TV choisie.
 - **Une seule connexion chez le fournisseur :** l'appareil qui envoie **arrête sa lecture d'abord**, puis la TV démarre à la même position (sinon le fournisseur refuse la seconde connexion).
 - **App fermée sur la TV :**

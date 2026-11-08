@@ -731,6 +731,10 @@ public protocol CndEngineProtocol: AnyObject, Sendable {
      */
     func isLocalAiProvider(config: AiProviderConfig)  -> Bool
     
+    func itemByContentKey(contentKey: String, sourceKey: String?, providerRef: String?) throws  -> IptvItemRecord?
+    
+    func itemByStableHash(hash: String) throws  -> IptvItemRecord?
+    
     /**
      * "Moins de ce genre": lowers the main feature of this content for this kind only, and hides it.
      */
@@ -1633,6 +1637,24 @@ open func isLocalAiProvider(config: AiProviderConfig) -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
     uniffi_cnd_core_fn_method_cndengine_is_local_ai_provider(self.uniffiClonePointer(),
         FfiConverterTypeAiProviderConfig_lower(config),$0
+    )
+})
+}
+    
+open func itemByContentKey(contentKey: String, sourceKey: String?, providerRef: String?)throws  -> IptvItemRecord?  {
+    return try  FfiConverterOptionTypeIptvItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_item_by_content_key(self.uniffiClonePointer(),
+        FfiConverterString.lower(contentKey),
+        FfiConverterOptionString.lower(sourceKey),
+        FfiConverterOptionString.lower(providerRef),$0
+    )
+})
+}
+    
+open func itemByStableHash(hash: String)throws  -> IptvItemRecord?  {
+    return try  FfiConverterOptionTypeIptvItemRecord.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_method_cndengine_item_by_stable_hash(self.uniffiClonePointer(),
+        FfiConverterString.lower(hash),$0
     )
 })
 }
@@ -14527,6 +14549,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_is_local_ai_provider() != 25045) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_item_by_content_key() != 42909) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_method_cndengine_item_by_stable_hash() != 58225) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_method_cndengine_less_like_this() != 21888) {

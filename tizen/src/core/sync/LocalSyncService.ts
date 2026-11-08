@@ -44,6 +44,7 @@ export class LocalSyncService {
   private playRemoteListeners: ((e: RemotePlayEvent) => void)[] = [];
   private remoteKeyListeners: ((key: string) => void)[] = [];
   private remoteTextListeners: ((text: string) => void)[] = [];
+  private genericMessageListeners: ((msg: any) => void)[] = [];
   private statusListeners: SyncStatusListener[] = [];
 
   public static getInstance(): LocalSyncService {
@@ -51,6 +52,13 @@ export class LocalSyncService {
       LocalSyncService.instance = new LocalSyncService();
     }
     return LocalSyncService.instance;
+  }
+
+  public onGenericMessage(fn: (msg: any) => void): () => void {
+    this.genericMessageListeners.push(fn);
+    return () => {
+      this.genericMessageListeners = this.genericMessageListeners.filter((l) => l !== fn);
+    };
   }
 
   public onPlayRemote(fn: (e: RemotePlayEvent) => void): () => void {
@@ -234,6 +242,10 @@ export class LocalSyncService {
 
   private dispatchSyncMessage(message: any): void {
     if (!message || !message.type) return;
+
+    for (const fn of this.genericMessageListeners) {
+      fn(message);
+    }
 
     switch (message.type) {
       case 'sync_delta':
