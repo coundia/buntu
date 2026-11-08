@@ -8,6 +8,9 @@ import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollCont
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { detectChannelQuality, formatBuntuCount } from '../../core/utils/categoryMeta';
 import { announce } from '../../ui/design/a11y';
+import { createMiniPlayer } from '../../core/player/MiniPlayerController';
+import { MiniPlayerPanel } from '../../ui/components/MiniPlayerPanel';
+import { panelFocusItems, panelItemForRow, installPanelLeftReturn } from '../../ui/design/miniPlayerFocus';
 
 export interface LiveViewProps {
   onPlayChannel: (channel: ItemRecord) => void;
@@ -30,16 +33,15 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   const [catFilter, setCatFilter] = createSignal<string>('');
   const [showCats, setShowCats] = createSignal(true);
   const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
-  // The right panel (preview + details + actions) is always there; the toolbar button can hide it.
-  const [showInspector, setShowInspector] = createSignal(true);
-  const [previewPlaying, setPreviewPlaying] = createSignal(false);
-  const [playingId, setPlayingId] = createSignal<number | null>(null);
-  // Lifecycle of the panel's stream: what the poster says, and when the video area becomes see-through.
-  const [previewStatus, setPreviewStatus] = createSignal<'idle' | 'connecting' | 'playing' | 'error'>('idle');
-  const [previewError, setPreviewError] = createSignal('');
   // Bumped when a favorite flag changes (the records are mutated in place).
   const [favTick, setFavTick] = createSignal(0);
-  let handingOver = false;
+  // Shared mini player: the right panel plays what you choose and shows the details of what you hover.
+  const mini = createMiniPlayer<ItemRecord>({
+    engine,
+    player,
+    onFullscreen: (ch) => props.onPlayChannel(ch),
+  });
+  let unsubPanelKeys: (() => void) | null = null;
 
   const [searchQuery, setSearchQuery] = createSignal<string>('');
   const [searchResults, setSearchResults] = createSignal<ItemRecord[]>([]);
@@ -48,7 +50,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   const [favChannels, setFavChannels] = createSignal<ItemRecord[]>([]);
   const [epgMap, setEpgMap] = createSignal<Record<string, EpgProgramRecord | undefined>>({});
 
-  const [previewChannel, setPreviewChannel] = createSignal<ItemRecord | null>(null);
+  const previewChannel = mini.focused; // the channel under the cursor (details of the panel)
   const [previewEpg, setPreviewEpg] = createSignal<{ now?: EpgProgramRecord; next?: EpgProgramRecord } | null>(null);
   const [focusId] = spatialNav.getFocusSignal();
 
@@ -61,7 +63,6 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   });
 
   let gridRef: HTMLDivElement | undefined;
-  let viewportRef: HTMLDivElement | undefined;
   let resizeHandler: (() => void) | null = null;
 
   const isSearchMode = () => searchQuery().trim().length > 0;
@@ -118,19 +119,6 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     }
   };
 
-  const syncAvPlayRect = () => {
-    if (!showInspector() || !viewportRef) return;
-    const rect = viewportRef.getBoundingClientRect();
-    if (rect.width > 10 && rect.height > 10) {
-      player.setDisplayArea({
-        x: Math.round(rect.left),
-        y: Math.round(rect.top),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-      });
-    }
-  };
-
   const refreshShelvesAndCounts = async () => {
     const [countsData, recents, favs] = await Promise.all([
       engine.getCategoryCounts('live'),
@@ -147,10 +135,13 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
   onMount(async () => {
     resizeHandler = () => {
-      syncAvPlayRect();
+      mini.syncRect();
       scheduleRebuildGrid(true);
     };
     window.addEventListener('resize', resizeHandler);
+
+    // LEFT from the panel goes back to the channel the cursor came from (not to the first row).
+    unsubPanelKeys = installPanelLeftReturn('live-insp', () => focusId(), () => lastContentFocus);
 
     // BACK from the player/details: same category, view mode and focused card as before.
     const restored = screenState.restore('live');
@@ -219,6 +210,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   });
 
   onCleanup(() => {
+    unsubPanelKeys?.();
     screenState.save('live', {
       category: selectedCategory(),
       viewMode: viewMode(),
@@ -237,23 +229,13 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       },
     });
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
-    document.querySelector('.app-root')?.classList.remove('preview-mode');
     // Leaving for another screen (not for the full-screen player) frees the stream.
-    if (!handingOver) engine.stopPlayback();
+    mini.dispose();
   });
 
+  /** The cursor is on a channel: its details (and program) fill the panel; the stream is untouched. */
   const selectForPreview = async (ch: ItemRecord) => {
-    const changed = previewChannel()?.id !== ch.id;
-    setPreviewChannel(ch);
-    if (changed) {
-      // The panel shows the focused channel: a stream still running for another one is stopped,
-      // and the "unavailable" message of the previous channel is dropped.
-      if (previewPlaying() && playingId() !== ch.id) stopPreview();
-      if (previewStatus() === 'error') {
-        setPreviewStatus('idle');
-        setPreviewError('');
-      }
-    }
+    mini.focus(ch);
     if (ch.tvg_id) {
       try {
         const epg = await db.getEpgNowNext(ch.tvg_id, Math.floor(Date.now() / 1000));
@@ -266,67 +248,8 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     }
   };
 
-  /** Plays the channel shown in the panel, inside the panel. */
-  const startPreview = async () => {
-    const ch = previewChannel();
-    if (!ch) return;
-    engine.recordRecent(ch);
-    setPlayingId(ch.id);
-    setPreviewError('');
-    setPreviewPlaying(true);
-    setPreviewStatus('connecting');
-    // See-through root first (the poster still covers the area while connecting): the video plane
-    // must not be hidden by an opaque page when the stream starts.
-    document.querySelector('.app-root')?.classList.add('preview-mode');
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    syncAvPlayRect();
-    try {
-      await Promise.race([
-        engine.play(ch),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Pas de réponse du serveur')), 20000)),
-      ]);
-      if (playingId() !== ch.id || !previewPlaying()) return; // stopped or another channel meanwhile
-      setPreviewStatus('playing');
-      document.querySelector('.app-root')?.classList.add('preview-mode');
-    } catch (err) {
-      if (playingId() !== ch.id || !previewPlaying()) return;
-      engine.stopPlayback();
-      setPreviewPlaying(false);
-      setPlayingId(null);
-      setPreviewStatus('error');
-      setPreviewError((err as Error)?.message || 'Connexion impossible');
-      document.querySelector('.app-root')?.classList.remove('preview-mode');
-      announce('Chaîne indisponible');
-    }
-  };
-
-  const stopPreview = () => {
-    if (!previewPlaying()) return;
-    engine.stopPlayback();
-    setPreviewPlaying(false);
-    setPlayingId(null);
-    setPreviewStatus('idle');
-    setPreviewError('');
-    document.querySelector('.app-root')?.classList.remove('preview-mode');
-  };
-
-  const togglePreviewPlayback = () => {
-    if (previewPlaying()) stopPreview();
-    else void startPreview();
-  };
-
-  /** Full screen: the stream already playing in the panel keeps running (not reopened). */
-  const goFullscreen = (ch: ItemRecord | null = previewChannel()) => {
-    if (!ch) return;
-    engine.recordRecent(ch);
-    handingOver = true;
-    props.onPlayChannel(ch);
-  };
-
   const toggleInspector = () => {
-    const next = !showInspector();
-    if (!next) stopPreview();
-    setShowInspector(next);
+    mini.toggleVisible();
     scheduleRebuildGrid(true);
   };
 
@@ -348,15 +271,10 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     }
   };
 
-  // OK on a channel card: the first press plays it in the right panel, a second press on the
-  // channel already playing there goes full screen. Without the panel it goes straight to full screen.
+  // OK on a channel card: the first press plays it in the mini player, a second press on the one
+  // already playing goes full screen (see the shared mini player controller).
   const handleCardActivate = (ch: ItemRecord) => {
-    if (!showInspector() || (previewPlaying() && playingId() === ch.id)) {
-      goFullscreen(ch);
-      return;
-    }
-    void selectForPreview(ch);
-    void startPreview();
+    mini.activate(ch);
   };
 
   const handleToggleFavorite = async (ch: ItemRecord, e?: MouseEvent) => {
@@ -520,13 +438,8 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     }
 
     const inspectorItems: FocusableItem[] =
-      showInspector() && previewChannel()
-        ? [
-            { id: 'live-insp-screen', onSelect: () => goFullscreen() },
-            { id: 'live-insp-play', onSelect: togglePreviewPlayback },
-            { id: 'live-insp-fav', onSelect: () => void handleToggleFavorite(previewChannel()!) },
-            { id: 'live-insp-full', onSelect: () => goFullscreen() },
-          ]
+      mini.visible() && previewChannel()
+        ? panelFocusItems(mini, 'live-insp', (ch) => void handleToggleFavorite(ch))
         : [];
 
     const totalBodyRows = Math.max(catColItems.length, contentRows.length, inspectorItems.length);
@@ -539,7 +452,9 @@ export const LiveView: Component<LiveViewProps> = (props) => {
         const cRow = contentRows[Math.min(r, contentRows.length - 1)];
         row.push(...cRow);
       }
-      if (r < inspectorItems.length) row.push(inspectorItems[r]);
+      // The panel is reachable with RIGHT from every row.
+      const panelItem = panelItemForRow(inspectorItems, r);
+      if (panelItem) row.push(panelItem);
       if (row.length > 0) grid.push(row);
     }
 
@@ -566,7 +481,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     const cleanTitle = () => (ch.name_clean && ch.name_clean !== ch.name ? ch.name_clean : cleanMediaTitle(ch.name).clean);
     const quality = () => detectChannelQuality(ch.name);
     const nowProg = () => (ch.tvg_id ? epgMap()[ch.tvg_id] : undefined);
-    const isPlaying = () => previewChannel()?.id === ch.id && showInspector();
+    const isPlaying = () => mini.isPlaying(ch.id) && mini.visible();
 
     return (
       <div
@@ -635,7 +550,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   };
 
   return (
-    <div class={`buntu-page ${previewStatus() === 'playing' ? 'with-preview' : ''}`}>
+    <div class={`buntu-page ${mini.status() === 'playing' ? 'with-preview' : ''}`}>
       {/* Top Buntu Toolbar */}
       <header class="buntu-toolbar">
         <div class="buntu-toolbar-left">
@@ -692,7 +607,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
             id="live-toggle-inspector"
             type="button"
             tabindex="-1"
-            class={`buntu-tool-btn ${showInspector() ? 'active' : ''} ${focusId() === 'live-toggle-inspector' ? 'focused' : ''}`}
+            class={`buntu-tool-btn ${mini.visible() ? 'active' : ''} ${focusId() === 'live-toggle-inspector' ? 'focused' : ''}`}
             title="Aperçu mini-lecteur"
             onClick={toggleInspector}
           >
@@ -911,115 +826,56 @@ export const LiveView: Component<LiveViewProps> = (props) => {
           </Show>
         </section>
 
-        {/* Column 3: preview + details + actions of the focused channel */}
-        <Show when={showInspector() && previewChannel()}>
-          <aside class="buntu-inspector-pane live-panel" aria-label="Aperçu chaîne">
-            <div
-              id="live-insp-screen"
-              ref={viewportRef}
-              role="button"
-              tabindex="-1"
-              aria-label="Passer en plein écran"
-              class={`buntu-inspector-viewport ${focusId() === 'live-insp-screen' ? 'focused' : ''}`}
-              onClick={() => goFullscreen()}
-            >
-              <Show when={previewStatus() !== 'playing' || typeof (window as any).webapis === 'undefined'}>
-                <div class="buntu-insp-poster">
-                  <div class="buntu-insp-poster-art">
-                    <Show when={previewChannel()?.logo_url} fallback={<span class="buntu-insp-poster-fallback">📺</span>}>
-                      <img src={previewChannel()!.logo_url} alt="" />
-                    </Show>
+        {/* Column 3: shared mini player panel (preview, details of the focused channel, actions) */}
+        <MiniPlayerPanel
+          ctl={mini}
+          idPrefix="live-insp"
+          focusId={focusId}
+          posterUrl={(ch) => ch.logo_url}
+          titleOf={(ch) => ch.name_clean || cleanMediaTitle(ch.name).clean}
+          fallbackIcon="📺"
+          isFavorite={isFav}
+          onToggleFavorite={(ch) => void handleToggleFavorite(ch)}
+          details={(ch) => (
+            <>
+              <div class="buntu-insp-heading">
+                <span class="buntu-ch-num">{ch.chno || ''}</span>
+                <h3 class="buntu-inspector-title">{ch.name_clean || cleanMediaTitle(ch.name).clean}</h3>
+                <Show when={detectChannelQuality(ch.name)}>
+                  <span class={`buntu-q-badge ${detectChannelQuality(ch.name) === '4K' ? 'uhd' : ''}`}>
+                    {detectChannelQuality(ch.name)}
+                  </span>
+                </Show>
+              </div>
+              <Show when={ch.group_title}>
+                <div class="buntu-ch-group">{ch.group_title}</div>
+              </Show>
+
+              <Show
+                when={previewEpg()?.now}
+                fallback={<p class="buntu-inspector-desc">Pas de guide pour cette chaîne.</p>}
+              >
+                <div class="buntu-insp-epg">
+                  <div class="buntu-insp-epg-label">
+                    EN CE MOMENT · {fmtTime(previewEpg()!.now!.start_ts)} – {fmtTime(previewEpg()!.now!.end_ts)}
                   </div>
-                  <div class={`buntu-insp-poster-hint ${previewStatus() === 'error' ? 'error' : ''}`}>
-                    {previewStatus() === 'connecting'
-                      ? 'Connexion…'
-                      : previewStatus() === 'error'
-                        ? '⚠ Chaîne indisponible'
-                        : previewStatus() === 'playing'
-                          ? '● Lecture en cours'
-                          : '▶ Appuyez sur Lecture'}
+                  <div class="buntu-insp-epg-title">{previewEpg()!.now!.title}</div>
+                  <div class="buntu-epg-bar">
+                    <div class="buntu-epg-fill" style={{ width: `${epgRatio(previewEpg()!.now)}%` }} />
                   </div>
-                  <Show when={previewStatus() === 'error' && previewError()}>
-                    <div class="buntu-insp-poster-detail">{previewError()}</div>
+                  <Show when={previewEpg()!.now!.description}>
+                    <p class="buntu-inspector-desc buntu-insp-clamp">{previewEpg()!.now!.description}</p>
                   </Show>
                 </div>
               </Show>
-              <Show when={previewStatus() === 'playing'}>
-                <span class="buntu-insp-live">● EN DIRECT</span>
-              </Show>
-            </div>
-
-            <div class="buntu-insp-body">
-            <div class="buntu-insp-heading">
-              <span class="buntu-ch-num">{previewChannel()!.chno || ''}</span>
-              <h3 class="buntu-inspector-title">
-                {previewChannel()!.name_clean || cleanMediaTitle(previewChannel()!.name).clean}
-              </h3>
-              <Show when={detectChannelQuality(previewChannel()!.name)}>
-                <span class={`buntu-q-badge ${detectChannelQuality(previewChannel()!.name) === '4K' ? 'uhd' : ''}`}>
-                  {detectChannelQuality(previewChannel()!.name)}
-                </span>
-              </Show>
-            </div>
-            <Show when={previewChannel()!.group_title}>
-              <div class="buntu-ch-group">{previewChannel()!.group_title}</div>
-            </Show>
-
-            <Show
-              when={previewEpg()?.now}
-              fallback={<p class="buntu-inspector-desc">Pas de guide pour cette chaîne.</p>}
-            >
-              <div class="buntu-insp-epg">
-                <div class="buntu-insp-epg-label">
-                  EN CE MOMENT · {fmtTime(previewEpg()!.now!.start_ts)} – {fmtTime(previewEpg()!.now!.end_ts)}
+              <Show when={previewEpg()?.next}>
+                <div class="buntu-insp-next">
+                  À SUIVRE · {fmtTime(previewEpg()!.next!.start_ts)} <b>{previewEpg()!.next!.title}</b>
                 </div>
-                <div class="buntu-insp-epg-title">{previewEpg()!.now!.title}</div>
-                <div class="buntu-epg-bar">
-                  <div class="buntu-epg-fill" style={{ width: `${epgRatio(previewEpg()!.now)}%` }} />
-                </div>
-                <Show when={previewEpg()!.now!.description}>
-                  <p class="buntu-inspector-desc buntu-insp-clamp">{previewEpg()!.now!.description}</p>
-                </Show>
-              </div>
-            </Show>
-            <Show when={previewEpg()?.next}>
-              <div class="buntu-insp-next">
-                À SUIVRE · {fmtTime(previewEpg()!.next!.start_ts)} <b>{previewEpg()!.next!.title}</b>
-              </div>
-            </Show>
-
-            <div class="buntu-inspector-actions">
-              <button
-                id="live-insp-play"
-                type="button"
-                tabindex="-1"
-                class={`buntu-action-primary ${focusId() === 'live-insp-play' ? 'focused' : ''}`}
-                onClick={togglePreviewPlayback}
-              >
-                {previewPlaying() ? '⏹ Arrêter' : '▶ Lecture'}
-              </button>
-              <button
-                id="live-insp-fav"
-                type="button"
-                tabindex="-1"
-                class={`buntu-action-secondary ${focusId() === 'live-insp-fav' ? 'focused' : ''}`}
-                onClick={() => void handleToggleFavorite(previewChannel()!)}
-              >
-                {isFav(previewChannel()!) ? '★ Favori' : '☆ Favori'}
-              </button>
-              <button
-                id="live-insp-full"
-                type="button"
-                tabindex="-1"
-                class={`buntu-action-secondary ${focusId() === 'live-insp-full' ? 'focused' : ''}`}
-                onClick={() => goFullscreen()}
-              >
-                ⛶ Plein écran
-              </button>
-            </div>
-            </div>
-          </aside>
-        </Show>
+              </Show>
+            </>
+          )}
+        />
       </div>
     </div>
   );
