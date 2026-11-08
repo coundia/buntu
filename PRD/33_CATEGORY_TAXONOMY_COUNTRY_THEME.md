@@ -172,13 +172,15 @@ CREATE INDEX IF NOT EXISTS idx_item_themes_theme ON item_themes(theme, item_id);
 
 ### 5.2. Ingestion
 
-- `IngestionWriter` (`db/ingestion_writer.rs`) appelle `taxonomy::classify` pour chaque élément **pendant** l'insertion par lots, dans la même transaction.
-- Pour Xtream, le classement de la catégorie est calculé **une fois** par `category_id` puis réutilisé.
+- Le classement est une **passe de fin d'actualisation** : `classify_source(source_id)` (`db/taxonomy_repo.rs`) relit les éléments enregistrés de la source, les classe par pages de 5 000 (une transaction par page) et écrit `tx_*` et `item_themes`. Une seule passe sert M3U, Xtream (direct, films, séries) et le repli M3U+ ; les écritures de l'ingestion (`ingestion_writer.rs`, `iptv/xtream.rs`) restent inchangées.
+- Appels : fin de `ingest_m3u_reader`, fin de `sync_xtream_native_catalog`, et `classify_series_episodes` après le chargement des épisodes d'une série Xtream. Un échec de classement est journalisé (`TAXONOMY`) et **ne fait pas échouer** l'actualisation.
+- Le classement par `category_id` Xtream n'est pas mis en cache : à moins de 5 µs par élément, ce n'est pas nécessaire.
+- **Thème emprunté** (`borrow_themes_by_tvg_id`), après chaque passe : une chaîne en direct dont le thème est `other` prend le thème le plus fréquent des chaînes de même `tvg-id` (sans le suffixe `@SD`) qui en ont un vrai (ni `other`, `general` ni `adult`). Provenance `tvg_id`. Une chaîne corrigée par l'utilisateur n'est jamais touchée.
 
 ### 5.3. Reclassement
 
-- `reclassify_all(progress)` lit `group_title`, `tvg_id`, `name`, `country`, `kind` par pages de 5 000 et réécrit les colonnes `tx_*` et `item_themes`. Annulable, rapporte sa progression.
-- Déclenché par : migration, changement de `TAXONOMY_VERSION`, surcharge de l'utilisateur (élément seul).
+- `reclassify_all(progress, cancel)` lit `group_title`, `tvg_id`, `name`, `country`, `kind` par pages de 5 000 et réécrit les colonnes `tx_*` et `item_themes`. Annulable, rapporte sa progression ; la version n'est enregistrée que si elle va au bout.
+- Déclenché par : la première ouverture après la migration et tout changement de `TAXONOMY_VERSION` (`ensure_taxonomy_current`, **dans un fil d'arrière-plan** lancé par `CndEngine`, `is_reclassifying_categories()` dit s'il tourne) ; une surcharge de l'utilisateur (l'élément seul).
 
 ### 5.4. Requêtes et API UniFFI (extrait)
 
@@ -186,22 +188,27 @@ CREATE INDEX IF NOT EXISTS idx_item_themes_theme ON item_themes(theme, item_id);
 enum CategoryAxis { Country, Theme, Provider }
 
 fn get_category_facets(kind: String, axis: CategoryAxis, source_id: Option<i64>,
-                       country: Option<String>, theme: Option<String>) -> Vec<CategoryFacet>;
-// CategoryFacet { key: String, subkeys: Vec<FacetCount>, count: i64 }
+                       filter: TaxonomyFilter) -> Vec<CategoryFacet>;
+// kind = 'live' | 'movie' | 'series'. Axe Pays : filtré par le thème choisi seulement ; axe Thèmes : par le pays seulement.
+// CategoryFacet { key: String, count: u32, subkeys: Vec<FacetCount> }
 //   axis Country : key = 'FR' | 'INT' | '' (inconnu)
 //   axis Theme  : key = 'sports', subkeys = sous-thèmes
 //   axis Provider: key = group_title brut (comportement actuel de get_groups)
 
-fn get_items_by_taxonomy(kind: String, country: Option<String>, theme: Option<String>,
-                         subtheme: Option<String>, source_id: Option<i64>,
-                         offset: i64, limit: i64) -> Vec<IptvItemRecord>;
+// Pas de `get_items_by_taxonomy` : les requêtes existantes reçoivent le filtre, ce qui garde la
+// recherche plein texte, le tri, les favoris et les règles de visibilité.
+fn query_catalog_by_taxonomy(filter: CatalogFilter, taxonomy: TaxonomyFilter) -> Vec<IptvItemRecord>;
+fn query_series_by_taxonomy(filter: CatalogFilter, taxonomy: TaxonomyFilter) -> Vec<SeriesRecord>;
+// TaxonomyFilter { country: Option<String> /* '' = pays inconnu */, theme: Option<String>, subtheme: Option<String> }
 
 fn set_taxonomy_override(stable_hash: String, country: Option<String>, themes: Option<Vec<String>>);
 fn clear_taxonomy_override(stable_hash: String);
-fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'éléments sans pays / 'other'
+fn taxonomy_status() -> TaxonomyStatus; // version du code et version stockée, chaînes en direct sans pays / sans thème
+fn is_reclassifying_categories() -> bool;
 ```
 
-- `get_groups` reste en place et sert l'axe `Provider` : aucun appel existant ne casse.
+- `get_groups` reste en place et sert l'axe `Provider` : aucun appel existant ne casse. `CatalogFilter` n'est pas modifié (pas de rupture côté Swift).
+- **Séries** : `series_catalog` porte `tx_country` et `tx_theme` (thème principal seulement, pas de sous-thème). Les valeurs du filtre sont validées (code pays de 2 lettres ou `INT`, thème de la liste fermée, sous-thème en minuscules) puis écrites dans le SQL ; toute autre valeur donne un résultat vide, jamais une requête modifiée.
 - Les filtres « masqué », « adulte » et « profil enfant » du `PRD-20` sont appliqués à l'identique dans les nouvelles requêtes.
 
 ---
@@ -254,7 +261,7 @@ fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'�
 | Lot | Contenu | Livrable validable seul |
 |---|---|---|
 | **33.1** | Module `taxonomy/` : données pays et thèmes, `tokenize`, `country`, `theme`, `classify`. Aucun branchement. | Tests unitaires sur un **jeu de libellés réels** (les 242 catégories de la base locale, des libellés Xtream courants, des `tvg-id` iptv-org) avec le résultat attendu. |
-| **33.2** | Schéma, migrations, classement à l'ingestion (M3U et Xtream), reclassement en arrière-plan, **thème emprunté à une autre chaîne de même `tvg-id`** quand le libellé n'en donne pas (502 chaînes de la base locale), requêtes de facettes et filtres croisés, exports UniFFI, XCFramework. | Tests Rust de bout en bout et SLA ; `get_groups` inchangé. |
+| **33.2** ✅ | Schéma, migrations, classement en fin d'actualisation (M3U et Xtream), reclassement en arrière-plan, **thème emprunté à une autre chaîne de même `tvg-id`** quand le libellé n'en donne pas (502 chaînes de la base locale), requêtes de facettes et filtres croisés, exports UniFFI, XCFramework. | Tests Rust de bout en bout et SLA ; `get_groups` inchangé. |
 | **33.3** | Interface : sélecteur d'axe, colonnes Pays et Thèmes, chips croisées, titres, iPhone et Apple TV. | Essai à l'écran sur la base locale. |
 | **33.4** | Corrections de l'utilisateur, masquage de pays / thèmes, thèmes autorisés des profils enfants, recherche FTS par pays et thème, assistant ⌘K. | Tests Rust et Swift ; essai à l'écran. |
 | **33.5** | VOD : genres de films et séries (même moteur, sous-thèmes `comedy`, `family`, `classic`, `action`…), indice XMLTV `<category>` pour les chaînes non classées. | Tests et essai à l'écran. |
@@ -329,7 +336,7 @@ fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'�
 
 ## 15. Statut d'Implémentation & Validation
 
-**Lot 33.1 terminé** (branche `feat/category-taxonomy`). Lots 33.2 à 33.5 non commencés.
+**Lots 33.1 et 33.2 terminés** (branche `feat/category-taxonomy`). Lots 33.3 à 33.5 non commencés.
 
 - **Module `crates/cnd-core/src/taxonomy/`**, fonctions pures sans SQLite ni réseau, non branché sur l'ingestion :
   - `data/countries.rs` : 213 pays et territoires ISO avec noms anglais, français et locaux, codes non ISO (`uk`, `usa`, `uae`, `ksa`), préfixes de langue, mots « international » ;
@@ -348,3 +355,13 @@ fn taxonomy_status() -> TaxonomyStatus; // version, reclassement en cours, % d'�
 - **Validation :** `cargo clippy -p cnd-core --all-targets -- -D warnings` au vert ; `cargo test --workspace --release` : tous les tests du lot au vert.
   - **Hors lot, déjà rouge sur `main`** : `recommend::tests::test_recommendations_sla_50k_items` (55 ms pour 50 ms) ;
   - `test_50k_streaming_m3u_ingestion_sla` échoue quand toute la suite tourne en parallèle et passe seul, comme indiqué dans le README.
+
+### Lot 33.2 : stockage, classement et requêtes
+
+- **Schéma** (migrations dans `apply_incremental_migrations`, `db/mod.rs`) : `iptv_items.tx_country`, `tx_country_src`, `tx_theme` ; `series_catalog.tx_country`, `tx_theme` ; tables `item_themes` et `taxonomy_overrides` ; index `(kind, tx_country, tx_theme, name)` et `(theme, item_id)`.
+- **`db/taxonomy_repo.rs`** : classement par pages, passe du thème emprunté, `reclassify_all`, `ensure_taxonomy_current`, surcharges (appliquées tout de suite, conservées par un reclassement complet), `get_category_facets`, `TaxonomyFilter` ; `query_catalog_with` et `query_series_with` dans `catalog_repo.rs` (les anciennes fonctions les appellent avec un filtre vide).
+- **API UniFFI** (`lib.rs`) : `get_category_facets`, `query_catalog_by_taxonomy`, `query_series_by_taxonomy`, `set_taxonomy_override`, `clear_taxonomy_override`, `taxonomy_status`, `is_reclassifying_categories`.
+- **Écarts avec le plan initial** (notés ci-dessus) : classement en fin d'actualisation et non pendant l'insertion ; filtre ajouté aux requêtes existantes au lieu de `get_items_by_taxonomy`.
+- **Mesures sur une copie de la base locale** (12 229 chaînes) : migration et reclassement complet en **0,34 s** ; 180 pays et 14 thèmes dans la colonne, calculés en 11 et 12 ms ; 242 catégories fournisseur inchangées ; 15 chaînes sans pays ; thème `other` : 2 933 (27,2 % → 24,0 %, soit 398 chaînes qui ont emprunté un thème).
+- **Mesures sur 50 000 éléments** (`--release`) : reclassement ≈ 1,1 s (objectif < 2 s) ; deux requêtes de facettes ≈ 85 ms (objectif < 50 ms chacune).
+- **Tests** (14 nouveaux dans `taxonomy_repo`, dont un test d'actualisation M3U complète par le moteur) : filtres croisés, sous-thèmes, axe Fournisseur identique à `get_groups`, thème emprunté, surcharges, bouquets masqués, groupes adultes et profil enfant sur chaque axe, valeurs de filtre hostiles, séries, version stockée, annulation, lignes orphelines, SLA.

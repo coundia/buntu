@@ -16,6 +16,8 @@ pub enum ThemeSource {
     Group,
     Kind,
     Name,
+    /// Borrowed from another channel with the same `tvg-id` (stored by the database layer).
+    TvgId,
     Fallback,
 }
 
@@ -26,6 +28,7 @@ impl ThemeSource {
             ThemeSource::Group => "group",
             ThemeSource::Kind => "kind",
             ThemeSource::Name => "name",
+            ThemeSource::TvgId => "tvg_id",
             ThemeSource::Fallback => "fallback",
         }
     }

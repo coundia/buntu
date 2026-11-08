@@ -34,6 +34,7 @@ pub use db::library_repo::{
 pub use db::profile_repo::{FavoriteFolderRecord, ProfileRecord};
 pub use db::recording_repo::{NewRecordingRequest, RecordingRecord, SeriesRuleRecord};
 pub use db::catalog_repo::{CatalogFilter, FacetCount, SeasonSummary, SeriesRecord, SortField};
+pub use db::taxonomy_repo::{CategoryAxis, CategoryFacet, TaxonomyFilter, TaxonomyStatus};
 pub use db::download_repo::{
     DownloadLogRecord, DownloadPartRecord, DownloadTaskRecord, NewDownloadRequest,
 };
@@ -106,6 +107,7 @@ pub struct CndEngine {
     recorder: Arc<recorder::PvrManager>,
     library: Arc<library::LibraryManager>,
     active_profile_id: std::sync::atomic::AtomicI64,
+    taxonomy_busy: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl CndEngine {
@@ -146,6 +148,36 @@ impl CndEngine {
             );
         }
 
+        // PRD-33: catalogues stored before the taxonomy existed, or classified by older rules, are
+        // reclassified from their stored columns in the background; the app stays usable meanwhile.
+        let taxonomy_busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        if db.stored_taxonomy_version().map(|v| v < taxonomy::TAXONOMY_VERSION).unwrap_or(false) {
+            // Runs on this thread when the catalogue is empty (instant, nothing logged), else in the background.
+            if !db.catalog_has_items() {
+                let _ = db.ensure_taxonomy_current(&|_, _| {}, &std::sync::atomic::AtomicBool::new(false));
+            }
+        }
+        if db.stored_taxonomy_version().map(|v| v < taxonomy::TAXONOMY_VERSION).unwrap_or(false) {
+            taxonomy_busy.store(true, std::sync::atomic::Ordering::Relaxed);
+            let (db, telemetry, busy) = (Arc::clone(&db), Arc::clone(&telemetry), Arc::clone(&taxonomy_busy));
+            std::thread::spawn(move || {
+                let started = Instant::now();
+                match db.ensure_taxonomy_current(&|_, _| {}, &std::sync::atomic::AtomicBool::new(false)) {
+                    Ok(true) => {
+                        telemetry.info(
+                            "TAXONOMY",
+                            format!("Categories reclassified in {} ms", started.elapsed().as_millis()),
+                        );
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        telemetry.warn("TAXONOMY", format!("Reclassification failed: {e}"));
+                    }
+                }
+                busy.store(false, std::sync::atomic::Ordering::Relaxed);
+            });
+        }
+
         Ok(Arc::new(Self {
             db,
             settings,
@@ -157,6 +189,7 @@ impl CndEngine {
             recorder,
             library,
             active_profile_id: std::sync::atomic::AtomicI64::new(1),
+            taxonomy_busy,
         }))
     }
 
@@ -190,6 +223,9 @@ impl CndEngine {
         let summary = self
             .db
             .finalize_m3u_ingestion(&mut session, &header, duration_ms)?;
+        if let Err(e) = self.db.classify_source(source_id) {
+            self.telemetry.warn("TAXONOMY", format!("Could not classify source id={source_id}: {e}"));
+        }
 
         self.telemetry.info(
             "M3U",
@@ -768,6 +804,59 @@ impl CndEngine {
         include_hidden: bool,
     ) -> Result<Vec<FacetCount>, CndError> {
         Ok(self.db.get_groups(&kind, source_id, include_hidden)?)
+    }
+
+    /// Entries of the category column for one axis, narrowed by the other axis (PRD-33).
+    /// `kind` is `live`, `movie` or `series`.
+    pub fn get_category_facets(
+        &self,
+        kind: String,
+        axis: CategoryAxis,
+        source_id: Option<i64>,
+        filter: TaxonomyFilter,
+    ) -> Result<Vec<CategoryFacet>, CndError> {
+        Ok(self.db.get_category_facets(&kind, axis, source_id, &filter)?)
+    }
+
+    /// `query_catalog` restricted to a country and / or a theme (PRD-33).
+    pub fn query_catalog_by_taxonomy(
+        &self,
+        filter: CatalogFilter,
+        taxonomy: TaxonomyFilter,
+    ) -> Result<Vec<db::IptvItemRecord>, CndError> {
+        Ok(self.db.query_catalog_with(&filter, &taxonomy)?)
+    }
+
+    /// `query_series` restricted to a country and / or a main theme (PRD-33).
+    pub fn query_series_by_taxonomy(
+        &self,
+        filter: CatalogFilter,
+        taxonomy: TaxonomyFilter,
+    ) -> Result<Vec<SeriesRecord>, CndError> {
+        Ok(self.db.query_series_with(&filter, &taxonomy)?)
+    }
+
+    /// Corrects the country and / or the themes of one item (PRD-33 § 7). `None` keeps the computed value.
+    pub fn set_taxonomy_override(
+        &self,
+        stable_hash: String,
+        country: Option<String>,
+        themes: Option<Vec<String>>,
+    ) -> Result<(), CndError> {
+        Ok(self.db.set_taxonomy_override(&stable_hash, country.as_deref(), themes.as_deref())?)
+    }
+
+    pub fn clear_taxonomy_override(&self, stable_hash: String) -> Result<(), CndError> {
+        Ok(self.db.clear_taxonomy_override(&stable_hash)?)
+    }
+
+    pub fn taxonomy_status(&self) -> Result<TaxonomyStatus, CndError> {
+        Ok(self.db.taxonomy_status()?)
+    }
+
+    /// True while the catalogue is being reclassified after an update of the rules.
+    pub fn is_reclassifying_categories(&self) -> bool {
+        self.taxonomy_busy.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn get_hosts(

@@ -9,6 +9,7 @@ pub mod recommend_repo;
 pub mod schema;
 pub mod settings_repo;
 pub mod sync_repo;
+pub mod taxonomy_repo;
 
 pub use profile_repo::{is_adult_category, FavoriteFolderRecord, ProfileRecord};
 pub use recording_repo::{NewRecordingRequest, RecordingRecord, SeriesRuleRecord};
@@ -421,6 +422,28 @@ impl DatabaseManager {
                 FOREIGN KEY(playlist_id) REFERENCES library_playlists(id) ON DELETE CASCADE,
                 FOREIGN KEY(item_id) REFERENCES library_items(id) ON DELETE CASCADE
             )",
+            // PRD-33: normalised categories (country + themes of a closed list).
+            "ALTER TABLE iptv_items ADD COLUMN tx_country TEXT",
+            "ALTER TABLE iptv_items ADD COLUMN tx_country_src TEXT",
+            "ALTER TABLE iptv_items ADD COLUMN tx_theme TEXT",
+            "ALTER TABLE series_catalog ADD COLUMN tx_country TEXT",
+            "ALTER TABLE series_catalog ADD COLUMN tx_theme TEXT",
+            "CREATE TABLE IF NOT EXISTS item_themes (
+                item_id INTEGER NOT NULL REFERENCES iptv_items(id) ON DELETE CASCADE,
+                theme TEXT NOT NULL,
+                subtheme TEXT,
+                src TEXT NOT NULL,
+                PRIMARY KEY (item_id, theme)
+            ) WITHOUT ROWID",
+            "CREATE TABLE IF NOT EXISTS taxonomy_overrides (
+                stable_hash TEXT PRIMARY KEY,
+                country TEXT,
+                themes TEXT,
+                updated_at INTEGER NOT NULL
+            )",
+            "CREATE INDEX IF NOT EXISTS idx_items_kind_country_theme ON iptv_items(kind, tx_country, tx_theme, name)",
+            "CREATE INDEX IF NOT EXISTS idx_item_themes_theme ON item_themes(theme, item_id)",
+            "CREATE INDEX IF NOT EXISTS idx_series_country_theme ON series_catalog(tx_country, tx_theme)",
         ];
         for sql in alter_stmts {
             // Ignore duplicate column error on already-migrated databases

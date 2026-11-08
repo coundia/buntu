@@ -1,3 +1,4 @@
+use crate::db::taxonomy_repo::TaxonomyFilter;
 use crate::db::{chrono_now_ts, DatabaseManager, DbError, IptvItemRecord};
 use rusqlite::params;
 
@@ -271,6 +272,12 @@ impl DatabaseManager {
     }
 
     pub fn query_catalog(&self, filter: &CatalogFilter) -> Result<Vec<IptvItemRecord>, DbError> {
+        self.query_catalog_with(filter, &TaxonomyFilter::default())
+    }
+
+    /// `query_catalog` restricted to a country and / or a theme (PRD-33).
+    pub fn query_catalog_with(&self, filter: &CatalogFilter, taxonomy: &TaxonomyFilter) -> Result<Vec<IptvItemRecord>, DbError> {
+        let taxonomy_clause = taxonomy.sql("i", false);
         self.with_conn(|conn| {
             let order_sql = static_item_order_clause(filter.sort_by, filter.sort_asc);
             let fav_join = if filter.favorites_only {
@@ -307,6 +314,7 @@ impl DatabaseManager {
                            AND (?4 IS NULL OR i.group_title = ?4)
                            AND (?5 IS NULL OR i.host = ?5)
                            {broken_clause}
+                           {taxonomy_clause}
                            {hidden_clause}
                          ORDER BY bm25(iptv_items_fts), {order_sql}
                          LIMIT ?6 OFFSET ?7"
@@ -344,6 +352,7 @@ impl DatabaseManager {
                            AND (?4 IS NULL OR i.group_title = ?4)
                            AND (?5 IS NULL OR i.host = ?5)
                            {broken_clause}
+                           {taxonomy_clause}
                            {hidden_clause}
                          ORDER BY {order_sql}
                          LIMIT ?6 OFFSET ?7"
@@ -380,6 +389,7 @@ impl DatabaseManager {
                    AND (?3 IS NULL OR i.group_title = ?3)
                    AND (?4 IS NULL OR i.host = ?4)
                    {broken_clause}
+                   {taxonomy_clause}
                    {hidden_clause}
                  ORDER BY {order_sql}
                  LIMIT ?5 OFFSET ?6"
@@ -405,6 +415,12 @@ impl DatabaseManager {
     }
 
     pub fn query_series(&self, filter: &CatalogFilter) -> Result<Vec<SeriesRecord>, DbError> {
+        self.query_series_with(filter, &TaxonomyFilter::default())
+    }
+
+    /// `query_series` restricted to a country and / or a main theme (PRD-33).
+    pub fn query_series_with(&self, filter: &CatalogFilter, taxonomy: &TaxonomyFilter) -> Result<Vec<SeriesRecord>, DbError> {
+        let taxonomy_clause = taxonomy.sql("sc", true);
         self.with_conn(|conn| {
             let order_sql = static_series_order_clause(filter.sort_by, filter.sort_asc);
             let fav_join = if filter.favorites_only {
@@ -447,6 +463,7 @@ impl DatabaseManager {
                    AND (?2 IS NULL OR sc.group_title = ?2)
                    AND (?3 IS NULL OR sc.title LIKE ?3 ESCAPE '\\' OR sc.group_title LIKE ?3 ESCAPE '\\')
                    {broken_clause}
+                   {taxonomy_clause}
                    {hidden_clause}
                  ORDER BY {order_sql}
                  LIMIT ?4 OFFSET ?5"
