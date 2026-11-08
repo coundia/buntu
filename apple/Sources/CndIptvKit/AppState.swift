@@ -41,6 +41,8 @@ public final class AppState {
     let forYou: ForYouHub
     /// iCloud sync of sources, favorites and progress; reports "local only" when iCloud is unusable.
     private(set) var cloudSync: CloudKitSyncManager?
+    /// Serverless local network continuity across Apple, Android and Samsung devices (PRD-41).
+    public private(set) var localSync: LocalSyncService?
     /// Profiles (Principal, Enfants…) shared by the shell and the profile screens.
     private(set) var profiles: ProfilesModel?
     @ObservationIgnored private let recorder = DeferredProgressRecorder()
@@ -152,6 +154,15 @@ public final class AppState {
         sync.onRemoteChange = { [weak self] _ in self?.reloadSnapshot() }
         cloudSync = sync
         sync.start()
+
+        let local = LocalSyncService(engine: engine)
+        local.onDeltaImported = { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.reloadSnapshot()
+            }
+        }
+        localSync = local
+        local.start()
         reloadSnapshot()
         if let currentMedia = player.media {
             upNext.onMediaChanged(currentMedia)
