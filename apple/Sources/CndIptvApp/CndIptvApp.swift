@@ -49,10 +49,15 @@ struct CndIptvApp: App {
     #endif
     @State private var appState = AppState()
     @State private var commandCenter = AppCommandCenter()
+    @Environment(\.scenePhase) private var scenePhase
     
     var body: some Scene {
         WindowGroup {
             AppShellView(state: appState, commands: commandCenter)
+                .onChange(of: scenePhase) { _, phase in
+                    // Household sync: rebuild the local network listener if iOS killed it in the background.
+                    if phase == .active { appState.localSync?.ensureRunning() }
+                }
                 #if os(macOS)
                 .frame(minWidth: 800, minHeight: 500)
                 #endif
