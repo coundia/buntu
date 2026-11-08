@@ -258,8 +258,8 @@ export const App: Component = () => {
     }
     setSelectedItem(item);
     setCurrentRoute('player');
-    // A live channel already playing in the Live TV panel keeps running (not reopened).
-    await engine.play(item, { force: item.kind !== 'live' });
+    // What already plays in a mini player (live channel or film) keeps running, not reopened.
+    await engine.play(item, { force: item.kind !== 'live' && !engine.isPlayingItem(item) });
   };
 
   const handleNextChannel = async () => {

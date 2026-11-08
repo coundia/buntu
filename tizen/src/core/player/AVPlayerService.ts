@@ -33,6 +33,28 @@ export interface DisplayArea {
   height: number;
 }
 
+/**
+ * The largest rectangle of the given picture aspect (width / height) that fits in `area`, centered.
+ * Even numbers (hardware windows dislike odd sizes). Unknown aspect: the area itself.
+ */
+export function fitRect(area: DisplayArea, aspect: number): DisplayArea {
+  if (!(aspect > 0) || area.width <= 0 || area.height <= 0) return area;
+  let width = area.width;
+  let height = Math.round(width / aspect);
+  if (height > area.height) {
+    height = area.height;
+    width = Math.round(height * aspect);
+  }
+  width -= width % 2;
+  height -= height % 2;
+  return {
+    x: area.x + Math.floor((area.width - width) / 2),
+    y: area.y + Math.floor((area.height - height) / 2),
+    width: Math.max(2, width),
+    height: Math.max(2, height),
+  };
+}
+
 export interface AVPlayerListener {
   onBufferingStart?: () => void;
   onBufferingProgress?: (percent: number) => void;
@@ -138,6 +160,25 @@ export class AVPlayerService {
     return this.isLive;
   }
 
+  /** Width / height of the current picture, 0 until the stream tells (fits it inside a small window). */
+  private videoAspect = 0;
+
+  private readVideoAspect(): number {
+    try {
+      const infos = this.avplay.getCurrentStreamInfo?.() as { type?: string; extra_info?: string }[] | undefined;
+      for (const info of infos || []) {
+        if (info.type !== 'VIDEO' || !info.extra_info) continue;
+        const extra = JSON.parse(info.extra_info);
+        const w = Number(extra.Width ?? extra.width);
+        const h = Number(extra.Height ?? extra.height);
+        if (w > 0 && h > 0) return w / h;
+      }
+    } catch {
+      /* stream info not available yet */
+    }
+    return 0;
+  }
+
   private setState(newState: PlayerState) {
     this.state = newState;
     this.listener.onStateChange?.(newState);
@@ -210,15 +251,19 @@ export class AVPlayerService {
       if (isFullScreen) {
         this.avplay.setDisplayRect(0, 0, 1920, 1080);
       } else {
+        if (this.videoAspect === 0 && st !== 'IDLE') this.videoAspect = this.readVideoAspect();
+        // The "full screen" mode fills the window it is given, so the picture is fitted by hand
+        // (a 2.39:1 film or a 4:3 channel is not stretched into a 16:9 window).
+        const fit = fitRect({ x, y, width, height }, this.videoAspect);
         const vw = typeof window !== 'undefined' && window.innerWidth > 0 ? window.innerWidth : 1920;
         const vh = typeof window !== 'undefined' && window.innerHeight > 0 ? window.innerHeight : 1080;
         const sx = 1920 / vw;
         const sy = 1080 / vh;
         this.avplay.setDisplayRect(
-          Math.round(x * sx),
-          Math.round(y * sy),
-          Math.max(2, Math.round(width * sx)),
-          Math.max(2, Math.round(height * sy))
+          Math.round(fit.x * sx),
+          Math.round(fit.y * sy),
+          Math.max(2, Math.round(fit.width * sx)),
+          Math.max(2, Math.round(fit.height * sy))
         );
       }
     } catch (err) {
@@ -233,6 +278,7 @@ export class AVPlayerService {
     this.closeCurrent();
     const token = ++this.openToken;
     this.currentUrl = url;
+    this.videoAspect = 0;
     this.isLive = isLive;
     this.durationMs = 0;
     this.currentTimeMs = 0;
@@ -270,6 +316,7 @@ export class AVPlayerService {
           () => {
             if (token !== this.openToken) return resolve(); // a newer stream replaced this one
             this.setState('READY');
+            this.videoAspect = this.readVideoAspect();
             this.applyDisplayArea();
             try {
               this.durationMs = this.avplay.getDuration();
