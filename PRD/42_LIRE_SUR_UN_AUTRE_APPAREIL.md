@@ -334,16 +334,26 @@ Le foyer ne peut pas réveiller une app qui n'écoute pas. Ce qu'on sait faire, 
 
 ## 14. Statut d'Implémentation & Validation
 
-**Statut global : `[x] Implémenté, testé et validé par les vecteurs de parité sur 4 plateformes (Rust, Apple, Android, Tizen)`.**
+**Statut global : `[~]` partiel.** Le protocole en Rust et la réception sur la TV Samsung sont codés et testés ; **l'interface côté Apple n'est branchée nulle part, Android n'a aucune implémentation, et rien n'a été essayé sur de vrais appareils.**
 
-**Vérifié et testé dans le code (8 novembre 2026) :**
-- **Rust (`crates/cnd-domain/src/remote/`) :** Nouveaux messages (`play_request`, `play_ready`, `play_refused`, `play_go`, `playback_state`, `playback_control`, `release_request`, `release_done`, `release_stream`), machine d'états d'émission et de réception (`OriginHandoffSession`, `TargetHandoffSession`), limiteur de débit (max 1 req/2s), reconstruction Xtream de secours et vérification du profil Enfants (`resolve.rs`).
-- **Parité Inter-Plateformes (`remote/vectors.json`) :** 100% de parité validée sur Rust (`cargo test -p cnd-domain`), Swift (`RemoteParityTests.swift`), Kotlin (`RemoteParityTest.kt`) et TypeScript (`RemoteVectors.test.ts`).
-- **Apple (`apple/`) :** `LocalSyncService.swift` étendu (messages adressés, DTOs wire), `RemotePlaybackCoordinator.swift`, sélecteur d'appareils `RemoteDevicePickerView.swift`, barre de commande « Lecture sur… » `RemotePlaybackControlBar.swift`, tests XCTest et Swift Testing (534 tests passés), builds `CndIPTV-macOS` et `CndIPTV-iOS` validés (`** BUILD SUCCEEDED **`).
-- **Android (`android/`) :** Tests de parité `RemoteParityTest.kt` validés (`BUILD SUCCESSFUL`).
-- **Tizen Samsung TV (`tizen/`) :** `RemotePlayback.ts`, gestion de `release_stream` (coupure immédiate du flux en cours si un autre appareil démarre ce compte), diffusion de l'état `playback_state` toutes les 1s, support des touches `channel_up` / `channel_down` dans `App.tsx`, 27 suites de tests Vitest passées (141 tests). Package `.wgt` signé et compilé en WebAssembly 1.0 MVP strict.
-- **Sécurité :** `./scripts/check-secrets.sh` vérifié propre (`secrets check: clean`). 0 URL de flux ni mot de passe en clair dans les messages.
+**Codé et testé (relu et corrigé le 8 novembre 2026) :**
+- **Rust (`crates/cnd-domain/src/remote/`) :** messages (`SyncMessage`), machines d'états d'émission et de réception, limiteur de débit, recherche par `content_key` dans `cnd-core` (`item_by_content_key`). Tests : `cargo test -p cnd-domain` (dont deux ajoutés à la relecture : une lecture en cours n'est jamais remplacée sans accord, une demande ne vole pas la réservation d'une autre).
+- **Parité de vecteurs** (`remote/vectors.json`) en Rust, Swift, Kotlin et TypeScript : ces tests vérifient le **format des messages**, pas le comportement des applications.
+- **Tizen :** `tizen/src/core/remote/RemotePlayback.ts` (réception, un seul flux par compte, état toutes les secondes vers l'appareil d'origine, refus si profil Enfants ou lecture en cours, limite de débit). La lecture passe par le chemin normal de l'app (lecteur plein écran).
+- **Apple :** `RemotePlaybackCoordinator.swift` (mêmes règles) et `LocalSyncService` (messages adressés à un seul appareil). Le code compile (`swift build`).
 
-**Non vérifié / non mesuré à l'écran réel :**
-- autorisation à l'écran demandée lors du premier réveil Samsung TV (`POST /api/v2/applications/cnd001iptv.CndIptv`) ;
-- volume réglable sur la TV Samsung depuis l'app web (bloqué par Tizen web API).
+**Défauts trouvés à la relecture et corrigés :**
+- Rust : une demande avec `replace = true` remplaçait une lecture en cours **sans demander** à la personne devant la TV ; une deuxième demande écrasait la réservation de la première.
+- `cnd-core` : la recherche de secours cherchait l'identifiant fournisseur dans **tous** les comptes et **tous** les types (mauvais contenu possible) ; la reconstruction d'adresse utilisait `password_ref` (une référence au Trousseau, pas le mot de passe). Supprimée ; recherche limitée au compte annoncé et au même type.
+- Tizen : le lancement n'ouvrait que le lecteur, sans afficher l'écran vidéo (son seul) ; le compte était choisi au hasard parmi les comptes ayant un serveur ; le message `release_stream` ne correspondait jamais ; aucun contrôle Enfants, occupé, limite de débit.
+- Apple : `release_stream` utilisait le compte de la lecture précédente (donc jamais envoyé sur une TV libre) ; la position rendue au rapatriement valait toujours 0 ; l'identifiant d'appareil envoyé dans `playback_state` était celui d'un autre appareil ; un message adressé était diffusé à tous quand l'appareil n'était pas trouvé, et la correspondance d'identifiant se faisait sur 6 caractères.
+- PRD-41 (Tizen) : le compteur anti-rejeu repartait de 1 à chaque lancement (les téléphones rejetaient alors tous les messages de la TV) ; chaque minute tous les favoris étaient renvoyés avec une date neuve (un favori supprimé ailleurs revenait) ; les suppressions reçues étaient ignorées ; la progression reçue n'était jamais enregistrée.
+
+**Pas fait :**
+- **Apple :** `RemotePlaybackCoordinator`, `RemoteDevicePickerView` et `RemotePlaybackControlBar` ne sont **utilisés par aucun écran** : il manque `configure(…)`, les branchements au lecteur (`onStopLocalPlay`, `onRequestLocalPlay`, `localPlaybackSnapshot`), le bouton « Lire sur… » et l'affichage de la barre.
+- **Android :** aucune réception ni émission (lots 42.2 et 42.3) ; le test de parité ne vérifie que le format des messages.
+- **Tizen :** pas de sélecteur d'appareils pour **envoyer** vers un autre appareil, pas d'écran de demande (« accepter / ignorer ») : tant qu'il n'existe pas, une TV qui lit refuse (`busy`) et le réglage « toujours demander » refuse.
+- **Machine d'états en Rust non exportée** vers UniFFI et WebAssembly : Swift et TypeScript répètent les mêmes règles (contraire à la règle d'architecture n° 1) ; les tests Rust ne couvrent pas ces copies.
+- Recherche de secours par identifiant fournisseur : seulement côté `cnd-core` ; non faite sur Tizen.
+- Lancement de l'app Samsung à distance (`POST`), volume, mesures de délais : **jamais essayés**.
+- Aucun essai sur un vrai appareil : aucune des cibles du § 12 n'est vérifiée.

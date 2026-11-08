@@ -18,6 +18,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     case libraryFolders
     #endif
     case sources
+    case household
     case settings
 
     var id: String { rawValue }
@@ -37,6 +38,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .libraryFolders: return "Dossiers"
         #endif
         case .sources: return "Sources"
+        case .household: return "Foyer"
         case .settings: return "Réglages"
         }
     }
@@ -56,6 +58,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .libraryFolders: return "folder"
         #endif
         case .sources: return "antenna.radiowaves.left.and.right"
+        case .household: return "house"
         case .settings: return "gearshape"
         }
     }
@@ -787,7 +790,7 @@ private struct LoadedShellView: View {
                 }
                 #endif
                 Section {
-                    ForEach([AppTab.sources, .settings].filter { visibleTabs.contains($0) }) { tab in
+                    ForEach([AppTab.sources, .household, .settings].filter { visibleTabs.contains($0) }) { tab in
                         Label(tab.title, systemImage: tab.systemImage)
                             .font(ui.font(.body))
                             .badge(badge(for: tab))
@@ -893,6 +896,7 @@ private struct LoadedShellView: View {
         case .libraryImages: return libraryModel.imageItems.count
         case .libraryFolders: return libraryModel.folders.count
         #endif
+        case .household: return Int(state.localSync?.activePeers.count ?? 0)
         case .guide, .settings, .recordings: return 0
         }
     }
@@ -960,6 +964,8 @@ private struct LoadedShellView: View {
             case .libraryFolders:
                 LibraryFoldersView(model: libraryModel, onPlayVideo: playLibraryVideo)
             #endif
+            case .household:
+                HouseholdView(localSync: state.localSync)
             case .settings:
                 #if !os(tvOS)
                 SettingsView(

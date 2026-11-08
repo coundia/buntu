@@ -223,25 +223,35 @@ public final class LocalSyncService: @unchecked Sendable {
     public var onDeltaImported: (@Sendable () -> Void)?
 
     // PRD-42 Handoff Callbacks
-    public var onPlayRequest: (@Sendable (_ req: PlayRequestDTO) -> Void)?
+    public var onPlayRequest: (@Sendable (_ req: PlayRequestDTO, _ senderId: String) -> Void)?
     public var onPlayReady: (@Sendable (_ requestId: String) -> Void)?
     public var onPlayRefused: (@Sendable (_ requestId: String, _ reason: String) -> Void)?
     public var onPlayGo: (@Sendable (_ requestId: String, _ positionMs: UInt64) -> Void)?
     public var onPlaybackState: (@Sendable (_ state: PlaybackStateDTO) -> Void)?
     public var onPlaybackControl: (@Sendable (_ action: String, _ value: Int64?) -> Void)?
     public var onReleaseStream: (@Sendable (_ sourceKey: String) -> Void)?
-    public var onReleaseRequest: (@Sendable (_ requestId: String) -> Void)?
+    public var onReleaseRequest: (@Sendable (_ requestId: String, _ senderId: String) -> Void)?
     public var onReleaseDone: (@Sendable (_ requestId: String, _ contentKey: String?, _ positionMs: UInt64) -> Void)?
+
+    /// This device's household identifier (the one announced to the other devices).
+    public var localDeviceId: String { store.deviceId }
 
     @ObservationIgnored private let engine: CndEngine?
     @ObservationIgnored private let store: HouseholdStore
     @ObservationIgnored private var listener: NWListener?
     @ObservationIgnored private var browser: NWBrowser?
     @ObservationIgnored private var connections: [String: NWConnection] = [:]
+    /// Connection on which each household device was last heard (outgoing or incoming),
+    /// so that a targeted message (PRD-42) reaches exactly that device.
+    @ObservationIgnored private var deviceConnections: [String: NWConnection] = [:]
     @ObservationIgnored private var peerEndpoints: [String: NWEndpoint] = [:]
     @ObservationIgnored private let queue = DispatchQueue(label: "com.pcoundia.buntu.localsync", qos: .utility)
     @ObservationIgnored private var periodicSyncTimer: DispatchSourceTimer?
     @ObservationIgnored private var lastExportTimestamp: Int64 = 0
+    /// `true` between `start()` and `stop()`: only then may a failed listener/browser be restarted.
+    @ObservationIgnored private var isRunning = false
+    @ObservationIgnored private var restartAttempts = 0
+    @ObservationIgnored private var restartScheduled = false
 
     public init(engine: CndEngine?, store: HouseholdStore = .shared) {
         self.engine = engine
@@ -259,13 +269,48 @@ public final class LocalSyncService: @unchecked Sendable {
             return
         }
 
+        isRunning = true
         startListener()
         startBrowser()
         startPeriodicSync()
         syncStatusMessage = "Synchronisation active"
     }
 
+    /// Called when the app comes back to the foreground: iOS kills the Bonjour connection of a
+    /// suspended app (`DefunctConnection`), so the listener and the browser are rebuilt if they died.
+    public func ensureRunning() {
+        guard isRunning, store.isJoined else { return }
+        if listener == nil || !isListening || browser == nil || !isBrowsing {
+            restartNetworking()
+        }
+    }
+
+    private func restartNetworking() {
+        stopBrowser()
+        stopListener()
+        startListener()
+        startBrowser()
+    }
+
+    /// Retries after a failure, with a growing delay (2 s, 4 s … 30 s), instead of staying dead.
+    @MainActor
+    private func scheduleNetworkRestart() {
+        guard isRunning, !restartScheduled else { return }
+        restartScheduled = true
+        restartAttempts += 1
+        let delay = min(30.0, pow(2.0, Double(restartAttempts)))
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.restartScheduled = false
+            guard self.isRunning, self.store.isJoined else { return }
+            self.restartNetworking()
+        }
+    }
+
     public func stop() {
+        isRunning = false
+        restartScheduled = false
+        restartAttempts = 0
         stopPeriodicSync()
         stopBrowser()
         stopListener()
@@ -296,9 +341,17 @@ public final class LocalSyncService: @unchecked Sendable {
                     switch state {
                     case .ready:
                         self.isListening = true
+                        self.restartAttempts = 0
+                        self.syncStatusMessage = "Synchronisation active"
+                    case .waiting(let err):
+                        self.isListening = false
+                        self.syncStatusMessage = "En attente du réseau local : \(err.localizedDescription). Vérifiez l'autorisation « Réseau local » dans les Réglages de l'iPhone."
                     case .failed(let err):
                         self.isListening = false
-                        self.syncStatusMessage = "Erreur écoute: \(err.localizedDescription)"
+                        self.syncStatusMessage = "Écoute interrompue, nouvelle tentative… (\(err.localizedDescription))"
+                        // A failed listener cannot be reused: drop it so it can be rebuilt (it stayed dead before).
+                        if self.listener === l { self.listener?.cancel(); self.listener = nil }
+                        self.scheduleNetworkRestart()
                     case .cancelled:
                         self.isListening = false
                     default:
@@ -388,11 +441,21 @@ public final class LocalSyncService: @unchecked Sendable {
             return
         }
 
+        deviceConnections[senderDeviceId] = connection
+
         switch type {
         case "device_announce":
             let name = (root["device_name"] as? String) ?? "Appareil"
             let devType = (root["device_type"] as? String) ?? "mobile"
-            let peer = DiscoveredPeer(id: senderDeviceId, name: name, deviceType: devType, lastSeen: Date())
+            let peer = DiscoveredPeer(
+                id: senderDeviceId,
+                name: name,
+                deviceType: devType,
+                canPlay: (root["can_play"] as? Bool) ?? true,
+                capabilities: (root["capabilities"] as? [String]) ?? [],
+                state: (root["state"] as? String) ?? "idle",
+                lastSeen: Date()
+            )
             Task { @MainActor in
                 self.updatePeer(peer)
             }
@@ -425,9 +488,9 @@ public final class LocalSyncService: @unchecked Sendable {
         case "play_request":
             if let req = try? JSONDecoder().decode(PlayRequestDTO.self, from: jsonData) {
                 let localId = store.deviceId
-                if req.target_device_id.isEmpty || req.target_device_id == localId || req.target_device_id.hasPrefix(localId.prefix(6)) {
+                if req.target_device_id == localId {
                     Task { @MainActor in
-                        self.onPlayRequest?(req)
+                        self.onPlayRequest?(req, senderDeviceId)
                     }
                 }
             }
@@ -466,7 +529,7 @@ public final class LocalSyncService: @unchecked Sendable {
             if let targetId = root["target_device_id"] as? String,
                let action = root["action"] as? String {
                 let localId = store.deviceId
-                if targetId.isEmpty || targetId == localId || targetId.hasPrefix(localId.prefix(6)) {
+                if targetId == localId {
                     let value = (root["value"] as? NSNumber)?.int64Value
                     Task { @MainActor in
                         self.onPlaybackControl?(action, value)
@@ -485,9 +548,9 @@ public final class LocalSyncService: @unchecked Sendable {
             if let reqId = root["request_id"] as? String,
                let targetId = root["target_device_id"] as? String {
                 let localId = store.deviceId
-                if targetId.isEmpty || targetId == localId || targetId.hasPrefix(localId.prefix(6)) {
+                if targetId == localId {
                     Task { @MainActor in
-                        self.onReleaseRequest?(reqId)
+                        self.onReleaseRequest?(reqId, senderDeviceId)
                     }
                 }
             }
@@ -532,7 +595,9 @@ public final class LocalSyncService: @unchecked Sendable {
                 case .ready: self.isBrowsing = true
                 case .failed(let err):
                     self.isBrowsing = false
-                    self.syncStatusMessage = "Erreur recherche: \(err.localizedDescription)"
+                    self.syncStatusMessage = "Recherche interrompue, nouvelle tentative… (\(err.localizedDescription))"
+                    if self.browser === b { self.browser?.cancel(); self.browser = nil }
+                    self.scheduleNetworkRestart()
                 case .cancelled: self.isBrowsing = false
                 default: break
                 }
@@ -577,6 +642,7 @@ public final class LocalSyncService: @unchecked Sendable {
                 self.receiveNextMessage(from: conn)
             case .failed, .cancelled:
                 self.connections.removeValue(forKey: id)
+                self.deviceConnections = self.deviceConnections.filter { $0.value !== conn }
             default:
                 break
             }
@@ -651,15 +717,21 @@ public final class LocalSyncService: @unchecked Sendable {
         }
     }
 
-    public func sendToPeer(peerId: String, messageJson: String) {
-        guard let sealed = try? sealMessage(messageJson) else { return }
-        for (name, conn) in connections {
-            if name.contains(peerId) || peerEndpoints[name]?.debugDescription.contains(peerId) == true {
-                sendEnvelope(sealed, on: conn)
-                return
-            }
+    /// Sends a message to ONE household device. Returns `false` (and sends nothing) when that device
+    /// is not connected: a targeted order such as `play_request` must never fall back to a broadcast,
+    /// or every device of the house would receive it.
+    @discardableResult
+    public func sendToPeer(peerId: String, messageJson: String) -> Bool {
+        guard let sealed = try? sealMessage(messageJson) else { return false }
+        if let conn = deviceConnections[peerId] {
+            sendEnvelope(sealed, on: conn)
+            return true
         }
-        broadcastMessage(messageJson)
+        if let conn = connections[peerId] {
+            sendEnvelope(sealed, on: conn)
+            return true
+        }
+        return false
     }
 
     public func broadcastMessage(_ messageJson: String) {

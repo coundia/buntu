@@ -1,7 +1,7 @@
 # Suivi d'Implémentation & Validation — « Lire sur… » (PRD-42)
 
 - **Date :** 8 novembre 2026
-- **Statut :** `[x] Implémenté et validé par les vecteurs de parité sur 4 plateformes`
+- **Statut :** `[~]` partiel (corrigé après relecture du 8 novembre 2026 : voir `PRD/42 § 14`). Les « SLA validés » ci-dessous n'ont **pas été mesurés** ; ils décrivent des objectifs.
 - **Périmètre :** Transfert de lecture et télécommande distante sans Cast/AirPlay entre Mac, iPhone, Android et TV Samsung (Tizen).
 
 ---

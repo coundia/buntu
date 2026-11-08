@@ -1,11 +1,11 @@
 import SwiftUI
 import CndCoreBridge
 
-/// What the Kids profile may not reach (PRD 20, lot 20.3): the sources, the settings (where accounts and
+/// What the Kids profile may not reach (PRD 20, lot 20.3): the sources, the household (keys and accounts shared with other devices), the settings (where accounts and
 /// profiles are changed) and the AI assistant (which sends commands to a remote provider).
 enum KidsModePolicy {
     static func allowedTabs(isKids: Bool) -> [AppTab] {
-        isKids ? AppTab.allCases.filter { $0 != .sources && $0 != .settings } : AppTab.allCases
+        isKids ? AppTab.allCases.filter { $0 != .sources && $0 != .household && $0 != .settings } : AppTab.allCases
     }
 
     static func canUseAssistant(isKids: Bool) -> Bool { !isKids }
