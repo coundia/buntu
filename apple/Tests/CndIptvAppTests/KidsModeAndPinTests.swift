@@ -52,6 +52,7 @@ final class KidsModeTests: XCTestCase {
     func testTheKidsProfileHasNoSourcesNoSettingsAndNoAssistant() {
         let kids = KidsModePolicy.allowedTabs(isKids: true)
         XCTAssertFalse(kids.contains(.sources))
+        XCTAssertFalse(kids.contains(.household))
         XCTAssertFalse(kids.contains(.settings))
         XCTAssertTrue(kids.contains(.live))
         XCTAssertTrue(kids.contains(.movies))
