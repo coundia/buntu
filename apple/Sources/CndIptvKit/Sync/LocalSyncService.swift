@@ -248,6 +248,10 @@ public final class LocalSyncService: @unchecked Sendable {
     @ObservationIgnored private let queue = DispatchQueue(label: "com.pcoundia.buntu.localsync", qos: .utility)
     @ObservationIgnored private var periodicSyncTimer: DispatchSourceTimer?
     @ObservationIgnored private var lastExportTimestamp: Int64 = 0
+    /// `true` between `start()` and `stop()`: only then may a failed listener/browser be restarted.
+    @ObservationIgnored private var isRunning = false
+    @ObservationIgnored private var restartAttempts = 0
+    @ObservationIgnored private var restartScheduled = false
 
     public init(engine: CndEngine?, store: HouseholdStore = .shared) {
         self.engine = engine
@@ -265,13 +269,48 @@ public final class LocalSyncService: @unchecked Sendable {
             return
         }
 
+        isRunning = true
         startListener()
         startBrowser()
         startPeriodicSync()
         syncStatusMessage = "Synchronisation active"
     }
 
+    /// Called when the app comes back to the foreground: iOS kills the Bonjour connection of a
+    /// suspended app (`DefunctConnection`), so the listener and the browser are rebuilt if they died.
+    public func ensureRunning() {
+        guard isRunning, store.isJoined else { return }
+        if listener == nil || !isListening || browser == nil || !isBrowsing {
+            restartNetworking()
+        }
+    }
+
+    private func restartNetworking() {
+        stopBrowser()
+        stopListener()
+        startListener()
+        startBrowser()
+    }
+
+    /// Retries after a failure, with a growing delay (2 s, 4 s … 30 s), instead of staying dead.
+    @MainActor
+    private func scheduleNetworkRestart() {
+        guard isRunning, !restartScheduled else { return }
+        restartScheduled = true
+        restartAttempts += 1
+        let delay = min(30.0, pow(2.0, Double(restartAttempts)))
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.restartScheduled = false
+            guard self.isRunning, self.store.isJoined else { return }
+            self.restartNetworking()
+        }
+    }
+
     public func stop() {
+        isRunning = false
+        restartScheduled = false
+        restartAttempts = 0
         stopPeriodicSync()
         stopBrowser()
         stopListener()
@@ -302,9 +341,17 @@ public final class LocalSyncService: @unchecked Sendable {
                     switch state {
                     case .ready:
                         self.isListening = true
+                        self.restartAttempts = 0
+                        self.syncStatusMessage = "Synchronisation active"
+                    case .waiting(let err):
+                        self.isListening = false
+                        self.syncStatusMessage = "En attente du réseau local : \(err.localizedDescription). Vérifiez l'autorisation « Réseau local » dans les Réglages de l'iPhone."
                     case .failed(let err):
                         self.isListening = false
-                        self.syncStatusMessage = "Erreur écoute: \(err.localizedDescription)"
+                        self.syncStatusMessage = "Écoute interrompue, nouvelle tentative… (\(err.localizedDescription))"
+                        // A failed listener cannot be reused: drop it so it can be rebuilt (it stayed dead before).
+                        if self.listener === l { self.listener?.cancel(); self.listener = nil }
+                        self.scheduleNetworkRestart()
                     case .cancelled:
                         self.isListening = false
                     default:
@@ -548,7 +595,9 @@ public final class LocalSyncService: @unchecked Sendable {
                 case .ready: self.isBrowsing = true
                 case .failed(let err):
                     self.isBrowsing = false
-                    self.syncStatusMessage = "Erreur recherche: \(err.localizedDescription)"
+                    self.syncStatusMessage = "Recherche interrompue, nouvelle tentative… (\(err.localizedDescription))"
+                    if self.browser === b { self.browser?.cancel(); self.browser = nil }
+                    self.scheduleNetworkRestart()
                 case .cancelled: self.isBrowsing = false
                 default: break
                 }
