@@ -23,6 +23,7 @@ import { SettingsView } from '../features/settings/SettingsView';
 import { OnboardingView } from '../features/onboarding/OnboardingView';
 import { NavigationHistory, NavEntry } from '../core/navigation/NavigationHistory';
 import { screenState } from '../core/navigation/ScreenState';
+import { zapContext } from '../core/navigation/ZapContext';
 
 export type ScreenRoute =
   | 'onboarding'
@@ -177,6 +178,8 @@ export const App: Component = () => {
       engine.stopPlayback();
     }
     screenState.disarm();
+    zapContext.category = ''; // only opening the player from a Live TV list keeps a zapping list
+    zapContext.frozen = null;
     if (opts.reset) {
       history.reset();
       screenState.clear();
@@ -262,27 +265,16 @@ export const App: Component = () => {
     await engine.play(item, { force: item.kind !== 'live' && !engine.isPlayingItem(item) });
   };
 
-  const handleNextChannel = async () => {
+  /** Ch+ / Ch- in the player: the neighbour of the current channel in the list it was opened from. */
+  const zapChannel = async (direction: 'next' | 'prev') => {
     const current = selectedItem();
     if (!current || current.kind !== 'live') return;
-    const channels = await engine.getCatalog('live', undefined, 0, 200);
-    const idx = channels.findIndex((c) => c.id === current.id);
-    if (idx !== -1 && channels.length > 1) {
-      const next = channels[(idx + 1) % channels.length];
-      await handlePlayItem(next);
-    }
+    const target = await engine.getAdjacentItem(current, zapContext.category, direction);
+    if (target) await handlePlayItem(target);
   };
 
-  const handlePrevChannel = async () => {
-    const current = selectedItem();
-    if (!current || current.kind !== 'live') return;
-    const channels = await engine.getCatalog('live', undefined, 0, 200);
-    const idx = channels.findIndex((c) => c.id === current.id);
-    if (idx !== -1 && channels.length > 1) {
-      const prev = channels[(idx - 1 + channels.length) % channels.length];
-      await handlePlayItem(prev);
-    }
-  };
+  const handleNextChannel = () => zapChannel('next');
+  const handlePrevChannel = () => zapChannel('prev');
 
   const handleSelectDetails = (item: ItemRecord) => {
     setSelectedItem(item);

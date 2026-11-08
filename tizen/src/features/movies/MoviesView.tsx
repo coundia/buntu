@@ -1,6 +1,6 @@
 import { Component, createSignal, createMemo, createEffect, onMount, onCleanup, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
-import { ItemRecord, FAVORITES_CATEGORY } from '../../core/storage/Database';
+import { ItemRecord, FAVORITES_CATEGORY, RECENT_CATEGORY } from '../../core/storage/Database';
 import { AVPlayerService } from '../../core/player/AVPlayerService';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { screenState, isContentFocusId, revealItem, BrowseSnapshot } from '../../core/navigation/ScreenState';
@@ -10,6 +10,8 @@ import { detectChannelQuality, formatBuntuCount } from '../../core/utils/categor
 import { announce } from '../../ui/design/a11y';
 import { createMiniPlayer } from '../../core/player/MiniPlayerController';
 import { MiniPlayerPanel } from '../../ui/components/MiniPlayerPanel';
+import { InfoChips, InfoSection, InfoProgress } from '../../ui/components/InfoParts';
+import { formatDuration, formatRuntime, percentOf } from '../../core/utils/timeFormat';
 import { panelFocusItems, panelItemForRow, installPanelLeftReturn } from '../../ui/design/miniPlayerFocus';
 
 export interface MoviesViewProps {
@@ -26,9 +28,9 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
   const [catCounts, setCatCounts] = createSignal<Record<string, number>>({});
   const [totalCount, setTotalCount] = createSignal(0);
   const [favCount, setFavCount] = createSignal(0);
+  const [recentCount, setRecentCount] = createSignal(0);
 
   const [selectedCat, setSelectedCat] = createSignal<string>('');
-  const [catFilter, setCatFilter] = createSignal<string>('');
   const [showCats, setShowCats] = createSignal(true);
   const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
   // Bumped when a favorite flag changes (the records are mutated in place).
@@ -69,9 +71,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
 
   const filteredCategories = createMemo(() => {
     const raw = categories().filter((c) => c !== FAVORITES_CATEGORY && c !== 'Favoris');
-    const q = catFilter().trim().toLowerCase();
-    if (!q) return raw;
-    return raw.filter((c) => c.toLowerCase().includes(q));
+    return raw;
   });
 
   const scroller = createInfiniteScroller<ItemRecord>({
@@ -98,13 +98,15 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
   });
 
   const refreshShelvesAndCounts = async () => {
-    const [countsData, recents, favs] = await Promise.all([
+    const [countsData, recents, favs, recentTotal] = await Promise.all([
       engine.getCategoryCounts('movie'),
       engine.getRecentItems('movie', 10),
       engine.getFavoritesByKind('movie', 12),
+      engine.countCatalog('movie', RECENT_CATEGORY),
     ]);
     setTotalCount(countsData.total);
     setFavCount(countsData.favCount);
+    setRecentCount(recentTotal);
     setCatCounts(countsData.counts);
     setRecentMovies(recents);
     setFavMovies(favs);
@@ -317,15 +319,8 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     const catColItems: FocusableItem[] = [];
     if (showCats()) {
       catColItems.push({
-        id: 'mv-cat-home',
-        onSelect: () => {
-          setCatFilter('');
-          void handleSelectCategory('');
-        },
-      });
-      catColItems.push({
-        id: 'mv-cat-filter',
-        onSelect: () => focusDomInput('mv-cat-filter'),
+        id: 'movie-cat-recent',
+        onSelect: () => void handleSelectCategory(RECENT_CATEGORY),
       });
       catColItems.push({
         id: 'movie-cat-all',
@@ -584,33 +579,22 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       <div class="buntu-body-split">
         <Show when={showCats()}>
           <aside class="buntu-cat-pane" aria-label="Catégories Films">
-            <div class="buntu-cat-filter-bar">
-              <button
-                id="mv-cat-home"
-                type="button"
-                tabindex="-1"
-                class={`buntu-cat-home-btn ${focusId() === 'mv-cat-home' ? 'focused' : ''}`}
-                onClick={() => {
-                  setCatFilter('');
-                  void handleSelectCategory('');
-                }}
-              >
-                ⌂
-              </button>
-              <input
-                id="mv-cat-filter"
-                type="text"
-                value={catFilter()}
-                placeholder="Filtrer les catégories"
-                class={`buntu-cat-filter-input ${focusId() === 'mv-cat-filter' ? 'focused' : ''}`}
-                onInput={(e) => {
-                  setCatFilter(e.currentTarget.value);
-                  scheduleRebuildGrid(true);
-                }}
-              />
-            </div>
-
             <div class="buntu-cat-list">
+              {/* Récemment vus */}
+              <div
+                id="movie-cat-recent"
+                role="button"
+                tabindex="-1"
+                class={`buntu-cat-row ${selectedCat() === RECENT_CATEGORY && !isSearchMode() ? 'active' : ''} ${focusId() === 'movie-cat-recent' ? 'focused' : ''}`}
+                onClick={() => void handleSelectCategory(RECENT_CATEGORY)}
+              >
+                <div class="buntu-cat-row-left">
+                  <span class="buntu-cat-row-icon">🕒</span>
+                  <span class="buntu-cat-row-title">Récemment vus</span>
+                </div>
+                <span class="buntu-cat-count">{formatBuntuCount(recentCount())}</span>
+              </div>
+
               <div
                 id="movie-cat-all"
                 role="button"
@@ -708,7 +692,9 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
               <h2 class="buntu-section-title">
                 {isSearchMode()
                   ? `Recherche : « ${searchQuery()} »`
-                  : selectedCat() === FAVORITES_CATEGORY
+                  : selectedCat() === RECENT_CATEGORY
+                    ? 'Récemment vus'
+                    : selectedCat() === FAVORITES_CATEGORY
                     ? 'Favoris'
                     : selectedCat() || 'Tous les films'}
               </h2>
@@ -727,6 +713,21 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
                 {(mv) => renderMovieCard(mv, `movie-${mv.id}`)}
               </For>
             </div>
+
+            <Show
+              when={
+                !isSearchMode() &&
+                !scroller.isLoading() &&
+                scroller.items().length === 0 &&
+                (selectedCat() === RECENT_CATEGORY || selectedCat() === FAVORITES_CATEGORY)
+              }
+            >
+              <p class="buntu-empty-hint">
+                {selectedCat() === RECENT_CATEGORY
+                  ? 'Lancez un film : il apparaîtra ici.'
+                  : 'Aucun favori pour l’instant : ajoutez-en avec ☆ Favori.'}
+              </p>
+            </Show>
 
             <Show when={!isSearchMode() && scroller.isLoading()}>
               <div class="tv-infinite-loader">
@@ -752,27 +753,43 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
           details={(mv) => {
             const parsed = cleanMediaTitle(mv.name);
             const year = mv.year || parsed.year;
+            const quality = detectChannelQuality(mv.name);
+            // The length is known from the catalog, or from the stream once this film plays.
+            const total = () => (mv.duration_ms > 0 ? mv.duration_ms : mini.isPlaying(mv.id) ? mini.durationMs() : 0);
+            const resumed = () => (mv.playback_position_ms > 0 ? percentOf(mv.playback_position_ms, total()) : 0);
             return (
               <>
                 <div class="buntu-insp-heading">
                   <h3 class="buntu-inspector-title">
                     {mv.name_clean && mv.name_clean !== mv.name ? mv.name_clean : parsed.clean}
                   </h3>
-                  <Show when={detectChannelQuality(mv.name)}>
-                    <span class={`buntu-q-badge ${detectChannelQuality(mv.name) === '4K' ? 'uhd' : ''}`}>
-                      {detectChannelQuality(mv.name)}
-                    </span>
-                  </Show>
-                  <Show when={mv.imdb_rating && mv.imdb_rating > 0}>
-                    <span class="buntu-q-badge">★ {mv.imdb_rating!.toFixed(1)}</span>
-                  </Show>
                 </div>
-                <div class="buntu-ch-group">
-                  {year ? `${year}${mv.group_title ? ' · ' + mv.group_title : ''}` : mv.group_title || 'VOD'}
-                </div>
-                <p class="buntu-inspector-desc buntu-insp-clamp buntu-insp-plot">
-                  {mv.plot || 'Film VOD disponible en haute définition.'}
-                </p>
+                <InfoChips
+                  chips={[
+                    quality ? { text: quality, tone: quality === '4K' ? 'uhd' : 'quality' } : null,
+                    mv.imdb_rating && mv.imdb_rating > 0 ? { text: `★ ${mv.imdb_rating.toFixed(1)}`, tone: 'rating' } : null,
+                    year ? { text: String(year) } : null,
+                    total() > 0 ? { text: formatRuntime(total()) } : null,
+                    mv.language ? { text: mv.language.toUpperCase() } : null,
+                    mv.container_ext ? { text: mv.container_ext.toUpperCase() } : null,
+                    mv.group_title ? { text: mv.group_title } : null,
+                  ]}
+                />
+
+                <Show when={resumed() > 0 && resumed() < 95}>
+                  <InfoSection label="REPRISE">
+                    <div class="buntu-insp-epg-title">
+                      Reprendre à {formatDuration(mv.playback_position_ms)} · {resumed()} %
+                    </div>
+                    <InfoProgress percent={resumed()} />
+                  </InfoSection>
+                </Show>
+
+                <InfoSection label="SYNOPSIS">
+                  <p class="buntu-inspector-desc buntu-insp-clamp buntu-insp-plot">
+                    {mv.plot || 'Aucun résumé disponible pour ce film.'}
+                  </p>
+                </InfoSection>
               </>
             );
           }}
