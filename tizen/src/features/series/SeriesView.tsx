@@ -1,6 +1,6 @@
 import { Component, createSignal, createMemo, createEffect, onMount, onCleanup, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
-import { ItemRecord, FAVORITES_CATEGORY } from '../../core/storage/Database';
+import { ItemRecord, FAVORITES_CATEGORY, RECENT_CATEGORY } from '../../core/storage/Database';
 import { AVPlayerService } from '../../core/player/AVPlayerService';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { screenState, isContentFocusId, revealItem, BrowseSnapshot } from '../../core/navigation/ScreenState';
@@ -22,9 +22,9 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
   const [catCounts, setCatCounts] = createSignal<Record<string, number>>({});
   const [totalCount, setTotalCount] = createSignal(0);
   const [favCount, setFavCount] = createSignal(0);
+  const [recentCount, setRecentCount] = createSignal(0);
 
   const [selectedCat, setSelectedCat] = createSignal<string>('');
-  const [catFilter, setCatFilter] = createSignal<string>('');
   const [showCats, setShowCats] = createSignal(true);
   const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
   const [showInspector, setShowInspector] = createSignal(false);
@@ -55,9 +55,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
 
   const filteredCategories = createMemo(() => {
     const raw = categories().filter((c) => c !== FAVORITES_CATEGORY && c !== 'Favoris');
-    const q = catFilter().trim().toLowerCase();
-    if (!q) return raw;
-    return raw.filter((c) => c.toLowerCase().includes(q));
+    return raw;
   });
 
   const scroller = createInfiniteScroller<ItemRecord>({
@@ -97,13 +95,15 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
   };
 
   const refreshShelvesAndCounts = async () => {
-    const [countsData, recents, favs] = await Promise.all([
+    const [countsData, recents, favs, recentTotal] = await Promise.all([
       engine.getCategoryCounts('series'),
       engine.getRecentItems('series', 10),
       engine.getFavoritesByKind('series', 12),
+      engine.countCatalog('series', RECENT_CATEGORY),
     ]);
     setTotalCount(countsData.total);
     setFavCount(countsData.favCount);
+    setRecentCount(recentTotal);
     setCatCounts(countsData.counts);
     setRecentSeries(recents);
     setFavSeries(favs);
@@ -312,15 +312,8 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     const catColItems: FocusableItem[] = [];
     if (showCats()) {
       catColItems.push({
-        id: 's-cat-home',
-        onSelect: () => {
-          setCatFilter('');
-          void handleSelectCategory('');
-        },
-      });
-      catColItems.push({
-        id: 's-cat-filter',
-        onSelect: () => focusDomInput('s-cat-filter'),
+        id: 'series-cat-recent',
+        onSelect: () => void handleSelectCategory(RECENT_CATEGORY),
       });
       catColItems.push({
         id: 'series-cat-all',
@@ -571,33 +564,22 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
       <div class="buntu-body-split">
         <Show when={showCats()}>
           <aside class="buntu-cat-pane" aria-label="Catégories Séries">
-            <div class="buntu-cat-filter-bar">
-              <button
-                id="s-cat-home"
-                type="button"
-                tabindex="-1"
-                class={`buntu-cat-home-btn ${focusId() === 's-cat-home' ? 'focused' : ''}`}
-                onClick={() => {
-                  setCatFilter('');
-                  void handleSelectCategory('');
-                }}
-              >
-                ⌂
-              </button>
-              <input
-                id="s-cat-filter"
-                type="text"
-                value={catFilter()}
-                placeholder="Filtrer les catégories"
-                class={`buntu-cat-filter-input ${focusId() === 's-cat-filter' ? 'focused' : ''}`}
-                onInput={(e) => {
-                  setCatFilter(e.currentTarget.value);
-                  scheduleRebuildGrid(true);
-                }}
-              />
-            </div>
-
             <div class="buntu-cat-list">
+              {/* Récemment vus */}
+              <div
+                id="series-cat-recent"
+                role="button"
+                tabindex="-1"
+                class={`buntu-cat-row ${selectedCat() === RECENT_CATEGORY && !isSearchMode() ? 'active' : ''} ${focusId() === 'series-cat-recent' ? 'focused' : ''}`}
+                onClick={() => void handleSelectCategory(RECENT_CATEGORY)}
+              >
+                <div class="buntu-cat-row-left">
+                  <span class="buntu-cat-row-icon">🕒</span>
+                  <span class="buntu-cat-row-title">Récemment vus</span>
+                </div>
+                <span class="buntu-cat-count">{formatBuntuCount(recentCount())}</span>
+              </div>
+
               <div
                 id="series-cat-all"
                 role="button"
@@ -695,7 +677,9 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
               <h2 class="buntu-section-title">
                 {isSearchMode()
                   ? `Recherche : « ${searchQuery()} »`
-                  : selectedCat() === FAVORITES_CATEGORY
+                  : selectedCat() === RECENT_CATEGORY
+                    ? 'Récemment vus'
+                    : selectedCat() === FAVORITES_CATEGORY
                     ? 'Favoris'
                     : selectedCat() || 'Toutes les séries'}
               </h2>
@@ -714,6 +698,21 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
                 {(s) => renderSeriesCard(s, `series-${s.id}`)}
               </For>
             </div>
+
+            <Show
+              when={
+                !isSearchMode() &&
+                !scroller.isLoading() &&
+                scroller.items().length === 0 &&
+                (selectedCat() === RECENT_CATEGORY || selectedCat() === FAVORITES_CATEGORY)
+              }
+            >
+              <p class="buntu-empty-hint">
+                {selectedCat() === RECENT_CATEGORY
+                  ? 'Ouvrez une série : il apparaîtra ici.'
+                  : 'Aucun favori pour l’instant : ajoutez-en avec ☆ Favori.'}
+              </p>
+            </Show>
 
             <Show when={!isSearchMode() && scroller.isLoading()}>
               <div class="tv-infinite-loader">

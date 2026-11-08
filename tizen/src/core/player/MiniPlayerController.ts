@@ -12,6 +12,7 @@
  */
 
 import { createSignal, Accessor } from 'solid-js';
+import type { StreamSummary } from './streamInfo';
 
 export type MiniPlayerStatus = 'idle' | 'connecting' | 'playing' | 'error';
 
@@ -26,9 +27,17 @@ export interface MiniPlayerEngine<T extends MiniPlayerItem> {
   recordRecent(item: T): void;
 }
 
+/** What the controller needs from the player service. The readers are optional (absent in tests). */
+export interface MiniPlayerPlayerPort {
+  setDisplayArea(area: { x: number; y: number; width: number; height: number }): void;
+  getStreamSummary?(): StreamSummary | null;
+  getCurrentTime?(): number;
+  getDuration?(): number;
+}
+
 export interface MiniPlayerOptions<T extends MiniPlayerItem> {
   engine: MiniPlayerEngine<T>;
-  player: { setDisplayArea(area: { x: number; y: number; width: number; height: number }): void };
+  player: MiniPlayerPlayerPort;
   /** Opens the full-screen player on this item (the screen decides how). */
   onFullscreen: (item: T) => void;
   /** How long a stream may take to start before the item is reported unavailable. */
@@ -46,6 +55,11 @@ export interface MiniPlayerController<T extends MiniPlayerItem> {
   playing: Accessor<T | null>;
   status: Accessor<MiniPlayerStatus>;
   error: Accessor<string>;
+  /** What the TV decodes for the running stream (size, codecs, audio); null until known. */
+  streamInfo: Accessor<StreamSummary | null>;
+  /** Position and length of the running stream in ms (length is 0 for live TV). */
+  positionMs: Accessor<number>;
+  durationMs: Accessor<number>;
   /** A stream is running or connecting. */
   active: () => boolean;
   /** The mini player runs the very item that is focused. */
@@ -56,6 +70,8 @@ export interface MiniPlayerController<T extends MiniPlayerItem> {
   /** The cursor moved onto an item: update the details only, never the stream. */
   focus: (item: T) => void;
   start: () => Promise<void>;
+  /** Plays this item in the mini player without changing which item is focused (e.g. resume the last channel). */
+  playItem: (item: T) => Promise<void>;
   stop: () => void;
   /** Stops when the focused item is the one playing, otherwise plays the focused item. */
   toggle: () => void;
@@ -86,9 +102,31 @@ export function createMiniPlayer<T extends MiniPlayerItem>(opts: MiniPlayerOptio
   const [playing, setPlaying] = createSignal<T | null>(null);
   const [status, setStatus] = createSignal<MiniPlayerStatus>('idle');
   const [error, setError] = createSignal('');
+  const [streamInfo, setStreamInfo] = createSignal<StreamSummary | null>(null);
+  const [positionMs, setPositionMs] = createSignal(0);
+  const [durationMs, setDurationMs] = createSignal(0);
 
   let viewport: HTMLElement | undefined;
   let handingOver = false;
+  let ticker: ReturnType<typeof setInterval> | undefined;
+
+  /** While a stream plays, read its facts once a second (stream info may arrive a moment after the start). */
+  const startTicker = () => {
+    const read = () => {
+      if (!streamInfo()) setStreamInfo(player.getStreamSummary?.() ?? null);
+      setPositionMs(player.getCurrentTime?.() ?? 0);
+      setDurationMs(player.getDuration?.() ?? 0);
+    };
+    read();
+    if (ticker === undefined) ticker = setInterval(read, 1000);
+  };
+  const stopTicker = () => {
+    if (ticker !== undefined) clearInterval(ticker);
+    ticker = undefined;
+    setStreamInfo(null);
+    setPositionMs(0);
+    setDurationMs(0);
+  };
 
   const appRoot = () => (typeof document === 'undefined' ? null : document.querySelector('.app-root'));
   const setSeeThrough = (on: boolean) => {
@@ -125,10 +163,9 @@ export function createMiniPlayer<T extends MiniPlayerItem>(opts: MiniPlayerOptio
     }
   };
 
-  const start = async () => {
-    const item = focused();
-    if (!item) return;
+  const playItem = async (item: T) => {
     engine.recordRecent(item);
+    stopTicker();
     setPlaying(() => item);
     setError('');
     setStatus('connecting');
@@ -151,9 +188,11 @@ export function createMiniPlayer<T extends MiniPlayerItem>(opts: MiniPlayerOptio
       if (playing()?.id !== item.id) return; // stopped, or another item took over meanwhile
       setStatus('playing');
       setSeeThrough(true);
+      startTicker();
     } catch (err) {
       if (playing()?.id !== item.id) return;
       engine.stopPlayback();
+      stopTicker();
       setPlaying(null);
       setStatus('error');
       setError((err as Error)?.message || 'Connexion impossible');
@@ -163,9 +202,15 @@ export function createMiniPlayer<T extends MiniPlayerItem>(opts: MiniPlayerOptio
     }
   };
 
+  const start = async () => {
+    const item = focused();
+    if (item) await playItem(item);
+  };
+
   const stop = () => {
     if (!active()) return;
     engine.stopPlayback();
+    stopTicker();
     setPlaying(null);
     setStatus('idle');
     setError('');
@@ -202,6 +247,7 @@ export function createMiniPlayer<T extends MiniPlayerItem>(opts: MiniPlayerOptio
   };
 
   const dispose = () => {
+    stopTicker();
     setSeeThrough(false);
     if (!handingOver) engine.stopPlayback();
   };
@@ -212,6 +258,9 @@ export function createMiniPlayer<T extends MiniPlayerItem>(opts: MiniPlayerOptio
     playing,
     status,
     error,
+    streamInfo,
+    positionMs,
+    durationMs,
     active,
     focusedIsPlaying,
     isPlaying,
@@ -220,6 +269,7 @@ export function createMiniPlayer<T extends MiniPlayerItem>(opts: MiniPlayerOptio
     },
     focus,
     start,
+    playItem,
     stop,
     toggle,
     activate,
