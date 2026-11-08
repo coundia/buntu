@@ -1140,6 +1140,23 @@ impl CndEngine {
         )?)
     }
 
+    pub fn item_by_stable_hash(&self, hash: String) -> Result<Option<db::IptvItemRecord>, CndError> {
+        Ok(self.db.item_by_stable_hash(&hash)?)
+    }
+
+    pub fn item_by_content_key(
+        &self,
+        content_key: String,
+        source_key: Option<String>,
+        provider_ref: Option<String>,
+    ) -> Result<Option<db::IptvItemRecord>, CndError> {
+        Ok(self.db.item_by_content_key(
+            &content_key,
+            source_key.as_deref(),
+            provider_ref.as_deref(),
+        )?)
+    }
+
     pub async fn search_subtitles(
         &self,
         query: subtitles::SubtitleSearchQuery,

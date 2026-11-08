@@ -503,3 +503,58 @@ pub fn wasm_sync_export_delta(
     let delta = state.export_delta(from_hlc.as_ref(), to_hlc);
     serde_json::to_string(&delta).map_err(|e| JsValue::from_str(&e.to_string()))
 }
+
+// ---------------------------------------------------------------- remote (PRD-42)
+
+#[wasm_bindgen]
+pub fn wasm_remote_reconstruct_xtream_url(
+    server: &str,
+    username: &str,
+    password: &str,
+    kind: &str,
+    provider_ref: &str,
+    container_ext: Option<String>,
+) -> String {
+    cnd_domain::remote::resolve::reconstruct_xtream_url(
+        server,
+        username,
+        password,
+        kind,
+        provider_ref,
+        container_ext.as_deref(),
+    )
+}
+
+#[wasm_bindgen]
+pub fn wasm_remote_verify_content_key(
+    source_key: &str,
+    item_kind: &str,
+    provider_item_id: &str,
+    expected_content_key: &str,
+) -> bool {
+    cnd_domain::remote::resolve::verify_content_key_match(
+        source_key,
+        item_kind,
+        provider_item_id,
+        expected_content_key,
+    )
+}
+
+#[wasm_bindgen]
+pub fn wasm_remote_is_kids_allowed(group_title: Option<String>, is_explicit_adult: bool) -> bool {
+    cnd_domain::remote::resolve::is_content_allowed_in_kids_mode(
+        group_title.as_deref(),
+        is_explicit_adult,
+    )
+}
+
+#[wasm_bindgen]
+pub fn wasm_remote_should_stop_stream(
+    current_source_key: Option<String>,
+    release_source_key: &str,
+) -> bool {
+    cnd_domain::remote::handoff::should_stop_stream_on_release(
+        current_source_key.as_deref(),
+        release_source_key,
+    )
+}

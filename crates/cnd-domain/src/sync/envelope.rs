@@ -9,11 +9,33 @@ use serde::{Deserialize, Serialize};
 
 use super::records::SyncDelta;
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_idle() -> String {
+    "idle".to_string()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlayRefuseReason {
+    UnknownContent,
+    SourceMissing,
+    Busy,
+    KidsRestricted,
+    DeclinedByUser,
+    NotAllowed,
+    AppNotReady,
+    RateLimited,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
 pub enum SyncMessage {
     SyncDelta(SyncDelta),
+    /// Deprecated PRD-41 broadcast alias, preserved for backwards compatibility.
     PlayRemote {
         content_key: String,
         position_ms: u64,
@@ -33,9 +55,79 @@ pub enum SyncMessage {
         device_name: String,
         device_type: String, // "tv" | "mobile" | "desktop"
         app_version: String,
+        #[serde(default = "default_true")]
+        can_play: bool,
+        #[serde(default)]
+        capabilities: Vec<String>,
+        #[serde(default = "default_idle")]
+        state: String, // "idle" | "playing" | "busy"
+        #[serde(default)]
+        profile_uuid: Option<String>,
+        #[serde(default)]
+        kids: bool,
     },
     Ping,
     Pong,
+    // PRD-42 Handoff & Remote Playback messages
+    PlayRequest {
+        target_device_id: String,
+        request_id: String,
+        content_key: String,
+        #[serde(default)]
+        source_key: Option<String>,
+        item_kind: String, // "live" | "movie" | "episode"
+        #[serde(default)]
+        provider_ref: Option<String>,
+        #[serde(default)]
+        title: Option<String>,
+        position_ms: u64,
+        #[serde(default)]
+        profile_uuid: Option<String>,
+        #[serde(default)]
+        replace: bool,
+    },
+    PlayReady {
+        request_id: String,
+    },
+    PlayRefused {
+        request_id: String,
+        reason: PlayRefuseReason,
+    },
+    PlayGo {
+        request_id: String,
+        position_ms: u64,
+    },
+    PlaybackState {
+        device_id: String,
+        #[serde(default)]
+        content_key: Option<String>,
+        #[serde(default)]
+        title: Option<String>,
+        state: String, // "loading" | "playing" | "paused" | "ended" | "error"
+        position_ms: u64,
+        duration_ms: u64,
+        #[serde(default)]
+        controls: Vec<String>,
+    },
+    PlaybackControl {
+        target_device_id: String,
+        action: String, // "pause" | "resume" | "seek_to" | "seek_by" | "stop" | "next" | "previous" | "channel_up" | "channel_down" | "volume"
+        #[serde(default)]
+        value: Option<i64>,
+    },
+    ReleaseRequest {
+        target_device_id: String,
+        request_id: String,
+    },
+    ReleaseDone {
+        request_id: String,
+        #[serde(default)]
+        content_key: Option<String>,
+        position_ms: u64,
+    },
+    ReleaseStream {
+        source_key: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

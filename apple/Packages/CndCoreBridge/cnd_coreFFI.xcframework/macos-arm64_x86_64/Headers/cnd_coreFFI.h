@@ -557,6 +557,16 @@ int8_t uniffi_cnd_core_fn_method_cndengine_is_health_check_running(void*_Nonnull
 int8_t uniffi_cnd_core_fn_method_cndengine_is_local_ai_provider(void*_Nonnull ptr, RustBuffer config, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ITEM_BY_CONTENT_KEY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ITEM_BY_CONTENT_KEY
+RustBuffer uniffi_cnd_core_fn_method_cndengine_item_by_content_key(void*_Nonnull ptr, RustBuffer content_key, RustBuffer source_key, RustBuffer provider_ref, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ITEM_BY_STABLE_HASH
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_ITEM_BY_STABLE_HASH
+RustBuffer uniffi_cnd_core_fn_method_cndengine_item_by_stable_hash(void*_Nonnull ptr, RustBuffer hash, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LESS_LIKE_THIS
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_FN_METHOD_CNDENGINE_LESS_LIKE_THIS
 void uniffi_cnd_core_fn_method_cndengine_less_like_this(void*_Nonnull ptr, RustBuffer kind, RustBuffer stable_hash, RustCallStatus *_Nonnull out_status
@@ -1810,6 +1820,18 @@ uint16_t uniffi_cnd_core_checksum_method_cndengine_is_health_check_running(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_IS_LOCAL_AI_PROVIDER
 #define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_IS_LOCAL_AI_PROVIDER
 uint16_t uniffi_cnd_core_checksum_method_cndengine_is_local_ai_provider(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_ITEM_BY_CONTENT_KEY
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_ITEM_BY_CONTENT_KEY
+uint16_t uniffi_cnd_core_checksum_method_cndengine_item_by_content_key(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_ITEM_BY_STABLE_HASH
+#define UNIFFI_FFIDEF_UNIFFI_CND_CORE_CHECKSUM_METHOD_CNDENGINE_ITEM_BY_STABLE_HASH
+uint16_t uniffi_cnd_core_checksum_method_cndengine_item_by_stable_hash(void
     
 );
 #endif
