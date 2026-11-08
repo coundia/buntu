@@ -38,7 +38,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .libraryFolders: return "Dossiers"
         #endif
         case .sources: return "Sources"
-        case .household: return "Foyer"
+        case .household: return "Appareils"
         case .settings: return "Réglages"
         }
     }

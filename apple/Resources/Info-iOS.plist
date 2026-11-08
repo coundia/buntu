@@ -68,7 +68,7 @@
 		<string>_buntu-sync._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Pour scanner le QR code affiché par votre TV et lui envoyer vos comptes.</string>
+	<string>Pour scanner le QR code affiché par votre TV (lui envoyer vos comptes) ou par un autre appareil de votre foyer (le rejoindre).</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Requis pour communiquer avec les serveurs IA locaux et découvrir les flux IPTV locaux.</string>
 	<key>NSSupportsLiveActivities</key>

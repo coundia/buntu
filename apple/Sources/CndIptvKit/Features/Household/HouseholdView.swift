@@ -5,7 +5,7 @@ import AppKit
 import UIKit
 #endif
 
-/// Sidebar screen "Foyer": the devices of the household (PRD 41), their state, and the household actions
+/// Sidebar screen "Appareils": the devices of the household (PRD 41), their state, and the household actions
 /// (create, join, copy the key, leave). The same actions exist in Settings; this screen is the place to
 /// see which devices are around and why one is missing.
 public struct HouseholdView: View {
@@ -16,6 +16,14 @@ public struct HouseholdView: View {
     @State private var showingLeaveConfirm = false
     @State private var errorMessage: String?
     @State private var keyCopied = false
+    #if !os(tvOS)
+    @State private var showingQR = false
+    /// The key behind the QR code: read when the sheet opens, dropped when it closes.
+    @State private var qrKey: String?
+    #endif
+    #if os(iOS)
+    @State private var showingScanner = false
+    #endif
 
     public init(localSync: LocalSyncService?) {
         self.localSync = localSync
@@ -36,13 +44,28 @@ public struct HouseholdView: View {
                 }
             }
         }
-        .navigationTitle("Foyer")
+        .navigationTitle("Appareils")
+        #if !os(tvOS)
+        .sheet(isPresented: $showingQR, onDismiss: { qrKey = nil }) {
+            HouseholdQRSheet(keyHex: qrKey ?? "") { showingQR = false }
+        }
+        #endif
+        #if os(iOS)
+        .sheet(isPresented: $showingScanner) {
+            HouseholdScanSheet { key in
+                showingScanner = false
+                join(key: key)
+            } onClose: {
+                showingScanner = false
+            }
+        }
+        #endif
         .alert("Rejoindre un foyer", isPresented: $showingJoin) {
             TextField("Clé du foyer (64 caractères)", text: $joinKey)
             Button("Rejoindre") { join() }
             Button("Annuler", role: .cancel) { joinKey = "" }
         } message: {
-            Text("Collez la clé affichée sur un autre appareil du foyer (écran Foyer, « Copier la clé »).")
+            Text("Collez la clé affichée sur un autre appareil du foyer (écran Appareils, « Copier la clé »).")
         }
         .confirmationDialog("Quitter le foyer ?", isPresented: $showingLeaveConfirm, titleVisibility: .visible) {
             Button("Quitter le foyer", role: .destructive) {
@@ -73,10 +96,17 @@ public struct HouseholdView: View {
             } label: {
                 Label("Créer un foyer", systemImage: "house.fill")
             }
+            #if os(iOS)
+            Button {
+                showingScanner = true
+            } label: {
+                Label("Scanner un QR code", systemImage: "qrcode.viewfinder")
+            }
+            #endif
             Button {
                 showingJoin = true
             } label: {
-                Label("Rejoindre un foyer existant…", systemImage: "person.badge.key")
+                Label("Rejoindre avec la clé…", systemImage: "person.badge.key")
             }
         } header: {
             Text("Aucun foyer")
@@ -189,6 +219,11 @@ public struct HouseholdView: View {
             }
             #if !os(tvOS)
             Button {
+                showQRCode()
+            } label: {
+                Label("Afficher le QR code (pour ajouter un appareil)", systemImage: "qrcode")
+            }
+            Button {
                 copyKey()
             } label: {
                 Label(keyCopied ? "Clé copiée" : "Copier la clé du foyer (pour ajouter un appareil)", systemImage: keyCopied ? "checkmark" : "key")
@@ -209,6 +244,10 @@ public struct HouseholdView: View {
     private func join() {
         let key = joinKey
         joinKey = ""
+        join(key: key)
+    }
+
+    private func join(key: String) {
         do {
             _ = try store.joinHousehold(keyHex: key)
             errorMessage = nil
@@ -217,6 +256,18 @@ public struct HouseholdView: View {
             errorMessage = "Clé de foyer invalide : \(error.localizedDescription)"
         }
     }
+
+    #if !os(tvOS)
+    private func showQRCode() {
+        guard let key = store.currentHouseholdKeyHex() else {
+            errorMessage = "La clé du foyer est introuvable sur cet appareil."
+            return
+        }
+        errorMessage = nil
+        qrKey = key
+        showingQR = true
+    }
+    #endif
 
     private func copyKey() {
         guard let key = store.currentHouseholdKeyHex() else { return }
