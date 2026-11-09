@@ -187,20 +187,29 @@ public final class AppState {
                     (try? engine.listSources())?.first(where: { $0.id == id })
                 }.value
                 guard let source else { continue }
+                let log = self?.localSync
                 do {
                     var password: String?
                     if source.sourceType == "xtream" {
                         let key = source.passwordRef ?? KeychainStore.xtreamKey(forSourceUuid: source.uuid)
-                        guard let secret = (try? KeychainStore.shared.readSecret(forKey: key)) ?? nil else { continue }
+                        guard let secret = (try? KeychainStore.shared.readSecret(forKey: key)) ?? nil else {
+                            log?.log("Catalogue de « \(source.name) » non chargé : pas de mot de passe sur cet appareil.", warning: true)
+                            continue
+                        }
                         password = secret
-                        _ = try await engine.refreshXtreamSource(sourceId: id, password: secret)
+                        log?.log("Chargement du catalogue de « \(source.name) »…")
+                        let summary = try await engine.refreshXtreamSource(sourceId: id, password: secret)
+                        log?.log("Catalogue de « \(source.name) » chargé : \(SyncSummaryFormatter.text(summary)).")
                     } else {
-                        _ = try await engine.refreshSource(sourceId: id)
+                        log?.log("Chargement du catalogue de « \(source.name) »…")
+                        let summary = try await engine.refreshSource(sourceId: id)
+                        log?.log("Catalogue de « \(source.name) » chargé : \(SyncSummaryFormatter.text(summary)).")
                     }
+                    self?.reloadSnapshot()
                     _ = try? await engine.refreshSourceEpg(sourceId: id, password: password)
                     self?.reloadSnapshot()
                 } catch {
-                    AppLog.shared.warn("SYNC", "Catalogue du compte reçu non chargé : \(error.localizedDescription)")
+                    log?.log("Catalogue de « \(source.name) » non chargé : \(error.localizedDescription)", warning: true)
                 }
             }
         }

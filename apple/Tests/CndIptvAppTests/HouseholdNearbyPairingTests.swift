@@ -160,4 +160,18 @@ final class HouseholdNearbyPairingTests: XCTestCase {
         XCTAssertEqual(with.password, "pw")
         XCTAssertEqual(with.uuid, "u1")
     }
+
+    // MARK: - Replay window (messages out of order on two connections)
+
+    func testReplayWindowAcceptsOutOfOrderOnceAndRefusesOld() {
+        let store = HouseholdStore()
+        let sender = "peer-replay-test"
+        XCTAssertTrue(store.acceptSequence(senderDeviceId: sender, sequence: 5_000))
+        XCTAssertTrue(store.acceptSequence(senderDeviceId: sender, sequence: 5_002), "a later message")
+        XCTAssertTrue(store.acceptSequence(senderDeviceId: sender, sequence: 5_001), "an earlier one arriving late is kept")
+        XCTAssertFalse(store.acceptSequence(senderDeviceId: sender, sequence: 5_001), "the same message twice is dropped")
+        XCTAssertTrue(store.acceptSequence(senderDeviceId: sender, sequence: 9_000))
+        XCTAssertFalse(store.acceptSequence(senderDeviceId: sender, sequence: 5_003), "older than the window")
+        XCTAssertEqual(store.replayFloor(for: sender), 9_000 - HouseholdStore.replayWindow)
+    }
 }

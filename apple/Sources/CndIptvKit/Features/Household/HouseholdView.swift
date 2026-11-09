@@ -37,6 +37,7 @@ public struct HouseholdView: View {
             if store.isJoined {
                 thisDeviceSection
                 devicesSection
+                syncLogSection
                 actionsSection
             } else {
                 welcomeSection
@@ -232,6 +233,56 @@ public struct HouseholdView: View {
             Text("La TV Samsung n'apparaît pas encore ici : son lien avec l'iPhone et le Mac (canal Samsung) n'est pas encore implémenté côté Apple.")
         }
     }
+
+    /// What the household sync did, most recent first: devices found, data sent and received, accounts
+    /// loaded, and why something failed. Names and counts only.
+    @ViewBuilder
+    private var syncLogSection: some View {
+        if let localSync {
+            Section {
+                if localSync.syncLog.isEmpty {
+                    Text("Rien pour l'instant. Appuyez sur « Synchroniser maintenant ».")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(localSync.syncLog.reversed().prefix(40)) { entry in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(entry.date.formatted(date: .omitted, time: .standard))
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            Text(entry.text)
+                                .font(.caption)
+                                .foregroundStyle(entry.isWarning ? Color.orange : Color.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    #if !os(tvOS)
+                    HStack {
+                        Button("Copier le journal") { copySyncLog(localSync.syncLog) }
+                        Spacer()
+                        Button("Effacer", role: .destructive) { localSync.clearLog() }
+                    }
+                    .font(.caption)
+                    #endif
+                }
+            } header: {
+                Text("Journal de synchronisation")
+            }
+        }
+    }
+
+    #if !os(tvOS)
+    private func copySyncLog(_ entries: [SyncLogEntry]) {
+        let text = entries.map { "\($0.date.formatted(date: .omitted, time: .standard)) \($0.isWarning ? "⚠︎ " : "")\($0.text)" }
+            .joined(separator: "\n")
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #else
+        UIPasteboard.general.string = text
+        #endif
+    }
+    #endif
 
     private func peerRow(_ peer: DiscoveredPeer, now: Date, reachable: Bool) -> some View {
         let seconds = now.timeIntervalSince(peer.lastSeen)

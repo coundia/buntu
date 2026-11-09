@@ -128,6 +128,21 @@ pub enum SyncMessage {
     ReleaseStream {
         source_key: String,
     },
+    /// Accounts, profiles, favorites and progress as the Apple apps store them (keyed by uuid and
+    /// `stable_hash`, the format of `cnd-core`'s delta export). Carried as an opaque object: its rules
+    /// (last write wins by `updated_at`) are applied by `cnd-core` on import. It may hold the Xtream
+    /// passwords of the accounts, which only ever travel inside this encrypted envelope.
+    HouseholdDataDelta {
+        delta: serde_json::Value,
+    },
+    /// "Send me everything you have": answered with a `HouseholdDataDelta` of the whole state.
+    SyncRequest,
+    /// New household key after a device was removed (PRD-41 § 5), sealed with the previous key.
+    HouseholdRekey {
+        new_key_hex: String,
+        #[serde(default)]
+        removed_device_id: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -324,5 +339,27 @@ mod tests {
         let env = seal_envelope(&key1, "phone_1", 1, &nonce, &msg).unwrap();
         let res = open_envelope(&key2, &env, 0);
         assert!(matches!(res, Err(EnvelopeError::MismatchedHouseholdId)));
+    }
+
+    #[test]
+    fn test_household_messages_round_trip() {
+        let key = [7u8; 32];
+        let nonce = [1u8; 12];
+        let messages = [
+            r#"{"type":"household_data_delta","delta":{"sources":[{"uuid":"u1","password":"pw"}],"favorites":[]}}"#,
+            r#"{"type":"sync_request"}"#,
+            r#"{"type":"household_rekey","new_key_hex":"ab","removed_device_id":"apple_x"}"#,
+            r#"{"type":"household_rekey","new_key_hex":"ab"}"#,
+        ];
+        for (i, raw) in messages.iter().enumerate() {
+            let msg: SyncMessage = serde_json::from_str(raw).expect("message accepted by the protocol");
+            let env = seal_envelope(&key, "dev", 10 + i as u64, &nonce, &msg).expect("sealed");
+            let opened = open_envelope(&key, &env, 0).expect("opened");
+            assert_eq!(opened, msg);
+        }
+        // The opaque delta keeps every field, the password included.
+        let msg: SyncMessage = serde_json::from_str(messages[0]).unwrap();
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["delta"]["sources"][0]["password"], "pw");
     }
 }
