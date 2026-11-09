@@ -107,6 +107,7 @@ public final class HouseholdStore: @unchecked Sendable {
         self.householdId = creds.householdId
         self.isJoined = true
         self.lastSeenSequenceByDevice.removeAll()
+        self.acceptedSequencesByDevice.removeAll()
         clearKnownDevicesLocked()
         lock.unlock()
 
@@ -127,6 +128,7 @@ public final class HouseholdStore: @unchecked Sendable {
         self.householdId = derivedId
         self.isJoined = true
         self.lastSeenSequenceByDevice.removeAll()
+        self.acceptedSequencesByDevice.removeAll()
         clearKnownDevicesLocked()
         lock.unlock()
 
@@ -140,6 +142,7 @@ public final class HouseholdStore: @unchecked Sendable {
         self.householdId = nil
         self.isJoined = false
         self.lastSeenSequenceByDevice.removeAll()
+        self.acceptedSequencesByDevice.removeAll()
         clearKnownDevicesLocked()
         lock.unlock()
     }
@@ -314,6 +317,39 @@ public final class HouseholdStore: @unchecked Sendable {
             return false // Replay or out of order
         }
         lastSeenSequenceByDevice[senderDeviceId] = sequence
+        return true
+    }
+
+    // MARK: - Replay window
+
+    /// How far behind the highest sequence a message may still arrive. Two devices talk over two TCP
+    /// connections (each one opened its own), so messages can arrive out of order: a large full sync
+    /// sealed first could arrive after a small announce sealed just after it, and was refused as a replay.
+    static let replayWindow: UInt64 = 1024
+    private var acceptedSequencesByDevice: [String: Set<UInt64>] = [:]
+
+    /// The barrier given to the envelope check: anything at or below it is refused as too old.
+    public func replayFloor(for senderDeviceId: String) -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        let highest = lastSeenSequenceByDevice[senderDeviceId] ?? 0
+        return highest > Self.replayWindow ? highest - Self.replayWindow : 0
+    }
+
+    /// Accepts each sequence once: refuses an exact repeat (replay, or the same message received on the
+    /// two connections) and anything older than the window.
+    public func acceptSequence(senderDeviceId: String, sequence: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let highest = lastSeenSequenceByDevice[senderDeviceId] ?? 0
+        let floor = highest > Self.replayWindow ? highest - Self.replayWindow : 0
+        guard sequence > floor else { return false }
+        var accepted = acceptedSequencesByDevice[senderDeviceId] ?? []
+        guard accepted.insert(sequence).inserted else { return false }
+        let newHighest = max(highest, sequence)
+        lastSeenSequenceByDevice[senderDeviceId] = newHighest
+        let newFloor = newHighest > Self.replayWindow ? newHighest - Self.replayWindow : 0
+        acceptedSequencesByDevice[senderDeviceId] = accepted.filter { $0 > newFloor }
         return true
     }
 
