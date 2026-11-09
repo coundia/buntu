@@ -105,6 +105,10 @@ public struct CndVideoPlayerView: View {
     var onReturnToLive: (() -> Void)?
     /// Downloads the film or episode being played; the button shows only when provided and the media can be downloaded.
     var onDownload: (() -> Void)?
+    /// "Lire sur…" (PRD-42): household devices that can play right now, and the action that sends the
+    /// current media to one of them. The menu shows only when both are provided and the media can be sent.
+    var remoteTargets: (() -> [DiscoveredPeer])?
+    var onPlayOnDevice: ((DiscoveredPeer) -> Void)?
     /// macOS "Mode Cinéma": toggles full screen on a black stage with the cursor hidden along with the controls.
     var onToggleCinema: (() -> Void)?
     var isCinema: Bool
@@ -131,9 +135,13 @@ public struct CndVideoPlayerView: View {
         subtitleSearch: (() -> SubtitleSearchModel)? = nil,
         onReturnToLive: (() -> Void)? = nil,
         onDownload: (() -> Void)? = nil,
+        remoteTargets: (() -> [DiscoveredPeer])? = nil,
+        onPlayOnDevice: ((DiscoveredPeer) -> Void)? = nil,
         onToggleCinema: (() -> Void)? = nil,
         isCinema: Bool = false
     ) {
+        self.remoteTargets = remoteTargets
+        self.onPlayOnDevice = onPlayOnDevice
         self.upNext = upNext
         self.onToggleCinema = onToggleCinema
         self.onDownload = onDownload
@@ -566,6 +574,7 @@ public struct CndVideoPlayerView: View {
                 hudButton("arrow.down.circle", "Télécharger", action: onDownload)
                     .help("Télécharger ce film ou cet épisode")
             }
+            playOnDeviceMenu
             volumeControls
             speedMenu
             audioMenu
@@ -578,6 +587,47 @@ public struct CndVideoPlayerView: View {
             }
         }
         .fixedSize()
+    }
+
+    /// "Lire sur…": the other device opens the content in its own Buntu and this one stops (no Cast).
+    @ViewBuilder
+    private var playOnDeviceMenu: some View {
+        if let remoteTargets, let onPlayOnDevice,
+           let media = controller.media, media.stableHash != nil,
+           media.kind == .live || media.kind == .movie || media.kind == .episode {
+            Menu {
+                let targets = remoteTargets()
+                if targets.isEmpty {
+                    Text("Aucun autre appareil Buntu détecté")
+                } else {
+                    Section("Lire sur…") {
+                        ForEach(targets) { peer in
+                            Button {
+                                onPlayOnDevice(peer)
+                            } label: {
+                                Label(
+                                    peer.state == "playing" ? "\(peer.name) (en lecture)" : peer.name,
+                                    systemImage: Self.deviceSymbol(peer.deviceType)
+                                )
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "rectangle.on.rectangle.angled")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .accessibilityLabel("Lire sur un autre appareil")
+        }
+    }
+
+    private static func deviceSymbol(_ type: String) -> String {
+        switch type.lowercased() {
+        case "tv": return "tv"
+        case "desktop", "mac": return "laptopcomputer"
+        default: return "iphone"
+        }
     }
 
     private var audioMenu: some View {

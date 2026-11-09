@@ -189,6 +189,7 @@ private struct LoadedShellView: View {
     var body: some View {
         VStack(spacing: 0) {
             mainShell
+            RemotePlaybackControlBar()
             if state.showNetworkConsole {
                 NetworkConsoleDrawer(model: consoleModel)
             }
@@ -227,6 +228,7 @@ private struct LoadedShellView: View {
             } message: {
                 Text(state.errorMessage ?? "")
             }
+            .modifier(RemotePlaybackAlerts(state: state, toasts: toasts, showPlayer: { showPlayerForRemoteStart() }))
             .onChange(of: selectedTabRaw) { _, _ in vodContext.selection = nil }
             #if !os(tvOS)
             .onChange(of: libraryModel.isAudioPlaying) { _, playing in
@@ -1036,6 +1038,18 @@ private struct LoadedShellView: View {
     }
     #endif
 
+    /// A household device started a playback here: show the player, as a playback started on this device does.
+    private func showPlayerForRemoteStart() {
+        #if !os(tvOS)
+        libraryModel.stopAudio()
+        #endif
+        #if os(macOS)
+        setExpanded(true, windowFullscreen: false)
+        #else
+        presentPlayerInFront()
+        #endif
+    }
+
     private func play(_ item: IptvItemRecord) {
         #if !os(tvOS)
         libraryModel.stopAudio()
@@ -1301,6 +1315,8 @@ private struct LoadedShellView: View {
             subtitleSearch: { makeSubtitleSearch() },
             onReturnToLive: { returnToLive() },
             onDownload: { downloadCurrentMedia() },
+            remoteTargets: { state.remotePlaybackTargets },
+            onPlayOnDevice: { state.playCurrentMedia(on: $0) },
             onToggleCinema: { setExpanded(true) }
         )
         .aspectRatio(16 / 9, contentMode: .fit)
@@ -1351,6 +1367,8 @@ private struct LoadedShellView: View {
             subtitleSearch: { makeSubtitleSearch() },
             onReturnToLive: { returnToLive() },
             onDownload: { downloadCurrentMedia() },
+            remoteTargets: { state.remotePlaybackTargets },
+            onPlayOnDevice: { state.playCurrentMedia(on: $0) },
             onToggleCinema: cinemaAction,
             isCinema: expandedShowsFullscreen
         )
@@ -1433,5 +1451,43 @@ private struct LoadedShellView: View {
         }
         #endif
         return false
+    }
+}
+
+/// "Lire sur…" (PRD-42): the question asked when another household device wants to play here, and the
+/// status of a transfer started from this device. Kept apart: the shell's modifier chain is already long.
+private struct RemotePlaybackAlerts: ViewModifier {
+    let state: AppState
+    let toasts: ToastCenter
+    let showPlayer: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: state.remotePlayStarts) { _, _ in showPlayer() }
+            .alert("Lire ici ?", isPresented: isPromptShown) {
+                Button("Accepter") { answer(true) }
+                Button("Ignorer", role: .cancel) { answer(false) }
+            } message: {
+                Text(message)
+            }
+            .onChange(of: RemotePlaybackCoordinator.shared.handoffStatusMessage) { _, status in
+                if let status { toasts.show(status) }
+            }
+    }
+
+    private var isPromptShown: Binding<Bool> {
+        Binding(get: { state.remotePrompt != nil }, set: { if !$0 { answer(false) } })
+    }
+
+    private var message: String {
+        let sender = state.remotePrompt?.senderName ?? "Un appareil"
+        let title = state.remotePrompt?.title ?? "un contenu"
+        return "\(sender) veut lire « \(title) » sur cet appareil."
+    }
+
+    private func answer(_ accepted: Bool) {
+        guard let prompt = state.remotePrompt else { return }
+        state.remotePrompt = nil
+        prompt.answer(accepted)
     }
 }

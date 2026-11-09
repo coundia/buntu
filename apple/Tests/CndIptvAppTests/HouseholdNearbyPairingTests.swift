@@ -109,4 +109,55 @@ final class HouseholdNearbyPairingTests: XCTestCase {
         XCTAssertEqual(store.knownDevices.count, 1)
         XCTAssertEqual(store.knownDevices.first?.name, "TV du salon")
     }
+
+    // MARK: - Removing a device (household_rekey)
+
+    func testRekeyMessageRoundTrip() throws {
+        let key = String(repeating: "ab", count: 32)
+        let json = try XCTUnwrap(HouseholdRekeyMessage.json(newKeyHex: key, removedDeviceId: "apple_x"))
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let parsed = try XCTUnwrap(HouseholdRekeyMessage.parse(root))
+        XCTAssertEqual(parsed.newKeyHex, key)
+        XCTAssertEqual(parsed.removedDeviceId, "apple_x")
+    }
+
+    func testRekeyMessageRefusesBadKeys() {
+        for bad in ["", "abc", String(repeating: "g", count: 64), String(repeating: "a", count: 65)] {
+            XCTAssertNil(HouseholdRekeyMessage.parse(["type": "household_rekey", "new_key_hex": bad]), "refused: \(bad.prefix(8))")
+        }
+        // Upper case is normalised, not refused.
+        XCTAssertEqual(HouseholdRekeyMessage.parse(["type": "household_rekey", "new_key_hex": String(repeating: "A", count: 64)])?.newKeyHex, String(repeating: "a", count: 64))
+        XCTAssertNil(HouseholdRekeyMessage.parse(["type": "other", "new_key_hex": String(repeating: "a", count: 64)]))
+    }
+
+    // MARK: - "Lire sur…": provider id of a stream
+
+    func testProviderRefIsTheStreamIdOnly() throws {
+        let cases: [(String, String?)] = [
+            ("http://server.example:80/movie/someuser/somepass/12345.mkv", "12345"),
+            ("http://server.example/live/someuser/somepass/987.ts", "987"),
+            ("https://server.example/someuser/somepass/55", "55"),
+            ("http://server.example/stream/ab%20cd.mp4", nil),
+            ("file:///Users/me/film.mkv", nil),
+        ]
+        for (raw, expected) in cases {
+            let url = try XCTUnwrap(URL(string: raw))
+            let ref = RemotePlaybackCoordinator.providerRef(from: url)
+            XCTAssertEqual(ref, expected, raw)
+            if let ref {
+                XCTAssertFalse(ref.contains("someuser") || ref.contains("somepass"), "no credential leaves the device")
+            }
+        }
+    }
+
+    // MARK: - Household sync of accounts
+
+    func testSyncedSourceDecodesWithAndWithoutPassword() throws {
+        let base = #"{"uuid":"u1","name":"Compte","source_type":"xtream","server":"http://s.example","username":"bob","password_ref":"cnd.xtream.u1","updated_at":10"#
+        let without = try JSONDecoder().decode(SyncSourceDTO.self, from: Data((base + "}").utf8))
+        XCTAssertNil(without.password, "an older device sends no password")
+        let with = try JSONDecoder().decode(SyncSourceDTO.self, from: Data((base + #","password":"pw"}"#).utf8))
+        XCTAssertEqual(with.password, "pw")
+        XCTAssertEqual(with.uuid, "u1")
+    }
 }

@@ -16,6 +16,7 @@ public struct HouseholdView: View {
     @State private var showingLeaveConfirm = false
     @State private var errorMessage: String?
     @State private var keyCopied = false
+    @State private var deviceToRemove: (id: String, name: String)?
     #if !os(tvOS)
     @State private var showingQR = false
     /// The key behind the QR code: read when the sheet opens, dropped when it closes.
@@ -90,6 +91,21 @@ public struct HouseholdView: View {
             Button("Annuler", role: .cancel) {}
         } message: {
             Text("Cet appareil ne partagera plus ses favoris, reprises et comptes avec le foyer. Les autres appareils ne sont pas modifiés.")
+        }
+        .confirmationDialog(
+            "Retirer \(deviceToRemove?.name ?? "cet appareil") du foyer ?",
+            isPresented: Binding(get: { deviceToRemove != nil }, set: { if !$0 { deviceToRemove = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Retirer du foyer", role: .destructive) {
+                if let target = deviceToRemove {
+                    do { try localSync?.removeDevice(target.id) } catch { errorMessage = error.localizedDescription }
+                }
+                deviceToRemove = nil
+            }
+            Button("Annuler", role: .cancel) { deviceToRemove = nil }
+        } message: {
+            Text("La clé du foyer est changée : cet appareil ne pourra plus lire vos favoris ni vos comptes. Les autres appareils reçoivent la nouvelle clé automatiquement ; ceux qui sont éteints la reçoivent à leur prochain passage sur le Wi‑Fi (sous 30 jours).")
         }
     }
 
@@ -236,6 +252,19 @@ public struct HouseholdView: View {
                 .fill(online ? Color.green : Color.gray)
                 .frame(width: 9, height: 9)
                 .accessibilityHidden(true)
+            #if !os(tvOS)
+            Menu {
+                Button(role: .destructive) {
+                    deviceToRemove = (peer.id, peer.name)
+                } label: {
+                    Label("Retirer du foyer…", systemImage: "person.badge.minus")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            #endif
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
@@ -245,7 +274,7 @@ public struct HouseholdView: View {
         Section {
             if let localSync {
                 Button {
-                    localSync.syncNow()
+                    localSync.syncNow(full: true)
                 } label: {
                     Label("Synchroniser maintenant", systemImage: "arrow.triangle.2.circlepath")
                 }
@@ -273,7 +302,7 @@ public struct HouseholdView: View {
                 Label("Quitter le foyer", systemImage: "rectangle.portrait.and.arrow.right")
             }
         } footer: {
-            Text("La clé du foyer donne accès à vos favoris et à vos comptes IPTV : ne la partagez qu'avec vos propres appareils. Retirer un appareil à distance (avec changement de clé) n'est pas encore disponible.")
+            Text("La clé du foyer donne accès à vos favoris et à vos comptes IPTV : ne la partagez qu'avec vos propres appareils. Retirer un appareil (menu « … » de sa ligne) change la clé du foyer.")
         }
     }
 
