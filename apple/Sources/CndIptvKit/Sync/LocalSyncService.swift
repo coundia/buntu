@@ -61,6 +61,9 @@ struct SyncSourceDTO: Codable {
     var password_ref: String?
     var epg_url: String?
     var updated_at: Int64
+    /// Xtream password, added when the delta travels between household devices (end-to-end encrypted by
+    /// the envelope). Never stored in the database: it goes to the Keychain of the receiving device.
+    var password: String?
 
     func toNative() -> SyncSource {
         SyncSource(uuid: uuid, name: name, sourceType: source_type, url: url, server: server, username: username, passwordRef: password_ref, epgUrl: epg_url, updatedAt: updated_at)
@@ -212,6 +215,7 @@ public struct PlaybackStateDTO: Codable, Sendable {
 @Observable
 public final class LocalSyncService: @unchecked Sendable {
     public static let serviceType = "_buntu-sync._tcp"
+    private static let exportCursorKey = "cnd.sync.lastExportTs.seconds"
 
     public private(set) var activePeers: [DiscoveredPeer] = []
     public private(set) var isListening: Bool = false
@@ -221,6 +225,8 @@ public final class LocalSyncService: @unchecked Sendable {
 
     public var onPlayRemote: (@Sendable (_ contentKey: String, _ positionMs: UInt64, _ title: String?, _ sourceKey: String?) -> Void)?
     public var onDeltaImported: (@Sendable () -> Void)?
+    /// Sources created by a received delta: they have no catalog yet and must be refreshed.
+    public var onSourcesInserted: (@Sendable (_ sourceIds: [Int64]) -> Void)?
 
     // PRD-42 Handoff Callbacks
     public var onPlayRequest: (@Sendable (_ req: PlayRequestDTO, _ senderId: String) -> Void)?
@@ -256,11 +262,22 @@ public final class LocalSyncService: @unchecked Sendable {
     public init(engine: CndEngine?, store: HouseholdStore = .shared) {
         self.engine = engine
         self.store = store
-        self.lastExportTimestamp = UserDefaults.standard.object(forKey: "cnd.sync.lastExportTs") as? Int64 ?? 0
+        // Seconds, like `updated_at` in the database. The old key held milliseconds: compared with seconds,
+        // nothing was ever exported again after the first sync, so it is abandoned.
+        self.lastExportTimestamp = UserDefaults.standard.object(forKey: Self.exportCursorKey) as? Int64 ?? 0
     }
 
     deinit {
         stop()
+    }
+
+    /// Bonjour name of this device. The suffix must differ from one device to the next: the old one
+    /// was `deviceId.prefix(6)` = "apple_" on every Apple device, so each Apple device took the other
+    /// for itself and never connected to it (the household list stayed empty).
+    private var ownServiceName: String {
+        let id = store.deviceId
+        let unique = id.split(separator: "_", maxSplits: 1).last.map(String.init) ?? id
+        return "\(store.deviceName) (\(unique.prefix(8)))"
     }
 
     public func start() {
@@ -330,7 +347,7 @@ public final class LocalSyncService: @unchecked Sendable {
             params.includePeerToPeer = true
             let l = try NWListener(using: params)
             l.service = NWListener.Service(
-                name: "\(store.deviceName) (\(store.deviceId.prefix(6)))",
+                name: ownServiceName,
                 type: Self.serviceType,
                 domain: nil
             )
@@ -417,7 +434,12 @@ public final class LocalSyncService: @unchecked Sendable {
             let wire = try decoder.decode(EnvelopeWireDTO.self, from: data)
             let envelope = wire.toSealed()
 
-            guard envelope.householdId == store.householdId else { return }
+            // A device that has not yet received the new key after a device was removed still speaks
+            // with the old one: read only its announce, and answer with the new key.
+            if envelope.householdId != store.householdId {
+                handleOldKeyEnvelope(envelope, on: connection)
+                return
+            }
 
             let lastSeen = store.lastSeenSequence(for: envelope.senderDeviceId)
             let messageJson = try syncOpenEnvelope(
@@ -427,11 +449,53 @@ public final class LocalSyncService: @unchecked Sendable {
             )
 
             _ = store.verifyAndAdvanceSequence(senderDeviceId: envelope.senderDeviceId, sequence: envelope.sequence)
+            store.markRekeyDelivered(envelope.senderDeviceId)
 
             handleDecryptedMessageJson(messageJson, senderDeviceId: envelope.senderDeviceId, connection: connection)
         } catch {
             // Decryption failure or replay rejection
         }
+    }
+
+    private func handleOldKeyEnvelope(_ envelope: HouseholdSealedEnvelope, on connection: NWConnection) {
+        guard let state = store.rekeyState,
+              envelope.householdId == state.previousHouseholdId,
+              let oldKeyHex = store.previousKeyHex(for: envelope.senderDeviceId),
+              let newKeyHex = store.currentHouseholdKeyHex() else { return }
+        do {
+            let lastSeen = store.lastSeenSequence(for: envelope.senderDeviceId)
+            let json = try syncOpenEnvelope(householdKeyHex: oldKeyHex, envelope: envelope, lastSeenSequence: lastSeen)
+            guard store.verifyAndAdvanceSequence(senderDeviceId: envelope.senderDeviceId, sequence: envelope.sequence),
+                  let root = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+                  root["type"] as? String == "device_announce",
+                  let message = HouseholdRekeyMessage.json(newKeyHex: newKeyHex, removedDeviceId: state.removedDeviceId ?? ""),
+                  let sealed = try? sealMessage(message, keyHex: oldKeyHex) else { return }
+            sendEnvelope(sealed, on: connection)
+        } catch {
+            // Not readable with the old key either: ignore.
+        }
+    }
+
+    /// Removes a device from the household: changes the household key, tells the other devices (sealed
+    /// with the old key) and drops the removed one. Devices that are offline get the new key the next
+    /// time they show up (`handleOldKeyEnvelope`).
+    @MainActor
+    public func removeDevice(_ removedId: String) throws {
+        let newKey = try store.generateKeyHex()
+        if let message = HouseholdRekeyMessage.json(newKeyHex: newKey, removedDeviceId: removedId) {
+            for (deviceId, conn) in deviceConnections where deviceId != removedId {
+                if let sealed = try? sealMessage(message) { sendEnvelope(sealed, on: conn) }
+            }
+        }
+        try store.applyRekey(newKeyHex: newKey, removing: removedId)
+        forget(deviceId: removedId)
+    }
+
+    @MainActor
+    private func forget(deviceId: String) {
+        deviceConnections[deviceId]?.cancel()
+        deviceConnections.removeValue(forKey: deviceId)
+        activePeers.removeAll { $0.id == deviceId }
     }
 
     private func handleDecryptedMessageJson(_ json: String, senderDeviceId: String, connection: NWConnection) {
@@ -457,7 +521,25 @@ public final class LocalSyncService: @unchecked Sendable {
                 lastSeen: Date()
             )
             Task { @MainActor in
+                // A device seen for the first time, or back after a while, gets everything (accounts,
+                // favorites, progress): that is how a device that just joined the household catches up.
+                let previous = self.activePeers.first(where: { $0.id == senderDeviceId })
+                let needsFullSync = previous == nil || peer.lastSeen.timeIntervalSince(previous?.lastSeen ?? .distantPast) > 120
                 self.updatePeer(peer)
+                if needsFullSync { self.sendFullSync(to: senderDeviceId) }
+            }
+
+        case "household_rekey":
+            // Only a device already known in the household may change the key.
+            guard store.isKnownDevice(senderDeviceId),
+                  let rekey = HouseholdRekeyMessage.parse(root),
+                  rekey.removedDeviceId != store.deviceId,
+                  (try? store.applyRekey(newKeyHex: rekey.newKeyHex, removing: rekey.removedDeviceId)) != nil else { return }
+            // Tell the sender (and let it stop waiting for us) with the new key.
+            sendAnnounce(on: connection)
+            Task { @MainActor in
+                if let removed = rekey.removedDeviceId { self.forget(deviceId: removed) }
+                self.syncStatusMessage = "Un appareil a été retiré du foyer : la clé a changé."
             }
 
         case "sync_delta":
@@ -465,15 +547,33 @@ public final class LocalSyncService: @unchecked Sendable {
                 do {
                     let decoder = JSONDecoder()
                     let deltaDto = try decoder.decode(SyncDeltaDTO.self, from: jsonData)
-                    _ = try engine.importSyncDelta(delta: deltaDto.toNative())
+                    // Last write wins: remember what this device had, to place passwords only where the
+                    // incoming account is new or newer.
+                    let localUpdatedAt = Dictionary(
+                        (try? engine.listSources())?.map { ($0.uuid, $0.updatedAt) } ?? [],
+                        uniquingKeysWith: { first, _ in first }
+                    )
+                    let summary = try engine.importSyncDelta(delta: deltaDto.toNative())
+                    Self.storeReceivedPasswords(deltaDto.sources, localUpdatedAt: localUpdatedAt)
+                    let inserted = summary.insertedSourceIds
+                    let received = (sources: Int(summary.sourcesApplied), favorites: Int(summary.favoritesApplied), progress: Int(summary.watchApplied))
                     Task { @MainActor in
                         self.lastSyncDate = Date()
+                        if received.sources + received.favorites + received.progress > 0 {
+                            self.syncStatusMessage = "Reçu : \(received.sources) compte(s), \(received.favorites) favori(s), \(received.progress) reprise(s)"
+                        }
                         self.onDeltaImported?()
+                        if !inserted.isEmpty { self.onSourcesInserted?(inserted) }
                     }
                 } catch {
-                    // Ignored or invalid format
+                    AppLog.shared.warn("SYNC", "Message de synchronisation reçu mais non appliqué : \(error.localizedDescription)")
+                    Task { @MainActor in self.syncStatusMessage = "Données reçues mais non appliquées (voir la console)." }
                 }
             }
+
+        case "sync_request":
+            // A device asks for everything (its "Synchroniser maintenant", or it has just joined).
+            sendFullSync(to: senderDeviceId)
 
         case "play_remote":
             if let contentKey = root["content_key"] as? String,
@@ -618,7 +718,7 @@ public final class LocalSyncService: @unchecked Sendable {
         for result in results {
             guard case .service(let name, _, _, _) = result.endpoint else { continue }
             // Avoid connecting to self
-            if name.contains(store.deviceId.prefix(6)) { continue }
+            if name == ownServiceName { continue }
 
             let peerId = name
             peerEndpoints[peerId] = result.endpoint
@@ -664,42 +764,103 @@ public final class LocalSyncService: @unchecked Sendable {
     // MARK: - Sending Messages & Deltas
 
     public func sendAnnounce(on connection: NWConnection) {
-        let announceJson = """
-        {"type":"device_announce","device_id":"\(store.deviceId)","device_name":"\(store.deviceName)","device_type":"\(store.deviceType)","app_version":"1.1.0"}
-        """
+        // Built with JSONSerialization: a device name containing a quote would break a hand-written string.
+        let announce: [String: Any] = [
+            "type": "device_announce",
+            "device_id": store.deviceId,
+            "device_name": store.deviceName,
+            "device_type": store.deviceType,
+            "app_version": "1.1.0",
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: announce),
+              let announceJson = String(data: data, encoding: .utf8) else { return }
         if let sealed = try? sealMessage(announceJson) {
             sendEnvelope(sealed, on: connection)
         }
     }
 
-    public func syncNow() {
+    /// `full` is the button "Synchroniser maintenant": sends everything this device has to every
+    /// connected device and asks them to send theirs, instead of only what changed since the last round.
+    public func syncNow(full: Bool = false) {
         guard let engine, store.isJoined else { return }
+        let peers = reachableConnections()
+        // Nobody is connected: keep the cursor, or what changed meanwhile would never be sent.
+        guard !peers.isEmpty else {
+            if full {
+                syncStatusMessage = "Aucun autre appareil joignable : ouvrez Buntu sur l'autre appareil, sur le même Wi‑Fi."
+            }
+            return
+        }
 
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
-            do {
-                let delta = try engine.exportSyncDelta(sinceTs: self.lastExportTimestamp)
-                let nowTs = Int64(Date().timeIntervalSince1970 * 1000)
-
-                let deltaDto = SyncDeltaDTO(delta)
-                let encoder = JSONEncoder()
-                let deltaData = try encoder.encode(deltaDto)
-
-                guard var dict = try JSONSerialization.jsonObject(with: deltaData) as? [String: Any] else { return }
-                dict["type"] = "sync_delta"
-                let messageData = try JSONSerialization.data(withJSONObject: dict)
-                guard let messageJson = String(data: messageData, encoding: .utf8) else { return }
-
-                self.broadcastMessage(messageJson)
-                self.lastExportTimestamp = nowTs
-                UserDefaults.standard.set(nowTs, forKey: "cnd.sync.lastExportTs")
-
-                Task { @MainActor in
-                    self.lastSyncDate = Date()
-                }
-            } catch {
-                // No delta to export
+            let nowTs = Int64(Date().timeIntervalSince1970)
+            let since = full ? 0 : self.lastExportTimestamp
+            if let messageJson = self.deltaMessageJson(engine: engine, since: since),
+               let sealed = try? self.sealMessage(messageJson) {
+                for conn in peers { self.sendEnvelope(sealed, on: conn) }
             }
+            if full, let sealed = try? self.sealMessage(#"{"type":"sync_request"}"#) {
+                for conn in peers { self.sendEnvelope(sealed, on: conn) }
+            }
+            if !full {
+                self.lastExportTimestamp = nowTs
+                UserDefaults.standard.set(nowTs, forKey: Self.exportCursorKey)
+            }
+            Task { @MainActor in
+                self.lastSyncDate = Date()
+                if full { self.syncStatusMessage = "Synchronisation demandée à \(peers.count) connexion(s)…" }
+            }
+        }
+    }
+
+    /// Every live connection, whichever side opened it.
+    private func reachableConnections() -> [NWConnection] {
+        var seen = Set<ObjectIdentifier>()
+        return (Array(connections.values) + Array(deviceConnections.values)).filter { seen.insert(ObjectIdentifier($0)).inserted }
+    }
+
+    /// Sends everything this device has (accounts, favorites, progress) to one device.
+    private func sendFullSync(to peerId: String) {
+        guard let engine, store.isJoined else { return }
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self, let messageJson = self.deltaMessageJson(engine: engine, since: 0) else { return }
+            _ = self.sendToPeer(peerId: peerId, messageJson: messageJson)
+        }
+    }
+
+    /// The `sync_delta` message of everything changed after `since` (seconds), with the Xtream passwords
+    /// of the accounts it contains. `nil` when there is nothing to send.
+    private func deltaMessageJson(engine: CndEngine, since: Int64) -> String? {
+        guard let delta = try? engine.exportSyncDelta(sinceTs: since) else { return nil }
+        guard !(delta.profiles.isEmpty && delta.sources.isEmpty && delta.favorites.isEmpty
+                && delta.watchHistory.isEmpty && delta.tombstones.isEmpty) else { return nil }
+        var dto = SyncDeltaDTO(delta)
+        dto.sources = dto.sources.map { source in
+            var source = source
+            if source.source_type == "xtream" {
+                let key = source.password_ref ?? KeychainStore.xtreamKey(forSourceUuid: source.uuid)
+                source.password = try? KeychainStore.shared.readSecret(forKey: key)
+            }
+            return source
+        }
+        guard let data = try? JSONEncoder().encode(dto),
+              var dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        dict["type"] = "sync_delta"
+        guard let message = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
+        return String(data: message, encoding: .utf8)
+    }
+
+    /// Puts the passwords of received accounts in this device's Keychain (never in the database).
+    private static func storeReceivedPasswords(_ sources: [SyncSourceDTO], localUpdatedAt: [String: Int64]) {
+        let keychain = KeychainStore.shared
+        for source in sources where source.source_type == "xtream" {
+            guard let password = source.password, !password.isEmpty else { continue }
+            let key = source.password_ref ?? KeychainStore.xtreamKey(forSourceUuid: source.uuid)
+            let isNewOrNewer = localUpdatedAt[source.uuid].map { source.updated_at > $0 } ?? true
+            let missing = ((try? keychain.readSecret(forKey: key)) ?? nil) == nil
+            guard missing || isNewOrNewer else { continue }
+            try? keychain.saveSecret(password, forKey: key, scope: keychain.passwordScope)
         }
     }
 
@@ -742,8 +903,8 @@ public final class LocalSyncService: @unchecked Sendable {
         }
     }
 
-    private func sealMessage(_ messageJson: String) throws -> HouseholdSealedEnvelope {
-        guard let keyHex = store.currentHouseholdKeyHex() else {
+    private func sealMessage(_ messageJson: String, keyHex explicitKeyHex: String? = nil) throws -> HouseholdSealedEnvelope {
+        guard let keyHex = explicitKeyHex ?? store.currentHouseholdKeyHex() else {
             throw NSError(domain: "LocalSyncService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Non appairé"])
         }
 

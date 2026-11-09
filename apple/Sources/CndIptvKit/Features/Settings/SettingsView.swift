@@ -583,7 +583,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     Button("Synchroniser maintenant") {
-                        localSync.syncNow()
+                        localSync.syncNow(full: true)
                     }
                 }
                 #if os(macOS)

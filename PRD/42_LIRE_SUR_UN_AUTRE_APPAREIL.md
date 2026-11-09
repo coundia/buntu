@@ -62,7 +62,8 @@ Idée centrale (comme « Spotify Connect ») : **on n'envoie pas le média, on e
 ### 2.1. Lancer sur un autre appareil
 
 - Bouton **« Lire sur… »** (icône écran + flèche) dans : le lecteur plein écran, le mini lecteur, la fiche d'un film ou d'une série, la ligne d'une chaîne (action secondaire), et la ligne « Reprendre ».
-- Il ouvre le **sélecteur d'appareils** : tous les appareils du foyer **qui peuvent lire**, avec leur état :
+- **Dans le lecteur (Apple), un menu « Lire sur… »** (icône à côté de la vitesse et du volume) liste directement les appareils joignables : **un geste** suffit, comme sur YouTube. L'appareil d'origine s'arrête quand la cible est prête (§ 3.2) ; il ne reste **pas** en pause avec le flux ouvert, car beaucoup d'abonnements n'autorisent qu'un flux. La position est conservée : « Reprendre ici » (§ 4) revient à l'endroit quitté.
+- Ailleurs (fiches, lignes de chaîne), le bouton ouvre le **sélecteur d'appareils** : tous les appareils du foyer **qui peuvent lire**, avec leur état :
 
 | État affiché | Sens | Action possible |
 | :--- | :--- | :--- |
@@ -334,7 +335,7 @@ Le foyer ne peut pas réveiller une app qui n'écoute pas. Ce qu'on sait faire, 
 
 ## 14. Statut d'Implémentation & Validation
 
-**Statut global : `[~]` partiel.** Le protocole en Rust et la réception sur la TV Samsung sont codés et testés ; **l'interface côté Apple n'est branchée nulle part, Android n'a aucune implémentation, et rien n'a été essayé sur de vrais appareils.**
+**Statut global : `[~]` partiel.** Le protocole en Rust et la réception sur la TV Samsung sont codés et testés ; **côté Apple, le menu « Lire sur… » du lecteur, la barre de télécommande et la demande à l'écran sont branchés (compilation vérifiée, jamais essayés à l'écran) ; Android n'a aucune implémentation, et rien n'a été essayé sur de vrais appareils.**
 
 **Codé et testé (relu et corrigé le 8 novembre 2026) :**
 - **Rust (`crates/cnd-domain/src/remote/`) :** messages (`SyncMessage`), machines d'états d'émission et de réception, limiteur de débit, recherche par `content_key` dans `cnd-core` (`item_by_content_key`). Tests : `cargo test -p cnd-domain` (dont deux ajoutés à la relecture : une lecture en cours n'est jamais remplacée sans accord, une demande ne vole pas la réservation d'une autre).
@@ -349,8 +350,13 @@ Le foyer ne peut pas réveiller une app qui n'écoute pas. Ce qu'on sait faire, 
 - Apple : `release_stream` utilisait le compte de la lecture précédente (donc jamais envoyé sur une TV libre) ; la position rendue au rapatriement valait toujours 0 ; l'identifiant d'appareil envoyé dans `playback_state` était celui d'un autre appareil ; un message adressé était diffusé à tous quand l'appareil n'était pas trouvé, et la correspondance d'identifiant se faisait sur 6 caractères.
 - PRD-41 (Tizen) : le compteur anti-rejeu repartait de 1 à chaque lancement (les téléphones rejetaient alors tous les messages de la TV) ; chaque minute tous les favoris étaient renvoyés avec une date neuve (un favori supprimé ailleurs revenait) ; les suppressions reçues étaient ignorées ; la progression reçue n'était jamais enregistrée.
 
+**Branché côté Apple (9 novembre 2026, compilation macOS, iOS et visionOS vérifiée, non essayé à l'écran ni sur appareil) :**
+- `AppState.configureRemotePlayback` : `configure(…)` et tous les crochets du lecteur (arrêt, lecture à une position, position mesurée, pause / reprise / saut / arrêt / épisode suivant reçus, demande à l'écran avec refus au bout de 10 s, profil Enfants = tout refusé, compte du média pour la règle d'un seul flux).
+- `CndVideoPlayerView` : menu « Lire sur… » (films, épisodes, chaînes du catalogue ; pas les fichiers locaux ni les replays) ; `AppShellView` : barre de télécommande de lecture, alerte « Lire ici ? », message d'état du transfert.
+- Le sélecteur `RemoteDevicePickerView` existe mais n'est utilisé nulle part (le menu du lecteur le remplace pour l'instant).
+
 **Pas fait :**
-- **Apple :** `RemotePlaybackCoordinator`, `RemoteDevicePickerView` et `RemotePlaybackControlBar` ne sont **utilisés par aucun écran** : il manque `configure(…)`, les branchements au lecteur (`onStopLocalPlay`, `onRequestLocalPlay`, `localPlaybackSnapshot`), le bouton « Lire sur… » et l'affichage de la barre.
+- **Apple :** « Lire sur… » depuis les fiches et les lignes de chaîne ; chaîne +/− depuis la télécommande ; appareils hors ligne grisés dans le menu ; réglage « Qui peut lancer ici ? » (la politique reste « libre ») ; tvOS ne propose pas le menu (non essayé).
 - **Android :** aucune réception ni émission (lots 42.2 et 42.3) ; le test de parité ne vérifie que le format des messages.
 - **Tizen :** pas de sélecteur d'appareils pour **envoyer** vers un autre appareil, pas d'écran de demande (« accepter / ignorer ») : tant qu'il n'existe pas, une TV qui lit refuse (`busy`) et le réglage « toujours demander » refuse.
 - **Machine d'états en Rust non exportée** vers UniFFI et WebAssembly : Swift et TypeScript répètent les mêmes règles (contraire à la règle d'architecture n° 1) ; les tests Rust ne couvrent pas ces copies.

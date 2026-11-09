@@ -77,7 +77,7 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
     // Origin side
     private var pendingRequestId: String?
     private var pendingTargetPeerId: String?
-    private var pendingItem: IptvItemRecord?
+    private var pendingContentKey: String?
     private var handedOffTargetId: String?
     private var handedOffContentKey: String?
     private var handedOffPositionMs: UInt64 = 0
@@ -128,10 +128,16 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
     // MARK: - Tracking of local playback
 
     public func setLocalPlaybackActive(item: IptvItemRecord?, sourceKey: String?) {
-        if let item {
-            currentLocalContentKey = item.stableHash
+        setLocalPlaybackActive(contentKey: item?.stableHash, title: item?.name, sourceKey: sourceKey)
+    }
+
+    /// Tells the coordinator what this device plays (`contentKey` nil = nothing), so that it can report
+    /// the state, answer "rends-moi la lecture" and apply the one-stream-per-account rule.
+    public func setLocalPlaybackActive(contentKey: String?, title: String?, sourceKey: String?) {
+        if let contentKey {
+            currentLocalContentKey = contentKey
             currentLocalSourceKey = sourceKey
-            currentLocalTitle = item.name
+            currentLocalTitle = title
             if stateSubscriberId != nil { startStateBroadcast() }
         } else {
             let hadSubscriber = stateSubscriberId
@@ -157,12 +163,30 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
         positionMs: UInt64,
         sourceKey: String?
     ) {
+        startRemotePlayback(
+            targetPeer: targetPeer, contentKey: item.stableHash, kind: item.kind,
+            title: item.name, positionMs: positionMs, sourceKey: sourceKey
+        )
+    }
+
+    /// Sends what is playing here to `targetPeer`. Nothing is stopped here until the target answers
+    /// `play_ready`; then this device stops (one stream at the provider) and the target starts at the
+    /// position measured at that very moment.
+    public func startRemotePlayback(
+        targetPeer: DiscoveredPeer,
+        contentKey: String,
+        kind: String,
+        title: String,
+        positionMs: UInt64,
+        sourceKey: String?,
+        providerRef: String? = nil
+    ) {
         guard let localSync, !isInitiatingHandoff else { return }
 
         let reqId = "req_\(UUID().uuidString.prefix(8))"
         pendingRequestId = reqId
         pendingTargetPeerId = targetPeer.id
-        pendingItem = item
+        pendingContentKey = contentKey
         isInitiatingHandoff = true
         handoffStatusMessage = "Connexion à \(targetPeer.name)…"
 
@@ -170,13 +194,14 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
             "type": "play_request",
             "target_device_id": targetPeer.id,
             "request_id": reqId,
-            "content_key": item.stableHash,
-            "item_kind": item.kind,
-            "title": item.name,
+            "content_key": contentKey,
+            "item_kind": kind,
+            "title": title,
             "position_ms": positionMs,
             "replace": true
         ]
         if let sourceKey { dict["source_key"] = sourceKey }
+        if let providerRef { dict["provider_ref"] = providerRef }
 
         guard let json = Self.json(dict), localSync.sendToPeer(peerId: targetPeer.id, messageJson: json) else {
             clearPending()
@@ -200,7 +225,7 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
         // Position measured NOW, just before the local stream is stopped (PRD-42 § 3.2).
         let snapshot = localPlaybackSnapshot?()
         let finalPosition = snapshot?.positionMs ?? 0
-        let key = pendingItem?.stableHash
+        let key = pendingContentKey
 
         // One single stream at the provider: stop here BEFORE telling the target to go.
         onStopLocalPlay?()
@@ -238,7 +263,7 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
     private func clearPending() {
         pendingRequestId = nil
         pendingTargetPeerId = nil
-        pendingItem = nil
+        pendingContentKey = nil
         isInitiatingHandoff = false
     }
 
@@ -487,6 +512,17 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
     }
 
     // MARK: - Helpers
+
+    /// The provider's own id of a stream (`…/12345.mkv` → `12345`), so another device that added the same
+    /// account by itself (its catalog ids differ) can find the content. Only this id leaves the device:
+    /// never the URL, which carries the account's name and password. `nil` when it does not look like an id.
+    public static func providerRef(from url: URL) -> String? {
+        guard url.scheme == "http" || url.scheme == "https" else { return nil }
+        let last = url.deletingPathExtension().lastPathComponent
+        guard !last.isEmpty, last.count <= 40,
+              last.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }) else { return nil }
+        return last
+    }
 
     private func onMain(_ work: @escaping @Sendable () -> Void) {
         if Thread.isMainThread { work() } else { DispatchQueue.main.async(execute: work) }

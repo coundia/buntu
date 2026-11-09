@@ -86,6 +86,7 @@ public final class AppState {
         }
         player.onMediaChanged = { [weak self] media in
             self?.upNext.onMediaChanged(media)
+            self?.trackRemotePlayback(media)
             guard let coordinator = self?.downloadCoordinator else { return }
             Task { await coordinator.playbackChanged(media: media) }
         }
@@ -151,7 +152,10 @@ public final class AppState {
         ParentalControlManager.shared.onAdultSessionChange = { [weak self] in self?.applyParentalVisibility() }
         applyParentalVisibility(reload: false)
         let sync = CloudKitSyncManager(engine: engine)
-        sync.onRemoteChange = { [weak self] _ in self?.reloadSnapshot() }
+        sync.onRemoteChange = { [weak self] insertedIds in
+            self?.reloadSnapshot()
+            self?.refreshInsertedSources(insertedIds)
+        }
         cloudSync = sync
         sync.start()
 
@@ -161,11 +165,177 @@ public final class AppState {
                 self?.reloadSnapshot()
             }
         }
+        local.onSourcesInserted = { [weak self] ids in
+            Task { @MainActor [weak self] in self?.refreshInsertedSources(ids) }
+        }
         localSync = local
         local.start()
+        configureRemotePlayback(localSync: local, engine: engine)
         reloadSnapshot()
         if let currentMedia = player.media {
             upNext.onMediaChanged(currentMedia)
+        }
+    }
+
+    /// Accounts that arrived from another device have no channels yet: download their catalog and guide,
+    /// one at a time (one connection at the provider). An Xtream account whose password has not arrived is skipped.
+    func refreshInsertedSources(_ ids: [Int64]) {
+        guard let engine, !ids.isEmpty else { return }
+        Task { [weak self] in
+            for id in ids {
+                let source = await Task.detached(priority: .utility) {
+                    (try? engine.listSources())?.first(where: { $0.id == id })
+                }.value
+                guard let source else { continue }
+                do {
+                    var password: String?
+                    if source.sourceType == "xtream" {
+                        let key = source.passwordRef ?? KeychainStore.xtreamKey(forSourceUuid: source.uuid)
+                        guard let secret = (try? KeychainStore.shared.readSecret(forKey: key)) ?? nil else { continue }
+                        password = secret
+                        _ = try await engine.refreshXtreamSource(sourceId: id, password: secret)
+                    } else {
+                        _ = try await engine.refreshSource(sourceId: id)
+                    }
+                    _ = try? await engine.refreshSourceEpg(sourceId: id, password: password)
+                    self?.reloadSnapshot()
+                } catch {
+                    AppLog.shared.warn("SYNC", "Catalogue du compte reçu non chargé : \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    // MARK: - "Lire sur…" (PRD-42)
+
+    /// A household device asks to play here and waits for this device's answer (10 s, no answer = refusal).
+    public var remotePrompt: RemotePlayPrompt?
+    /// Account of the media playing here (see `RemotePlaybackCoordinator`: one stream per account).
+    @ObservationIgnored private var remoteSourceKey: String?
+    /// Bumped each time another household device starts a playback here, so the shell shows the player
+    /// (a playback started by `player.open` alone plays with sound but nothing on screen on the Mac).
+    public private(set) var remotePlayStarts = 0
+
+    /// Films, episodes and live channels of the catalog can be sent to another device.
+    /// Local files, recordings and replays cannot: the other device does not have them.
+    public var canPlayOnAnotherDevice: Bool {
+        guard let media = player.media, media.stableHash != nil else { return false }
+        return media.kind == .live || media.kind == .movie || media.kind == .episode
+    }
+
+    /// Devices of the household that can play and are reachable right now.
+    public var remotePlaybackTargets: [DiscoveredPeer] {
+        (localSync?.activePeers ?? []).filter { $0.canPlay }
+    }
+
+    /// Sends what is playing here to `peer`; this device stops once the peer is ready (one stream only).
+    public func playCurrentMedia(on peer: DiscoveredPeer) {
+        guard canPlayOnAnotherDevice, let media = player.media, let hash = media.stableHash else { return }
+        let live = media.kind == .live
+        RemotePlaybackCoordinator.shared.startRemotePlayback(
+            targetPeer: peer,
+            contentKey: hash,
+            kind: media.itemKind ?? (live ? "live" : "movie"),
+            title: media.title,
+            positionMs: live ? 0 : UInt64(max(0, player.positionMs)),
+            sourceKey: remoteSourceKey,
+            providerRef: RemotePlaybackCoordinator.providerRef(from: media.url)
+        )
+    }
+
+    private func configureRemotePlayback(localSync: LocalSyncService, engine: CndEngine) {
+        let remote = RemotePlaybackCoordinator.shared
+        remote.configure(localSync: localSync, engine: engine)
+        // Every hook is called on the main thread (the sync service dispatches there).
+        remote.localPlaybackSnapshot = { [weak self] in
+            MainActor.assumeIsolated { self?.remoteSnapshot() }
+        }
+        remote.onStopLocalPlay = { [weak self] in
+            MainActor.assumeIsolated { self?.player.close() }
+        }
+        remote.onRequestLocalPlay = { [weak self] item, positionMs in
+            MainActor.assumeIsolated {
+                guard let self, let media = PlayableMedia(item: item, startPositionMs: Int64(positionMs)) else { return }
+                self.player.open(media)
+                self.remotePlayStarts += 1
+            }
+        }
+        // Kids profile: nothing is started from another device (the catalog filter is not applied to a lookup by key).
+        remote.isItemAllowedForActiveProfile = { [weak self] _ in
+            MainActor.assumeIsolated { !(self?.profiles?.isKidsModeActive ?? false) }
+        }
+        remote.onPromptRequest = { [weak self] title, senderName, answer in
+            MainActor.assumeIsolated { self?.askRemotePrompt(title: title, senderName: senderName, answer: answer) ?? answer(false) }
+        }
+        remote.onRemoteControl = { [weak self] action, value in
+            MainActor.assumeIsolated { self?.applyRemoteControl(action: action, value: value) }
+        }
+        remote.onStreamInterruptedByPeer = { [weak self] _ in
+            MainActor.assumeIsolated { self?.errorMessage = "Lecture arrêtée : un autre appareil du foyer lit ce compte." }
+        }
+    }
+
+    private func remoteSnapshot() -> LocalPlaybackSnapshot? {
+        guard player.media != nil else { return nil }
+        let state: String
+        switch player.state {
+        case .playing: state = "playing"
+        case .paused: state = "paused"
+        case .idle, .loading, .buffering: state = "loading"
+        case .ended: state = "ended"
+        case .failed: state = "error"
+        }
+        return LocalPlaybackSnapshot(
+            state: state,
+            positionMs: UInt64(max(0, player.positionMs)),
+            durationMs: UInt64(max(0, player.durationMs))
+        )
+    }
+
+    private func applyRemoteControl(action: String, value: Int64?) {
+        switch action {
+        case "pause": player.pause()
+        case "resume": player.play()
+        case "seek_to": if let value { player.seek(toMs: max(0, value)) }
+        case "seek_by": if let value { player.seek(toMs: max(0, player.positionMs + value)) }
+        case "stop": player.close()
+        case "next": player.next()
+        case "previous": player.previous()
+        default: break
+        }
+    }
+
+    private func askRemotePrompt(title: String?, senderName: String, answer: @escaping @Sendable (Bool) -> Void) {
+        let prompt = RemotePlayPrompt(title: title, senderName: senderName, answer: answer)
+        remotePrompt = prompt
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard let self, self.remotePrompt?.id == prompt.id else { return }
+            self.remotePrompt = nil
+            answer(false)
+        }
+    }
+
+    /// Tells the coordinator what plays here, and finds the account of that media (off the main thread).
+    private func trackRemotePlayback(_ media: PlayableMedia?) {
+        let remote = RemotePlaybackCoordinator.shared
+        remoteSourceKey = nil
+        guard let media, let hash = media.stableHash, let engine else {
+            remote.setLocalPlaybackActive(contentKey: nil, title: nil, sourceKey: nil)
+            return
+        }
+        remote.setLocalPlaybackActive(contentKey: hash, title: media.title, sourceKey: nil)
+        Task { [weak self] in
+            let sourceId = await Task.detached(priority: .utility) { () -> Int64? in
+                (try? engine.itemByContentKey(contentKey: hash, sourceKey: nil, providerRef: nil, itemKind: nil))?.sourceId
+            }.value
+            guard let self, let sourceId, self.player.media?.stableHash == hash,
+                  let source = self.sources.first(where: { $0.id == sourceId }) else { return }
+            let key = syncComputeSourceKey(
+                sourceType: source.sourceType, serverOrUrl: source.server ?? source.url ?? "", username: source.username
+            )
+            self.remoteSourceKey = key
+            remote.setLocalPlaybackActive(contentKey: hash, title: media.title, sourceKey: key)
         }
     }
 
@@ -285,4 +455,12 @@ public final class AppState {
         self.reloadSnapshot(notifyScreens: false)
         return newBroken
     }
+}
+
+/// Request of another household device to play here, waiting for the user's answer.
+public struct RemotePlayPrompt: Identifiable {
+    public let id = UUID()
+    public let title: String?
+    public let senderName: String
+    public let answer: @Sendable (Bool) -> Void
 }
