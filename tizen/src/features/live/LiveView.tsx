@@ -49,6 +49,12 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       zapContext.frozen = null;
       props.onPlayChannel(ch);
     },
+    onItemFailed: (ch, err) => {
+      console.warn(`[LiveView] MiniPlayer failed for channel ${ch.name}:`, err);
+      ch.is_broken = 1;
+      void db.setBroken(ch.id, true);
+      setFavTick((t) => t + 1);
+    },
   });
   let unsubPanelKeys: (() => void) | null = null;
 
@@ -159,6 +165,16 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     const restored = screenState.restore('live');
     const snap = restored?.snapshot as BrowseSnapshot<ItemRecord> | undefined;
     if (restored && snap) {
+      // If the channel was marked broken while playing, update snapshot item
+      const currentItem = engine.getCurrentPlayingItem();
+      if (currentItem && currentItem.is_broken !== undefined) {
+        const itemInSnap = snap.items.find((i) => i.id === currentItem.id);
+        if (itemInSnap) itemInSnap.is_broken = currentItem.is_broken;
+        const itemInRecent = snap.recent.find((i) => i.id === currentItem.id);
+        if (itemInRecent) itemInRecent.is_broken = currentItem.is_broken;
+        const itemInFav = snap.favs.find((i) => i.id === currentItem.id);
+        if (itemInFav) itemInFav.is_broken = currentItem.is_broken;
+      }
       // Instant return: show what was on screen, then refresh counts and shelves behind.
       setSelectedCategory(restored.category);
       setViewMode(restored.viewMode);
@@ -506,18 +522,20 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   };
 
   const renderChannelCard = (ch: ItemRecord, cardId: string, fallbackIdx: number) => {
+    favTick();
     const cleanTitle = () => (ch.name_clean && ch.name_clean !== ch.name ? ch.name_clean : cleanMediaTitle(ch.name).clean);
     const quality = () => detectChannelQuality(ch.name);
     const nowProg = () => (ch.tvg_id ? epgMap()[ch.tvg_id] : undefined);
     const isPlaying = () => mini.isPlaying(ch.id) && mini.visible();
+    const isBroken = () => ch.is_broken === 1;
 
     return (
       <div
         id={cardId}
         role="button"
         tabindex="-1"
-        aria-label={`${cleanTitle()}, chaîne ${ch.chno || fallbackIdx + 1}`}
-        class={`buntu-ch-card ${isPlaying() ? 'playing' : ''} ${focusId() === cardId ? 'focused' : ''}`}
+        aria-label={`${cleanTitle()}, chaîne ${ch.chno || fallbackIdx + 1}${isBroken() ? ', hors service' : ''}`}
+        class={`buntu-ch-card ${isPlaying() ? 'playing' : ''} ${isBroken() ? 'broken' : ''} ${focusId() === cardId ? 'focused' : ''}`}
         onClick={() => handleCardActivate(ch)}
       >
         <div class="buntu-ch-top">
@@ -540,6 +558,9 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               <span class="buntu-ch-name">{cleanTitle()}</span>
               <Show when={quality()}>
                 <span class={`buntu-q-badge ${quality() === '4K' ? 'uhd' : ''}`}>{quality()}</span>
+              </Show>
+              <Show when={isBroken()}>
+                <span class="buntu-hs-badge" title="Chaîne temporairement hors service">HS</span>
               </Show>
             </div>
             <Show when={ch.group_title}>
@@ -908,6 +929,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                 </div>
                 <InfoChips
                   chips={[
+                    ch.is_broken === 1 ? { text: '⚠ HORS SERVICE', tone: 'quality' as const } : null,
                     quality ? { text: quality, tone: quality === '4K' ? 'uhd' : 'quality' } : null,
                     ch.country ? { text: ch.country.toUpperCase() } : null,
                     ch.language ? { text: ch.language.toUpperCase() } : null,

@@ -595,6 +595,10 @@ export class CndEngine {
     return this.db.toggleFavorite(itemId);
   }
 
+  public async setBroken(itemId: number, broken = true): Promise<boolean> {
+    return this.db.setBroken(itemId, broken);
+  }
+
   /**
    * Playback. Several calls may overlap (zapping in the Live TV list): only the last one opens its stream.
    * The same item already playing (mini player → full screen) is not reopened unless `force`.

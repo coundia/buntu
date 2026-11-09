@@ -330,7 +330,11 @@ export const App: Component = () => {
     setCurrentRoute('player');
     RemotePlaybackCoordinator.getInstance().setLocalPlaying(item);
     // What already plays in a mini player (live channel or film) keeps running, not reopened.
-    await engine.play(item, { force: item.kind !== 'live' && !engine.isPlayingItem(item) });
+    try {
+      await engine.play(item, { force: item.kind !== 'live' && !engine.isPlayingItem(item) });
+    } catch (err) {
+      console.warn('[App] Play error:', err);
+    }
   };
 
   /** Ch+ / Ch- in the player: the neighbour of the current channel in the list it was opened from. */

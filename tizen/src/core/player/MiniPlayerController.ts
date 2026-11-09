@@ -44,6 +44,8 @@ export interface MiniPlayerOptions<T extends MiniPlayerItem> {
   startTimeoutMs?: number;
   /** Message shown when the stream does not answer in time. */
   timeoutMessage?: string;
+  /** Called when a stream fails to connect or errors out. */
+  onItemFailed?: (item: T, error: string) => void;
 }
 
 export interface MiniPlayerController<T extends MiniPlayerItem> {
@@ -195,8 +197,10 @@ export function createMiniPlayer<T extends MiniPlayerItem>(opts: MiniPlayerOptio
       stopTicker();
       setPlaying(null);
       setStatus('error');
-      setError((err as Error)?.message || 'Connexion impossible');
+      const msg = (err as Error)?.message || 'Connexion impossible';
+      setError(msg);
       setSeeThrough(false);
+      opts.onItemFailed?.(item, msg);
     } finally {
       if (timer) clearTimeout(timer);
     }
