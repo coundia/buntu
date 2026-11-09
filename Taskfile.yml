@@ -13,6 +13,13 @@ tasks:
     cmds:
       - task --list
 
+  # ---------------------------------------------------------------- init
+  init:
+    desc: Set up a fresh clone - checks tools, creates .env, builds the Apple XCFramework (not versioned), generates the Xcode project, installs tizen deps (FORCE=1 rebuilds, SKIP_CORE=1 skips the XCFramework)
+    aliases: [setup, bootstrap]
+    cmds:
+      - ./scripts/init.sh {{if .FORCE}}--force{{end}} {{if .SKIP_CORE}}--skip-core{{end}}
+
   # ---------------------------------------------------------------- keys
   keys:
     desc: Regenerate the default API keys from .env / the environment (PRD 28); needed once before swift build or test

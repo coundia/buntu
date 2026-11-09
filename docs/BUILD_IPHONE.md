@@ -10,6 +10,16 @@ task run:iphone
 
 La commande détecte l'appareil branché, compile, signe, installe et lance l'app. Tout ce qui suit sert à la première mise en place et au dépannage.
 
+## 0. Après un clone
+
+Le XCFramework du cœur Rust (`apple/Packages/CndCoreBridge/cnd_coreFFI.xcframework`, environ 440 Mo) **n'est pas dans git** : il se construit sur votre Mac. Une seule commande prépare tout (outils, `.env`, XCFramework, projet Xcode, dépendances de la TV) :
+
+```bash
+task init
+```
+
+Elle dure plusieurs minutes la première fois et ne refait que ce qui manque (`FORCE=1 task init` reconstruit le XCFramework).
+
 ## 1. Prérequis
 
 | Élément | Détail |

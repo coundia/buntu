@@ -131,6 +131,7 @@ flowchart TD
 
 ### 1. Environnement & Utilitaires
 ```bash
+task init               # Prépare un clone neuf : outils, .env, XCFramework (non versionné), projet Xcode
 task doctor             # Vérifie la présence des compilateurs et outils requis
 task keys               # Régénère les clés d'API masquées depuis le .env
 task icon               # Régénère assets/AppIcon.icns et assets/AppIcon-1024.png

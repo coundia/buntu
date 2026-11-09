@@ -15,6 +15,10 @@ DerivedData/
 !.env.example
 apple/Sources/CndIptvKit/Generated/
 
+# Rust core as an Apple XCFramework (~440 MB, built by `task init` / `task xcframework`): never versioned.
+# The Swift bindings next to it (Sources/CndCoreBridge/CndCore.swift) stay versioned.
+apple/Packages/CndCoreBridge/cnd_coreFFI.xcframework/
+
 # Android (PRD 37)
 android/.gradle/
 android/**/.gradle/
