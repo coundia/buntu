@@ -38,6 +38,7 @@
     <array>
         <string>_cndiptv._tcp</string>
         <string>_buntu-sync._tcp</string>
+        <string>_buntu-pair._tcp</string>
     </array>
 </dict>
 </plist>

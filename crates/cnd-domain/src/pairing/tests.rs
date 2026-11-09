@@ -196,7 +196,7 @@ fn the_tv_answers_and_only_the_right_phone_reads_it() {
     let opened = open(&offer.state, &sealed.message, NOW + 6).unwrap();
     let reply = seal_reply(&opened.reply_key, &offer.session, &bytes(200, 12), "added", 2).unwrap();
     let body = open_reply(&sealed.reply_key, &offer.session, &reply).unwrap();
-    assert_eq!(body, ReplyBody { result: "added".into(), count: 2 });
+    assert_eq!(body, ReplyBody { result: "added".into(), count: 2, payload: None });
     assert!(open_reply(&b64_encode(&[1u8; 32]), &offer.session, &reply).is_err(), "wrong key");
     assert!(open_reply(&sealed.reply_key, "OTHER", &reply).is_err(), "wrong session");
 }
@@ -239,4 +239,41 @@ fn the_shared_vectors_are_stable() {
     }
     let stored: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).expect("vectors.json")).unwrap();
     assert_eq!(stored, produced, "the vectors changed: every platform would stop understanding the others");
+}
+
+#[test]
+fn test_sas_and_household_join_request_and_reply_payload() {
+    let secret: [u8; 32] = [42u8; 32];
+    let sas1 = compute_sas(&secret, "SESSION123");
+    let sas2 = compute_sas(&secret, "SESSION123");
+    assert_eq!(sas1, sas2);
+    assert_eq!(sas1, "586507");
+    assert_eq!(sas1.len(), 6);
+    assert!(sas1.chars().all(|c| c.is_ascii_digit()));
+
+    // Different session gives different code
+    let sas3 = compute_sas(&secret, "SESSION999");
+    assert_ne!(sas1, sas3);
+
+    // HouseholdJoinRequest in SealedPayload
+    let req = SealedPayload::HouseholdJoinRequest {
+        device_name: "MacBook Pro".into(),
+        device_id: "mac_123".into(),
+        device_type: "desktop".into(),
+    };
+    let json = serde_json::to_string(&req).unwrap();
+    assert!(json.contains("household-join-request"));
+    let roundtrip: SealedPayload = serde_json::from_str(&json).unwrap();
+    assert_eq!(roundtrip, req);
+
+    // seal_reply_with_payload roundtrip
+    let offer = offer();
+    let sealed = seal_for(&offer);
+    let opened = open(&offer.state, &sealed.message, NOW + 6).unwrap();
+    let payload = r#"{"type":"household-join","household_id":"hh_abc","household_key":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","household_name":"Maison"}"#;
+    let reply = seal_reply_with_payload(&opened.reply_key, &offer.session, &bytes(200, 12), "added", 1, Some(payload)).unwrap();
+    let body = open_reply(&sealed.reply_key, &offer.session, &reply).unwrap();
+    assert_eq!(body.result, "added");
+    assert_eq!(body.count, 1);
+    assert_eq!(body.payload.as_deref(), Some(payload));
 }
