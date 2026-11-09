@@ -31,3 +31,6 @@ android/core/engine/src/main/jniLibs/**/*.so
 tizen/node_modules/
 tizen/dist/
 
+
+# IDE
+/.idea/
