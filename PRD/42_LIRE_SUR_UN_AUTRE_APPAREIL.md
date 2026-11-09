@@ -355,8 +355,14 @@ Le foyer ne peut pas réveiller une app qui n'écoute pas. Ce qu'on sait faire, 
 - `CndVideoPlayerView` : menu « Lire sur… » (films, épisodes, chaînes du catalogue ; pas les fichiers locaux ni les replays) ; `AppShellView` : barre de télécommande de lecture, alerte « Lire ici ? », message d'état du transfert.
 - Le sélecteur `RemoteDevicePickerView` existe mais n'est utilisé nulle part (le menu du lecteur le remplace pour l'instant).
 
+**Ajouté côté Apple le 9 novembre 2026 (Mac ↔ iPhone essayé par l'utilisateur, dans les deux sens) :**
+- Transport : réponse à la présentation, présence toutes les 30 s, reconnexion et nettoyage des connexions (`LocalSyncService.swift`) ; avant, l'iPhone voyait le Mac « Hors ligne ».
+- Menu « Lire sur un autre appareil » dans les menus contextuels des films, chaînes, « À suivre » et « Pour vous » (`PlayOnAnotherDeviceMenu.swift`).
+- **Décision de l'utilisateur : pas de confirmation dans le foyer.** La cible arrête son flux et lit le nouveau sans demander (`RemotePlaybackCoordinator.swift`). La règle Rust « jamais remplacée sans accord » et la copie TypeScript de la TV ne suivent pas encore : voir `PRD-44` (lot 44.1) et `PRD-45`.
+- Suite : Android dans les deux sens (`PRD-44`), TV Samsung en réception seule (`PRD-45`).
+
 **Pas fait :**
-- **Apple :** « Lire sur… » depuis les fiches et les lignes de chaîne ; chaîne +/− depuis la télécommande ; appareils hors ligne grisés dans le menu ; réglage « Qui peut lancer ici ? » (la politique reste « libre ») ; tvOS ne propose pas le menu (non essayé).
+- **Apple :** « Lire sur… » depuis les fiches (écran de détail) ; chaîne +/− depuis la télécommande ; appareils hors ligne grisés dans le menu ; réglage « Qui peut lancer ici ? » (la politique reste « libre ») ; tvOS ne propose pas le menu (non essayé).
 - **Android :** aucune réception ni émission (lots 42.2 et 42.3) ; le test de parité ne vérifie que le format des messages.
 - **Tizen :** pas de sélecteur d'appareils pour **envoyer** vers un autre appareil, pas d'écran de demande (« accepter / ignorer ») : tant qu'il n'existe pas, une TV qui lit refuse (`busy`) et le réglage « toujours demander » refuse.
 - **Machine d'états en Rust non exportée** vers UniFFI et WebAssembly : Swift et TypeScript répètent les mêmes règles (contraire à la règle d'architecture n° 1) ; les tests Rust ne couvrent pas ces copies.
