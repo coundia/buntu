@@ -2690,6 +2690,16 @@ html, body, #root {
   background: #2C3340;
 }
 
+.buntu-ch-card.broken {
+  opacity: 0.72;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.buntu-ch-card.broken.focused {
+  opacity: 1;
+  border-color: var(--buntu-danger) !important;
+}
+
 .buntu-ch-card.focused {
   background: var(--buntu-card-hover) !important;
   border-color: var(--buntu-accent) !important;
@@ -2778,6 +2788,18 @@ html, body, #root {
 .buntu-q-badge.uhd {
   background: var(--buntu-uhd);
   color: #000000;
+}
+
+.buntu-hs-badge {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--buntu-danger);
+  color: #FFFFFF;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+  margin-left: 4px;
 }
 
 .buntu-ch-group {
@@ -3198,6 +3220,7 @@ html, body, #root {
 .buntu-ch-num { font-size: clamp(14px, 1.15vw, 30px); margin-right: 0.5vw; color: rgba(255, 255, 255, 0.7); }
 .buntu-ch-name { font-size: clamp(17px, 1.5vw, 38px); }
 .buntu-q-badge { font-size: clamp(11px, 0.9vw, 24px); padding: 2px 7px; margin-left: 0.5vw; }
+.buntu-hs-badge { font-size: clamp(11px, 0.9vw, 24px); padding: 2px 7px; margin-left: 0.5vw; }
 .buntu-ch-group { font-size: clamp(12px, 1vw, 26px); color: rgba(255, 255, 255, 0.62); }
 .buntu-ch-star { font-size: clamp(20px, 1.8vw, 46px); color: rgba(255, 255, 255, 0.4); }
 .buntu-ch-star.fav { color: var(--buntu-star); }

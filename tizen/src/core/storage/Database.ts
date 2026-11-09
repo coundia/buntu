@@ -51,6 +51,7 @@ export interface ItemRecord {
   stream_url: string;
   container_ext?: string;
   is_favorite: number;
+  is_broken?: number;
   season_num?: number;
   episode_num?: number;
   playback_position_ms: number;
@@ -546,6 +547,15 @@ export class Database {
     item.is_favorite = item.is_favorite ? 0 : 1;
     await this.put('items', item);
     return item.is_favorite === 1;
+  }
+
+  public async setBroken(itemId: number, broken = true): Promise<boolean> {
+    if (!this.db) return false;
+    const item = await this.getById<ItemRecord>('items', itemId);
+    if (!item) return false;
+    item.is_broken = broken ? 1 : 0;
+    await this.put('items', item);
+    return item.is_broken === 1;
   }
 
   public async getFavorites(): Promise<ItemRecord[]> {

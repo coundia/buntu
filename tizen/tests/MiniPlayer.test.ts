@@ -81,6 +81,25 @@ describe('mini player controller', () => {
     expect(ctl.status()).toBe('idle');
   });
 
+  it('calls onItemFailed callback when playback errors', async () => {
+    const onItemFailed = vi.fn();
+    const engine = {
+      play: vi.fn(async () => {
+        throw new Error('Flux hors service');
+      }),
+      stopPlayback: vi.fn(),
+      recordRecent: vi.fn(),
+    };
+    const player = { setDisplayArea: vi.fn() };
+    const onFullscreen = vi.fn();
+    const ctl = createRoot(() =>
+      createMiniPlayer<Item>({ engine, player, onFullscreen, startTimeoutMs: 50, onItemFailed })
+    );
+    ctl.activate(a);
+    await vi.waitFor(() => expect(ctl.status()).toBe('error'));
+    expect(onItemFailed).toHaveBeenCalledWith(a, 'Flux hors service');
+  });
+
   it('gives up when the stream does not answer in time', async () => {
     const { ctl } = setup(() => new Promise<void>(() => {}), 30);
     ctl.activate(a);

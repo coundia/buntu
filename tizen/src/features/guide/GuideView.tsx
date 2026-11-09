@@ -246,7 +246,12 @@ export const GuideView: Component<GuideViewProps> = (props) => {
                       {ch.chno || '•'}
                     </div>
                     <div class="tv-guide-channel-text">
-                      <div class="tv-guide-channel-name">{chName}</div>
+                      <div class="tv-guide-channel-name">
+                        {chName}
+                        <Show when={ch.is_broken === 1}>
+                          <span class="buntu-hs-badge" title="Chaîne temporairement hors service">HS</span>
+                        </Show>
+                      </div>
                       <div class="tv-guide-channel-cat">{ch.group_title || 'Direct TV'}</div>
                     </div>
                   </div>

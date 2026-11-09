@@ -1,4 +1,4 @@
-import { Component, createSignal, onMount, onCleanup, Show, For } from 'solid-js';
+import { Component, createSignal, createEffect, onMount, onCleanup, Show, For } from 'solid-js';
 import { AVPlayerService, FULL_SCREEN, TrackInfo } from '../../core/player/AVPlayerService';
 import { HttpClient } from '../../core/net/HttpClient';
 import { ItemRecord } from '../../core/storage/Database';
@@ -30,7 +30,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   const [currentTimeMs, setCurrentTimeMs] = createSignal(0);
   const [durationMs, setDurationMs] = createSignal(0);
   const [showOsd, setShowOsd] = createSignal(true);
-  const [isBuffering, setIsBuffering] = createSignal(false);
+  const [isBuffering, setIsBuffering] = createSignal(true);
   const [bufferingPercent, setBufferingPercent] = createSignal(0);
   const [playerError, setPlayerError] = createSignal<string | null>(null);
   const [activeSubtitle, setActiveSubtitle] = createSignal<string>('');
@@ -74,30 +74,110 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   /** When a film ends if it keeps playing, as a clock time. */
   const endsAt = () => (durationMs() > 0 ? formatClock(info.nowTs() + (durationMs() - currentTimeMs()) / 1000) : '');
 
+  const MAX_RETRIES = 3;
+  const [retryCount, setRetryCount] = createSignal(1);
+  let retryTimer: any = null;
+  let connectionTimeoutTimer: any = null;
   let osdTimer: any = null;
   let hudTimer: any = null;
   let keyUnsub: (() => void) | null = null;
   let hasResumed = false;
   let lastBroadcastMs = 0;
 
-  const updateGrid = () => {
-    if (playerError()) {
-      spatialNav.setGrid([
-        [
-          { id: 'btn-player-retry', onSelect: retryPlayback },
-          { id: 'btn-player-exit', onSelect: () => { player.stop(); props.onExit(); } },
-        ],
-      ]);
+  const clearTimers = () => {
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+    if (connectionTimeoutTimer) {
+      clearTimeout(connectionTimeoutTimer);
+      connectionTimeoutTimer = null;
+    }
+  };
+
+  const focusErrorAction = () => {
+    spatialNav.setFocusById('btn-player-retry');
+    setTimeout(() => {
+      if (playerError()) {
+        spatialNav.setFocusById('btn-player-retry');
+      }
+    }, 50);
+  };
+
+  const startConnectionWatchdog = (expectedItemId: number) => {
+    if (props.item.kind !== 'live') return;
+    if (connectionTimeoutTimer) clearTimeout(connectionTimeoutTimer);
+    connectionTimeoutTimer = setTimeout(() => {
+      if (props.item.id === expectedItemId && isBuffering() && !playerError()) {
+        console.warn(`[PlayerView] Stream connection timeout (attempt ${retryCount()}/${MAX_RETRIES})`);
+        handleStreamError('Délai d’attente du serveur IPTV dépassé');
+      }
+    }, 12000);
+  };
+
+  const executeRetry = async (expectedItemId: number) => {
+    if (props.item.id !== expectedItemId) return;
+    clearTimers();
+    setPlayerError(null);
+    setIsBuffering(true);
+    startConnectionWatchdog(expectedItemId);
+    try {
+      await player.open(props.item.stream_url, props.item.kind === 'live');
+      if (props.item.id !== expectedItemId) return;
+      player.play();
+    } catch (err: any) {
+      if (props.item.id !== expectedItemId) return;
+      handleStreamError(err?.message || 'Échec de connexion');
+    }
+  };
+
+  const handleStreamError = (errorMsg: string) => {
+    clearTimers();
+    if (props.item.kind === 'live' && retryCount() < MAX_RETRIES) {
+      const nextAttempt = retryCount() + 1;
+      setRetryCount(nextAttempt);
+      setIsBuffering(true);
+      announce(`Connexion… tentative ${nextAttempt} sur ${MAX_RETRIES}`);
+      retryTimer = setTimeout(() => {
+        void executeRetry(props.item.id);
+      }, 1200);
       return;
     }
 
-    const isLive = props.item.kind === 'live';
+    setIsBuffering(false);
+    setPlayerError(errorMsg);
+    announce(`Erreur de lecture : ${errorMsg}`);
+
+    // Mark channel as broken in DB & locally
+    if (props.item.kind === 'live') {
+      props.item.is_broken = 1;
+      void Database.getInstance().setBroken(props.item.id, true);
+    }
+
+    updateGrid();
+    focusErrorAction();
+  };
+
+  const updateGrid = () => {
+    const isLiveItem = props.item.kind === 'live';
+    if (playerError()) {
+      const errorRow = [
+        { id: 'btn-player-retry', onSelect: retryPlayback },
+        ...(props.onNextChannel && isLiveItem
+          ? [{ id: 'btn-player-next', onSelect: () => props.onNextChannel?.() }]
+          : []),
+        { id: 'btn-player-exit', onSelect: () => { player.stop(); props.onExit(); } },
+      ];
+      spatialNav.setGrid([errorRow], 0, 0, false);
+      return;
+    }
+
     const actionRow = [
       {
         id: 'btn-osd-play-pause',
         onSelect: togglePlayPause,
       },
-      ...(!isLive
+      ...(!isLiveItem
         ? [
             { id: 'btn-osd-seek-back', onSelect: () => seekDelta(-10000) },
             { id: 'btn-osd-seek-fwd', onSelect: () => seekDelta(10000) },
@@ -124,6 +204,29 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     spatialNav.setGrid([actionRow]);
   };
 
+  let previousItemId: number | null = null;
+  createEffect(() => {
+    const currentId = props.item.id;
+    if (previousItemId === null) {
+      previousItemId = currentId;
+      return;
+    }
+    if (previousItemId === currentId) return;
+    previousItemId = currentId;
+
+    clearTimers();
+    setRetryCount(1);
+    setPlayerError(null);
+    setIsBuffering(true);
+    setBufferingPercent(0);
+    setCurrentTimeMs(0);
+    setDurationMs(0);
+    hasResumed = false;
+    updateGrid();
+    triggerChannelHud();
+    startConnectionWatchdog(currentId);
+  });
+
   onMount(() => {
     // 1. Ensure AVPlay hardware video surface is sized to full screen
     player.setDisplayArea(FULL_SCREEN);
@@ -140,14 +243,25 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       },
       onBufferingProgress: (pct) => setBufferingPercent(pct),
       onBufferingComplete: () => {
+        clearTimers();
         setIsBuffering(false);
         setIsPlaying(true);
+        setPlayerError(null);
+        setRetryCount(1);
+        if (props.item.kind === 'live' && props.item.is_broken) {
+          props.item.is_broken = 0;
+          void Database.getInstance().setBroken(props.item.id, false);
+        }
         if (!hasResumed && props.item.playback_position_ms && props.item.playback_position_ms > 0 && props.item.kind !== 'live') {
           hasResumed = true;
           player.seekTo(props.item.playback_position_ms);
         }
       },
       onCurrentPlayTime: (ms) => {
+        if (connectionTimeoutTimer) {
+          clearTimeout(connectionTimeoutTimer);
+          connectionTimeoutTimer = null;
+        }
         setCurrentTimeMs(ms);
         setDurationMs(player.getDuration());
         if (props.item.kind !== 'live' && Math.abs(ms - lastBroadcastMs) >= 15000) {
@@ -162,10 +276,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       },
       onError: (err) => {
         console.error('Player error:', err);
-        setPlayerError(err);
-        setIsBuffering(false);
-        announce(`Erreur : ${err}`);
-        updateGrid();
+        handleStreamError(err);
       },
       onSubtitleChange: (text, duration) => {
         const clean = text?.trim();
@@ -210,9 +321,11 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     // Listen to remote keys
     keyUnsub = RemoteKeyHandler.getInstance().addListener(handleKey);
     updateGrid();
+    startConnectionWatchdog(props.item.id);
   });
 
   onCleanup(() => {
+    clearTimers();
     if (props.item.kind !== 'live' && currentTimeMs() > 0) {
       void LocalSyncService.getInstance().broadcastProgress(
         props.item.stable_hash,
@@ -326,16 +439,18 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   };
 
   const retryPlayback = async () => {
+    clearTimers();
+    setRetryCount(1);
     setPlayerError(null);
     setIsBuffering(true);
     announce('Nouvelle tentative de connexion…');
+    updateGrid();
+    startConnectionWatchdog(props.item.id);
     try {
       await player.open(props.item.stream_url, props.item.kind === 'live');
       player.play();
-      updateGrid();
     } catch (err: any) {
-      setPlayerError(err?.message || 'Échec de connexion');
-      updateGrid();
+      handleStreamError(err?.message || 'Échec de connexion');
     }
   };
 
@@ -348,21 +463,27 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     }
 
     if (key === 'PLAY' || key === 'PAUSE' || key === 'PLAY_PAUSE') {
-      togglePlayPause();
-      return true;
+      if (!playerError()) {
+        togglePlayPause();
+        return true;
+      }
     }
 
     if (key === 'FAST_FORWARD') {
-      seekDelta(30000);
-      return true;
+      if (!playerError()) {
+        seekDelta(30000);
+        return true;
+      }
     }
 
     if (key === 'REWIND') {
-      seekDelta(-30000);
-      return true;
+      if (!playerError()) {
+        seekDelta(-30000);
+        return true;
+      }
     }
 
-    if (key === 'CHANNEL_UP' || (key === 'UP' && !showOsd() && props.item.kind === 'live')) {
+    if (key === 'CHANNEL_UP' || (key === 'UP' && (!showOsd() || playerError()) && props.item.kind === 'live')) {
       if (props.onNextChannel) {
         props.onNextChannel();
         triggerChannelHud();
@@ -370,12 +491,16 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       }
     }
 
-    if (key === 'CHANNEL_DOWN' || (key === 'DOWN' && !showOsd() && props.item.kind === 'live')) {
+    if (key === 'CHANNEL_DOWN' || (key === 'DOWN' && (!showOsd() || playerError()) && props.item.kind === 'live')) {
       if (props.onPrevChannel) {
         props.onPrevChannel();
         triggerChannelHud();
         return true;
       }
+    }
+
+    if (playerError()) {
+      return false;
     }
 
     // Any arrow or enter key brings back the OSD
@@ -487,7 +612,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         }} role="status" aria-label="Chargement du flux vidéo">
           <div class="tv-spinner" style={{ width: "40px", height: "40px", "border-width": "4px" }} />
           <div style={{ "font-size": "24px", "font-weight": "700" }}>
-            Chargement... {bufferingPercent() > 0 ? `${bufferingPercent()}%` : ''}
+            {isLive()
+              ? `Connexion… (tentative ${retryCount()}/${MAX_RETRIES})`
+              : `Chargement... ${bufferingPercent() > 0 ? `${bufferingPercent()}%` : ''}`}
           </div>
         </div>
       </Show>
@@ -502,14 +629,30 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
           <p style={{ "font-size": "22px", color: "var(--buntu-text)", margin: 0 }}>
             {playerError()}
           </p>
-          <div style={{ display: "flex", gap: "20px", "margin-top": "8px" }}>
+          <Show when={isLive()}>
+            <p style={{ "font-size": "16px", color: "var(--buntu-text-muted)", margin: "4px 0 0 0" }}>
+              Cette chaîne a été marquée temporairement hors service (HS).
+            </p>
+          </Show>
+          <div style={{ display: "flex", gap: "20px", "margin-top": "12px" }}>
             <button
+              id="btn-player-retry"
               class={`tv-btn ${focusId() === 'btn-player-retry' ? 'focused' : ''}`}
               onClick={retryPlayback}
             >
               🔄 Réessayer
             </button>
+            <Show when={props.onNextChannel && isLive()}>
+              <button
+                id="btn-player-next"
+                class={`tv-btn ${focusId() === 'btn-player-next' ? 'focused' : ''}`}
+                onClick={() => props.onNextChannel?.()}
+              >
+                ⏭ Chaîne suivante
+              </button>
+            </Show>
             <button
+              id="btn-player-exit"
               class={`tv-btn ${focusId() === 'btn-player-exit' ? 'focused' : ''}`}
               onClick={() => { player.stop(); props.onExit(); }}
             >
@@ -582,6 +725,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
             chips={
               isLive()
                 ? [
+                    props.item.is_broken === 1 ? { text: '⚠ HORS SERVICE', tone: 'quality' as const } : null,
                     qualityChip(),
                     props.item.country ? { text: props.item.country.toUpperCase() } : null,
                     props.item.language ? { text: props.item.language.toUpperCase() } : null,
