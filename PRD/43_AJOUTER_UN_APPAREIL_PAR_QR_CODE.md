@@ -1,4 +1,4 @@
-# PRD 43 — Ajouter un appareil au foyer en scannant un QR code (dans les deux sens)
+# PRD 43 — Ajouter un appareil au foyer : QR code et découverte automatique à proximité (Bonjour / réseau local)
 
 - **ID :** `PRD-43`
 - **Prérequis :**
@@ -6,12 +6,13 @@
   - `PRD-41` (foyer : clé de foyer, messages chiffrés, § 5 « Le foyer : confiance et clés ») ;
   - `PRD-20` (profils, mode Enfants).
 - **Couches impactées :**
-  - `Rust` : module `pairing` de `cnd-domain` (demande d'adhésion, réponse qui porte la clé), exposé par UniFFI et WebAssembly ;
-  - `apple/` : écran Appareils (QR à afficher, scanner), transport court terme sur le réseau local ;
-  - `android/` : écran Appareils (inexistant aujourd'hui), scanner, QR ;
+  - `Rust` : module `pairing` de `cnd-domain` (demande d'adhésion, réponse qui porte la clé, calcul de code SAS à 6 chiffres), exposé par UniFFI et WebAssembly ;
+  - `apple/` : écran Appareils (QR à afficher/scanner, découverte Bonjour `_buntu-pair._tcp` sans caméra, fiches d'invitation/adhésion), transport local ;
+  - `android/` : écran Appareils (inexistant aujourd'hui), scanner, QR, découverte NSD `_buntu-pair._tcp` ;
   - `tizen/` : QR d'invitation, réception avec confirmation à la télécommande.
 - **Objectifs mesurables :**
   - **< 20 s** entre « Ajouter un appareil » et le nouvel appareil visible dans la liste, sur le même Wi-Fi ;
+  - **0 clé de foyer saisie manuellement** (remplacement de la saisie des 64 caractères hexadécimaux par QR code ou découverte Bonjour avec code court SAS) ;
   - **0 clé de foyer lisible** dans un QR code, dans une capture d'écran, sur le réseau ou dans les journaux ;
   - **0 appareil ajouté sans confirmation** sur un appareil qui est déjà dans le foyer ou sur le nouvel appareil (§ 4.3) ;
   - un QR code photographié puis scanné plus tard, ou une deuxième fois, est **refusé**.
@@ -20,16 +21,19 @@
 
 ## 1. Contexte & Objectif
 
-**La question de départ :** peut-on scanner le QR code d'un appareil pour l'ajouter au foyer ? **Oui, dans les deux sens :**
+**La question de départ :** comment ajouter un appareil au foyer facilement et en toute sécurité, particulièrement sur les appareils dépourvus de caméra (Mac, Apple TV, box) et sans forcer l'utilisateur à recopier une clé de 64 caractères hexadécimaux ?
 
-| Sens | Qui affiche le QR | Qui le scanne | Exemple |
-| :--- | :--- | :--- | :--- |
-| **A. « Inviter »** | un appareil **déjà dans le foyer** | le **nouvel** appareil | l'iPhone de Papa montre un QR, le téléphone de Léa le scanne pour entrer dans le foyer. |
-| **B. « Rejoindre »** | le **nouvel** appareil | un appareil **déjà dans le foyer** | la TV Samsung (sans clavier) montre un QR, l'iPhone du foyer le scanne et lui donne l'accès. |
+**Trois modes sont supportés, tous protégés par chiffrement de bout en bout et confirmation humaine :**
 
-Le sens B est celui du `PRD-39` (le téléphone scanne la TV). Le sens A est le plus naturel quand le nouvel appareil est un téléphone.
+| Sens | Mode | Qui initie | Qui confirme | Idéal pour |
+| :--- | :--- | :--- | :--- | :--- |
+| **A. « Inviter par QR »** | QR code | un appareil **déjà dans le foyer** affiche le QR | le **nouvel** appareil scanne avec sa caméra | iPhone invitant un autre téléphone ou tablette. |
+| **B. « Rejoindre par QR »** | QR code | le **nouvel** appareil affiche le QR | un appareil **déjà dans le foyer** scanne le QR | TV Samsung ou Apple TV rejoignant le foyer via un iPhone. |
+| **C. « Découverte locale »** | Bonjour / Wi-Fi local | l'appareil invitant **ou** le nouvel appareil | **Validation mutuelle** (code court à 6 chiffres SAS + bouton « Autoriser ») | **Mac, ordinateurs, Apple TV**, ou tout utilisateur refusant de scanner un QR ou de saisir une clé. |
 
-**Objectif :** un seul protocole sûr, qui marche dans les deux sens, sur toutes les plateformes, et qui remplace les essais actuels (§ 1.2).
+Le sens B est l'adaptation du `PRD-39` (le téléphone scanne la TV). Le sens A est naturel entre téléphones. Le mode C (style AirDrop / Apple TV) élimine complètement la nécessité d'une caméra et toute saisie manuelle de clé.
+
+**Objectif :** un seul protocole sûr, multi-modes, sur toutes les plateformes, qui remplace les essais actuels (§ 1.2).
 
 ### 1.1. Pourquoi ne pas mettre la clé dans le QR
 
@@ -84,7 +88,27 @@ Le `PRD-41` (§ 5) demande le contraire : la clé n'est « jamais affichée », 
 
 **Sur le nouvel appareil**, **confirmation obligatoire** : « **iPhone de Papa** vous invite dans le foyer *Maison*. Rejoindre ? » (à la télécommande sur une TV). Aucune clé n'est enregistrée avant « Rejoindre ».
 
-### 2.3. Règles communes
+### 2.3. Mode C — « Découverte locale » (sans scan, sans saisie de clé)
+
+Ce mode résout le cas des **Mac, PC ou Apple TV** (sans caméra dorsale) ou des utilisateurs trouvant la saisie de clé pénible.
+
+**Sur l'appareil invitant (ex. Mac du foyer)** : Appareils > « Ajouter un appareil à proximité ».
+1. Il active une écoute locale temporaire Bonjour (`_buntu-pair._tcp`) pendant 2 minutes.
+2. Il affiche : « En attente d'appareils à proximité sur ce Wi-Fi… ».
+3. Dès qu'un nouvel appareil demande à se connecter :
+   - Un accord de clé éphémère X25519 calcule un **code court de confirmation à 6 chiffres (SAS)**.
+   - Une fenêtre s'affiche : « **iPhone de Léa** veut rejoindre le foyer. Vérifiez le code : **482 193** ».
+   - Boutons **[Refuser]** (focus par défaut) et **[Autoriser]**.
+4. Clic sur **Autoriser** : la clé du foyer est chiffrée avec la clé de session et envoyée. L'écoute se ferme aussitôt.
+
+**Sur le nouvel appareil (ex. iPhone, autre Mac, Apple TV)** : Appareils > « Rejoindre un foyer à proximité ».
+1. Il parcourt le réseau local via Bonjour (`_buntu-pair._tcp`).
+2. Il voit apparaître la liste des foyers proposant une adhésion : « *Foyer Maison (MacBook Pro de Papa)* ».
+3. Il clique dessus : « En attente d'autorisation sur *MacBook Pro de Papa*… Code : **482 193** ».
+4. Dès l'autorisation accordée, la clé est enregistrée dans le Keychain/Keystore et la synchronisation démarre.
+5. **Résultat : Zéro caméra, zéro saisie de clé de 64 caractères, 100 % sécurisé par confirmation humaine et SAS.**
+
+### 2.4. Règles communes
 
 - **Profil Enfants :** l'écran Appareils est caché (déjà fait sur Apple) ; aucune demande d'adhésion n'est acceptée tant qu'un profil Enfants est actif sur l'appareil qui autorise.
 - **Un seul foyer par appareil :** un appareil déjà dans un autre foyer demande « Quitter *Maison* et rejoindre *Chez Léa* ? » avant d'accepter.
@@ -150,15 +174,16 @@ La clé du foyer ne circule donc jamais en clair, et ne passe jamais par un QR :
 
 ## 5. Par plateforme
 
-| Plateforme | Afficher un QR (sens A et B) | Scanner (sens A et B) | Écoute locale |
-| :--- | :--- | :--- | :--- |
-| **iPhone / iPad** | Core Image, déjà utilisé (`CIQRCodeGenerator`) | VisionKit `DataScannerViewController`, déjà utilisé pour le `PRD-39` | `NWListener` temporaire |
-| **Mac** | oui | **pas de caméra pour scanner** : « Ouvrir le lien » (coller) ou lien reçu par le système | `NWListener` temporaire |
-| **Apple TV** | **sens B seulement** (nouvel appareil). Pas de sens A : une TV ne montre jamais un QR d'invitation | non | `NWListener` temporaire |
-| **Android** | ZXing, déjà présent | Google code scanner (sans permission caméra), repli CameraX | `ServerSocket` temporaire |
-| **Android TV** | sens B ; sens A possible, mais non prioritaire | non | `ServerSocket` temporaire |
-| **Samsung (Tizen)** | sens B ; sens A **retiré** (la TV ne montre plus de QR d'invitation, § 6) | non | canal MSF (la TV n'ouvre pas de port) |
+| Plateforme | Afficher un QR (sens A et B) | Scanner (sens A et B) | Mode C (Découverte Bonjour) | Écoute locale |
+| :--- | :--- | :--- | :--- | :--- |
+| **iPhone / iPad** | Core Image (`CIQRCodeGenerator`) | VisionKit `DataScannerViewController` | **Oui** (Inviter et Rejoindre) | `NWListener` temporaire |
+| **Mac** | oui | **pas de caméra** : remplacé par le Mode C | **Oui** (Inviter et Rejoindre, 100 % sans scan) | `NWListener` temporaire |
+| **Apple TV** | **sens B seulement** (nouvel appareil) | non | **Oui** (Rejoindre le foyer facilement) | `NWListener` temporaire |
+| **Android** | ZXing, déjà présent | Google code scanner / CameraX | **Oui** (NSD `_buntu-pair._tcp`) | `ServerSocket` temporaire |
+| **Android TV** | sens B ; sens A possible | non | **Oui** (NSD `_buntu-pair._tcp`) | `ServerSocket` temporaire |
+| **Samsung (Tizen)** | sens B ; sens A retiré (§ 6) | non | non (canal MSF pour l'appairage TV) | canal MSF |
 
+- **Service Bonjour / NSD :** `_buntu-pair._tcp` actif uniquement pendant l'affichage des fiches d'appairage. Déclaré dans `NSBonjourServices` (`Info-*.plist`) et `AndroidManifest.xml`.
 - **Lien profond :** `buntu://household-invite` déclaré dans `Info-iOS.plist` (le schéma `buntu` existe déjà) et dans `AndroidManifest.xml`.
 - **Transport `tcp` :** un petit protocole de longueur préfixée, comme dans `LocalSyncService`, mais **sans** la clé du foyer (le nouvel appareil ne l'a pas encore) : seuls les messages scellés de la session sont acceptés.
 - **Autorisation caméra iOS :** le texte de `NSCameraUsageDescription` couvre déjà le foyer (prototype non commité).
