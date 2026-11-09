@@ -84,6 +84,7 @@ Lancer ce qui correspond aux couches touchées :
 | Tout | `task check` (release complète, long) |
 
 **Pièges connus :**
+- **Clone neuf :** `task init` (outils, `.env`, XCFramework, projet Xcode). Le XCFramework `apple/Packages/CndCoreBridge/cnd_coreFFI.xcframework` n'est **pas versionné** (ignoré par git) ; ne jamais le recommiter.
 - Après tout changement d'API **UniFFI** (`#[uniffi::export]`, `Record`, `Enum`, `Error`) : reconstruire le XCFramework (`./scripts/build-xcframework.sh`, plusieurs minutes) **et** les liaisons Kotlin (`./scripts/build-android.sh --bindings-only`).
 - Après l'ajout de fichiers Swift : `xcodegen generate` dans `apple/` (voir `reprise.md` pour l'équipe de signature).
 - Après un changement de `cnd-domain` utilisé par la TV : `./scripts/build-tizen.sh` (reconstruit le `.wasm`).
