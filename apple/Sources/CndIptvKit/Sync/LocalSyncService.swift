@@ -261,6 +261,20 @@ public final class LocalSyncService: @unchecked Sendable {
     /// so that a targeted message (PRD-42) reaches exactly that device.
     @ObservationIgnored private var deviceConnections: [String: NWConnection] = [:]
     @ObservationIgnored private var peerEndpoints: [String: NWEndpoint] = [:]
+    /// Connections opened by the other devices (listener side): kept to send them the heartbeat, to
+    /// sync over them, and to notice when they close.
+    @ObservationIgnored private var incomingConnections: [ObjectIdentifier: NWConnection] = [:]
+    /// Connections on which this device has already announced itself. An announce received on another
+    /// one is answered once: a single connection, whichever side opened it, is then enough for both
+    /// devices to see each other (before, a device only announced itself on the connections it opened,
+    /// so the Mac could see the iPhone while the iPhone saw the Mac offline and could not play on it).
+    @ObservationIgnored private var announcedConnections: Set<ObjectIdentifier> = []
+    /// Household device heard on each connection, to find another route when one closes.
+    @ObservationIgnored private var connectionDeviceIds: [ObjectIdentifier: String] = [:]
+    @ObservationIgnored private var heartbeatTicks = 0
+    /// Every connected device is told "still here" this often. The Devices screen shows a device
+    /// offline after 120 s without news: the announce used to be sent once per connection only.
+    private static let heartbeatSeconds = 30
     @ObservationIgnored private let queue = DispatchQueue(label: "com.pcoundia.buntu.localsync", qos: .utility)
     @ObservationIgnored private var periodicSyncTimer: DispatchSourceTimer?
     @ObservationIgnored private var lastExportTimestamp: Int64 = 0
@@ -311,6 +325,8 @@ public final class LocalSyncService: @unchecked Sendable {
         if listener == nil || !isListening || browser == nil || !isBrowsing {
             restartNetworking()
         }
+        // Back in the foreground: say we are here, and reopen the connections iOS closed meanwhile.
+        queue.async { [weak self] in self?.heartbeat() }
     }
 
     private func restartNetworking() {
@@ -344,6 +360,11 @@ public final class LocalSyncService: @unchecked Sendable {
         stopListener()
         connections.values.forEach { $0.cancel() }
         connections.removeAll()
+        incomingConnections.values.forEach { $0.cancel() }
+        incomingConnections.removeAll()
+        deviceConnections.removeAll()
+        connectionDeviceIds.removeAll()
+        announcedConnections.removeAll()
         activePeers.removeAll()
         syncStatusMessage = "Arrêté"
     }
@@ -406,6 +427,17 @@ public final class LocalSyncService: @unchecked Sendable {
     }
 
     private func handleIncomingConnection(_ connection: NWConnection) {
+        incomingConnections[ObjectIdentifier(connection)] = connection
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .failed:
+                connection.cancel()
+            case .cancelled:
+                self?.connectionClosed(connection)
+            default:
+                break
+            }
+        }
         connection.start(queue: queue)
         receiveNextMessage(from: connection)
     }
@@ -518,9 +550,15 @@ public final class LocalSyncService: @unchecked Sendable {
         }
 
         deviceConnections[senderDeviceId] = connection
+        connectionDeviceIds[ObjectIdentifier(connection)] = senderDeviceId
 
         switch type {
         case "device_announce":
+            // Answer on this connection if we have not announced ourselves on it yet, so the sender
+            // sees this device too (once: the announces that follow are heartbeats).
+            if !announcedConnections.contains(ObjectIdentifier(connection)) {
+                sendAnnounce(on: connection)
+            }
             let name = (root["device_name"] as? String) ?? "Appareil"
             let devType = (root["device_type"] as? String) ?? "mobile"
             let peer = DiscoveredPeer(
@@ -739,13 +777,20 @@ public final class LocalSyncService: @unchecked Sendable {
     }
 
     private func handleBrowseResults(_ results: Set<NWBrowser.Result>) {
+        // Only the devices advertised right now: the heartbeat reconnects to these when a connection drops.
+        var current: [String: NWEndpoint] = [:]
+        for result in results {
+            guard case .service(let name, _, _, _) = result.endpoint, name != ownServiceName else { continue }
+            current[name] = result.endpoint
+        }
+        peerEndpoints = current
+
         for result in results {
             guard case .service(let name, _, _, _) = result.endpoint else { continue }
             // Avoid connecting to self
             if name == ownServiceName { continue }
 
             let peerId = name
-            peerEndpoints[peerId] = result.endpoint
 
             // If not connected, initiate connection
             if connections[peerId] == nil {
@@ -767,11 +812,11 @@ public final class LocalSyncService: @unchecked Sendable {
                 self.receiveNextMessage(from: conn)
             case .failed(let error):
                 self.log("Connexion à \(id) perdue : \(error.localizedDescription)", warning: true)
-                self.connections.removeValue(forKey: id)
-                self.deviceConnections = self.deviceConnections.filter { $0.value !== conn }
+                conn.cancel()
             case .cancelled:
-                self.connections.removeValue(forKey: id)
-                self.deviceConnections = self.deviceConnections.filter { $0.value !== conn }
+                // A newer connection to the same device may already have replaced this one.
+                if self.connections[id] === conn { self.connections.removeValue(forKey: id) }
+                self.connectionClosed(conn)
             case .waiting(let error):
                 // A waiting connection never becomes ready by itself here: drop it so the next browse retries.
                 self.log("Connexion à \(id) en attente : \(error.localizedDescription)", warning: true)
@@ -782,6 +827,39 @@ public final class LocalSyncService: @unchecked Sendable {
         }
 
         conn.start(queue: queue)
+    }
+
+    /// Forgets a closed connection (on `queue`). If it was the route to a household device, another
+    /// live connection to that device takes over; with none left, the device leaves the list of
+    /// available devices instead of staying "Disponible" with a dead connection.
+    private func connectionClosed(_ connection: NWConnection) {
+        let key = ObjectIdentifier(connection)
+        announcedConnections.remove(key)
+        incomingConnections.removeValue(forKey: key)
+        guard let deviceId = connectionDeviceIds.removeValue(forKey: key),
+              deviceConnections[deviceId] === connection else { return }
+        let live = reachableConnections().filter { $0 !== connection }
+        if let other = live.first(where: { connectionDeviceIds[ObjectIdentifier($0)] == deviceId }) {
+            deviceConnections[deviceId] = other
+            return
+        }
+        deviceConnections.removeValue(forKey: deviceId)
+        let name = peerName(deviceId)
+        Task { @MainActor in
+            guard self.activePeers.contains(where: { $0.id == deviceId }) else { return }
+            self.activePeers.removeAll { $0.id == deviceId }
+            self.log("\(name) n'est plus joignable.")
+        }
+    }
+
+    /// Runs every `heartbeatSeconds` (on `queue`): tells every connected device that this one is still
+    /// here, and reopens a connection to the advertised devices this one lost.
+    private func heartbeat() {
+        guard isRunning, store.isJoined else { return }
+        for conn in reachableConnections() { sendAnnounce(on: conn) }
+        for (name, endpoint) in peerEndpoints where connections[name] == nil {
+            connectToPeer(id: name, endpoint: endpoint)
+        }
     }
 
     /// Adds a line to the sync journal (and to the app console). Never a secret.
@@ -827,6 +905,7 @@ public final class LocalSyncService: @unchecked Sendable {
         guard let data = try? JSONSerialization.data(withJSONObject: announce),
               let announceJson = String(data: data, encoding: .utf8) else { return }
         if let sealed = try? sealMessage(announceJson) {
+            announcedConnections.insert(ObjectIdentifier(connection))
             sendEnvelope(sealed, on: connection)
         }
     }
@@ -871,7 +950,8 @@ public final class LocalSyncService: @unchecked Sendable {
     /// Every live connection, whichever side opened it.
     private func reachableConnections() -> [NWConnection] {
         var seen = Set<ObjectIdentifier>()
-        return (Array(connections.values) + Array(deviceConnections.values)).filter { seen.insert(ObjectIdentifier($0)).inserted }
+        let all = Array(connections.values) + Array(deviceConnections.values) + Array(incomingConnections.values)
+        return all.filter { seen.insert(ObjectIdentifier($0)).inserted }
     }
 
     /// Sends everything this device has (accounts, favorites, progress) to one device.
@@ -1029,9 +1109,14 @@ public final class LocalSyncService: @unchecked Sendable {
     private func startPeriodicSync() {
         stopPeriodicSync()
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 5, repeating: .seconds(60))
+        heartbeatTicks = 0
+        timer.schedule(deadline: .now() + 5, repeating: .seconds(Self.heartbeatSeconds))
         timer.setEventHandler { [weak self] in
-            self?.syncNow()
+            guard let self else { return }
+            self.heartbeat()
+            // The data itself still goes every 60 s (first tick, then every other one).
+            if self.heartbeatTicks % 2 == 0 { self.syncNow() }
+            self.heartbeatTicks += 1
         }
         timer.resume()
         self.periodicSyncTimer = timer
