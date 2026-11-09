@@ -12,6 +12,7 @@ public final class HouseholdStore: @unchecked Sendable {
     private static let keyAccount = "household_key_v1"
     private static let deviceIdDefaultsKey = "cnd.sync.deviceId"
     private static let sequenceDefaultsKey = "cnd.sync.sequence"
+    private static let knownDevicesDefaultsKey = "cnd.sync.knownDevices"
 
     public private(set) var deviceId: String
     public private(set) var deviceName: String
@@ -49,6 +50,11 @@ public final class HouseholdStore: @unchecked Sendable {
         self.sequence = UInt64(defaults.integer(forKey: Self.sequenceDefaultsKey))
         if self.sequence == 0 {
             self.sequence = UInt64(Date().timeIntervalSince1970 * 1000)
+        }
+
+        if let data = defaults.data(forKey: Self.knownDevicesDefaultsKey),
+           let saved = try? JSONDecoder().decode([KnownDevice].self, from: data) {
+            self.knownDevices = saved
         }
 
         // 2. Load household key from Keychain
@@ -91,6 +97,7 @@ public final class HouseholdStore: @unchecked Sendable {
         self.householdId = creds.householdId
         self.isJoined = true
         self.lastSeenSequenceByDevice.removeAll()
+        clearKnownDevicesLocked()
         lock.unlock()
 
         return creds
@@ -110,6 +117,7 @@ public final class HouseholdStore: @unchecked Sendable {
         self.householdId = derivedId
         self.isJoined = true
         self.lastSeenSequenceByDevice.removeAll()
+        clearKnownDevicesLocked()
         lock.unlock()
 
         return derivedId
@@ -122,7 +130,48 @@ public final class HouseholdStore: @unchecked Sendable {
         self.householdId = nil
         self.isJoined = false
         self.lastSeenSequenceByDevice.removeAll()
+        clearKnownDevicesLocked()
         lock.unlock()
+    }
+
+    // MARK: - Known devices (roster)
+
+    /// A device that belongs to the household, remembered even when it is offline.
+    public struct KnownDevice: Codable, Identifiable, Hashable, Sendable {
+        public let id: String
+        public var name: String
+        public var deviceType: String
+        public var lastSeen: Date
+    }
+
+    /// Every device this one has accepted or seen in the household, most recent first.
+    public private(set) var knownDevices: [KnownDevice] = []
+
+    /// Records (or refreshes) a household device. Persists only when something visible changed.
+    public func rememberDevice(id: String, name: String, deviceType: String, seenAt: Date = Date()) {
+        guard !id.isEmpty, id != deviceId else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        if let idx = knownDevices.firstIndex(where: { $0.id == id }) {
+            let old = knownDevices[idx]
+            let changed = old.name != name || old.deviceType != deviceType
+            if !changed && seenAt.timeIntervalSince(old.lastSeen) < 60 { return }
+            knownDevices[idx] = KnownDevice(id: id, name: name, deviceType: deviceType, lastSeen: max(seenAt, old.lastSeen))
+        } else {
+            knownDevices.append(KnownDevice(id: id, name: name, deviceType: deviceType, lastSeen: seenAt))
+        }
+        persistKnownDevicesLocked()
+    }
+
+    private func persistKnownDevicesLocked() {
+        if let data = try? JSONEncoder().encode(knownDevices) {
+            UserDefaults.standard.set(data, forKey: Self.knownDevicesDefaultsKey)
+        }
+    }
+
+    private func clearKnownDevicesLocked() {
+        knownDevices = []
+        UserDefaults.standard.removeObject(forKey: Self.knownDevicesDefaultsKey)
     }
 
     /// Gets current 64-char household key hex if joined.

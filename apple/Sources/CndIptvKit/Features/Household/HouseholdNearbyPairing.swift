@@ -26,6 +26,27 @@ public enum HouseholdSAS {
     }
 }
 
+/// AES-256-GCM for the household credentials. The wire format is `ciphertext || tag` (16-byte tag) plus the
+/// nonce, and the session id is authenticated, so a packet cannot be replayed into another session.
+enum HouseholdPairingCrypto {
+    static let tagLength = 16
+
+    static func seal(_ plaintext: Data, key: SymmetricKey, sessionId: String) throws -> (payload: Data, nonce: Data) {
+        let box = try AES.GCM.seal(plaintext, using: key, authenticating: Data(sessionId.utf8))
+        return (box.ciphertext + box.tag, Data(box.nonce))
+    }
+
+    static func open(payload: Data, nonce: Data, key: SymmetricKey, sessionId: String) throws -> Data {
+        guard payload.count > tagLength else { throw CryptoKitError.incorrectParameterSize }
+        let box = try AES.GCM.SealedBox(
+            nonce: AES.GCM.Nonce(data: nonce),
+            ciphertext: Data(payload.dropLast(tagLength)),
+            tag: Data(payload.suffix(tagLength))
+        )
+        return try AES.GCM.open(box, using: key, authenticating: Data(sessionId.utf8))
+    }
+}
+
 // MARK: - Wire DTOs
 
 struct HouseholdJoinRequestDTO: Codable {
@@ -228,15 +249,15 @@ public final class HouseholdNearbyPairingHost {
             deviceType: req.deviceType,
             sasCode: sas,
             approveAction: { [weak self] in
-                self?.respondToRequest(approved: true, sessionId: req.sessionId, symmetricKey: symmetricKey, deviceName: req.deviceName)
+                self?.respondToRequest(approved: true, sessionId: req.sessionId, symmetricKey: symmetricKey, deviceName: req.deviceName, deviceId: req.deviceId, deviceType: req.deviceType)
             },
             rejectAction: { [weak self] in
-                self?.respondToRequest(approved: false, sessionId: req.sessionId, symmetricKey: symmetricKey, deviceName: req.deviceName)
+                self?.respondToRequest(approved: false, sessionId: req.sessionId, symmetricKey: symmetricKey, deviceName: req.deviceName, deviceId: req.deviceId, deviceType: req.deviceType)
             }
         )
     }
 
-    private func respondToRequest(approved: Bool, sessionId: String, symmetricKey: SymmetricKey, deviceName: String) {
+    private func respondToRequest(approved: Bool, sessionId: String, symmetricKey: SymmetricKey, deviceName: String, deviceId: String, deviceType: String) {
         guard let conn = activeConnection else { return }
 
         if approved, let keyHex = store.currentHouseholdKeyHex() {
@@ -247,17 +268,18 @@ public final class HouseholdNearbyPairingHost {
             )
             do {
                 let credsData = try JSONEncoder().encode(creds)
-                let sealed = try AES.GCM.seal(credsData, using: symmetricKey)
+                let sealed = try HouseholdPairingCrypto.seal(credsData, key: symmetricKey, sessionId: sessionId)
                 let decision = HouseholdJoinDecisionDTO(
                     type: "join_decision",
                     sessionId: sessionId,
                     approved: true,
-                    encryptedPayloadB64: sealed.ciphertext.base64EncodedString(),
-                    nonceB64: Data(sealed.nonce).base64EncodedString()
+                    encryptedPayloadB64: sealed.payload.base64EncodedString(),
+                    nonceB64: sealed.nonce.base64EncodedString()
                 )
                 if let decisionData = try? JSONEncoder().encode(decision) {
                     sendFrame(decisionData, on: conn)
                 }
+                store.rememberDevice(id: deviceId, name: deviceName, deviceType: deviceType)
                 state = .success(deviceName: deviceName)
             } catch {
                 state = .failed("Échec du chiffrement des identifiants.")
@@ -472,13 +494,12 @@ public final class HouseholdNearbyPairingClient {
                 if decision.approved,
                    let ctB64 = decision.encryptedPayloadB64,
                    let nonceB64 = decision.nonceB64,
-                   let ctData = Data(base64Encoded: ctB64),
+                   let payload = Data(base64Encoded: ctB64),
                    let nonceData = Data(base64Encoded: nonceB64),
-                   let nonce = try? AES.GCM.Nonce(data: nonceData),
-                   let sealedBox = try? AES.GCM.SealedBox(nonce: nonce, ciphertext: ctData, tag: Data()),
-                   let decrypted = try? self.decryptPayload(box: sealedBox, ct: ctData, nonce: nonce, key: symmetricKey)
+                   decision.sessionId == sessionId
                 {
                     do {
+                        let decrypted = try HouseholdPairingCrypto.open(payload: payload, nonce: nonceData, key: symmetricKey, sessionId: sessionId)
                         let creds = try JSONDecoder().decode(HouseholdCredentialsPayloadDTO.self, from: decrypted)
                         let joinedId = try self.store.joinHousehold(keyHex: creds.householdKeyHex)
                         self.state = .success(householdId: joinedId)
@@ -493,15 +514,6 @@ public final class HouseholdNearbyPairingClient {
                 conn.cancel()
             }
         }
-    }
-
-    private func decryptPayload(box: AES.GCM.SealedBox, ct: Data, nonce: AES.GCM.Nonce, key: SymmetricKey) throws -> Data {
-        if let combinedBox = try? AES.GCM.SealedBox(combined: nonce.withUnsafeBytes { Data($0) } + ct) {
-            if let data = try? AES.GCM.open(combinedBox, using: key) {
-                return data
-            }
-        }
-        return try AES.GCM.open(box, using: key)
     }
 
     private func sendFrame(_ payload: Data, on connection: NWConnection) {
