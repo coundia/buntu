@@ -144,6 +144,7 @@ struct RecoMovieCard: View {
             }
             .contextMenu {
                 Button("Lire", systemImage: "play.fill") { vod.play(item, resume: false) }
+                PlayOnAnotherDeviceMenu(item: item, positionMs: UInt64(max(0, VodContext.resumePosition(for: item) ?? 0)))
                 RecoFeedbackMenu(card: card, model: model)
             }
             .accessibilityLabel("\(title). \(card.reasonText)")
@@ -179,6 +180,7 @@ struct RecoSeriesCard: View {
             .contextMenu {
                 if let episode = card.nextEpisode {
                     Button("Lire \(Self.label(episode))", systemImage: "play.fill") { vod.play(episode, resume: true) }
+                    PlayOnAnotherDeviceMenu(item: episode, positionMs: UInt64(max(0, VodContext.resumePosition(for: episode) ?? 0)))
                 }
                 RecoFeedbackMenu(card: card, model: model)
             }
@@ -286,6 +288,7 @@ struct LivePlayerForYouView: View {
         .buttonStyle(.plain)
         .contextMenu {
             Button("Lire", systemImage: "play.fill") { onPlay(channel) }
+            PlayOnAnotherDeviceMenu(item: channel)
             RecoFeedbackMenu(card: card, model: model)
         }
     }

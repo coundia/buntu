@@ -236,6 +236,7 @@ struct ChannelCardView: View {
                 showMirrors(item)
             }
         }
+        PlayOnAnotherDeviceMenu(item: item)
         if let media = PlayableMedia(item: item) {
             Menu("Ouvrir dans…", systemImage: "arrow.up.forward.app") {
                 ForEach(ExternalPlayer.availableOnThisPlatform) { player in
