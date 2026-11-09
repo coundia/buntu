@@ -178,14 +178,27 @@ public struct HouseholdView: View {
         }
     }
 
+    /// Devices heard on the network right now, then the household devices that are known but not
+    /// currently reachable (shown offline), so the host sees every device of the household.
+    private var householdPeers: [(peer: DiscoveredPeer, reachable: Bool)] {
+        let active = localSync?.activePeers ?? []
+        let activeIds = Set(active.map(\.id))
+        let offline = store.knownDevices
+            .filter { !activeIds.contains($0.id) }
+            .sorted { $0.lastSeen > $1.lastSeen }
+            .map { DiscoveredPeer(id: $0.id, name: $0.name, deviceType: $0.deviceType, lastSeen: $0.lastSeen) }
+        return active.map { ($0, true) } + offline.map { ($0, false) }
+    }
+
     private var devicesSection: some View {
-        Section {
-            if let localSync, !localSync.activePeers.isEmpty {
+        let peers = householdPeers
+        return Section {
+            if !peers.isEmpty {
                 TimelineView(.periodic(from: .now, by: 15)) { context in
                     VStack(spacing: 0) {
-                        ForEach(localSync.activePeers) { peer in
-                            peerRow(peer, now: context.date)
-                            if peer.id != localSync.activePeers.last?.id { Divider() }
+                        ForEach(peers, id: \.peer.id) { entry in
+                            peerRow(entry.peer, now: context.date, reachable: entry.reachable)
+                            if entry.peer.id != peers.last?.peer.id { Divider() }
                         }
                     }
                 }
@@ -204,9 +217,9 @@ public struct HouseholdView: View {
         }
     }
 
-    private func peerRow(_ peer: DiscoveredPeer, now: Date) -> some View {
+    private func peerRow(_ peer: DiscoveredPeer, now: Date, reachable: Bool) -> some View {
         let seconds = now.timeIntervalSince(peer.lastSeen)
-        let online = seconds < 120
+        let online = reachable && seconds < 120
         return HStack(spacing: 12) {
             Image(systemName: Self.icon(for: peer.deviceType))
                 .font(.title3)

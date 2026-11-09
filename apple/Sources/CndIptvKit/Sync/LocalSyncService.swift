@@ -653,6 +653,7 @@ public final class LocalSyncService: @unchecked Sendable {
 
     @MainActor
     private func updatePeer(_ peer: DiscoveredPeer) {
+        store.rememberDevice(id: peer.id, name: peer.name, deviceType: peer.deviceType, seenAt: peer.lastSeen)
         if let idx = activePeers.firstIndex(where: { $0.id == peer.id }) {
             activePeers[idx] = peer
         } else {
