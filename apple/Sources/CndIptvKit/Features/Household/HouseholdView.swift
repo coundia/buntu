@@ -24,6 +24,8 @@ public struct HouseholdView: View {
     #if os(iOS)
     @State private var showingScanner = false
     #endif
+    @State private var showingNearbyInvite = false
+    @State private var showingNearbyJoin = false
 
     public init(localSync: LocalSyncService?) {
         self.localSync = localSync
@@ -60,6 +62,19 @@ public struct HouseholdView: View {
             }
         }
         #endif
+        .sheet(isPresented: $showingNearbyInvite) {
+            HouseholdNearbyInviteSheet {
+                showingNearbyInvite = false
+            }
+        }
+        .sheet(isPresented: $showingNearbyJoin) {
+            HouseholdNearbyJoinSheet {
+                showingNearbyJoin = false
+                localSync?.start()
+            } onClose: {
+                showingNearbyJoin = false
+            }
+        }
         .alert("Rejoindre un foyer", isPresented: $showingJoin) {
             TextField("Clé du foyer (64 caractères)", text: $joinKey)
             Button("Rejoindre") { join() }
@@ -95,6 +110,11 @@ public struct HouseholdView: View {
                 }
             } label: {
                 Label("Créer un foyer", systemImage: "house.fill")
+            }
+            Button {
+                showingNearbyJoin = true
+            } label: {
+                Label("Rejoindre un foyer à proximité…", systemImage: "wave.3.forward.circle.fill")
             }
             #if os(iOS)
             Button {
@@ -218,6 +238,11 @@ public struct HouseholdView: View {
                 }
             }
             #if !os(tvOS)
+            Button {
+                showingNearbyInvite = true
+            } label: {
+                Label("Ajouter un appareil à proximité…", systemImage: "person.badge.plus")
+            }
             Button {
                 showQRCode()
             } label: {

@@ -33,6 +33,7 @@
     <array>
         <string>_cndiptv._tcp</string>
         <string>_buntu-sync._tcp</string>
+        <string>_buntu-pair._tcp</string>
     </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Requis pour communiquer avec les serveurs IA locaux et découvrir les flux IPTV locaux.</string>

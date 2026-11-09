@@ -202,7 +202,7 @@ pub fn parse_link(link: &str, now: i64) -> Result<ParsedLink, PairingError> {
         return Err(PairingError::BadLink);
     }
     let transport = get("t")?;
-    if !matches!(transport.as_str(), "msf" | "http" | "tls") {
+    if !matches!(transport.as_str(), "msf" | "http" | "tls" | "tcp") {
         return Err(PairingError::BadLink);
     }
     let parsed = ParsedLink {
@@ -251,6 +251,14 @@ fn derive_key(shared: &[u8; 32], session: &str) -> [u8; 32] {
     // 32 bytes is far below HKDF-SHA256's limit.
     hk.expand(&info, &mut key).expect("hkdf length");
     key
+}
+
+/// Computes a 6-digit confirmation code (Short Authentication String) from the agreed secret and session.
+/// Displayed on both screens to let users confirm they are talking to each other without a MITM.
+pub fn compute_sas(shared_secret: &[u8; 32], session: &str) -> String {
+    let key = derive_key(shared_secret, session);
+    let num = (u32::from_be_bytes([key[0], key[1], key[2], key[3]]) & 0x7FFF_FFFF) % 1_000_000;
+    format!("{:06}", num)
 }
 
 fn aad(session: &str, from: &str) -> Vec<u8> {
@@ -370,6 +378,11 @@ pub enum SealedPayload {
         #[serde(default)]
         sender_device_id: Option<String>,
     },
+    HouseholdJoinRequest {
+        device_name: String,
+        device_id: String,
+        device_type: String,
+    },
 }
 
 /// What `open` did to the session when it did not produce a document.
@@ -459,6 +472,32 @@ pub struct ReplyBody {
     /// `added`, `refused` or `error`.
     pub result: String,
     pub count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<String>,
+}
+
+/// TV or inviter side: sends back a reply with an optional encrypted payload (e.g. household credentials).
+pub fn seal_reply_with_payload(
+    reply_key: &str,
+    session: &str,
+    entropy: &[u8],
+    result: &str,
+    count: u32,
+    payload: Option<&str>,
+) -> Result<String, PairingError> {
+    if entropy.len() < REPLY_ENTROPY {
+        return Err(PairingError::NotEnoughEntropy);
+    }
+    let key: [u8; 32] = b64_decode(reply_key).and_then(|b| b.try_into().ok()).ok_or(PairingError::BadMessage)?;
+    let body = serde_json::to_vec(&ReplyBody {
+        result: result.to_string(),
+        count,
+        payload: payload.map(|s| s.to_string()),
+    }).map_err(|_| PairingError::BadMessage)?;
+    let nonce = &entropy[..12];
+    let ct = encrypt(&key, nonce, &aad(session, "reply"), &body)?;
+    serde_json::to_string(&Reply { s: session.to_string(), nonce: b64_encode(nonce), ct: b64_encode(&ct) })
+        .map_err(|_| PairingError::BadMessage)
 }
 
 /// TV side: tells the phone what happened (encrypted with the key of the session).
@@ -469,15 +508,7 @@ pub fn seal_reply(
     result: &str,
     count: u32,
 ) -> Result<String, PairingError> {
-    if entropy.len() < REPLY_ENTROPY {
-        return Err(PairingError::NotEnoughEntropy);
-    }
-    let key: [u8; 32] = b64_decode(reply_key).and_then(|b| b.try_into().ok()).ok_or(PairingError::BadMessage)?;
-    let body = serde_json::to_vec(&ReplyBody { result: result.to_string(), count }).map_err(|_| PairingError::BadMessage)?;
-    let nonce = &entropy[..12];
-    let ct = encrypt(&key, nonce, &aad(session, "reply"), &body)?;
-    serde_json::to_string(&Reply { s: session.to_string(), nonce: b64_encode(nonce), ct: b64_encode(&ct) })
-        .map_err(|_| PairingError::BadMessage)
+    seal_reply_with_payload(reply_key, session, entropy, result, count, None)
 }
 
 /// Phone side: reads the TV's answer.
