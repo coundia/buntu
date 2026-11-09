@@ -6,8 +6,9 @@
 //  Two-phase handoff, single stream enforcement, remote control, state reporting.
 //
 //  Safe by default: a request is refused unless this device is free, the content exists,
-//  the active profile allows it and the access policy allows it. A running playback is never
-//  replaced without the user's answer (`onPromptRequest`); with no prompt handler it is refused.
+//  the active profile allows it and the access policy allows it. Devices of the same household trust
+//  each other: a running playback is replaced without asking (the policy `alwaysAsk`, off by default,
+//  still uses `onPromptRequest`; with no prompt handler it is refused).
 //
 //  Note: the protocol rules mirror `cnd-domain::remote::handoff` (Rust). The state machine itself is
 //  not exported through UniFFI yet, so these rules are repeated here and must follow the Rust tests.
@@ -78,6 +79,8 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
     private var pendingRequestId: String?
     private var pendingTargetPeerId: String?
     private var pendingContentKey: String?
+    /// Position asked by the caller: used when nothing plays here (menu "Lire sur un autre appareil").
+    private var pendingPositionMs: UInt64 = 0
     private var handedOffTargetId: String?
     private var handedOffContentKey: String?
     private var handedOffPositionMs: UInt64 = 0
@@ -104,6 +107,14 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
     private var stateBroadcastTimer: Timer?
 
     public init() {}
+
+    /// `true` once the household sync is running on this device (the menu entry is hidden otherwise).
+    public var isHouseholdActive: Bool { localSync != nil }
+
+    /// Household devices that can play and are reachable right now.
+    public var availablePeers: [DiscoveredPeer] {
+        (localSync?.activePeers ?? []).filter { $0.canPlay }
+    }
 
     public func configure(localSync: LocalSyncService, engine: CndEngine?) {
         self.localSync = localSync
@@ -187,6 +198,7 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
         pendingRequestId = reqId
         pendingTargetPeerId = targetPeer.id
         pendingContentKey = contentKey
+        pendingPositionMs = positionMs
         isInitiatingHandoff = true
         handoffStatusMessage = "Connexion à \(targetPeer.name)…"
 
@@ -224,7 +236,7 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
 
         // Position measured NOW, just before the local stream is stopped (PRD-42 § 3.2).
         let snapshot = localPlaybackSnapshot?()
-        let finalPosition = snapshot?.positionMs ?? 0
+        let finalPosition = snapshot?.positionMs ?? pendingPositionMs
         let key = pendingContentKey
 
         // One single stream at the provider: stop here BEFORE telling the target to go.
@@ -303,14 +315,13 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
             return
         }
 
-        let isPlayingHere = currentLocalContentKey != nil
         let senderName = localSync?.activePeers.first(where: { $0.id == senderId })?.name ?? "Un appareil du foyer"
-        let needsAnswer = isPlayingHere || accessPolicy == .alwaysAsk
+        // Same household: the current stream is stopped and replaced without a confirmation.
+        let needsAnswer = accessPolicy == .alwaysAsk
 
         if needsAnswer {
-            // Never replaced silently, whatever the sender's `replace` flag says.
             guard let prompt = onPromptRequest else {
-                refuse(isPlayingHere ? "busy" : "not_allowed")
+                refuse("not_allowed")
                 return
             }
             prompt(req.title, senderName) { [weak self] accepted in

@@ -103,6 +103,8 @@ public struct UpNextShelf: View {
                 Label("Lire", systemImage: "play.fill")
             }
 
+            PlayOnAnotherDeviceMenu(item: rec.item, positionMs: UInt64(max(0, VodContext.resumePosition(for: rec.item) ?? 0)))
+
             Button(role: .destructive) {
                 model.dismissItem(stableHash: rec.item.stableHash)
             } label: {

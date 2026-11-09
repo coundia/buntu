@@ -27,6 +27,7 @@ struct MovieActionsMenu: View {
                    systemImage: item.isBroken ? "checkmark.circle" : "exclamationmark.triangle",
                    action: onToggleBroken)
         }
+        PlayOnAnotherDeviceMenu(item: item, positionMs: UInt64(max(0, VodContext.resumePosition(for: item) ?? 0)))
         Button("Télécharger", systemImage: "arrow.down.circle") { vod.downloadMovie(item) }
         if let media = PlayableMedia(item: item) {
             Menu("Ouvrir dans…", systemImage: "arrow.up.forward.app") {
