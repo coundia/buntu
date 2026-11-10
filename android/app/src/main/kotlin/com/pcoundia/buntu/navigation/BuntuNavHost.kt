@@ -8,6 +8,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.pcoundia.buntu.feature.details.DetailsRoute
+import com.pcoundia.buntu.feature.devices.DevicesRoute
 import com.pcoundia.buntu.feature.downloads.DownloadsRoute
 import com.pcoundia.buntu.feature.guide.GuideRoute
 import com.pcoundia.buntu.feature.live.LiveRoute
@@ -163,6 +164,13 @@ fun BuntuNavHost(
             SettingsRoute(
                 onOpenSources = { navController.navigate(BuntuRoutes.SOURCES) },
                 onOpenProfiles = { navController.navigate(BuntuRoutes.PROFILES) },
+                onOpenDevices = { navController.navigate(BuntuRoutes.DEVICES) },
+            )
+        }
+
+        composable(BuntuRoutes.DEVICES) {
+            DevicesRoute(
+                onBack = { navController.popBackStack() },
             )
         }
 

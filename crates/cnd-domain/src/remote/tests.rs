@@ -230,28 +230,26 @@ fn test_content_key_verification_from_vectors() {
 
 
 #[test]
-fn test_running_playback_is_never_replaced_without_consent() {
+fn test_running_playback_is_replaced_without_confirmation_in_household() {
     let mut limiter = RateLimiter::new();
 
-    // "Open" target that is already playing, sender says replace = true:
-    // the sender's flag is not a permission, the user of the target must be asked.
+    // "Open" target that is already playing:
+    // In a household, running playback is replaced without confirmation (PRD-44 § 1.1, § 3.4).
     let mut target = TargetHandoffSession::new();
     let eval = target.evaluate_request(
         "sender_1", "req_300", "ck", Some("sk"), Some("Film"),
         TargetAccessPolicy::Open, true, true, true, false, false, &mut limiter, 1000,
     );
-    assert!(matches!(eval, TargetEvaluation::NeedsUserPrompt { .. }));
-    assert_eq!(target.state, TargetState::Idle, "nothing reserved before the user answers");
+    assert!(matches!(eval, TargetEvaluation::Ready { .. }));
+    assert!(matches!(target.state, TargetState::Reserved { .. }));
 
-    // Without `replace` an "Open" target answers `busy`.
-    let eval = target.evaluate_request(
+    // But if target policy is explicitly AlwaysAsk, user prompt is still required:
+    let mut target_ask = TargetHandoffSession::new();
+    let eval_ask = target_ask.evaluate_request(
         "sender_2", "req_301", "ck", Some("sk"), Some("Film"),
-        TargetAccessPolicy::Open, true, true, false, false, false, &mut limiter, 5000,
+        TargetAccessPolicy::AlwaysAsk, true, true, false, false, false, &mut limiter, 5000,
     );
-    assert!(matches!(
-        eval,
-        TargetEvaluation::Refused { reason: PlayRefuseReason::Busy, .. }
-    ));
+    assert!(matches!(eval_ask, TargetEvaluation::NeedsUserPrompt { .. }));
 }
 
 #[test]

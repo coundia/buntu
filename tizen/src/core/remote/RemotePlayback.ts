@@ -184,8 +184,7 @@ export class RemotePlaybackCoordinator {
     const playingHere = this.isPlayingHere();
     const senderName = this.store.getPairedDevices().find((d) => d.device_id === senderId)?.device_name || 'Un appareil du foyer';
 
-    if (playingHere || this.accessPolicy === 'always_ask') {
-      // Never replaced silently, whatever the sender's `replace` flag says.
+    if (this.accessPolicy === 'always_ask') {
       if (!this.onPrompt) {
         await this.refuse(requestId, playingHere ? 'busy' : 'not_allowed');
         return;
@@ -197,6 +196,7 @@ export class RemotePlaybackCoordinator {
       return;
     }
 
+    // Default policy is 'open': replacement without confirmation in the household (PRD-45 § 1.1 & § 3.3)
     await this.reserve(requestId, item, sourceKey, senderId);
   }
 
@@ -210,6 +210,9 @@ export class RemotePlaybackCoordinator {
     if (!held || held.requestId !== msg.request_id) return;
     this.reservation = null;
     if (Date.now() - held.reservedAt > RESERVATION_TTL_MS) return; // the origin had given up
+
+    // Stop current stream if active (PRD-45 § 3.3)
+    this.stopHere();
 
     // Everybody else stops streaming THIS account (PRD-42 § 3.4): the incoming key, not the previous one.
     const sourceKey = held.sourceKey || (await this.sourceKeyOf(held.item));

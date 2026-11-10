@@ -256,6 +256,7 @@ public final class LocalSyncService: @unchecked Sendable {
     @ObservationIgnored private let store: HouseholdStore
     @ObservationIgnored private var listener: NWListener?
     @ObservationIgnored private var browser: NWBrowser?
+    @ObservationIgnored private let samsungTransport = SamsungChannelTransport()
     @ObservationIgnored private var connections: [String: NWConnection] = [:]
     /// Connection on which each household device was last heard (outgoing or incoming),
     /// so that a targeted message (PRD-42) reaches exactly that device.
@@ -289,6 +290,26 @@ public final class LocalSyncService: @unchecked Sendable {
         // Seconds, like `updated_at` in the database. The old key held milliseconds: compared with seconds,
         // nothing was ever exported again after the first sync, so it is abandoned.
         self.lastExportTimestamp = UserDefaults.standard.object(forKey: Self.exportCursorKey) as? Int64 ?? 0
+        setupSamsungTransport()
+    }
+
+    private func setupSamsungTransport() {
+        samsungTransport.onConnected = { [weak self] in
+            guard let self else { return }
+            self.sendAnnounceOnSamsungChannel()
+        }
+        samsungTransport.onDisconnected = { [weak self] in
+            guard let self, let tvId = self.samsungTransport.connectedTvDeviceId else { return }
+            let name = self.peerName(tvId)
+            Task { @MainActor in
+                guard self.activePeers.contains(where: { $0.id == tvId }) else { return }
+                self.activePeers.removeAll { $0.id == tvId }
+                self.log("\(name) n'est plus joignable.")
+            }
+        }
+        samsungTransport.onEnvelopeReceived = { [weak self] envelope in
+            self?.handleSamsungChannelEnvelope(envelope)
+        }
     }
 
     deinit {
@@ -314,6 +335,9 @@ public final class LocalSyncService: @unchecked Sendable {
         log("Recherche des appareils du foyer sur le réseau local…")
         startListener()
         startBrowser()
+        if let hId = store.householdId, !hId.isEmpty {
+            samsungTransport.start(householdId: hId)
+        }
         startPeriodicSync()
         syncStatusMessage = "Synchronisation active"
     }
@@ -325,6 +349,7 @@ public final class LocalSyncService: @unchecked Sendable {
         if listener == nil || !isListening || browser == nil || !isBrowsing {
             restartNetworking()
         }
+        samsungTransport.ensureRunning()
         // Back in the foreground: say we are here, and reopen the connections iOS closed meanwhile.
         queue.async { [weak self] in self?.heartbeat() }
     }
@@ -355,6 +380,7 @@ public final class LocalSyncService: @unchecked Sendable {
         isRunning = false
         restartScheduled = false
         restartAttempts = 0
+        samsungTransport.stop()
         stopPeriodicSync()
         stopBrowser()
         stopListener()
@@ -542,22 +568,53 @@ public final class LocalSyncService: @unchecked Sendable {
         activePeers.removeAll { $0.id == deviceId }
     }
 
-    private func handleDecryptedMessageJson(_ json: String, senderDeviceId: String, connection: NWConnection) {
+    private func handleSamsungChannelEnvelope(_ envelope: HouseholdSealedEnvelope) {
+        guard let keyHex = store.currentHouseholdKeyHex() else { return }
+
+        // Ignore our own reflections from the broadcast relay
+        guard envelope.senderDeviceId != store.deviceId else { return }
+
+        if envelope.householdId != store.householdId {
+            return
+        }
+
+        do {
+            let messageJson = try syncOpenEnvelope(
+                householdKeyHex: keyHex,
+                envelope: envelope,
+                lastSeenSequence: store.replayFloor(for: envelope.senderDeviceId)
+            )
+            guard store.acceptSequence(senderDeviceId: envelope.senderDeviceId, sequence: envelope.sequence) else { return }
+            store.markRekeyDelivered(envelope.senderDeviceId)
+
+            handleDecryptedMessageJson(messageJson, senderDeviceId: envelope.senderDeviceId, connection: nil)
+        } catch {
+            log("Message TV reçu illisible (\(error.localizedDescription))", warning: true)
+        }
+    }
+
+    private func handleDecryptedMessageJson(_ json: String, senderDeviceId: String, connection: NWConnection?) {
         guard let jsonData = json.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
               let type = root["type"] as? String else {
             return
         }
 
-        deviceConnections[senderDeviceId] = connection
-        connectionDeviceIds[ObjectIdentifier(connection)] = senderDeviceId
+        if let connection {
+            deviceConnections[senderDeviceId] = connection
+            connectionDeviceIds[ObjectIdentifier(connection)] = senderDeviceId
+        }
 
         switch type {
         case "device_announce":
             // Answer on this connection if we have not announced ourselves on it yet, so the sender
             // sees this device too (once: the announces that follow are heartbeats).
-            if !announcedConnections.contains(ObjectIdentifier(connection)) {
-                sendAnnounce(on: connection)
+            if let connection {
+                if !announcedConnections.contains(ObjectIdentifier(connection)) {
+                    sendAnnounce(on: connection)
+                }
+            } else {
+                sendAnnounceOnSamsungChannel()
             }
             let name = (root["device_name"] as? String) ?? "Appareil"
             let devType = (root["device_type"] as? String) ?? "mobile"
@@ -587,7 +644,11 @@ public final class LocalSyncService: @unchecked Sendable {
                   rekey.removedDeviceId != store.deviceId,
                   (try? store.applyRekey(newKeyHex: rekey.newKeyHex, removing: rekey.removedDeviceId)) != nil else { return }
             // Tell the sender (and let it stop waiting for us) with the new key.
-            sendAnnounce(on: connection)
+            if let connection {
+                sendAnnounce(on: connection)
+            } else {
+                sendAnnounceOnSamsungChannel()
+            }
             Task { @MainActor in
                 if let removed = rekey.removedDeviceId { self.forget(deviceId: removed) }
                 self.syncStatusMessage = "Un appareil a été retiré du foyer : la clé a changé."
@@ -729,7 +790,11 @@ public final class LocalSyncService: @unchecked Sendable {
         case "ping":
             let pongJson = "{\"type\":\"pong\"}"
             if let sealed = try? sealMessage(pongJson) {
-                sendEnvelope(sealed, on: connection)
+                if let connection {
+                    sendEnvelope(sealed, on: connection)
+                } else {
+                    samsungTransport.sendEnvelope(sealed)
+                }
             }
 
         default:
@@ -857,6 +922,8 @@ public final class LocalSyncService: @unchecked Sendable {
     private func heartbeat() {
         guard isRunning, store.isJoined else { return }
         for conn in reachableConnections() { sendAnnounce(on: conn) }
+        sendAnnounceOnSamsungChannel()
+        samsungTransport.ensureRunning()
         for (name, endpoint) in peerEndpoints where connections[name] == nil {
             connectToPeer(id: name, endpoint: endpoint)
         }
@@ -893,8 +960,7 @@ public final class LocalSyncService: @unchecked Sendable {
 
     // MARK: - Sending Messages & Deltas
 
-    public func sendAnnounce(on connection: NWConnection) {
-        // Built with JSONSerialization: a device name containing a quote would break a hand-written string.
+    private func makeDeviceAnnounceJson() -> String? {
         let announce: [String: Any] = [
             "type": "device_announce",
             "device_id": store.deviceId,
@@ -902,11 +968,22 @@ public final class LocalSyncService: @unchecked Sendable {
             "device_type": store.deviceType,
             "app_version": "1.1.0",
         ]
-        guard let data = try? JSONSerialization.data(withJSONObject: announce),
-              let announceJson = String(data: data, encoding: .utf8) else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: announce) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    public func sendAnnounce(on connection: NWConnection) {
+        guard let announceJson = makeDeviceAnnounceJson() else { return }
         if let sealed = try? sealMessage(announceJson) {
             announcedConnections.insert(ObjectIdentifier(connection))
             sendEnvelope(sealed, on: connection)
+        }
+    }
+
+    private func sendAnnounceOnSamsungChannel() {
+        guard let announceJson = makeDeviceAnnounceJson() else { return }
+        if let sealed = try? sealMessage(announceJson) {
+            samsungTransport.sendEnvelope(sealed)
         }
     }
 
@@ -1039,6 +1116,9 @@ public final class LocalSyncService: @unchecked Sendable {
     @discardableResult
     public func sendToPeer(peerId: String, messageJson: String) -> Bool {
         guard let sealed = sealOrLog(messageJson) else { return false }
+        if samsungTransport.isPeer(peerId) {
+            return samsungTransport.sendEnvelope(sealed)
+        }
         if let conn = deviceConnections[peerId] {
             sendEnvelope(sealed, on: conn)
             return true
@@ -1055,6 +1135,7 @@ public final class LocalSyncService: @unchecked Sendable {
         for (_, conn) in connections {
             sendEnvelope(sealed, on: conn)
         }
+        samsungTransport.sendEnvelope(sealed)
     }
 
     /// Seals, or writes in the journal why the message could not be prepared (type only, never content).

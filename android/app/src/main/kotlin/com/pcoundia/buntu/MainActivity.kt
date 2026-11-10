@@ -19,16 +19,20 @@ import com.pcoundia.buntu.core.designsystem.BuntuMetrics
 import com.pcoundia.buntu.core.designsystem.BuntuTheme
 import com.pcoundia.buntu.core.designsystem.BuntuWindowWidth
 import com.pcoundia.buntu.core.domain.model.AppPreferences
+import com.pcoundia.buntu.core.domain.repository.HouseholdRepository
+import com.pcoundia.buntu.core.domain.repository.RemotePlaybackRepository
 import com.pcoundia.buntu.core.domain.repository.SettingsRepository
 import com.pcoundia.buntu.core.domain.repository.SourcesRepository
 import com.pcoundia.buntu.core.platform.device.DeviceCapabilities
 import com.pcoundia.buntu.core.platform.logging.RedactedAppLogger
+import com.pcoundia.buntu.core.platform.sync.LocalSyncService
 import com.pcoundia.buntu.core.player.VideoEngine
 import com.pcoundia.buntu.navigation.BuntuRoutes
 import com.pcoundia.buntu.ui.MobileShell
 import com.pcoundia.buntu.ui.TvShell
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -49,6 +53,15 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var videoEngine: VideoEngine
 
+    @Inject
+    lateinit var householdRepo: HouseholdRepository
+
+    @Inject
+    lateinit var remotePlaybackRepo: RemotePlaybackRepository
+
+    @Inject
+    lateinit var localSyncService: LocalSyncService
+
     private var pendingDeepLinkPlayId by mutableStateOf<Long?>(null)
     private var pendingDeepLinkPairUri by mutableStateOf<String?>(null)
 
@@ -59,6 +72,7 @@ class MainActivity : ComponentActivity() {
             enableEdgeToEdge()
         }
         extractDeepLinks(intent)
+        householdRepo.startSyncService()
 
         setContent {
             val prefs by settingsRepository.preferencesFlow.collectAsStateWithLifecycle(
@@ -99,6 +113,36 @@ class MainActivity : ComponentActivity() {
 
             LaunchedEffect(Unit) {
                 sourcesRepository.refreshSourcesList()
+                launch {
+                    remotePlaybackRepo.incomingPlayInstructions.collect { instruction ->
+                        videoEngine.stop()
+                        navController.navigate(
+                            BuntuRoutes.player(
+                                itemId = instruction.itemId,
+                                startPositionMs = instruction.positionMs,
+                            )
+                        )
+                    }
+                }
+                launch {
+                    remotePlaybackRepo.streamInterruptedByPeer.collect {
+                        videoEngine.stop()
+                    }
+                }
+                launch {
+                    videoEngine.state.collect { state ->
+                        val active = state.activeStream
+                        if (state.isPlaying && active != null) {
+                            remotePlaybackRepo.setLocalPlaybackActive(
+                                contentKey = active.stableHash,
+                                title = active.title,
+                                sourceKey = active.host,
+                            )
+                        } else {
+                            remotePlaybackRepo.onLocalPlaybackStopped()
+                        }
+                    }
+                }
             }
 
             LaunchedEffect(pendingDeepLinkPlayId) {
@@ -135,6 +179,11 @@ class MainActivity : ComponentActivity() {
         window?.let { win ->
             runCatching { appLogger.attachJankStats(win) }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        localSyncService.ensureRunning()
     }
 
     override fun onNewIntent(intent: Intent) {

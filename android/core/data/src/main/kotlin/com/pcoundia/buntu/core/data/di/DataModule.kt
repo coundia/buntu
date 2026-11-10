@@ -54,6 +54,10 @@ abstract class DataModule {
 
     @Binds
     @Singleton
+    abstract fun bindHouseholdSyncEngineBridge(impl: com.pcoundia.buntu.core.data.repository.RustHouseholdSyncEngineBridge): com.pcoundia.buntu.core.domain.repository.HouseholdSyncEngineBridge
+
+    @Binds
+    @Singleton
     abstract fun bindCatalogRepository(impl: RustCatalogRepository): CatalogRepository
 
     @Binds

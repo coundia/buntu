@@ -19,17 +19,25 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +64,9 @@ fun DetailsRoute(
     viewModel: DetailsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val peers by viewModel.availablePeers.collectAsStateWithLifecycle()
+    val handoffStatus by viewModel.handoffStatus.collectAsStateWithLifecycle()
+    var showRemoteDialog by remember { mutableStateOf(false) }
     val metrics = LocalBuntuMetrics.current
     val primaryFocusRequester = remember { FocusRequester() }
 
@@ -110,6 +121,7 @@ fun DetailsRoute(
                 detail = detail,
                 primaryEpisode = state.primaryEpisode,
                 isTv = state.isTv,
+                hasOnlinePeers = peers.any { it.state != "offline" },
                 primaryFocusRequester = primaryFocusRequester,
                 onPlayPrimary = {
                     if (detail.isSeries) {
@@ -141,6 +153,7 @@ fun DetailsRoute(
                     val dlId = if (detail.isSeries) state.primaryEpisode?.id else (detail.movieItem?.id ?: detail.id)
                     if (dlId != null) viewModel.enqueueDownload(dlId)
                 },
+                onOpenRemoteDialog = { showRemoteDialog = true },
                 onBack = onBack,
             )
         }
@@ -230,6 +243,58 @@ fun DetailsRoute(
             }
         }
     }
+
+    if (showRemoteDialog) {
+        val onlinePeers = peers.filter { it.state != "offline" }
+        AlertDialog(
+            onDismissRequest = { showRemoteDialog = false },
+            title = { Text("Lire sur un autre appareil") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    handoffStatus?.let { status ->
+                        Text(status, color = BuntuPalette.LeerCyan, style = MaterialTheme.typography.bodyMedium)
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    if (onlinePeers.isEmpty()) {
+                        Text("Aucun appareil disponible.", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        onlinePeers.forEach { peer ->
+                            Surface(
+                                color = BuntuPalette.SlateElevated,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.playOnPeer(peer.id) {
+                                            showRemoteDialog = false
+                                        }
+                                    },
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        imageVector = if (peer.deviceType == "tv") Icons.Default.Tv else Icons.Default.PhoneAndroid,
+                                        contentDescription = null,
+                                        tint = BuntuPalette.PureWhite,
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(peer.name, color = BuntuPalette.PureWhite, style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showRemoteDialog = false }) {
+                    Text("Fermer")
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -237,11 +302,13 @@ private fun DetailsHeroSection(
     detail: MediaDetail,
     primaryEpisode: EpisodeItem?,
     isTv: Boolean,
+    hasOnlinePeers: Boolean,
     primaryFocusRequester: FocusRequester,
     onPlayPrimary: () -> Unit,
     onPlayFromBeginning: () -> Unit,
     onToggleFavorite: () -> Unit,
     onDownload: () -> Unit,
+    onOpenRemoteDialog: () -> Unit,
     onBack: () -> Unit,
 ) {
     val metrics = LocalBuntuMetrics.current
@@ -339,6 +406,12 @@ private fun DetailsHeroSection(
                             text = if (detail.isFavorite) "★ Favori" else "☆ Favori",
                             color = BuntuPalette.TerangaGold,
                         )
+                    }
+
+                    if (hasOnlinePeers) {
+                        OutlinedButton(onClick = onOpenRemoteDialog) {
+                            Text("Lire sur…", color = BuntuPalette.PureWhite)
+                        }
                     }
 
                     if (!isTv) {

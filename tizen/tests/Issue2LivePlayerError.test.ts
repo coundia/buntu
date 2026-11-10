@@ -41,10 +41,10 @@ describe('Issue #2: Samsung TV Live TV Error Handling & Zapping', () => {
     itemStore.set(mockChannel.id, { ...mockChannel });
 
     (db as any).db = { objectStoreNames: { contains: () => true } };
-    vi.spyOn(db as any, 'getById').mockImplementation(async (_store: string, id: number) => {
+    (vi.spyOn(db as any, 'getById') as any).mockImplementation(async (_store: string, id: number) => {
       return itemStore.get(id) ? { ...itemStore.get(id)! } : null;
     });
-    vi.spyOn(db as any, 'put').mockImplementation(async (_store: string, item: ItemRecord) => {
+    (vi.spyOn(db as any, 'put') as any).mockImplementation(async (_store: string, item: ItemRecord) => {
       itemStore.set(item.id, { ...item });
       return item.id;
     });

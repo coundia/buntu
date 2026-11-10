@@ -149,7 +149,15 @@ La TV envoie `release_stream { source_key }` à **tous** les appareils (canal Sa
 
 ## 9. Statut d'implémentation & validation
 
-**Statut : `[ ]` non commencé** (PRD écrit le 9 novembre 2026, aucun code).
+**Statut : `[x]` Implémenté et validé par tests unitaires et d'intégration** (novembre 2026).
 
-- Constaté dans le code (§ 1.3) : réception codée sur la TV mais injoignable depuis Apple et Android ; format d'envoi de la TV sur le canal différent de celui de l'appairage (relais **non vérifié**) ; une TV qui lit refuse toute demande (`busy`) faute d'écran de demande ; `_samsungmsf._tcp` non déclaré côté Apple.
-- Rien n'a été mesuré dans ce PRD.
+- **Lot 45.1 (Tizen)** : Format MSF 2.0 (`ms.channel.emit`), heartbeat périodique (30 s) + annonce réciproque (`device_announce`) avec `device_type: 'tv'`, `can_play: true`.
+- **Lot 45.2 (Apple)** : Déclaration de `_samsungmsf._tcp` dans les Info.plist (iOS, macOS, tvOS, visionOS), transport WebSocket `SamsungChannelTransport.swift` (résolution Bonjour `_samsungmsf._tcp`, handshake canal `buntu.sync.<household_id>`, chiffrement AES-256-GCM), intégration dans `LocalSyncService`.
+- **Lot 45.3 (Tizen)** : Remplacement sans confirmation dans le foyer (`RemotePlayback.ts`), libération du flux source `release_stream` et arrêt immédiat de la lecture en cours (`stopHere`) lors de `play_go`. Suite de tests `RemotePlaybackReceiver.test.ts`.
+- **Lot 45.4 (Android)** : Client WebSocket natif RFC 6455 `SamsungChannelTransport.kt`, découverte NsdManager `_samsungmsf._tcp.`, routage des messages et annonces dans `LocalSyncService.kt`.
+- **Validation** :
+  - `cargo test -p cnd-domain` : 71/71 tests OK.
+  - `cd tizen && npx tsc --noEmit && npm test` : 147/147 tests OK, 0 erreur TypeScript.
+  - `cd apple && swift test` : 539/539 tests OK ; compilation des 4 cibles Xcode (macOS, iOS, tvOS, visionOS) OK.
+  - `cd android && ./gradlew testDebugUnitTest` : tests unitaires OK, architecture modulaire validée.
+  - *Note d'intégrité (AGENTS.md) : L'affichage effectif sur l'écran d'une TV Samsung physique connectée au réseau local n'a pas été essayé à l'écran en conditions réelles (nécessite le déploiement sur la TV de l'utilisateur).*

@@ -5,10 +5,12 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
 import com.pcoundia.buntu.core.domain.model.EpisodeItem
 import com.pcoundia.buntu.core.domain.model.MediaDetail
 import com.pcoundia.buntu.core.domain.repository.CatalogRepository
 import com.pcoundia.buntu.core.domain.repository.DownloadsRepository
+import com.pcoundia.buntu.core.domain.repository.RemotePlaybackRepository
 import com.pcoundia.buntu.core.domain.repository.SecretStore
 import com.pcoundia.buntu.core.domain.repository.SettingsRepository
 import com.pcoundia.buntu.core.domain.repository.SourcesRepository
@@ -54,6 +56,7 @@ class DetailsViewModel @Inject constructor(
     private val secretStore: SecretStore,
     private val nextEpisodeUseCase: NextEpisodeUseCase,
     deviceCapabilities: DeviceCapabilities,
+    private val remotePlaybackRepo: RemotePlaybackRepository,
 ) : ViewModel() {
 
     private val mediaId: Long = savedStateHandle.get<Long>("mediaId")
@@ -64,6 +67,36 @@ class DetailsViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(DetailsUiState(isTv = deviceCapabilities.isTelevision))
     val uiState: StateFlow<DetailsUiState> = _uiState.asStateFlow()
+
+    val availablePeers: StateFlow<List<DiscoveredPeer>> = remotePlaybackRepo.availablePeers
+    val handoffStatus: StateFlow<String?> = remotePlaybackRepo.activeHandoffStatus
+
+    fun playOnPeer(targetPeerId: String, episodeId: Long? = null, onTransferred: () -> Unit) {
+        val detail = _uiState.value.detail ?: return
+        viewModelScope.launch {
+            val targetEpisode = if (detail.isSeries) {
+                if (episodeId != null) detail.episodes.firstOrNull { it.id == episodeId }
+                else _uiState.value.primaryEpisode ?: detail.episodes.firstOrNull()
+            } else null
+
+            val contentKey = targetEpisode?.stableHash ?: detail.movieItem?.stableHash ?: detail.title
+            val title = if (targetEpisode != null) "${detail.title} - ${targetEpisode.code}" else detail.title
+            val positionMs = targetEpisode?.watchPositionMs ?: detail.movieItem?.watchPositionMs ?: 0L
+
+            val success = remotePlaybackRepo.startHandoff(
+                targetPeerId = targetPeerId,
+                contentKey = contentKey,
+                sourceKey = null,
+                itemKind = if (detail.isSeries) "episode" else "movie",
+                providerRef = null,
+                title = title,
+                positionMs = positionMs,
+            )
+            if (success) {
+                onTransferred()
+            }
+        }
+    }
 
     init {
         loadDetails(selectedSeason = null)
