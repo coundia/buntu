@@ -12,6 +12,7 @@
 import { WorkerBridge } from '../../worker/worker-bridge';
 import { Database, ItemRecord } from '../storage/Database';
 import { HouseholdStore } from './HouseholdStore';
+import { AVPlayerService } from '../player/AVPlayerService';
 
 export interface RemotePlayEvent {
   content_key: string;
@@ -38,6 +39,8 @@ export class LocalSyncService {
   private isConnected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private periodicSyncTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private seenPeersOnConnection = new Set<string>();
   private localSeq = 1;
   private lastSyncHlc = '';
 
@@ -131,11 +134,25 @@ export class LocalSyncService {
     this.isConnected = false;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.periodicSyncTimer) clearInterval(this.periodicSyncTimer);
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    this.seenPeersOnConnection.clear();
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
     this.notifyStatus();
+  }
+
+  private startHeartbeat(): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = setInterval(() => {
+      if (this.isConnected) {
+        this.broadcastDeviceAnnounce();
+      }
+    }, 30_000);
   }
 
   private connectWs(householdId: string): void {
@@ -151,8 +168,10 @@ export class LocalSyncService {
 
       this.ws.onopen = () => {
         this.isConnected = true;
+        this.seenPeersOnConnection.clear();
         this.notifyStatus();
         this.broadcastDeviceAnnounce();
+        this.startHeartbeat();
       };
 
       this.ws.onmessage = (event) => {
@@ -161,6 +180,11 @@ export class LocalSyncService {
 
       this.ws.onclose = () => {
         this.isConnected = false;
+        if (this.heartbeatTimer) {
+          clearInterval(this.heartbeatTimer);
+          this.heartbeatTimer = null;
+        }
+        this.seenPeersOnConnection.clear();
         this.notifyStatus();
         if (this.isRunning) {
           this.reconnectTimer = setTimeout(() => this.connectWs(householdId), 5_000);
@@ -222,14 +246,33 @@ export class LocalSyncService {
     });
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ event: 'buntu-sync-envelope', data: envelope }));
+      this.ws.send(
+        JSON.stringify({
+          method: 'ms.channel.emit',
+          params: { event: 'buntu-sync-envelope', to: 'broadcast', data: envelope },
+        })
+      );
     }
   }
 
   private async handleIncomingMessage(raw: string): Promise<void> {
     try {
-      const parsed = JSON.parse(raw);
-      const envelope = parsed.data || parsed;
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (parsed.event === 'ms.channel.connect') {
+        return;
+      }
+
+      let envelope = parsed.data;
+      if (typeof envelope === 'string') {
+        try {
+          envelope = JSON.parse(envelope);
+        } catch {
+          // not JSON string
+        }
+      }
+      if (!envelope || !envelope.sender_device_id) {
+        envelope = parsed;
+      }
       if (!envelope || !envelope.sender_device_id || !envelope.ciphertext_hex) {
         return;
       }
@@ -305,17 +348,25 @@ export class LocalSyncService {
           0
         );
         this.notifyStatus();
+        if (!this.seenPeersOnConnection.has(senderId)) {
+          this.seenPeersOnConnection.add(senderId);
+          this.broadcastDeviceAnnounce();
+        }
         break;
     }
   }
 
   private broadcastDeviceAnnounce(): void {
+    const isPlaying = AVPlayerService.getInstance().isActive();
     void this.sendMessage({
       type: 'device_announce',
       device_id: this.store.getLocalDeviceId(),
       device_name: this.store.getLocalDeviceName(),
       device_type: 'tv',
       app_version: '1.0.0',
+      can_play: true,
+      capabilities: ['play', 'remote_control'],
+      state: isPlaying ? 'playing' : 'idle',
     });
   }
 

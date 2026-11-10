@@ -8,9 +8,11 @@ import androidx.lifecycle.viewModelScope
 import com.pcoundia.buntu.core.domain.model.MovieItem
 import com.pcoundia.buntu.core.domain.model.PlayableStream
 import com.pcoundia.buntu.core.domain.model.StreamKind
+import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
 import com.pcoundia.buntu.core.domain.repository.CatalogRepository
 import com.pcoundia.buntu.core.domain.repository.DownloadsRepository
 import com.pcoundia.buntu.core.domain.repository.EpgRepository
+import com.pcoundia.buntu.core.domain.repository.RemotePlaybackRepository
 import com.pcoundia.buntu.core.domain.repository.SettingsRepository
 import com.pcoundia.buntu.core.domain.repository.WatchNextPublisher
 import com.pcoundia.buntu.core.domain.usecase.ZapToChannelUseCase
@@ -62,6 +64,7 @@ class PlayerViewModel @Inject constructor(
     private val zapToChannelUseCase: ZapToChannelUseCase,
     val videoEngine: VideoEngine,
     deviceCapabilities: DeviceCapabilities,
+    private val remotePlaybackRepo: RemotePlaybackRepository,
 ) : ViewModel() {
 
     private val itemId: Long = savedStateHandle.get<Long>("itemId")
@@ -83,6 +86,27 @@ class PlayerViewModel @Inject constructor(
     val screenState: StateFlow<PlayerScreenUiState> = _screenState.asStateFlow()
 
     val engineState: StateFlow<PlayerEngineState> = videoEngine.state
+    val availablePeers: StateFlow<List<DiscoveredPeer>> = remotePlaybackRepo.availablePeers
+    val handoffStatus: StateFlow<String?> = remotePlaybackRepo.activeHandoffStatus
+
+    fun playOnPeer(targetPeerId: String, onTransferred: () -> Unit) {
+        val stream = videoEngine.state.value.activeStream ?: return
+        viewModelScope.launch {
+            val success = remotePlaybackRepo.startHandoff(
+                targetPeerId = targetPeerId,
+                contentKey = stream.stableHash,
+                sourceKey = stream.host,
+                itemKind = if (stream.kind == StreamKind.LIVE) "live" else "movie",
+                providerRef = null,
+                title = stream.title,
+                positionMs = videoEngine.state.value.positionMs,
+            )
+            if (success) {
+                stopPlaybackAndCleanup()
+                onTransferred()
+            }
+        }
+    }
 
     private var progressSaverJob: Job? = null
     private var pausedDownloadsForSession: Boolean = false

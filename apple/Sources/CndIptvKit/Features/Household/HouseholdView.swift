@@ -229,8 +229,6 @@ public struct HouseholdView: View {
             }
         } header: {
             Text("Appareils du foyer")
-        } footer: {
-            Text("La TV Samsung n'apparaît pas encore ici : son lien avec l'iPhone et le Mac (canal Samsung) n'est pas encore implémenté côté Apple.")
         }
     }
 

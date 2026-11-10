@@ -205,7 +205,11 @@ public struct HouseholdNearbyJoinSheet: View {
                                     .padding(.vertical, 4)
                                 }
                             }
+                            #if os(tvOS)
+                            .listStyle(.plain)
+                            #else
                             .listStyle(.inset)
+                            #endif
                         }
                     }
 

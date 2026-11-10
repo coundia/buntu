@@ -25,13 +25,14 @@
 1. [Plateformes Prises en Charge](#plateformes-prises-en-charge)
 2. [Fonctionnalités Principales](#fonctionnalités-principales)
 3. [Architecture Unifiée (Monorepo)](#architecture-unifiée-monorepo)
-4. [Démarrage Rapide](#démarrage-rapide)
-5. [Commandes Rapides (`Taskfile.yml`)](#commandes-rapides-taskfileyml)
-6. [Structure du Dépôt](#structure-du-dépôt)
-7. [Guides Détaillés par Plateforme](#guides-détaillés-par-plateforme)
-8. [Emplacement des Données](#emplacement-des-données)
-9. [Tests et Qualité](#tests-et-qualité)
-10. [Licence](#licence)
+4. [Démarrage Rapide & Initialisation](#démarrage-rapide--initialisation)
+5. [Compilation et Lancement par Plateforme](#compilation-et-lancement-par-plateforme)
+6. [Commandes Rapides (`Taskfile.yml`)](#commandes-rapides-taskfileyml)
+7. [Structure du Dépôt](#structure-du-dépôt)
+8. [Guides Détaillés par Plateforme](#guides-détaillés-par-plateforme)
+9. [Emplacement des Données](#emplacement-des-données)
+10. [Tests et Qualité](#tests-et-qualité)
+11. [Licence](#licence)
 
 ---
 
@@ -103,70 +104,195 @@ flowchart TD
 
 ---
 
-## Démarrage Rapide
+## Démarrage Rapide & Initialisation
 
-### Prérequis Généraux
+### 1. Prérequis Généraux
 
-- [go-task](https://taskfile.dev) : `brew install go-task`
-- **Rust** stable (`rustup`) avec les cibles nécessaires :
+- **[go-task](https://taskfile.dev)** : `brew install go-task`
+- **Rust** stable (`rustup`) avec les cibles Apple, Wasm et Android :
   ```bash
-  # Cibles Apple
+  # Cibles Apple (macOS, iOS, tvOS, visionOS)
   rustup target add aarch64-apple-darwin x86_64-apple-darwin \
-                    aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
-  # Cible WebAssembly (Tizen)
+                    aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios \
+                    aarch64-apple-tvos aarch64-apple-tvos-sim \
+                    aarch64-apple-visionos aarch64-apple-visionos-sim
+
+  # Cible WebAssembly (Samsung Smart TV Tizen)
   rustup target add wasm32-unknown-unknown
-  # Cibles Android (si développement Android)
+
+  # Cibles Android (si développement Android / Android TV)
   rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
   ```
-- **Outils d'optimisation Wasm** (pour Tizen) : `brew install wasm-pack binaryen`
-- **Clés d'API par défaut** (optionnel pour affiches OMDb et IA) :
-  ```bash
-  cp .env.example .env
-  task keys
-  ```
+- **Outils complémentaires selon les plateformes visées :**
+  - **macOS / iOS** : Xcode 15+ (`xcode-select --install`), `brew install xcodegen` et optionnellement `brew install mpv` (pour le moteur `libmpv`).
+  - **Samsung Smart TV (Tizen)** : `brew install wasm-pack binaryen node`
+  - **Android** : Android Studio / SDK Command-line Tools avec le NDK.
+
+---
+
+### 2. Initialisation d'un Clone Neuf (`task init`)
+
+Le framework binaire Apple (`apple/Packages/CndCoreBridge/cnd_coreFFI.xcframework/`) **n'est pas versionné dans Git** afin de garantir un dépôt ultra-léger (< 10 Mo).
+
+Après avoir cloné le dépôt, lancez l'initialisation automatisée :
+```bash
+task init
+```
+
+Ce script (`./scripts/init.sh`) effectue automatiquement les 5 étapes nécessaires :
+1. **Outils requis** : vérifie la présence de `cargo`, `rustc`, `rustup`, `swift`, `xcodebuild`, `xcodegen`, `task`, `node`, `npm`, `python3`.
+2. **Cibles Rust** : s'assure que toutes les cibles Apple sont bien installées.
+3. **Variables locales** : crée le fichier `.env` à partir de `.env.example` et génère les clés d'API par défaut masquées (`task keys`).
+4. **Cœur Rust XCFramework** : compile `crates/cnd-core` en XCFramework universel (`cnd_coreFFI.xcframework`) pour macOS, iOS, tvOS et visionOS.
+5. **Projet Xcode & dépendances Tizen** : génère `apple/CndIPTV.xcodeproj` avec XcodeGen et installe les modules Node pour Tizen (`npm ci`).
+
+> [!TIP]
+> - `task init FORCE=1` : force la recompilation de l'XCFramework et la réinstallation des dépendances même si elles existent.
+> - `task init SKIP_CORE=1` : effectue les vérifications et génère le projet Xcode sans recompiler l'XCFramework Rust.
+
+---
+
+## Compilation et Lancement par Plateforme
+
+Buntu fournit des scripts de compilation et de lancement clé en main dans le dossier `scripts/`, pilotables directement via `task` :
+
+### 🍏 1. macOS
+
+L'application macOS peut être compilée et lancée sous la forme d'un vrai bundle `.app` natif (icône Dock, barre de menus système, fenêtres multi-vues Metal) :
+
+```bash
+# Compilation en mode Debug et lancement immédiat
+task run
+
+# Compilation optimisée en mode Release
+task run:release
+
+# Lancement dans le terminal actuel pour afficher les journaux en direct (logs stdout)
+task run:logs
+
+# Recompiler d'abord le cœur Rust FFI, puis compiler et lancer l'app macOS
+task run:fresh
+
+# Assembler le bundle build/CndIPTV.app sans le lancer
+task bundle
+
+# Installer Buntu dans le dossier /Applications du système
+task install
+
+# Installer Buntu dans ~/Applications (utilisateur uniquement)
+task install:user
+```
+
+---
+
+### 📱 2. iPhone, iPad, Apple TV & Apple Vision Pro
+
+```bash
+# Ouvrir le projet complet dans Xcode (génère apple/CndIPTV.xcodeproj si manquant)
+task xcode:open
+
+# Lister les appareils Apple connectés (iPhone, iPad, Apple TV)
+task iphone:devices
+
+# Compiler, signer avec votre équipe Apple, installer et lancer sur l'appareil connecté
+task run:iphone
+
+# Cibler un appareil spécifique par son nom ou son UDID
+task run:iphone DEVICE="Mon iPhone"
+
+# Compilation optimisée Release sur appareil
+task run:iphone:release DEVICE="Mon iPhone"
+
+# Installer sur l'iPhone sans le lancer immédiatement
+task install:iphone DEVICE="Mon iPhone"
+
+# Recompiler manuellement le XCFramework Rust (après modification de crates/cnd-core)
+task xcframework
+
+# Régénérer le projet Xcode depuis apple/project.yml
+task xcode:generate
+```
+
+---
+
+### 🤖 3. Android & Android TV / Google TV
+
+L'application Android est modulaire (SRP) et bascule automatiquement entre le mode mobile et le mode salon 10-foot (Leanback) :
+
+```bash
+# 1. Compiler les bibliothèques natives (.so) Rust et générer les bindings Kotlin
+task android:core
+
+# 2. Lister les téléphones, tablettes, téléviseurs et émulateurs Android connectés via adb
+task android:devices
+
+# 3. Compiler, installer et lancer sur téléphone ou tablette
+task run:android
+
+# 4. Lancer directement en mode Salon 10-foot sur Android TV / Google TV
+task run:android:tv
+
+# 5. Lancer et diffuser les journaux logcat filtrés de Buntu en direct
+task run:android:logs
+
+# Compiler tous les fichiers APK (Debug et Release sous android/app/build/outputs/apk/)
+task android:build
+```
+
+---
+
+### 📺 4. Samsung Smart TV (Tizen 3.0+)
+
+L'application Samsung TV combine **SolidJS** (performances 60 fps sans Virtual DOM) et le moteur `cnd-domain` compilé en **WebAssembly 1.0 MVP strict** :
+
+```bash
+# Développement rapide dans le navigateur sur Mac avec rechargement à chaud (Vite)
+task run:web
+
+# Compiler le module cnd-domain-wasm et empaqueter le fichier Tizen (build/tizen/cnd-iptv-tizen.wgt)
+task tizen:build
+
+# Déployer et lancer le paquet sur la TV Samsung (en mode Développeur sur le même réseau)
+task tizen:install TV_IP="192.168.1.50"
+
+# Activer l'inspecteur Chrome DevTools distant (port 9222) pour déboguer la TV
+task tizen:debug
+```
+
+---
+
+### 💻 5. Outil CLI Rust (`cnd-cli`)
+
+Le projet propose également un outil autonome en ligne de commande pour manipuler les playlists et vérifier le moteur natif sans interface graphique :
+
+```bash
+# Afficher l'aide et les commandes disponibles
+task cli -- --help
+
+# Exemple : tester le téléchargement d'un flux via le moteur Rust
+task cli -- download <URL_FLUX> [DOSSIER_CIBLE]
+```
 
 ---
 
 ## Commandes Rapides (`Taskfile.yml`)
 
-### 1. Environnement & Utilitaires
-```bash
-task init               # Prépare un clone neuf : outils, .env, XCFramework (non versionné), projet Xcode
-task doctor             # Vérifie la présence des compilateurs et outils requis
-task keys               # Régénère les clés d'API masquées depuis le .env
-task icon               # Régénère assets/AppIcon.icns et assets/AppIcon-1024.png
-task lint               # Exécute cargo clippy --workspace -- -D warnings
-task test               # Exécute tous les tests unitaires Rust
-```
+Tableau récapitulatif des commandes courantes :
 
-### 2. Apple (macOS, iPhone, iPad, Apple TV)
-```bash
-task run                # Compile et lance l'app macOS (build/CndIPTV.app)
-task run:release        # Idem en profil Release
-task run:iphone         # Compile, signe et installe sur l'iPhone branché (DEVICE="Mon iPhone")
-task iphone:devices     # Liste les appareils Apple connectés
-task xcframework        # Régénère l'XCFramework universel et les bindings Swift UniFFI
-task xcode:macos        # Lance xcodebuild pour macOS
-task xcode:ios          # Lance xcodebuild pour iOS Simulator
-```
-
-### 3. Android (Téléphones, Tablettes & Android TV)
-```bash
-task run:android        # Compile, installe l'APK et lance Buntu sur l'appareil Android connecté
-task run:android:tv     # Démarre l'application directement en mode Salon 10-foot (Leanback)
-task run:android:logs   # Affiche les journaux logcat masqués de Buntu en direct
-task android:devices    # Liste les appareils et téléviseurs Android connectés via adb
-task android:test       # Exécute les tests unitaires JVM et le linter Android
-task android:build      # Compile tous les APK Debug et Release
-```
-
-### 4. Samsung Smart TV (Tizen 3.0+)
-```bash
-task tizen:test         # Exécute les tests unitaires Vitest (AVPlay, client HTTP, télécommande)
-task tizen:build        # Compile le Wasm et assemble le paquet build/tizen/cnd-iptv-tizen.wgt
-task tizen:install TV_IP="192.168.1.50"  # Déploie le paquet sur le téléviseur en mode Développeur
-task tizen:debug        # Active l'inspection distante Chrome DevTools (port 9222)
-```
+| Commande | Action |
+| :--- | :--- |
+| `task init` | Prépare un clone neuf : vérifie les outils, crée `.env`, compile l'XCFramework, génère le projet Xcode et installe Tizen. |
+| `task doctor` | Vérifie la présence des compilateurs (`cargo`, `swift`, `xcodebuild`, etc.) et des cibles Rust. |
+| `task keys` | Régénère les clés d'API par défaut masquées depuis `.env`. |
+| `task run` | Compile et lance Buntu sur macOS. |
+| `task run:iphone` | Compile, signe et lance Buntu sur l'iPhone / iPad branché. |
+| `task run:android` | Compile et lance Buntu sur l'appareil Android connecté. |
+| `task run:android:tv` | Lance Buntu en mode Salon 10-foot sur Android TV. |
+| `task run:web` | Lance l'application Tizen dans le navigateur web avec rechargement à chaud. |
+| `task tizen:install` | Déploie et lance le paquet `.wgt` sur une TV Samsung (`TV_IP="..."`). |
+| `task lint` | Exécute `cargo clippy` en traitant les avertissements comme des erreurs. |
+| `task test` | Exécute l'ensemble des tests rapides (Rust, bridge Swift, app). |
+| `task check` | Validation complète de release (secrets, clés, clippy, tests SLA, xcodebuild). |
 
 ---
 
@@ -230,23 +356,29 @@ Pour les instructions complètes de configuration d'environnement, d'installatio
 
 ## Tests et Qualité
 
-La qualité et l'absence de régressions sont garanties par plus de **350 tests automatisés** à travers toutes les couches de la pile :
+La qualité et l'absence de régressions sont garanties par plus de **700 tests automatisés** à travers toutes les couches de la pile :
 
 ```bash
-# 1. Tests unitaires du cœur métier pur (27 tests, 0.00s)
+# 1. Tests unitaires du cœur métier pur (71 tests : M3U, EPG, Sagas, Profils, Appairage, IA)
 cargo test -p cnd-domain
 
-# 2. Tests d'intégration du moteur natif (321 tests : SQLite, M3U, EPG, Xtream, PVR, IA)
+# 2. Tests d'intégration du moteur natif (SQLite, M3U, EPG, Xtream, PVR, Synchronisation)
 cargo test -p cnd-core
 
-# 3. Tests de l'application Tizen (lecteur AVPlay, client HTTP mono-connexion, télécommande)
+# 3. Tests de l'application Apple (550+ tests Swift & SwiftUI, lecteurs, coordination)
+task swift:test
+
+# 4. Tests de l'application Tizen (145 tests Vitest : AVPlay, client HTTP, télécommande)
 task tizen:test
 
-# 4. Tests Android JVM et linter
+# 5. Tests Android JVM et linter
 task android:test
 
-# 5. Vérification statique globale (zéro avertissement)
+# 6. Vérification statique globale (Clippy warnings as errors)
 task lint
+
+# 7. Validation complète avant mise en production
+task check
 ```
 
 ---

@@ -36,6 +36,7 @@ import com.pcoundia.buntu.core.domain.model.AiProviderType
 fun SettingsRoute(
     onOpenSources: () -> Unit,
     onOpenProfiles: () -> Unit,
+    onOpenDevices: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -65,6 +66,9 @@ fun SettingsRoute(
                     color = BuntuPalette.PureWhite,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
+                    OutlinedButton(onClick = onOpenDevices) {
+                        Text("Appareils", color = BuntuPalette.PureWhite)
+                    }
                     OutlinedButton(onClick = onOpenSources) {
                         Text("Sources IPTV", color = BuntuPalette.PureWhite)
                     }

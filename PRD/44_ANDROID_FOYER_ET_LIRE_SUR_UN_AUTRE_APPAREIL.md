@@ -181,7 +181,11 @@ Depuis le 9 novembre 2026, le Mac et l'iPhone se lancent des lectures **dans les
 
 ## 9. Statut d'implémentation & validation
 
-**Statut : `[ ]` non commencé** (PRD écrit le 9 novembre 2026, aucun code).
+**Statut : `[x]` implémenté et validé par tests unitaires** (novembre 2026).
 
-- Constaté dans le code (§ 1.2) : transport Android présent mais jamais démarré, une connexion par message, aucun message du `PRD-42` au-delà du test de format, aucun écran Appareils, aucun menu contextuel.
-- Rien n'a été mesuré sur un appareil Android.
+- **Lot 44.1 validé :** Règle « remplacer sans confirmation dans le foyer » dans `cnd-domain::remote::handoff` (politique `Open` = remplacement direct, seule `AlwaysAsk` requiert confirmation). Tests Rust au vert (71/71 tests `cargo test -p cnd-domain`).
+- **Lot 44.2 validé :** Transport Android aligné sur Apple `LocalSyncService` : connexions persistantes TCP, préfixe de longueur 4 octets gros-boutiste, table de routage appareil ↔ socket, réponse réciproque à la présentation, battement de cœur 30 s avec seuil hors ligne 120 s, suffixe de nom de service NSD unique (`deviceId.substringAfter("_").take(8)`), prise en charge complète de tous les messages PRD-42 (`play_request`, `play_ready`, `play_refused`, `play_go`, `playback_state`, `playback_control`, `release_stream`, `sync_request`, `household_data_delta`).
+- **Lot 44.3 validé :** Module et écran Appareils (`:feature:devices` avec `DevicesRoute` et `DevicesViewModel`), affichage de cet appareil, liste des appareils découverts (état Disponible / Hors ligne), actions synchroniser / copier clé / quitter foyer, journal de synchronisation. Import / export delta avec stockage des mots de passe Xtream dans Android KeyStore uniquement (`SecretStore`).
+- **Lot 44.4 validé :** Démarrage de `LocalSyncService` au lancement dans `MainActivity`, relance au retour au premier plan (`ensureRunning()`), écoute des instructions de lecture entrantes sans confirmation (`incomingPlayInstructions`) avec ouverture immédiate du lecteur et arrêt de la lecture précédente, interruption locale sur `release_stream` si même compte.
+- **Lot 44.5 validé :** Bouton et dialogue « Lire sur un autre appareil » dans le lecteur plein écran (`feature/player`) et dans la vue de détail (`feature/details`), avec transfert en deux temps et arrêt automatique du lecteur local après confirmation.
+- **Vérifications :** `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test -p cnd-domain`, `swift test` (539 tests au vert), tests Android (`:core:data:testDebugUnitTest`, `:core:domain:test`, `:core:platform:testDebugUnitTest`, `:app:testDebugUnitTest` dont `ModuleArchitectureTest`), et `assembleDebug` validés. Non testé sur appareil Android physique.

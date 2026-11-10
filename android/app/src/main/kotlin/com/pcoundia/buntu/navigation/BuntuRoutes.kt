@@ -98,6 +98,7 @@ object BuntuRoutes {
     const val SOURCES_PATTERN = "sources?pairLink={pairLink}"
     const val PROFILES = "profiles"
     const val SETTINGS = "settings"
+    const val DEVICES = "devices"
 
     const val DETAILS_PATTERN = "details/{mediaId}?isSeries={isSeries}"
     const val PLAYER_PATTERN =

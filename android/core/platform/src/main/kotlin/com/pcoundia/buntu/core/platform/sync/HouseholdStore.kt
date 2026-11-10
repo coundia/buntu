@@ -12,11 +12,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.json.JSONArray
+import org.json.JSONObject
 import java.security.SecureRandom
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+
+data class KnownHouseholdDevice(
+    val id: String,
+    val name: String,
+    val deviceType: String,
+    val lastSeen: Long,
+)
 
 /**
  * Manages household credentials, persistent device identity, and monotonic sequence barriers (PRD-41 § 5 & § 6).
@@ -32,6 +41,7 @@ class HouseholdStore @Inject constructor(
         private const val PREFS_NAME = "buntu_sync_prefs"
         private const val PREF_DEVICE_ID = "sync_device_id"
         private const val PREF_SEQUENCE = "sync_sequence"
+        private const val PREF_KNOWN_DEVICES = "known_household_devices"
         private const val SECRET_KEY_ALIAS = "household_key_v1"
     }
 
@@ -48,6 +58,9 @@ class HouseholdStore @Inject constructor(
 
     private val _householdId = MutableStateFlow<String?>(null)
     val householdId: StateFlow<String?> = _householdId.asStateFlow()
+
+    private val _knownDevices = MutableStateFlow<List<KnownHouseholdDevice>>(emptyList())
+    val knownDevices: StateFlow<List<KnownHouseholdDevice>> = _knownDevices.asStateFlow()
 
     private var currentSequence: ULong
 
@@ -68,6 +81,8 @@ class HouseholdStore @Inject constructor(
 
         val savedSeq = prefs.getLong(PREF_SEQUENCE, 0L)
         currentSequence = if (savedSeq > 0) savedSeq.toULong() else System.currentTimeMillis().toULong()
+
+        loadKnownDevices()
     }
 
     suspend fun loadFromStore(): Boolean = mutex.withLock {
@@ -120,6 +135,58 @@ class HouseholdStore @Inject constructor(
         _householdId.value = null
         _isJoined.value = false
         lastSeenSequenceByDevice.clear()
+        _knownDevices.value = emptyList()
+        prefs.edit().remove(PREF_KNOWN_DEVICES).apply()
+    }
+
+    fun rememberDevice(id: String, name: String, deviceType: String, seenAt: Long = System.currentTimeMillis()) {
+        if (id == deviceId) return
+        val current = _knownDevices.value.toMutableList()
+        val idx = current.indexOfFirst { it.id == id }
+        val updated = KnownHouseholdDevice(id = id, name = name, deviceType = deviceType, lastSeen = seenAt)
+        if (idx >= 0) {
+            current[idx] = updated
+        } else {
+            current.add(updated)
+        }
+        _knownDevices.value = current
+        persistKnownDevices(current)
+    }
+
+    private fun loadKnownDevices() {
+        val raw = prefs.getString(PREF_KNOWN_DEVICES, null) ?: return
+        try {
+            val array = JSONArray(raw)
+            val list = mutableListOf<KnownHouseholdDevice>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(
+                    KnownHouseholdDevice(
+                        id = obj.getString("id"),
+                        name = obj.getString("name"),
+                        deviceType = obj.optString("type", "mobile"),
+                        lastSeen = obj.optLong("lastSeen", 0L),
+                    )
+                )
+            }
+            _knownDevices.value = list
+        } catch (_: Exception) {}
+    }
+
+    private fun persistKnownDevices(devices: List<KnownHouseholdDevice>) {
+        try {
+            val array = JSONArray()
+            for (d in devices) {
+                val obj = JSONObject().apply {
+                    put("id", d.id)
+                    put("name", d.name)
+                    put("type", d.deviceType)
+                    put("lastSeen", d.lastSeen)
+                }
+                array.put(obj)
+            }
+            prefs.edit().putString(PREF_KNOWN_DEVICES, array.toString()).apply()
+        } catch (_: Exception) {}
     }
 
     suspend fun currentHouseholdKeyHex(): String? = mutex.withLock {

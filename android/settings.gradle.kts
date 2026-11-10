@@ -44,6 +44,7 @@ include(":feature:recommendations")
 include(":feature:downloads")
 include(":feature:profiles")
 include(":feature:settings")
+include(":feature:devices")
 
 include(":benchmark")
 

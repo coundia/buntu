@@ -368,31 +368,11 @@ impl TargetHandoffSession {
             }
         }
 
-        // A running playback is NEVER replaced without the user's consent on the target
-        // screen (PRD-42 § 5.3), whatever the policy and whatever the sender's `replace` flag
-        // says: `replace` only means "the origin accepts to be told yes/no", it is not a permission.
-        if is_playing {
-            if replace_requested {
-                return TargetEvaluation::NeedsUserPrompt {
-                    request_id: request_id.to_string(),
-                    title: title.map(|t| t.to_string()),
-                };
-            }
-            if policy == TargetAccessPolicy::AlwaysAsk {
-                return TargetEvaluation::NeedsUserPrompt {
-                    request_id: request_id.to_string(),
-                    title: title.map(|t| t.to_string()),
-                };
-            }
-            return TargetEvaluation::Refused {
-                reply: SyncMessage::PlayRefused {
-                    request_id: request_id.to_string(),
-                    reason: PlayRefuseReason::Busy,
-                },
-                reason: PlayRefuseReason::Busy,
-            };
-        }
-
+        // Household trust rule (PRD-44 § 1.1, § 3.4):
+        // Devices of the same household trust each other. A running playback is replaced
+        // without confirmation unless the target's policy is explicitly AlwaysAsk.
+        let _ = replace_requested;
+        let _ = is_playing;
         if policy == TargetAccessPolicy::AlwaysAsk {
             return TargetEvaluation::NeedsUserPrompt {
                 request_id: request_id.to_string(),

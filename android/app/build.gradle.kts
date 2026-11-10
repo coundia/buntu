@@ -96,6 +96,7 @@ dependencies {
     implementation(project(":feature:downloads"))
     implementation(project(":feature:profiles"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:devices"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)

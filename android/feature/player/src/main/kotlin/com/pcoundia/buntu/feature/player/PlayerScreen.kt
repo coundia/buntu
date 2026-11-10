@@ -19,8 +19,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -28,10 +33,13 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -62,6 +70,9 @@ fun PlayerRoute(
 ) {
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
     val engineState by viewModel.engineState.collectAsStateWithLifecycle()
+    val peers by viewModel.availablePeers.collectAsStateWithLifecycle()
+    val handoffStatus by viewModel.handoffStatus.collectAsStateWithLifecycle()
+    var showRemoteDialog by remember { mutableStateOf(false) }
     val metrics = LocalBuntuMetrics.current
     val context = LocalContext.current
     val activity = context as? Activity
@@ -262,6 +273,11 @@ fun PlayerRoute(
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
+                        if (peers.any { it.state != "offline" }) {
+                            OutlinedButton(onClick = { showRemoteDialog = true }) {
+                                Text("Lire sur…", color = BuntuPalette.PureWhite)
+                            }
+                        }
                         if (engineState.audioTracks.isNotEmpty() || engineState.subtitleTracks.isNotEmpty()) {
                             OutlinedButton(onClick = { viewModel.toggleTrackSheet(true) }) {
                                 Text("Audio / Sous-titres", color = BuntuPalette.PureWhite)
@@ -485,6 +501,59 @@ fun PlayerRoute(
                     }
                 }
             }
+        }
+
+        if (showRemoteDialog) {
+            val onlinePeers = peers.filter { it.state != "offline" }
+            AlertDialog(
+                onDismissRequest = { showRemoteDialog = false },
+                title = { Text("Lire sur un autre appareil") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        handoffStatus?.let { status ->
+                            Text(status, color = BuntuPalette.LeerCyan, style = MaterialTheme.typography.bodyMedium)
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+                        if (onlinePeers.isEmpty()) {
+                            Text("Aucun appareil du foyer joignable.", style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            onlinePeers.forEach { peer ->
+                                Surface(
+                                    color = BuntuPalette.SlateElevated,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.playOnPeer(peer.id) {
+                                                showRemoteDialog = false
+                                                onBack()
+                                            }
+                                        },
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            imageVector = if (peer.deviceType == "tv") Icons.Default.Tv else Icons.Default.PhoneAndroid,
+                                            contentDescription = null,
+                                            tint = BuntuPalette.PureWhite,
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(peer.name, color = BuntuPalette.PureWhite, style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showRemoteDialog = false }) {
+                        Text("Fermer")
+                    }
+                },
+            )
         }
     }
 }

@@ -1,8 +1,11 @@
 package com.pcoundia.buntu.core.platform.di
 
+import com.pcoundia.buntu.core.domain.repository.HouseholdRepository
+import com.pcoundia.buntu.core.domain.repository.RemotePlaybackRepository
 import com.pcoundia.buntu.core.domain.repository.SecretStore
 import com.pcoundia.buntu.core.domain.repository.WatchNextPublisher
 import com.pcoundia.buntu.core.platform.security.KeystoreSecretStore
+import com.pcoundia.buntu.core.platform.sync.LocalSyncService
 import com.pcoundia.buntu.core.platform.tv.TvWatchNextPublisher
 import dagger.Binds
 import dagger.Module
@@ -21,5 +24,13 @@ abstract class PlatformModule {
     @Binds
     @Singleton
     abstract fun bindWatchNextPublisher(impl: TvWatchNextPublisher): WatchNextPublisher
+
+    @Binds
+    @Singleton
+    abstract fun bindHouseholdRepository(impl: LocalSyncService): HouseholdRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindRemotePlaybackRepository(impl: LocalSyncService): RemotePlaybackRepository
 }
 
