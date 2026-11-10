@@ -303,8 +303,10 @@ impl TargetHandoffSession {
         title: Option<&str>,
         policy: TargetAccessPolicy,
         has_content: bool,
-        is_playing: bool,
-        replace_requested: bool,
+        // Kept in the signature for the platforms that report them, but no longer decisive:
+        // inside the household a running playback is replaced without asking (PRD-44 § 1.1).
+        _is_playing: bool,
+        _replace_requested: bool,
         kids_active: bool,
         content_is_adult: bool,
         rate_limiter: &mut RateLimiter,
@@ -368,11 +370,9 @@ impl TargetHandoffSession {
             }
         }
 
-        // Household trust rule (PRD-44 § 1.1, § 3.4):
-        // Devices of the same household trust each other. A running playback is replaced
-        // without confirmation unless the target's policy is explicitly AlwaysAsk.
-        let _ = replace_requested;
-        let _ = is_playing;
+        // Household trust rule (PRD-44 § 1.1, § 3.4, PRD-45 § 3.3): devices of the same household trust
+        // each other. A running playback is replaced without confirmation; only an explicit AlwaysAsk
+        // policy asks the user. `Busy` is kept for a second request while one is reserved (above).
         if policy == TargetAccessPolicy::AlwaysAsk {
             return TargetEvaluation::NeedsUserPrompt {
                 request_id: request_id.to_string(),
