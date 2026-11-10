@@ -22,6 +22,13 @@ import com.pcoundia.buntu.core.domain.repository.RecommendationsRepository
 import com.pcoundia.buntu.core.domain.repository.SecretStore
 import com.pcoundia.buntu.core.domain.repository.SettingsRepository
 import com.pcoundia.buntu.core.domain.usecase.LoadShelvesUseCase
+import com.pcoundia.buntu.core.domain.usecase.PlayOnAnotherDeviceUseCase
+import com.pcoundia.buntu.core.domain.model.ActiveRemoteControlSession
+import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
+import com.pcoundia.buntu.core.domain.model.IncomingPlayInstruction
+import com.pcoundia.buntu.core.domain.repository.RemotePlaybackRepository
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import com.pcoundia.buntu.core.domain.usecase.ZapToChannelUseCase
 import com.pcoundia.buntu.core.player.PlayerEngineState
 import com.pcoundia.buntu.core.player.VideoEngine
@@ -114,6 +121,7 @@ class LiveViewModelTest {
             zapToChannelUseCase = ZapToChannelUseCase(catalogRepo, settingsRepo, downloadsRepo),
             loadShelvesUseCase = LoadShelvesUseCase(recoRepo, profilesRepo, settingsRepo, secretStore),
             videoEngine = fakeEngine,
+            playOnAnotherDevice = PlayOnAnotherDeviceUseCase(NoRemotePlayback),
         )
 
         vm.appendChannelDigit('1')
@@ -219,3 +227,23 @@ private class FakeLiveSettingsRepository : SettingsRepository {
     override suspend fun updateAiConfig(config: com.pcoundia.buntu.core.domain.model.AiSettingsConfig) = Unit
 }
 
+
+/** No household: the live screen must work without it. */
+private object NoRemotePlayback : RemotePlaybackRepository {
+    override val availablePeers: StateFlow<List<DiscoveredPeer>> = MutableStateFlow(emptyList())
+    override val isHouseholdActive: StateFlow<Boolean> = MutableStateFlow(false)
+    override val activeHandoffStatus: StateFlow<String?> = MutableStateFlow(null)
+    override val activeRemoteSession: StateFlow<ActiveRemoteControlSession?> = MutableStateFlow(null)
+    override val incomingPlayInstructions: SharedFlow<IncomingPlayInstruction> = MutableSharedFlow()
+    override val streamInterruptedByPeer: SharedFlow<String> = MutableSharedFlow()
+    override suspend fun startHandoff(
+        targetPeerId: String, contentKey: String, sourceKey: String?, itemKind: String,
+        providerRef: String?, title: String?, positionMs: Long,
+    ) = false
+    override fun clearHandoffStatus() = Unit
+    override suspend fun startHandoffForItem(targetPeerId: String, itemId: Long) = false
+    override suspend fun sourceKeyForItem(itemId: Long): String? = null
+    override suspend fun sendPlaybackControl(targetPeerId: String, action: String, value: Long?) = Unit
+    override fun setLocalPlaybackActive(contentKey: String?, title: String?, sourceKey: String?) = Unit
+    override fun onLocalPlaybackStopped() = Unit
+}

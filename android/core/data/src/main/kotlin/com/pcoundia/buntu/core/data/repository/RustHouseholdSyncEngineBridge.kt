@@ -1,5 +1,6 @@
 package com.pcoundia.buntu.core.data.repository
 
+import com.pcoundia.buntu.core.domain.model.RemoteItemDescriptor
 import com.pcoundia.buntu.core.domain.repository.HouseholdSyncEngineBridge
 import com.pcoundia.buntu.core.domain.repository.SecretStore
 import com.pcoundia.buntu.core.engine.EngineProvider
@@ -9,6 +10,7 @@ import com.pcoundia.buntu.core.engine.ffi.SyncProfile
 import com.pcoundia.buntu.core.engine.ffi.SyncSource
 import com.pcoundia.buntu.core.engine.ffi.SyncTombstone
 import com.pcoundia.buntu.core.engine.ffi.SyncWatchProgress
+import com.pcoundia.buntu.core.engine.ffi.syncComputeSourceKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -36,6 +38,36 @@ class RustHouseholdSyncEngineBridge @Inject constructor(
             itemKind = itemKind,
         )
         record?.id
+    }
+
+    override suspend fun sourceKeyForItem(itemId: Long): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val engine = engineProvider.awaitEngine()
+            val item = engine.getItemById(itemId) ?: return@runCatching null
+            val source = engine.listSources().firstOrNull { it.id == item.sourceId } ?: return@runCatching null
+            syncComputeSourceKey(source.sourceType, source.server ?: source.url ?: "", source.username)
+        }.getOrNull()
+    }
+
+    override suspend fun remoteItem(itemId: Long): RemoteItemDescriptor? = withContext(Dispatchers.IO) {
+        runCatching {
+            val engine = engineProvider.awaitEngine()
+            val item = engine.getItemById(itemId) ?: return@runCatching null
+            val kind = when (item.kind) {
+                "movie", "vod" -> "movie"
+                "episode" -> "episode"
+                "live" -> "live"
+                else -> return@runCatching null // a series is not playable as such
+            }
+            val source = engine.listSources().firstOrNull { it.id == item.sourceId }
+            RemoteItemDescriptor(
+                contentKey = item.stableHash,
+                sourceKey = source?.let { syncComputeSourceKey(it.sourceType, it.server ?: it.url ?: "", it.username) },
+                itemKind = kind,
+                title = item.name,
+                resumePositionMs = if (kind == "live" || item.isCompleted) 0L else item.resumePositionMs.coerceAtLeast(0L),
+            )
+        }.getOrNull()
     }
 
     override suspend fun importHouseholdDelta(deltaJson: String): Boolean = withContext(Dispatchers.IO) {

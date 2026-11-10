@@ -4,7 +4,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,6 +82,8 @@ fun BuntuPosterCard(
     subtitle: String? = null,
     badge: String? = null,
     progressFraction: Float = 0f,
+    /** Context menu (long press, Menu key on TV); `null` = none. */
+    onLongClick: (() -> Unit)? = null,
 ) {
     val metrics = LocalBuntuMetrics.current
     val density = LocalDensity.current
@@ -136,7 +137,7 @@ fun BuntuPosterCard(
             .onFocusChanged { isFocused = it.isFocused }
             .focusable()
             .clip(shape)
-            .clickable(role = Role.Button, onClick = onClick),
+            .buntuCardClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         Box(
             modifier = Modifier
@@ -234,6 +235,8 @@ fun BuntuChannelCard(
     isSelected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Context menu (long press, Menu key on TV); `null` = none. */
+    onLongClick: (() -> Unit)? = null,
 ) {
     val metrics = LocalBuntuMetrics.current
     val density = LocalDensity.current
@@ -280,7 +283,7 @@ fun BuntuChannelCard(
             .clip(shape)
             .background(if (highlighted) BuntuPalette.SlateElevated else BuntuPalette.Slate)
             .border(BorderStroke(if (highlighted) 2.dp else 1.dp, borderColor), shape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .buntuCardClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(metrics.spacingM),
     ) {
         Box(
@@ -379,6 +382,8 @@ fun BuntuMediaShelf(
     onCardClick: (BuntuShelfCardData) -> Unit,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    /** Context menu of a card; `null` = none. */
+    onCardLongClick: ((BuntuShelfCardData) -> Unit)? = null,
 ) {
     if (cards.isEmpty()) return
     val metrics = LocalBuntuMetrics.current
@@ -420,6 +425,7 @@ fun BuntuMediaShelf(
                     badge = card.badge,
                     progressFraction = card.progressFraction,
                     onClick = { onCardClick(card) },
+                    onLongClick = onCardLongClick?.let { handler -> { handler(card) } },
                 )
             }
         }

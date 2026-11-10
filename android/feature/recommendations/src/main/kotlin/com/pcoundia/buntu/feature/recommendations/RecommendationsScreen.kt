@@ -1,5 +1,9 @@
 package com.pcoundia.buntu.feature.recommendations
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.pcoundia.buntu.core.designsystem.BuntuDeviceChoice
+import com.pcoundia.buntu.core.designsystem.BuntuDevicePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,6 +44,13 @@ fun RecommendationsRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val metrics = LocalBuntuMetrics.current
+    val remoteDevices by viewModel.remoteDevices.collectAsStateWithLifecycle()
+    val remoteStatus by viewModel.remoteStatus.collectAsStateWithLifecycle()
+    var remoteTarget by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    val openRemoteMenu: (Long, String) -> Unit = { itemId, title ->
+        viewModel.openRemoteMenu()
+        remoteTarget = itemId to title
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -112,9 +123,30 @@ fun RecommendationsRoute(
                             RecoDomainKind.LIVE_TV -> card.itemId?.let(onOpenLiveChannel)
                         }
                     },
+                    onCardLongClick = { clicked ->
+                        val card = shelf.cards.firstOrNull { it.stableHash == clicked.key }
+                        val itemId = when (shelf.kind) {
+                            // A series card has no menu; an episode card (itemId of an episode) has one.
+                            RecoDomainKind.SERIES -> card?.itemId?.takeIf { card.seriesId != null && it != card.seriesId }
+                            else -> card?.itemId
+                        }
+                        if (itemId != null) openRemoteMenu(itemId, clicked.title)
+                    },
                 )
             }
         }
+    }
+
+    remoteTarget?.let { (itemId, title) ->
+        BuntuDevicePickerDialog(
+            itemTitle = title,
+            devices = remember(remoteDevices) {
+                remoteDevices.map { BuntuDeviceChoice(it.id, it.name, it.deviceType) }.toImmutableList()
+            },
+            status = remoteStatus,
+            onPick = { device -> viewModel.playOnDevice(device.id, itemId) { remoteTarget = null } },
+            onDismiss = { remoteTarget = null },
+        )
     }
 }
 

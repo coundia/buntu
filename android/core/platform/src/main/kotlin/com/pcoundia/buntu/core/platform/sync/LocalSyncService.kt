@@ -19,6 +19,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,12 +29,16 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.net.Inet4Address
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -42,11 +47,17 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
 
 /**
- * Serverless local network continuity transport over NSD (_buntu-sync._tcp) + TCP.
- * Full parity with Apple LocalSyncService and RemotePlaybackCoordinator (PRD-41, PRD-42, PRD-44).
- * AES-256-GCM encrypted and authenticated using the shared 256-bit Household Key from [HouseholdStore].
+ * Household transport of Android (PRD-41, PRD-42, PRD-44), aligned on Apple `LocalSyncService.swift`:
+ * NSD `_buntu-sync._tcp` + persistent TCP connections (4-byte big-endian length + envelope JSON),
+ * presence every 30 s, "offline" after 120 s, and the Samsung TV reached through its channel
+ * (PRD-45 lot 45.4, [SamsungChannelTransport]).
+ *
+ * Nothing here runs on the main thread: every public entry point hops to [scope] (`Dispatchers.IO`).
+ * Envelopes are sealed and opened in Rust ([HouseholdSyncRepository]); no stream URL, password or key
+ * is ever written to the journal.
  */
 @Singleton
 class LocalSyncService @Inject constructor(
@@ -58,9 +69,13 @@ class LocalSyncService @Inject constructor(
 
     companion object {
         const val SERVICE_TYPE = "_buntu-sync._tcp."
-        private const val HEARTBEAT_SECONDS = 30L
+        private const val HEARTBEAT_MS = 30_000L
         private const val OFFLINE_THRESHOLD_MS = 120_000L
         private const val MAX_PAYLOAD_SIZE = 10_000_000
+        /** PRD-42 § 5.2: one request every 2 s per sender. */
+        private const val MIN_REQUEST_INTERVAL_MS = 2_000L
+        /** PRD-42 § 3.2: a `play_ready` holds the target 10 s, waiting for `play_go`. */
+        private const val RESERVATION_TTL_MS = 10_000L
     }
 
     class PeerConnection(
@@ -79,6 +94,7 @@ class LocalSyncService @Inject constructor(
 
     private data class PendingReservation(
         val requestId: String,
+        val senderId: String,
         val itemId: Long,
         val title: String?,
         val positionMs: Long,
@@ -92,38 +108,49 @@ class LocalSyncService @Inject constructor(
         val readyDeferred: CompletableDeferred<Unit>,
     )
 
-    private val scope = CoroutineScope(Dispatchers.IO + Job())
+    private data class PeerPresence(val state: String, val canPlay: Boolean)
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val lifecycleMutex = Mutex()
+    private val resolveMutex = Mutex()
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as? NsdManager
     private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
     private var multicastLock: WifiManager.MulticastLock? = null
 
+    @Volatile private var running = false
     private var serverSocket: ServerSocket? = null
     private var serverJob: Job? = null
     private var heartbeatJob: Job? = null
     private var registrationListener: NsdManager.RegistrationListener? = null
-    private var discoveryListener: NsdManager.DiscoveryListener? = null
+    private var syncDiscoveryListener: NsdManager.DiscoveryListener? = null
+    private var tvDiscoveryListener: NsdManager.DiscoveryListener? = null
 
-    // Persistent Connections
+    private val samsung = SamsungChannelTransport(scope)
+
+    // Persistent connections
     private val connections = ConcurrentHashMap<String, PeerConnection>()
+    private val connecting = ConcurrentHashMap.newKeySet<String>()
     private val deviceConnections = ConcurrentHashMap<String, PeerConnection>()
     private val incomingConnections = ConcurrentHashMap<PeerConnection, Boolean>()
     private val announcedConnections = ConcurrentHashMap.newKeySet<PeerConnection>()
     private val connectionDeviceIds = ConcurrentHashMap<PeerConnection, String>()
     private val peerEndpoints = ConcurrentHashMap<String, Pair<String, Int>>()
+    /** Devices already answered on the Samsung channel (once per channel connection, PRD-45 § 3.3). */
+    private val channelAnsweredDevices = ConcurrentHashMap.newKeySet<String>()
+    private val peerPresence = ConcurrentHashMap<String, PeerPresence>()
 
     // Handoff state
     private val pendingReservations = ConcurrentHashMap<String, PendingReservation>()
     private val pendingHandoffs = ConcurrentHashMap<String, PendingHandoff>()
+    private val lastRequestAt = ConcurrentHashMap<String, Long>()
 
-    // Local playback state for single-stream enforcement
+    // Local playback, for the "one stream per account" rule
     @Volatile private var currentLocalContentKey: String? = null
-    @Volatile private var currentLocalTitle: String? = null
     @Volatile private var currentLocalSourceKey: String? = null
 
-    // Sequence & Export cursor
-    private var lastExportTimestamp: Long = 0L
+    @Volatile private var lastExportTimestamp: Long = 0L
 
-    // HouseholdRepository properties
+    // HouseholdRepository
     override val isJoined: StateFlow<Boolean> = store.isJoined
     override val householdId: StateFlow<String?> = store.householdId
     override val deviceId: String get() = store.deviceId
@@ -139,7 +166,7 @@ class LocalSyncService @Inject constructor(
     private val _syncLog = MutableStateFlow<List<SyncLogEntry>>(emptyList())
     override val syncLog: StateFlow<List<SyncLogEntry>> = _syncLog.asStateFlow()
 
-    // RemotePlaybackRepository properties
+    // RemotePlaybackRepository
     override val availablePeers: StateFlow<List<DiscoveredPeer>> = _activePeers.asStateFlow()
     override val isHouseholdActive: StateFlow<Boolean> = store.isJoined
 
@@ -155,41 +182,76 @@ class LocalSyncService @Inject constructor(
     private val _streamInterruptedByPeer = MutableSharedFlow<String>(extraBufferCapacity = 16)
     override val streamInterruptedByPeer: SharedFlow<String> = _streamInterruptedByPeer.asSharedFlow()
 
+    /** Unique per device (PRD-44 § 3.2.5): the random part of the device id, not its "android_" prefix. */
     private val ownUniqueSuffix: String
         get() = store.deviceId.substringAfter("_").take(8)
 
     private val ownServiceName: String
         get() = "${store.deviceName} ($ownUniqueSuffix)"
 
-    // MARK: - Lifecycle
+    init {
+        samsung.onConnected = {
+            channelAnsweredDevices.clear()
+            scope.launch { sendAnnounceOnChannel() }
+        }
+        samsung.onDisconnected = { tvs ->
+            tvs.forEach { log("${peerName(it)} n'est plus joignable.") }
+            refreshActivePeers()
+        }
+        samsung.onEnvelopeReceived = { envelope -> scope.launch { processChannelEnvelope(envelope) } }
+    }
 
+    // MARK: - Lifecycle (never on the caller's thread)
+
+    /** At app start: reloads the household from the Keystore, then starts if this device is in one. */
     override fun startSyncService() {
-        start()
+        scope.launch { lifecycleMutex.withLock { if (!running) { store.loadFromStore(); startLocked() } } }
     }
 
     override fun stopSyncService() {
-        stop()
+        scope.launch { lifecycleMutex.withLock { stopLocked() } }
     }
 
-    fun start() {
+    /** Back in the foreground (like `ensureRunning()` on Apple): restarts what the system closed. */
+    fun ensureRunning() {
+        scope.launch {
+            lifecycleMutex.withLock {
+                if (!running) {
+                    store.loadFromStore()
+                    startLocked()
+                    return@withLock
+                }
+                if (serverSocket == null || serverSocket?.isClosed == true) {
+                    stopServer()
+                    startServer()
+                }
+                if (syncDiscoveryListener == null || tvDiscoveryListener == null) startDiscovery()
+            }
+            if (running) heartbeat()
+        }
+    }
+
+    private fun startLocked() {
         if (!store.isJoined.value) {
             _syncStatus.value = "Aucun foyer configuré"
             return
         }
-
+        running = true
         log("Recherche des appareils du foyer sur le réseau local…")
         acquireMulticastLock()
         startServer()
         startDiscovery()
-        val hId = store.householdId.value
+        store.householdId.value?.takeIf { it.isNotEmpty() }?.let { samsung.start(it) }
         startHeartbeat()
         _syncStatus.value = "Synchronisation active"
     }
 
-    fun stop() {
+    private fun stopLocked() {
+        running = false
         stopHeartbeat()
         stopDiscovery()
         stopServer()
+        samsung.stop()
         releaseMulticastLock()
 
         connections.values.forEach { it.close() }
@@ -202,28 +264,18 @@ class LocalSyncService @Inject constructor(
         peerEndpoints.clear()
         pendingReservations.clear()
         pendingHandoffs.clear()
+        channelAnsweredDevices.clear()
+        peerPresence.clear()
 
         _activePeers.value = emptyList()
         _syncStatus.value = "Arrêté"
-    }
-
-    fun ensureRunning() {
-        if (!store.isJoined.value) return
-        if (serverSocket == null || serverSocket?.isClosed == true) {
-            stopServer()
-            startServer()
-        }
-        if (discoveryListener == null) {
-            startDiscovery()
-        }
-        heartbeat()
     }
 
     private fun acquireMulticastLock() {
         try {
             if (multicastLock == null) {
                 multicastLock = wifiManager?.createMulticastLock("buntu_sync_multicast")?.apply {
-                    setReferenceCounted(true)
+                    setReferenceCounted(false)
                     acquire()
                 }
             }
@@ -232,25 +284,19 @@ class LocalSyncService @Inject constructor(
 
     private fun releaseMulticastLock() {
         try {
-            multicastLock?.let {
-                if (it.isHeld) it.release()
-            }
-            multicastLock = null
+            multicastLock?.let { if (it.isHeld) it.release() }
         } catch (_: Exception) {}
+        multicastLock = null
     }
 
-    // MARK: - TCP Server & NSD Registration
+    // MARK: - TCP server & NSD registration
 
     private fun startServer() {
         if (serverSocket != null) return
-
         try {
             val server = ServerSocket(0)
             serverSocket = server
-            val localPort = server.localPort
-
-            registerNsdService(localPort)
-
+            registerNsdService(server.localPort)
             serverJob = scope.launch {
                 while (isActive && !server.isClosed) {
                     try {
@@ -267,8 +313,8 @@ class LocalSyncService @Inject constructor(
                     }
                 }
             }
-        } catch (e: Exception) {
-            _syncStatus.value = "Erreur démarrage serveur: ${e.message}"
+        } catch (_: Exception) {
+            _syncStatus.value = "Erreur au démarrage du service local"
         }
     }
 
@@ -276,9 +322,7 @@ class LocalSyncService @Inject constructor(
         unregisterNsdService()
         serverJob?.cancel()
         serverJob = null
-        try {
-            serverSocket?.close()
-        } catch (_: Exception) {}
+        try { serverSocket?.close() } catch (_: Exception) {}
         serverSocket = null
     }
 
@@ -288,92 +332,133 @@ class LocalSyncService @Inject constructor(
             serviceType = SERVICE_TYPE
             this.port = port
         }
-
-        registrationListener = object : NsdManager.RegistrationListener {
+        val listener = object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(info: NsdServiceInfo) {
                 _syncStatus.value = "Synchronisation active"
             }
             override fun onRegistrationFailed(info: NsdServiceInfo, errorCode: Int) {
-                _syncStatus.value = "Échec enregistrement NSD ($errorCode)"
+                _syncStatus.value = "Échec de l'annonce sur le réseau local ($errorCode)"
             }
             override fun onServiceUnregistered(info: NsdServiceInfo) {}
             override fun onUnregistrationFailed(info: NsdServiceInfo, errorCode: Int) {}
         }
-
+        registrationListener = listener
         try {
-            nsdManager?.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
+            nsdManager?.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, listener)
         } catch (_: Exception) {}
     }
 
     private fun unregisterNsdService() {
-        registrationListener?.let {
-            try {
-                nsdManager?.unregisterService(it)
-            } catch (_: Exception) {}
-        }
+        registrationListener?.let { try { nsdManager?.unregisterService(it) } catch (_: Exception) {} }
         registrationListener = null
     }
 
-    // MARK: - NSD Discovery (Client)
+    // MARK: - NSD discovery
 
     private fun startDiscovery() {
-        if (discoveryListener != null) return
+        if (syncDiscoveryListener == null) {
+            syncDiscoveryListener = discover(SERVICE_TYPE,
+                onFound = { service ->
+                    if (service.serviceName == ownServiceName || service.serviceName.contains(ownUniqueSuffix)) return@discover
+                    scope.launch { resolveSyncPeer(service) }
+                },
+                onLost = { service ->
+                    peerEndpoints.remove(service.serviceName)
+                    connections.remove(service.serviceName)?.close()
+                    refreshActivePeers()
+                },
+            )
+        }
+        if (tvDiscoveryListener == null) {
+            tvDiscoveryListener = discover(SamsungChannelTransport.SERVICE_TYPE,
+                onFound = { service -> scope.launch { resolveTv(service) } },
+                onLost = {},
+            )
+        }
+    }
 
-        discoveryListener = object : NsdManager.DiscoveryListener {
+    private fun discover(
+        type: String,
+        onFound: (NsdServiceInfo) -> Unit,
+        onLost: (NsdServiceInfo) -> Unit,
+    ): NsdManager.DiscoveryListener? {
+        val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(regType: String) {}
-
-            override fun onServiceFound(service: NsdServiceInfo) {
-                if (service.serviceName == ownServiceName || service.serviceName.contains(ownUniqueSuffix)) return
-                resolveService(service)
-            }
-
-            override fun onServiceLost(service: NsdServiceInfo) {
-                peerEndpoints.remove(service.serviceName)
-                connections.remove(service.serviceName)?.close()
-                refreshActivePeers()
-            }
-
+            override fun onServiceFound(service: NsdServiceInfo) = onFound(service)
+            override fun onServiceLost(service: NsdServiceInfo) = onLost(service)
             override fun onDiscoveryStopped(serviceType: String) {}
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
         }
-
-        try {
-            nsdManager?.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-        } catch (_: Exception) {}
+        return try {
+            nsdManager?.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, listener)
+            listener
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun stopDiscovery() {
-        discoveryListener?.let {
-            try {
-                nsdManager?.stopServiceDiscovery(it)
-            } catch (_: Exception) {}
+        listOfNotNull(syncDiscoveryListener, tvDiscoveryListener).forEach {
+            try { nsdManager?.stopServiceDiscovery(it) } catch (_: Exception) {}
         }
-        discoveryListener = null
+        syncDiscoveryListener = null
+        tvDiscoveryListener = null
     }
 
-    private fun resolveService(serviceInfo: NsdServiceInfo) {
-        val resolver = object : NsdManager.ResolveListener {
-            override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {}
-            override fun onServiceResolved(info: NsdServiceInfo) {
-                val host = info.host?.hostAddress ?: return
-                val port = info.port
-                val serviceName = info.serviceName
-                peerEndpoints[serviceName] = Pair(host, port)
-
-                if (connections[serviceName]?.isAlive != true) {
-                    log("Appareil trouvé sur le réseau : $serviceName.")
-                    connectToPeer(serviceName, host, port)
+    /**
+     * NsdManager resolves one service at a time before Android 14 (`FAILURE_ALREADY_ACTIVE`): resolutions
+     * are queued here and retried, or a device found at the same time as another would never be reached.
+     */
+    @Suppress("DEPRECATION")
+    private suspend fun resolve(service: NsdServiceInfo): NsdServiceInfo? = resolveMutex.withLock {
+        val manager = nsdManager ?: return@withLock null
+        repeat(3) { attempt ->
+            val outcome = withTimeoutOrNull(6_000) {
+                suspendCancellableCoroutine<Pair<NsdServiceInfo?, Int>> { cont ->
+                    val listener = object : NsdManager.ResolveListener {
+                        override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
+                            if (cont.isActive) cont.resume(null to errorCode)
+                        }
+                        override fun onServiceResolved(info: NsdServiceInfo) {
+                            if (cont.isActive) cont.resume(info to 0)
+                        }
+                    }
+                    try {
+                        manager.resolveService(service, listener)
+                    } catch (_: Exception) {
+                        if (cont.isActive) cont.resume(null to -1)
+                    }
                 }
             }
+            outcome?.first?.let { return@withLock it }
+            if (outcome != null && outcome.second != NsdManager.FAILURE_ALREADY_ACTIVE) return@withLock null
+            delay(500L * (attempt + 1))
         }
+        null
+    }
 
-        try {
-            nsdManager?.resolveService(serviceInfo, resolver)
-        } catch (_: Exception) {}
+    private suspend fun resolveSyncPeer(service: NsdServiceInfo) {
+        val info = resolve(service) ?: return
+        val host = info.host?.hostAddress ?: return
+        val name = info.serviceName
+        peerEndpoints[name] = host to info.port
+        if (connections[name]?.isAlive != true) {
+            log("Appareil trouvé sur le réseau : $name.")
+            connectToPeer(name, host, info.port)
+        }
+    }
+
+    private suspend fun resolveTv(service: NsdServiceInfo) {
+        if (!running || samsung.isConnected) return
+        val info = resolve(service) ?: return
+        // IPv4 only: a link-local IPv6 with its scope does not fit in a ws:// URL.
+        val address = info.host as? Inet4Address ?: return
+        address.hostAddress?.let { samsung.connectToTv(it) }
     }
 
     private fun connectToPeer(serviceName: String, host: String, port: Int) {
+        if (!connecting.add(serviceName)) return
         scope.launch {
             try {
                 val socket = Socket()
@@ -384,34 +469,26 @@ class LocalSyncService @Inject constructor(
                     output = DataOutputStream(socket.getOutputStream()),
                 )
                 connections[serviceName] = connection
-
+                connecting.remove(serviceName)
                 sendAnnounce(connection)
                 readLoop(connection)
             } catch (_: Exception) {
                 connections.remove(serviceName)?.close()
+            } finally {
+                connecting.remove(serviceName)
             }
         }
     }
 
-    // MARK: - Wire Loop & Routing
+    // MARK: - Reading
 
     private suspend fun readLoop(connection: PeerConnection) {
         try {
             while (scope.isActive && connection.isAlive) {
-                val length = try {
-                    connection.input.readInt()
-                } catch (_: Exception) {
-                    break
-                }
+                val length = try { connection.input.readInt() } catch (_: Exception) { break }
                 if (length <= 0 || length > MAX_PAYLOAD_SIZE) break
-
                 val payload = ByteArray(length)
-                try {
-                    connection.input.readFully(payload)
-                } catch (_: Exception) {
-                    break
-                }
-
+                try { connection.input.readFully(payload) } catch (_: Exception) { break }
                 processIncomingPayload(payload, connection)
             }
         } finally {
@@ -420,34 +497,49 @@ class LocalSyncService @Inject constructor(
     }
 
     private suspend fun processIncomingPayload(payload: ByteArray, connection: PeerConnection) {
-        val keyHex = store.currentHouseholdKeyHex() ?: return
-
-        try {
-            val envelopeObj = JSONObject(String(payload, Charsets.UTF_8))
-            val envelope = DomainHouseholdSealedEnvelope(
-                householdId = envelopeObj.getString("household_id"),
-                senderDeviceId = envelopeObj.getString("sender_device_id"),
-                sequence = envelopeObj.getLong("sequence").toULong(),
-                nonceHex = envelopeObj.getString("nonce_hex"),
-                ciphertextHex = envelopeObj.getString("ciphertext_hex"),
+        val envelope = try {
+            val obj = JSONObject(String(payload, Charsets.UTF_8))
+            DomainHouseholdSealedEnvelope(
+                householdId = obj.getString("household_id"),
+                senderDeviceId = obj.getString("sender_device_id"),
+                sequence = obj.getLong("sequence").toULong(),
+                nonceHex = obj.getString("nonce_hex"),
+                ciphertextHex = obj.getString("ciphertext_hex"),
             )
+        } catch (_: Exception) {
+            return
+        }
+        openAndHandle(envelope, connection, warnIfUnreadable = true)
+    }
 
-            if (envelope.householdId != store.householdId.value) return
+    private suspend fun processChannelEnvelope(envelope: DomainHouseholdSealedEnvelope) {
+        // Our own messages come back from the relay.
+        if (envelope.senderDeviceId == store.deviceId) return
+        // Broadcasts of the NSD devices also come through the relay: the copy fails the replay check, quietly.
+        openAndHandle(envelope, connection = null, warnIfUnreadable = false)
+    }
 
-            val lastSeen = store.lastSeenSequence(envelope.senderDeviceId)
-            val messageJson = try {
-                syncRepo.openEnvelope(keyHex, envelope, lastSeen)
-            } catch (e: Exception) {
+    private suspend fun openAndHandle(
+        envelope: DomainHouseholdSealedEnvelope,
+        connection: PeerConnection?,
+        warnIfUnreadable: Boolean,
+    ) {
+        val keyHex = store.currentHouseholdKeyHex() ?: return
+        if (envelope.householdId != store.householdId.value) return
+        val messageJson = try {
+            syncRepo.openEnvelope(keyHex, envelope, store.lastSeenSequence(envelope.senderDeviceId))
+        } catch (_: Exception) {
+            if (warnIfUnreadable) {
                 log("Message reçu illisible : l'autre appareil a peut-être une autre clé de foyer.", isWarning = true)
-                return
             }
-
-            if (!store.verifyAndAdvanceSequence(envelope.senderDeviceId, envelope.sequence)) {
-                return
-            }
-
+            return
+        }
+        if (!store.verifyAndAdvanceSequence(envelope.senderDeviceId, envelope.sequence)) return
+        try {
             handleDecryptedMessageJson(messageJson, envelope.senderDeviceId, connection)
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            // Malformed message: ignored, like on Apple.
+        }
     }
 
     private fun connectionClosed(connection: PeerConnection) {
@@ -462,72 +554,33 @@ class LocalSyncService @Inject constructor(
                 deviceConnections[deviceId] = live
             } else {
                 deviceConnections.remove(deviceId)
-                val name = peerName(deviceId)
-                log("$name n'est plus joignable.")
+                log("${peerName(deviceId)} n'est plus joignable.")
             }
         }
-
         connections.entries.removeIf { it.value == connection }
         refreshActivePeers()
     }
 
-    // MARK: - Message Handling
+    // MARK: - Messages
 
     private suspend fun handleDecryptedMessageJson(json: String, senderDeviceId: String, connection: PeerConnection?) {
         if (connection != null) {
             deviceConnections[senderDeviceId] = connection
             connectionDeviceIds[connection] = senderDeviceId
         }
+        val root = try { JSONObject(json) } catch (_: Exception) { return }
 
-        val root = try {
-            JSONObject(json)
-        } catch (_: Exception) {
-            return
-        }
-
-        when (val type = root.optString("type")) {
-            "device_announce" -> {
-                if (connection != null && announcedConnections.add(connection)) {
-                    sendAnnounce(connection)
-                }
-
-                val name = root.optString("device_name", "Appareil")
-                val devType = root.optString("device_type", "mobile")
-                val canPlay = root.optBoolean("can_play", true)
-                val state = root.optString("state", "idle")
-                val caps = mutableListOf<String>()
-                root.optJSONArray("capabilities")?.let { arr ->
-                    for (i in 0 until arr.length()) caps.add(arr.getString(i))
-                }
-
-                val previous = store.knownDevices.value.firstOrNull { it.id == senderDeviceId }
-                val isNewOrBack = previous == null || (System.currentTimeMillis() - previous.lastSeen > OFFLINE_THRESHOLD_MS)
-
-                store.rememberDevice(senderDeviceId, name, devType, System.currentTimeMillis())
-                refreshActivePeers()
-
-                if (previous == null) {
-                    log("$name est connecté.")
-                }
-
-                if (isNewOrBack) {
-                    sendFullSync(senderDeviceId)
-                }
-            }
+        when (root.optString("type")) {
+            "device_announce" -> handleAnnounce(root, senderDeviceId, connection)
 
             "household_data_delta" -> {
                 val deltaObj = root.optJSONObject("delta") ?: return
-                try {
-                    val success = engineBridge.importHouseholdDelta(deltaObj.toString())
-                    val sender = peerName(senderDeviceId)
-                    if (success) {
-                        log("Données du foyer reçues de $sender et appliquées.")
-                        _syncStatus.value = "Données synchronisées avec $sender"
-                    } else {
-                        log("Données reçues de $sender mais non appliquées.", isWarning = true)
-                    }
-                } catch (e: Exception) {
-                    log("Erreur application données du foyer: ${e.message}", isWarning = true)
+                val sender = peerName(senderDeviceId)
+                if (engineBridge.importHouseholdDelta(deltaObj.toString())) {
+                    log("Données du foyer reçues de $sender et appliquées.")
+                    _syncStatus.value = "Données synchronisées avec $sender"
+                } else {
+                    log("Données reçues de $sender mais non appliquées.", isWarning = true)
                 }
             }
 
@@ -536,229 +589,267 @@ class LocalSyncService @Inject constructor(
                 sendFullSync(senderDeviceId)
             }
 
-            "play_request" -> {
-                val targetDeviceId = root.optString("target_device_id")
-                if (targetDeviceId != store.deviceId) return
-
-                val requestId = root.getString("request_id")
-                val contentKey = root.getString("content_key")
-                val sourceKey = root.optString("source_key").takeIf { it.isNotEmpty() }
-                val itemKind = root.optString("item_kind").takeIf { it.isNotEmpty() }
-                val providerRef = root.optString("provider_ref").takeIf { it.isNotEmpty() }
-                val title = root.optString("title").takeIf { it.isNotEmpty() }
-                val positionMs = root.optLong("position_ms", 0L)
-
-                // Resolve item locally
-                val itemId = engineBridge.resolveItemByContentKey(
-                    contentKey = contentKey,
-                    sourceKey = sourceKey,
-                    providerRef = providerRef,
-                    itemKind = itemKind,
-                )
-
-                if (itemId != null) {
-                    // Zero-prompt replacement in household (PRD-44 § 1.1 & § 3.4)
-                    pendingReservations[requestId] = PendingReservation(
-                        requestId = requestId,
-                        itemId = itemId,
-                        title = title,
-                        positionMs = positionMs,
-                        sourceKey = sourceKey,
-                    )
-                    val readyMsg = JSONObject().apply {
-                        put("type", "play_ready")
-                        put("request_id", requestId)
-                    }.toString()
-                    sendToPeer(senderDeviceId, readyMsg)
-                    log("Lecture demandée par ${peerName(senderDeviceId)} acceptée.")
-                } else {
-                    val refuseMsg = JSONObject().apply {
-                        put("type", "play_refused")
-                        put("request_id", requestId)
-                        put("reason", "Contenu introuvable sur cet appareil")
-                    }.toString()
-                    sendToPeer(senderDeviceId, refuseMsg)
-                    log("Lecture demandée par ${peerName(senderDeviceId)} refusée : contenu introuvable.", isWarning = true)
-                }
+            "play_request" -> if (root.optString("target_device_id") == store.deviceId) {
+                handlePlayRequest(root, senderDeviceId)
             }
 
-            "play_ready" -> {
-                val requestId = root.getString("request_id")
-                val handoff = pendingHandoffs[requestId]
-                if (handoff != null) {
-                    handoff.readyDeferred.complete(Unit)
-                }
-            }
+            "play_ready" -> pendingHandoffs[root.optString("request_id")]?.readyDeferred?.complete(Unit)
 
             "play_refused" -> {
-                val requestId = root.getString("request_id")
-                val reason = root.optString("reason", "Refusé par la cible")
-                val handoff = pendingHandoffs[requestId]
-                if (handoff != null) {
-                    _activeHandoffStatus.value = "Refusé : $reason"
-                    handoff.readyDeferred.cancel()
-                }
+                val handoff = pendingHandoffs[root.optString("request_id")] ?: return
+                _activeHandoffStatus.value = "Refusé : ${refusalText(root.optString("reason"))}"
+                handoff.readyDeferred.cancel()
             }
 
-            "play_go" -> {
-                val requestId = root.getString("request_id")
-                val positionMs = root.optLong("position_ms", 0L)
-                val reservation = pendingReservations.remove(requestId)
-                if (reservation != null) {
-                    // Single-stream rule: release stream across the household
-                    if (!reservation.sourceKey.isNullOrEmpty()) {
-                        val releaseMsg = JSONObject().apply {
-                            put("type", "release_stream")
-                            put("source_key", reservation.sourceKey)
-                        }.toString()
-                        broadcastMessage(releaseMsg)
-                    }
-
-                    _incomingPlayInstructions.emit(
-                        IncomingPlayInstruction(
-                            itemId = reservation.itemId,
-                            title = reservation.title,
-                            positionMs = if (positionMs > 0) positionMs else reservation.positionMs,
-                            sourceKey = reservation.sourceKey,
-                        )
-                    )
-                    log("Lecture démarrée depuis ${peerName(senderDeviceId)}.")
-                }
-            }
+            "play_go" -> handlePlayGo(root, senderDeviceId)
 
             "playback_state" -> {
-                val devId = root.optString("device_id")
-                val session = _activeRemoteSession.value
-                if (session != null && session.targetPeerId == devId) {
-                    _activeRemoteSession.value = session.copy(
-                        state = root.optString("state", session.state),
-                        positionMs = root.optLong("position_ms", session.positionMs),
-                        durationMs = root.optLong("duration_ms", session.durationMs),
-                        lastUpdate = System.currentTimeMillis(),
-                    )
-                }
+                val session = _activeRemoteSession.value ?: return
+                if (session.targetPeerId != senderDeviceId) return
+                _activeRemoteSession.value = session.copy(
+                    state = root.optString("state", session.state),
+                    positionMs = root.optLong("position_ms", session.positionMs),
+                    durationMs = root.optLong("duration_ms", session.durationMs),
+                    lastUpdate = System.currentTimeMillis(),
+                )
             }
 
-            "playback_control" -> {
-                val targetDeviceId = root.optString("target_device_id")
-                if (targetDeviceId == store.deviceId) {
-                    val action = root.optString("action")
-                    val value = if (root.has("value")) root.getLong("value") else null
-                    log("Commande reçue de ${peerName(senderDeviceId)} : $action")
-                }
+            "playback_control" -> if (root.optString("target_device_id") == store.deviceId) {
+                // Remote control of this player (PRD-42 § 4) is not wired on Android yet.
+                log("Commande « ${root.optString("action")} » reçue de ${peerName(senderDeviceId)} : non prise en charge sur Android.")
             }
 
             "release_stream" -> {
-                val sourceKey = root.optString("source_key")
-                if (sourceKey.isNotEmpty() && sourceKey == currentLocalSourceKey) {
-                    log("Flux arrêté : un autre appareil du foyer utilise ce compte.")
+                val sourceKey = root.optString("source_key").trim()
+                val mine = currentLocalSourceKey
+                if (sourceKey.isNotEmpty() && mine != null && sourceKey.equals(mine.trim(), ignoreCase = true)) {
+                    log("Lecture arrêtée : un autre appareil du foyer utilise ce compte.")
                     _streamInterruptedByPeer.emit(sourceKey)
                 }
             }
 
-            "ping" -> {
-                val pongJson = JSONObject().apply { put("type", "pong") }.toString()
-                sendToPeer(senderDeviceId, pongJson)
-            }
+            "ping" -> sendToPeer(senderDeviceId, JSONObject().put("type", "pong").toString())
         }
     }
 
-    // MARK: - Sending Messages & Deltas
+    private suspend fun handleAnnounce(root: JSONObject, senderDeviceId: String, connection: PeerConnection?) {
+        // Answer once per connection (once per device on the channel, which broadcasts), so the sender sees
+        // this device too; the announces that follow are the 30 s heartbeats.
+        if (connection != null) {
+            if (announcedConnections.add(connection)) sendAnnounce(connection)
+        } else if (channelAnsweredDevices.add(senderDeviceId)) {
+            sendAnnounceOnChannel()
+        }
 
-    fun sendAnnounce(connection: PeerConnection) {
-        val announce = JSONObject().apply {
-            put("type", "device_announce")
-            put("device_id", store.deviceId)
-            put("device_name", store.deviceName)
-            put("device_type", store.deviceType)
-            put("can_play", true)
-            put("capabilities", org.json.JSONArray(listOf("play", "remote_control")))
-            put("state", if (currentLocalContentKey != null) "playing" else "idle")
-            put("app_version", "1.1.0")
-        }.toString()
+        val name = root.optString("device_name", "Appareil")
+        val devType = root.optString("device_type", "mobile")
+        // Reachable only through the Samsung channel: the TV (PRD-45), decided after decryption.
+        val channelTv = connection == null && devType == "tv"
+        if (channelTv) samsung.markTv(senderDeviceId)
+        peerPresence[senderDeviceId] = PeerPresence(
+            state = root.optString("state", "idle"),
+            canPlay = root.optBoolean("can_play", true),
+        )
 
-        val sealed = sealMessage(announce) ?: return
+        val previous = store.knownDevices.value.firstOrNull { it.id == senderDeviceId }
+        val wasOnline = _activePeers.value.any { it.id == senderDeviceId && it.state != "offline" }
+        val isNewOrBack = previous == null || !wasOnline ||
+            System.currentTimeMillis() - previous.lastSeen > OFFLINE_THRESHOLD_MS
+        store.rememberDevice(senderDeviceId, name, devType, System.currentTimeMillis())
+        refreshActivePeers()
+
+        if (previous == null || !wasOnline) log("$name est connecté.")
+        // Not to the Samsung TV: it does not read this format yet (PRD-45 § 1.4).
+        if (isNewOrBack && !channelTv) sendFullSync(senderDeviceId)
+    }
+
+    /**
+     * Target side of PRD-42 § 3.2, household trust (PRD-44 § 1.1): a running playback is replaced without
+     * asking. Same order of checks as `cnd-domain::remote::handoff::evaluate_request`. Android has no
+     * "Qui peut lancer ici ?" setting nor Kids check here yet: policy `Open`.
+     */
+    private suspend fun handlePlayRequest(root: JSONObject, senderDeviceId: String) {
+        val requestId = root.optString("request_id").takeIf { it.isNotEmpty() } ?: return
+        val now = System.currentTimeMillis()
+
+        val last = lastRequestAt[senderDeviceId] ?: 0L
+        if (now - last < MIN_REQUEST_INTERVAL_MS) return refuse(senderDeviceId, requestId, "rate_limited")
+        lastRequestAt[senderDeviceId] = now
+
+        val contentKey = root.optString("content_key")
+        val sourceKey = root.optString("source_key").takeIf { it.isNotEmpty() }
+        val itemId = if (contentKey.isEmpty()) null else engineBridge.resolveItemByContentKey(
+            contentKey = contentKey,
+            sourceKey = sourceKey,
+            providerRef = root.optString("provider_ref").takeIf { it.isNotEmpty() },
+            itemKind = root.optString("item_kind").takeIf { it.isNotEmpty() },
+        )
+        if (itemId == null) {
+            log("Lecture demandée par ${peerName(senderDeviceId)} refusée : contenu introuvable sur cet appareil.", isWarning = true)
+            return refuse(senderDeviceId, requestId, "unknown_content")
+        }
+
+        // Another handoff waits for its play_go: do not steal it (the first origin would stop for nothing).
+        pendingReservations.values.removeIf { now - it.createdAt > RESERVATION_TTL_MS }
+        if (pendingReservations.values.any { it.requestId != requestId }) {
+            return refuse(senderDeviceId, requestId, "busy")
+        }
+
+        pendingReservations[requestId] = PendingReservation(
+            requestId = requestId,
+            senderId = senderDeviceId,
+            itemId = itemId,
+            title = root.optString("title").takeIf { it.isNotEmpty() },
+            positionMs = root.optLong("position_ms", 0L),
+            sourceKey = sourceKey,
+        )
+        sendToPeer(senderDeviceId, JSONObject().put("type", "play_ready").put("request_id", requestId).toString())
+    }
+
+    private suspend fun handlePlayGo(root: JSONObject, senderDeviceId: String) {
+        val reservation = pendingReservations.remove(root.optString("request_id")) ?: return
+        if (reservation.senderId != senderDeviceId) return
+        if (System.currentTimeMillis() - reservation.createdAt > RESERVATION_TTL_MS) return // the origin gave up
+
+        // Everybody else stops streaming THIS account (PRD-42 § 3.4) before this device opens it.
+        val sourceKey = reservation.sourceKey ?: engineBridge.sourceKeyForItem(reservation.itemId)
+        if (!sourceKey.isNullOrEmpty()) {
+            broadcastMessage(JSONObject().put("type", "release_stream").put("source_key", sourceKey).toString())
+        }
+        val positionMs = root.optLong("position_ms", 0L)
+        _incomingPlayInstructions.emit(
+            IncomingPlayInstruction(
+                itemId = reservation.itemId,
+                title = reservation.title,
+                positionMs = if (positionMs > 0) positionMs else reservation.positionMs,
+                sourceKey = sourceKey,
+            )
+        )
+        log("Lecture lancée depuis ${peerName(senderDeviceId)}.")
+    }
+
+    private suspend fun refuse(peerId: String, requestId: String, reason: String) {
+        sendToPeer(
+            peerId,
+            JSONObject().put("type", "play_refused").put("request_id", requestId).put("reason", reason).toString(),
+        )
+    }
+
+    /** `PlayRefuseReason` codes of `cnd-domain::sync::envelope`, shown to the user of the origin. */
+    private fun refusalText(code: String): String = when (code) {
+        "busy" -> "l'appareil traite déjà une autre demande"
+        "unknown_content" -> "contenu introuvable sur l'appareil"
+        "source_missing" -> "compte absent sur l'appareil"
+        "kids_restricted" -> "interdit par le profil Enfants"
+        "not_allowed" -> "l'appareil n'accepte pas les lectures à distance"
+        "declined_by_user" -> "refusé sur l'appareil"
+        "rate_limited" -> "trop de demandes, réessayez"
+        "app_not_ready" -> "l'app démarre encore"
+        else -> "refusé par l'appareil"
+    }
+
+    // MARK: - Sending
+
+    private fun announceJson(): String = JSONObject().apply {
+        put("type", "device_announce")
+        put("device_id", store.deviceId)
+        put("device_name", store.deviceName)
+        put("device_type", store.deviceType)
+        put("can_play", true)
+        put("capabilities", JSONArray(listOf("play")))
+        put("state", if (currentLocalContentKey != null) "playing" else "idle")
+        put("app_version", "1.1.0")
+    }.toString()
+
+    private suspend fun sendAnnounce(connection: PeerConnection) {
+        val sealed = sealMessage(announceJson()) ?: return
+        announcedConnections.add(connection)
         sendEnvelope(sealed, connection)
     }
 
-    override suspend fun syncNow() {
+    private suspend fun sendAnnounceOnChannel() {
+        if (!samsung.isConnected) return
+        sealMessage(announceJson())?.let { samsung.sendEnvelope(it) }
+    }
+
+    override suspend fun syncNow() = sendDelta(full = true)
+
+    /**
+     * `full` is the "Synchroniser maintenant" button: everything, plus `sync_request` so the others send
+     * theirs. The 60 s round only sends what changed (a `sync_request` every minute would make every device
+     * resend all its data, passwords included, every minute).
+     */
+    private suspend fun sendDelta(full: Boolean) {
         if (!store.isJoined.value) return
         val peers = reachableConnections()
         if (peers.isEmpty()) {
-            _syncStatus.value = "Aucun autre appareil joignable"
-            log("Synchroniser : aucun autre appareil joignable (même Wi‑Fi ?).", isWarning = true)
+            if (full) {
+                _syncStatus.value = "Aucun autre appareil joignable : ouvrez Buntu sur l'autre appareil, sur le même Wi‑Fi."
+                log("Synchroniser : aucun autre appareil joignable (même Wi‑Fi ?).", isWarning = true)
+            }
             return
         }
-
-        val deltaJson = engineBridge.exportHouseholdDelta(lastExportTimestamp)
+        val nowTs = System.currentTimeMillis() / 1000
+        val deltaJson = engineBridge.exportHouseholdDelta(if (full) 0L else lastExportTimestamp)
         if (deltaJson.isNotEmpty()) {
-            val wrapped = JSONObject().apply {
-                put("type", "household_data_delta")
-                put("delta", JSONObject(deltaJson))
-            }.toString()
-            val sealed = sealMessage(wrapped)
-            if (sealed != null) {
-                for (c in peers) sendEnvelope(sealed, c)
+            val wrapped = JSONObject().put("type", "household_data_delta").put("delta", JSONObject(deltaJson)).toString()
+            sealMessage(wrapped)?.let { sealed -> peers.forEach { sendEnvelope(sealed, it) } }
+        }
+        if (full) {
+            sealMessage(JSONObject().put("type", "sync_request").toString())?.let { sealed ->
+                peers.forEach { sendEnvelope(sealed, it) }
             }
+            log("Synchroniser : données envoyées et demandées sur ${peers.size} connexion(s).")
+            _syncStatus.value = "Synchronisation demandée à ${peers.size} connexion(s)…"
+        } else {
+            lastExportTimestamp = nowTs
         }
-
-        val req = JSONObject().apply { put("type", "sync_request") }.toString()
-        val sealedReq = sealMessage(req)
-        if (sealedReq != null) {
-            for (c in peers) sendEnvelope(sealedReq, c)
-            log("Synchroniser : données demandées à ${peers.size} connexion(s).")
-        }
-
-        lastExportTimestamp = System.currentTimeMillis() / 1000
-        _syncStatus.value = "Synchronisation demandée à ${peers.size} connexion(s)…"
     }
 
     private fun sendFullSync(peerId: String) {
         if (!store.isJoined.value) return
         scope.launch {
             val deltaJson = engineBridge.exportHouseholdDelta(0L)
-            if (deltaJson.isNotEmpty()) {
-                val wrapped = JSONObject().apply {
-                    put("type", "household_data_delta")
-                    put("delta", JSONObject(deltaJson))
-                }.toString()
-                if (sendToPeer(peerId, wrapped)) {
-                    log("Envoi de toutes les données du foyer à ${peerName(peerId)}.")
-                }
-            }
+            if (deltaJson.isEmpty()) return@launch
+            val wrapped = JSONObject().put("type", "household_data_delta").put("delta", JSONObject(deltaJson)).toString()
+            if (sendToPeer(peerId, wrapped)) log("Envoi de toutes les données du foyer à ${peerName(peerId)}.")
         }
     }
 
-    private fun sendToPeer(peerId: String, messageJson: String): Boolean {
+    /**
+     * One device only; `false` (nothing sent) when it is not reachable: a targeted order such as
+     * `play_request` never falls back to a broadcast. The TV has no TCP connection: it gets the message
+     * through its channel, which broadcasts, but the message carries `target_device_id`.
+     */
+    private suspend fun sendToPeer(peerId: String, messageJson: String): Boolean {
+        val conn = (deviceConnections[peerId] ?: connections[peerId])?.takeIf { it.isAlive }
+        if (conn == null && !samsung.isTv(peerId)) return false
         val sealed = sealMessage(messageJson) ?: return false
-        val conn = deviceConnections[peerId] ?: connections[peerId]
-        return if (conn != null && conn.isAlive) {
+        return if (conn != null) {
             sendEnvelope(sealed, conn)
             true
         } else {
-            false
+            samsung.sendEnvelope(sealed)
         }
     }
 
-    fun broadcastMessage(messageJson: String) {
+    private suspend fun broadcastMessage(messageJson: String) {
         val sealed = sealMessage(messageJson) ?: return
-        for (c in reachableConnections()) {
-            sendEnvelope(sealed, c)
-        }
+        reachableConnections().forEach { sendEnvelope(sealed, it) }
+        samsung.sendEnvelope(sealed)
     }
 
     private fun sendEnvelope(envelope: DomainHouseholdSealedEnvelope, connection: PeerConnection) {
         scope.launch {
             try {
                 connection.writeMutex.withLock {
-                    val envelopeObj = JSONObject().apply {
+                    val bytes = JSONObject().apply {
                         put("household_id", envelope.householdId)
                         put("sender_device_id", envelope.senderDeviceId)
                         put("sequence", envelope.sequence.toLong())
                         put("nonce_hex", envelope.nonceHex)
                         put("ciphertext_hex", envelope.ciphertextHex)
-                    }
-                    val bytes = envelopeObj.toString().toByteArray(Charsets.UTF_8)
+                    }.toString().toByteArray(Charsets.UTF_8)
                     connection.output.writeInt(bytes.size)
                     connection.output.write(bytes)
                     connection.output.flush()
@@ -769,17 +860,14 @@ class LocalSyncService @Inject constructor(
         }
     }
 
-    private fun sealMessage(messageJson: String): DomainHouseholdSealedEnvelope? {
-        val keyHex = kotlinx.coroutines.runBlocking { store.currentHouseholdKeyHex() } ?: return null
-        val nonce = ByteArray(12)
-        SecureRandom().nextBytes(nonce)
-        val seq = kotlinx.coroutines.runBlocking { store.nextSequence() }
-
+    private suspend fun sealMessage(messageJson: String): DomainHouseholdSealedEnvelope? {
+        val keyHex = store.currentHouseholdKeyHex() ?: return null
+        val nonce = ByteArray(12).also { SecureRandom().nextBytes(it) }
         return try {
             syncRepo.sealEnvelope(
                 householdKeyHex = keyHex,
                 senderDeviceId = store.deviceId,
-                sequence = seq,
+                sequence = store.nextSequence(),
                 nonceBytes = nonce,
                 messageJson = messageJson,
             )
@@ -789,29 +877,24 @@ class LocalSyncService @Inject constructor(
     }
 
     private fun reachableConnections(): List<PeerConnection> {
-        val list = mutableListOf<PeerConnection>()
         val seen = mutableSetOf<Socket>()
-        for (c in connections.values + deviceConnections.values + incomingConnections.keys) {
-            if (c.isAlive && seen.add(c.socket)) {
-                list.add(c)
-            }
-        }
-        return list
+        return (connections.values + deviceConnections.values + incomingConnections.keys)
+            .filter { it.isAlive && seen.add(it.socket) }
     }
 
-    // MARK: - Heartbeat & Pruning
+    // MARK: - Heartbeat
 
     private fun startHeartbeat() {
         stopHeartbeat()
         heartbeatJob = scope.launch {
             var ticks = 0
+            delay(5_000)
             while (isActive) {
-                delay(HEARTBEAT_SECONDS * 1000)
                 heartbeat()
+                // The data itself goes every 60 s (first tick, then every other one), like on Apple.
+                if (ticks % 2 == 0) sendDelta(full = false)
                 ticks++
-                if (ticks % 2 == 0) {
-                    syncNow()
-                }
+                delay(HEARTBEAT_MS)
             }
         }
     }
@@ -821,20 +904,16 @@ class LocalSyncService @Inject constructor(
         heartbeatJob = null
     }
 
-    private fun heartbeat() {
-        if (!store.isJoined.value) return
-
-        for (c in reachableConnections()) {
-            sendAnnounce(c)
-        }
-
-        // Reconnect to discovered peers that dropped
+    private suspend fun heartbeat() {
+        if (!running || !store.isJoined.value) return
+        reachableConnections().forEach { sendAnnounce(it) }
+        sendAnnounceOnChannel()
         for ((serviceName, endpoint) in peerEndpoints) {
-            if (connections[serviceName]?.isAlive != true) {
-                connectToPeer(serviceName, endpoint.first, endpoint.second)
-            }
+            if (connections[serviceName]?.isAlive != true) connectToPeer(serviceName, endpoint.first, endpoint.second)
         }
-
+        // Expired reservations: the origin gave up.
+        val now = System.currentTimeMillis()
+        pendingReservations.values.removeIf { now - it.createdAt > RESERVATION_TTL_MS }
         pruneDeadConnections()
         refreshActivePeers()
     }
@@ -847,38 +926,33 @@ class LocalSyncService @Inject constructor(
         connectionDeviceIds.keys.removeIf { !it.isAlive }
     }
 
+    /** "Disponible" = a live route (TCP or the TV channel) and news in the last 120 s. */
     private fun refreshActivePeers() {
         val now = System.currentTimeMillis()
-        val connectedDeviceIds = deviceConnections.filter { it.value.isAlive }.keys
-
-        val list = store.knownDevices.value.map { known ->
-            val isOnline = connectedDeviceIds.contains(known.id) && (now - known.lastSeen <= OFFLINE_THRESHOLD_MS)
+        val connected = deviceConnections.filterValues { it.isAlive }.keys
+        _activePeers.value = store.knownDevices.value.map { known ->
+            val reachable = connected.contains(known.id) || samsung.isTv(known.id)
+            val online = reachable && now - known.lastSeen <= OFFLINE_THRESHOLD_MS
+            val presence = peerPresence[known.id]
             DiscoveredPeer(
                 id = known.id,
                 name = known.name,
                 deviceType = known.deviceType,
-                canPlay = true,
-                state = if (isOnline) "idle" else "offline",
+                canPlay = presence?.canPlay ?: true,
+                state = if (online) presence?.state ?: "idle" else "offline",
                 lastSeen = known.lastSeen,
             )
         }
-        _activePeers.value = list
     }
 
-    private fun peerName(deviceId: String): String {
-        return store.knownDevices.value.firstOrNull { it.id == deviceId }?.name
-            ?: "l'appareil ${deviceId.takeLast(6)}"
-    }
+    private fun peerName(deviceId: String): String =
+        store.knownDevices.value.firstOrNull { it.id == deviceId }?.name ?: "l'appareil ${deviceId.takeLast(6)}"
 
     private fun log(text: String, isWarning: Boolean = false) {
-        val entry = SyncLogEntry(message = text, isWarning = isWarning)
-        val current = _syncLog.value.toMutableList()
-        current.add(0, entry)
-        if (current.size > 100) current.removeAt(current.size - 1)
-        _syncLog.value = current
+        _syncLog.value = (listOf(SyncLogEntry(message = text, isWarning = isWarning)) + _syncLog.value).take(100)
     }
 
-    // MARK: - RemotePlaybackRepository Implementation
+    // MARK: - RemotePlaybackRepository (origin side)
 
     override suspend fun startHandoff(
         targetPeerId: String,
@@ -889,8 +963,9 @@ class LocalSyncService @Inject constructor(
         title: String?,
         positionMs: Long,
     ): Boolean {
-        val conn = deviceConnections[targetPeerId] ?: connections[targetPeerId]
-        if (conn == null || !conn.isAlive) {
+        val reachable = (deviceConnections[targetPeerId] ?: connections[targetPeerId])?.isAlive == true ||
+            samsung.isTv(targetPeerId)
+        if (!reachable) {
             _activeHandoffStatus.value = "Appareil non joignable"
             return false
         }
@@ -917,11 +992,11 @@ class LocalSyncService @Inject constructor(
 
         if (!sendToPeer(targetPeerId, req)) {
             pendingHandoffs.remove(requestId)
-            _activeHandoffStatus.value = "Échec envoi de la demande"
+            _activeHandoffStatus.value = "Échec de l'envoi de la demande"
             return false
         }
 
-        val ready = withTimeoutOrNull(6000) {
+        val ready = withTimeoutOrNull(6_000) {
             try {
                 readyDeferred.await()
                 true
@@ -929,7 +1004,6 @@ class LocalSyncService @Inject constructor(
                 false
             }
         } ?: false
-
         pendingHandoffs.remove(requestId)
 
         if (!ready) {
@@ -939,17 +1013,12 @@ class LocalSyncService @Inject constructor(
             return false
         }
 
-        // Send play_go
-        val go = JSONObject().apply {
-            put("type", "play_go")
-            put("request_id", requestId)
-            put("position_ms", positionMs)
-        }.toString()
-
-        sendToPeer(targetPeerId, go)
+        sendToPeer(
+            targetPeerId,
+            JSONObject().put("type", "play_go").put("request_id", requestId).put("position_ms", positionMs).toString(),
+        )
         log("Lecture transférée à $targetName.")
         _activeHandoffStatus.value = null
-
         _activeRemoteSession.value = ActiveRemoteControlSession(
             targetPeerId = targetPeerId,
             targetPeerName = targetName,
@@ -959,8 +1028,30 @@ class LocalSyncService @Inject constructor(
             positionMs = positionMs,
             durationMs = 0L,
         )
-
         return true
+    }
+
+    override suspend fun sourceKeyForItem(itemId: Long): String? = engineBridge.sourceKeyForItem(itemId)
+
+    override fun clearHandoffStatus() {
+        _activeHandoffStatus.value = null
+    }
+
+    override suspend fun startHandoffForItem(targetPeerId: String, itemId: Long): Boolean {
+        val item = engineBridge.remoteItem(itemId)
+        if (item == null) {
+            _activeHandoffStatus.value = "Ce contenu ne peut pas être lu sur un autre appareil."
+            return false
+        }
+        return startHandoff(
+            targetPeerId = targetPeerId,
+            contentKey = item.contentKey,
+            sourceKey = item.sourceKey,
+            itemKind = item.itemKind,
+            providerRef = null,
+            title = item.title,
+            positionMs = item.resumePositionMs,
+        )
     }
 
     override suspend fun sendPlaybackControl(targetPeerId: String, action: String, value: Long?) {
@@ -975,36 +1066,32 @@ class LocalSyncService @Inject constructor(
 
     override fun setLocalPlaybackActive(contentKey: String?, title: String?, sourceKey: String?) {
         currentLocalContentKey = contentKey
-        currentLocalTitle = title
         currentLocalSourceKey = sourceKey
     }
 
     override fun onLocalPlaybackStopped() {
         currentLocalContentKey = null
-        currentLocalTitle = null
         currentLocalSourceKey = null
     }
 
-    // MARK: - HouseholdRepository methods
+    // MARK: - HouseholdRepository
 
     override suspend fun createHousehold(): DomainHouseholdCredentials {
         val creds = store.createHousehold()
-        start()
+        withContext(Dispatchers.IO) { lifecycleMutex.withLock { stopLocked(); startLocked() } }
         return creds
     }
 
     override suspend fun joinHousehold(keyHex: String): String {
         val id = store.joinHousehold(keyHex)
-        start()
+        withContext(Dispatchers.IO) { lifecycleMutex.withLock { stopLocked(); startLocked() } }
         return id
     }
 
     override suspend fun leaveHousehold() {
-        stop()
+        withContext(Dispatchers.IO) { lifecycleMutex.withLock { stopLocked() } }
         store.leaveHousehold()
     }
 
-    override suspend fun currentHouseholdKeyHex(): String? {
-        return store.currentHouseholdKeyHex()
-    }
+    override suspend fun currentHouseholdKeyHex(): String? = store.currentHouseholdKeyHex()
 }

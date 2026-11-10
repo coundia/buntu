@@ -29,6 +29,18 @@ interface RemotePlaybackRepository {
         positionMs: Long,
     ): Boolean
 
+    /**
+     * Context menu « Lire sur un autre appareil » (PRD-44 § 2.2): sends a local item by id; a movie or an
+     * episode starts at its resume position, a channel live. `false` when refused, unreachable or not playable.
+     */
+    /** Forgets the last handoff message (before opening the device list again). */
+    fun clearHandoffStatus()
+
+    suspend fun startHandoffForItem(targetPeerId: String, itemId: Long): Boolean
+
+    /** `source_key` of the account of [itemId] (computed in Rust), `null` if unknown. */
+    suspend fun sourceKeyForItem(itemId: Long): String?
+
     suspend fun sendPlaybackControl(targetPeerId: String, action: String, value: Long?)
     fun setLocalPlaybackActive(contentKey: String?, title: String?, sourceKey: String?)
     fun onLocalPlaybackStopped()

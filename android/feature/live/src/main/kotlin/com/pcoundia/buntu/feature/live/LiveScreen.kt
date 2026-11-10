@@ -1,5 +1,11 @@
 package com.pcoundia.buntu.feature.live
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.pcoundia.buntu.core.designsystem.BuntuDeviceChoice
+import com.pcoundia.buntu.core.designsystem.BuntuDevicePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,6 +63,9 @@ import com.pcoundia.buntu.core.player.PlayerEngineState
 import com.pcoundia.buntu.core.player.VideoEngine
 import kotlinx.collections.immutable.toImmutableList
 
+/** Opens the « Lire sur un autre appareil » menu for a channel (item id, name); provided by [LiveRoute]. */
+private val LocalOpenRemoteMenu = staticCompositionLocalOf<((Long, String) -> Unit)?> { null }
+
 @Composable
 fun LiveRoute(
     onOpenFullscreenPlayer: (Long) -> Unit,
@@ -67,7 +76,27 @@ fun LiveRoute(
     val playerState by viewModel.playerState.collectAsStateWithLifecycle()
     val pagedChannels = viewModel.pagedChannels.collectAsLazyPagingItems()
     val metrics = LocalBuntuMetrics.current
+    val remoteDevices by viewModel.remoteDevices.collectAsStateWithLifecycle()
+    val remoteStatus by viewModel.remoteStatus.collectAsStateWithLifecycle()
+    var remoteTarget by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    val openRemoteMenu: (Long, String) -> Unit = { itemId, title ->
+        viewModel.openRemoteMenu()
+        remoteTarget = itemId to title
+    }
 
+    remoteTarget?.let { (itemId, title) ->
+        BuntuDevicePickerDialog(
+            itemTitle = title,
+            devices = remember(remoteDevices) {
+                remoteDevices.map { BuntuDeviceChoice(it.id, it.name, it.deviceType) }.toImmutableList()
+            },
+            status = remoteStatus,
+            onPick = { device -> viewModel.playOnDevice(device.id, itemId) { remoteTarget = null } },
+            onDismiss = { remoteTarget = null },
+        )
+    }
+
+    CompositionLocalProvider(LocalOpenRemoteMenu provides openRemoteMenu) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -166,6 +195,7 @@ fun LiveRoute(
                 )
             }
         }
+    }
     }
 }
 
@@ -515,6 +545,7 @@ private fun ChannelRowWithStatusBadge(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
+    val openRemoteMenu = LocalOpenRemoteMenu.current
     Box(modifier = Modifier.fillMaxWidth()) {
         BuntuChannelCard(
             name = channel.name,
@@ -526,6 +557,7 @@ private fun ChannelRowWithStatusBadge(
             isFavorite = channel.isFavorite,
             isSelected = isSelected,
             onClick = onClick,
+            onLongClick = openRemoteMenu?.let { open -> { open(channel.id, channel.name) } },
         )
         // Concise outage badge (never verbose!)
         if (channel.isBroken) {
@@ -553,6 +585,7 @@ private fun LiveRecoShelfSection(
     shelf: RecoShelfGroup,
     onSelectChannelId: (Long) -> Unit,
 ) {
+    val openRemoteMenu = LocalOpenRemoteMenu.current
     val shelfCards = remember(shelf.cards) {
         shelf.cards.map { card ->
             BuntuShelfCardData(
@@ -571,6 +604,11 @@ private fun LiveRecoShelfSection(
         onCardClick = { clicked ->
             val match = shelf.cards.firstOrNull { it.stableHash == clicked.key }
             match?.itemId?.let(onSelectChannelId)
+        },
+        onCardLongClick = openRemoteMenu?.let { open ->
+            { clicked: BuntuShelfCardData ->
+                shelf.cards.firstOrNull { it.stableHash == clicked.key }?.itemId?.let { open(it, clicked.title) }
+            }
         },
     )
 }

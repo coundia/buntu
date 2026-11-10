@@ -79,7 +79,8 @@ class DetailsViewModel @Inject constructor(
                 else _uiState.value.primaryEpisode ?: detail.episodes.firstOrNull()
             } else null
 
-            val contentKey = targetEpisode?.stableHash ?: detail.movieItem?.stableHash ?: detail.title
+            // The title is not an identity: without a content key there is nothing the target can find.
+            val contentKey = targetEpisode?.stableHash ?: detail.movieItem?.stableHash ?: return@launch
             val title = if (targetEpisode != null) "${detail.title} - ${targetEpisode.code}" else detail.title
             val positionMs = targetEpisode?.watchPositionMs ?: detail.movieItem?.watchPositionMs ?: 0L
 

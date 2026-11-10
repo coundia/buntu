@@ -1,5 +1,9 @@
 package com.pcoundia.buntu.feature.movies
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.pcoundia.buntu.core.designsystem.BuntuDeviceChoice
+import com.pcoundia.buntu.core.designsystem.BuntuDevicePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -43,6 +47,13 @@ fun MoviesRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val pagedMovies = viewModel.pagedMovies.collectAsLazyPagingItems()
     val metrics = LocalBuntuMetrics.current
+    val remoteDevices by viewModel.remoteDevices.collectAsStateWithLifecycle()
+    val remoteStatus by viewModel.remoteStatus.collectAsStateWithLifecycle()
+    var remoteTarget by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    val openRemoteMenu: (Long, String) -> Unit = { itemId, title ->
+        viewModel.openRemoteMenu()
+        remoteTarget = itemId to title
+    }
 
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = metrics.posterGridMinCell),
@@ -135,6 +146,10 @@ fun MoviesRoute(
                         val itemId = shelf.cards.firstOrNull { it.stableHash == clicked.key }?.itemId
                         if (itemId != null) onOpenMovieDetail(itemId)
                     },
+                    onCardLongClick = { clicked ->
+                        shelf.cards.firstOrNull { it.stableHash == clicked.key }?.itemId
+                            ?.let { openRemoteMenu(it, clicked.title) }
+                    },
                 )
             }
         }
@@ -166,8 +181,21 @@ fun MoviesRoute(
                     badge = movie.rating?.takeIf { it > 0.0 }?.let { "★ %.1f".format(it) },
                     progressFraction = movie.resumeFraction,
                     onClick = { onOpenMovieDetail(movie.id) },
+                    onLongClick = { openRemoteMenu(movie.id, movie.title) },
                 )
             }
         }
+    }
+
+    remoteTarget?.let { (itemId, title) ->
+        BuntuDevicePickerDialog(
+            itemTitle = title,
+            devices = remember(remoteDevices) {
+                remoteDevices.map { BuntuDeviceChoice(it.id, it.name, it.deviceType) }.toImmutableList()
+            },
+            status = remoteStatus,
+            onPick = { device -> viewModel.playOnDevice(device.id, itemId) { remoteTarget = null } },
+            onDismiss = { remoteTarget = null },
+        )
     }
 }

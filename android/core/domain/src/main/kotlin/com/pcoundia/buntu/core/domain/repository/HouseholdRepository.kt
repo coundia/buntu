@@ -20,6 +20,7 @@ interface HouseholdRepository {
     suspend fun createHousehold(): DomainHouseholdCredentials
     suspend fun joinHousehold(keyHex: String): String
     suspend fun leaveHousehold()
+    /** "Synchroniser maintenant": sends everything to every connected device and asks for theirs. */
     suspend fun syncNow()
     suspend fun currentHouseholdKeyHex(): String?
     fun startSyncService()
