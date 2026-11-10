@@ -41,3 +41,16 @@ data class ActiveRemoteControlSession(
     val lastUpdate: Long = System.currentTimeMillis(),
 )
 
+
+/** Devices offered by « Lire sur un autre appareil »: reachable and able to play. */
+fun List<DiscoveredPeer>.playbackTargets(): List<DiscoveredPeer> = filter { it.state != "offline" && it.canPlay }
+
+/** What a handoff sends about a local item (PRD-42 § 3.1), read from the engine. */
+data class RemoteItemDescriptor(
+    val contentKey: String,
+    val sourceKey: String?,
+    /** "movie" | "episode" | "live" (wire values of `item_kind`). */
+    val itemKind: String,
+    val title: String,
+    val resumePositionMs: Long,
+)

@@ -1,5 +1,9 @@
 package com.pcoundia.buntu.feature.series
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.pcoundia.buntu.core.designsystem.BuntuDeviceChoice
+import com.pcoundia.buntu.core.designsystem.BuntuDevicePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -41,6 +45,13 @@ fun SeriesRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val pagedSeries = viewModel.pagedSeries.collectAsLazyPagingItems()
     val metrics = LocalBuntuMetrics.current
+    val remoteDevices by viewModel.remoteDevices.collectAsStateWithLifecycle()
+    val remoteStatus by viewModel.remoteStatus.collectAsStateWithLifecycle()
+    var remoteTarget by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    val openRemoteMenu: (Long, String) -> Unit = { itemId, title ->
+        viewModel.openRemoteMenu()
+        remoteTarget = itemId to title
+    }
 
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = metrics.posterGridMinCell),
@@ -117,6 +128,12 @@ fun SeriesRoute(
                         }
                         if (seriesId != null) onOpenSeriesDetail(seriesId)
                     },
+                    // Only an episode card (e.g. « À suivre ») can be sent; a series card has no menu.
+                    onCardLongClick = { clicked ->
+                        val card = shelf.cards.firstOrNull { it.stableHash == clicked.key }
+                        val episodeId = card?.itemId?.takeIf { card.seriesId != null && it != card.seriesId }
+                        if (episodeId != null) openRemoteMenu(episodeId, clicked.title)
+                    },
                 )
             }
         }
@@ -154,6 +171,18 @@ fun SeriesRoute(
                 )
             }
         }
+    }
+
+    remoteTarget?.let { (itemId, title) ->
+        BuntuDevicePickerDialog(
+            itemTitle = title,
+            devices = remember(remoteDevices) {
+                remoteDevices.map { BuntuDeviceChoice(it.id, it.name, it.deviceType) }.toImmutableList()
+            },
+            status = remoteStatus,
+            onPick = { device -> viewModel.playOnDevice(device.id, itemId) { remoteTarget = null } },
+            onDismiss = { remoteTarget = null },
+        )
     }
 }
 

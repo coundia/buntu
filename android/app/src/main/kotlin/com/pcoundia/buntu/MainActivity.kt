@@ -32,6 +32,9 @@ import com.pcoundia.buntu.ui.MobileShell
 import com.pcoundia.buntu.ui.TvShell
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -130,18 +133,20 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 launch {
-                    videoEngine.state.collect { state ->
-                        val active = state.activeStream
-                        if (state.isPlaying && active != null) {
-                            remotePlaybackRepo.setLocalPlaybackActive(
-                                contentKey = active.stableHash,
-                                title = active.title,
-                                sourceKey = active.host,
-                            )
-                        } else {
-                            remotePlaybackRepo.onLocalPlaybackStopped()
+                    // What plays here, with the `source_key` of its account (computed in Rust, off the main
+                    // thread): the key of `release_stream`, never the server address (PRD-42 § 3.4).
+                    videoEngine.state
+                        .map { it.activeStream }
+                        .distinctUntilChanged { a, b -> a?.itemId == b?.itemId }
+                        .collectLatest { active ->
+                            if (active == null) {
+                                remotePlaybackRepo.onLocalPlaybackStopped()
+                                return@collectLatest
+                            }
+                            remotePlaybackRepo.setLocalPlaybackActive(active.stableHash, active.title, null)
+                            val sourceKey = remotePlaybackRepo.sourceKeyForItem(active.itemId)
+                            remotePlaybackRepo.setLocalPlaybackActive(active.stableHash, active.title, sourceKey)
                         }
-                    }
                 }
             }
 

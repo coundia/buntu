@@ -273,7 +273,10 @@ fun PlayerRoute(
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
-                        if (peers.any { it.state != "offline" }) {
+                        // Not for local files and downloads (PRD-42 § 1.3): the other device cannot open them.
+                        if (peers.any { it.state != "offline" } &&
+                            engineState.activeStream?.kind != com.pcoundia.buntu.core.domain.model.StreamKind.LOCAL_FILE
+                        ) {
                             OutlinedButton(onClick = { showRemoteDialog = true }) {
                                 Text("Lire sur…", color = BuntuPalette.PureWhite)
                             }

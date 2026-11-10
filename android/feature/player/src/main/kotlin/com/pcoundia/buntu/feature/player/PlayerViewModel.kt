@@ -90,13 +90,18 @@ class PlayerViewModel @Inject constructor(
     val handoffStatus: StateFlow<String?> = remotePlaybackRepo.activeHandoffStatus
 
     fun playOnPeer(targetPeerId: String, onTransferred: () -> Unit) {
-        val stream = videoEngine.state.value.activeStream ?: return
+        val stream = videoEngine.state.value.activeStream?.takeIf { it.kind != StreamKind.LOCAL_FILE } ?: return
         viewModelScope.launch {
             val success = remotePlaybackRepo.startHandoff(
                 targetPeerId = targetPeerId,
                 contentKey = stream.stableHash,
-                sourceKey = stream.host,
-                itemKind = if (stream.kind == StreamKind.LIVE) "live" else "movie",
+                // The account key computed in Rust (PRD-41 identity), never the server address.
+                sourceKey = remotePlaybackRepo.sourceKeyForItem(stream.itemId),
+                itemKind = when (stream.kind) {
+                    StreamKind.LIVE, StreamKind.CATCHUP -> "live"
+                    StreamKind.VOD_EPISODE -> "episode"
+                    else -> "movie"
+                },
                 providerRef = null,
                 title = stream.title,
                 positionMs = videoEngine.state.value.positionMs,

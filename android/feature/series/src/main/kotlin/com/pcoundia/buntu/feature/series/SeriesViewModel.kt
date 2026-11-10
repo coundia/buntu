@@ -1,5 +1,9 @@
 package com.pcoundia.buntu.feature.series
 
+import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
+import com.pcoundia.buntu.core.domain.usecase.PlayOnAnotherDeviceUseCase
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -42,7 +46,19 @@ data class SeriesUiState(
 class SeriesViewModel @Inject constructor(
     private val catalogRepository: CatalogRepository,
     private val loadShelvesUseCase: LoadShelvesUseCase,
+    private val playOnAnotherDevice: PlayOnAnotherDeviceUseCase,
 ) : ViewModel() {
+
+    // « Lire sur un autre appareil » from the context menu of a card (PRD-44 § 2.2).
+    val remoteDevices: StateFlow<List<DiscoveredPeer>> = playOnAnotherDevice.devices
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val remoteStatus: StateFlow<String?> = playOnAnotherDevice.status
+
+    fun openRemoteMenu() = playOnAnotherDevice.reset()
+
+    fun playOnDevice(deviceId: String, itemId: Long, onSent: () -> Unit) {
+        viewModelScope.launch { if (playOnAnotherDevice(deviceId, itemId)) onSent() }
+    }
 
     private val _uiState = MutableStateFlow(SeriesUiState())
     val uiState: StateFlow<SeriesUiState> = _uiState.asStateFlow()
