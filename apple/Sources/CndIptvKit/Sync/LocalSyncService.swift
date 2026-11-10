@@ -270,6 +270,9 @@ public final class LocalSyncService: @unchecked Sendable {
     /// devices to see each other (before, a device only announced itself on the connections it opened,
     /// so the Mac could see the iPhone while the iPhone saw the Mac offline and could not play on it).
     @ObservationIgnored private var announcedConnections: Set<ObjectIdentifier> = []
+    /// Devices this one already answered on the Samsung channel (one answer each per channel connection:
+    /// the relay broadcasts, so answering every announce would make two phones answer each other forever).
+    @ObservationIgnored private var channelAnsweredDevices: Set<String> = []
     /// Household device heard on each connection, to find another route when one closes.
     @ObservationIgnored private var connectionDeviceIds: [ObjectIdentifier: String] = [:]
     @ObservationIgnored private var heartbeatTicks = 0
@@ -296,19 +299,24 @@ public final class LocalSyncService: @unchecked Sendable {
     private func setupSamsungTransport() {
         samsungTransport.onConnected = { [weak self] in
             guard let self else { return }
-            self.sendAnnounceOnSamsungChannel()
+            self.queue.async {
+                self.channelAnsweredDevices.removeAll()
+                self.sendAnnounceOnSamsungChannel()
+            }
         }
-        samsungTransport.onDisconnected = { [weak self] in
-            guard let self, let tvId = self.samsungTransport.connectedTvDeviceId else { return }
-            let name = self.peerName(tvId)
+        samsungTransport.onDisconnected = { [weak self] tvIds in
+            guard let self, !tvIds.isEmpty else { return }
             Task { @MainActor in
-                guard self.activePeers.contains(where: { $0.id == tvId }) else { return }
-                self.activePeers.removeAll { $0.id == tvId }
-                self.log("\(name) n'est plus joignable.")
+                for tvId in tvIds where self.activePeers.contains(where: { $0.id == tvId }) {
+                    self.activePeers.removeAll { $0.id == tvId }
+                    self.log("\(self.peerName(tvId)) n'est plus joignable.")
+                }
             }
         }
         samsungTransport.onEnvelopeReceived = { [weak self] envelope in
-            self?.handleSamsungChannelEnvelope(envelope)
+            guard let self else { return }
+            // Same queue as the TCP messages: the routing tables are not shared across threads.
+            self.queue.async { self.handleSamsungChannelEnvelope(envelope) }
         }
     }
 
@@ -570,13 +578,8 @@ public final class LocalSyncService: @unchecked Sendable {
 
     private func handleSamsungChannelEnvelope(_ envelope: HouseholdSealedEnvelope) {
         guard let keyHex = store.currentHouseholdKeyHex() else { return }
-
-        // Ignore our own reflections from the broadcast relay
-        guard envelope.senderDeviceId != store.deviceId else { return }
-
-        if envelope.householdId != store.householdId {
-            return
-        }
+        // Our own messages come back from the relay; another household's are not ours to read.
+        guard envelope.senderDeviceId != store.deviceId, envelope.householdId == store.householdId else { return }
 
         do {
             let messageJson = try syncOpenEnvelope(
@@ -584,12 +587,13 @@ public final class LocalSyncService: @unchecked Sendable {
                 envelope: envelope,
                 lastSeenSequence: store.replayFloor(for: envelope.senderDeviceId)
             )
+            // Broadcasts of the Bonjour devices also come through the relay: the second copy is dropped here.
             guard store.acceptSequence(senderDeviceId: envelope.senderDeviceId, sequence: envelope.sequence) else { return }
             store.markRekeyDelivered(envelope.senderDeviceId)
 
             handleDecryptedMessageJson(messageJson, senderDeviceId: envelope.senderDeviceId, connection: nil)
         } catch {
-            log("Message TV reçu illisible (\(error.localizedDescription))", warning: true)
+            // Usually the copy of a message already read on TCP (replay check): not worth a warning.
         }
     }
 
@@ -613,11 +617,14 @@ public final class LocalSyncService: @unchecked Sendable {
                 if !announcedConnections.contains(ObjectIdentifier(connection)) {
                     sendAnnounce(on: connection)
                 }
-            } else {
+            } else if channelAnsweredDevices.insert(senderDeviceId).inserted {
                 sendAnnounceOnSamsungChannel()
             }
             let name = (root["device_name"] as? String) ?? "Appareil"
             let devType = (root["device_type"] as? String) ?? "mobile"
+            // Reachable only through the Samsung channel: the TV (PRD-45). Decided after decryption.
+            let channelTv = connection == nil && devType == "tv"
+            if channelTv { samsungTransport.markTv(senderDeviceId) }
             let peer = DiscoveredPeer(
                 id: senderDeviceId,
                 name: name,
@@ -631,7 +638,9 @@ public final class LocalSyncService: @unchecked Sendable {
                 // A device seen for the first time, or back after a while, gets everything (accounts,
                 // favorites, progress): that is how a device that just joined the household catches up.
                 let previous = self.activePeers.first(where: { $0.id == senderDeviceId })
-                let needsFullSync = previous == nil || peer.lastSeen.timeIntervalSince(previous?.lastSeen ?? .distantPast) > 120
+                // Not to the Samsung TV: it does not read this format yet (PRD-45 § 1.4).
+                let needsFullSync = !channelTv
+                    && (previous == nil || peer.lastSeen.timeIntervalSince(previous?.lastSeen ?? .distantPast) > 120)
                 self.updatePeer(peer)
                 if previous == nil { self.log("\(name) est connecté.") }
                 if needsFullSync { self.sendFullSync(to: senderDeviceId) }
@@ -923,6 +932,8 @@ public final class LocalSyncService: @unchecked Sendable {
         guard isRunning, store.isJoined else { return }
         for conn in reachableConnections() { sendAnnounce(on: conn) }
         sendAnnounceOnSamsungChannel()
+        // `start` again with the current id: after a key change the channel name changes too.
+        if let hId = store.householdId, !hId.isEmpty { samsungTransport.start(householdId: hId) }
         samsungTransport.ensureRunning()
         for (name, endpoint) in peerEndpoints where connections[name] == nil {
             connectToPeer(id: name, endpoint: endpoint)
@@ -1116,9 +1127,6 @@ public final class LocalSyncService: @unchecked Sendable {
     @discardableResult
     public func sendToPeer(peerId: String, messageJson: String) -> Bool {
         guard let sealed = sealOrLog(messageJson) else { return false }
-        if samsungTransport.isPeer(peerId) {
-            return samsungTransport.sendEnvelope(sealed)
-        }
         if let conn = deviceConnections[peerId] {
             sendEnvelope(sealed, on: conn)
             return true
@@ -1126,6 +1134,10 @@ public final class LocalSyncService: @unchecked Sendable {
         if let conn = connections[peerId] {
             sendEnvelope(sealed, on: conn)
             return true
+        }
+        // The TV has no TCP connection: the relay broadcasts, the message carries `target_device_id`.
+        if samsungTransport.isTv(peerId) {
+            return samsungTransport.sendEnvelope(sealed)
         }
         return false
     }
