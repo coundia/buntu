@@ -19,6 +19,8 @@ public final class SamsungChannelTransport: @unchecked Sendable {
     public var onConnected: (@Sendable () -> Void)?
     /// Called with the TVs that were reachable on the closed connection.
     public var onDisconnected: (@Sendable (_ tvDeviceIds: Set<String>) -> Void)?
+    /// Journal of the « Appareils » screen (addresses and counts only, never a key or a message).
+    public var onLog: (@Sendable (_ text: String, _ warning: Bool) -> Void)?
 
     private let queue = DispatchQueue(label: "com.pcoundia.buntu.samsungtransport", qos: .utility)
     private let lock = NSLock()
@@ -171,7 +173,10 @@ public final class SamsungChannelTransport: @unchecked Sendable {
                 if case .hostPort(let h, _) = conn.currentPath?.remoteEndpoint { host = Self.hostString(h) } else { host = nil }
                 conn.cancel()
                 self.resolving[name] = nil
-                if let host, self.currentTask() == nil { self.connectToTvHost(host) }
+                if let host, self.currentTask() == nil {
+                    self.onLog?("TV Samsung trouvée sur le réseau (\(host)) : ouverture de son canal…", false)
+                    self.connectToTvHost(host)
+                }
             case .failed, .waiting:
                 conn.cancel()
                 self.resolving[name] = nil
@@ -243,6 +248,9 @@ public final class SamsungChannelTransport: @unchecked Sendable {
                     self.handle(message)
                     self.receive(on: task)
                 case .failure:
+                    if self.reconnectAttempts == 0 {
+                        self.onLog?("Canal de la TV Samsung fermé ou injoignable : nouvel essai bientôt.", true)
+                    }
                     self.disconnectWebSocket()
                     self.scheduleReconnect()
                 }
@@ -263,7 +271,17 @@ public final class SamsungChannelTransport: @unchecked Sendable {
         case "ms.channel.connect":
             lock.lock(); connected = true; lock.unlock()
             reconnectAttempts = 0
+            // The relay lists who is on this household channel, this device included.
+            let others = max(0, ((root["data"] as? [String: Any])?["clients"] as? [Any])?.count ?? 1) - 1
+            if others == 0 {
+                onLog?("Canal de la TV ouvert, mais personne d'autre dessus : Buntu est-il ouvert sur la TV, "
+                       + "et la TV est-elle dans ce foyer (même identifiant dans « Appareils ») ?", true)
+            } else {
+                onLog?("Canal de la TV ouvert : \(others) autre(s) appareil(s) connecté(s).", false)
+            }
             onConnected?()
+        case "ms.channel.clientConnect":
+            onLog?("Un appareil vient de rejoindre le canal de la TV.", false)
         case "buntu-sync-envelope":
             if let envelope = Self.parseEnvelope(root["data"]) { onEnvelopeReceived?(envelope) }
         default:

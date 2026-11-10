@@ -40,6 +40,7 @@ export type ScreenRoute =
   | 'recommendations'
   | 'sources'
   | 'profiles'
+  | 'devices'
   | 'settings';
 
 export const App: Component = () => {
@@ -74,6 +75,7 @@ export const App: Component = () => {
   const SYSTEM_NAV_ITEMS: { route: ScreenRoute; label: string; icon: string; countKey?: 'sources' }[] = [
     { route: 'sources', label: 'Sources', icon: '📡', countKey: 'sources' },
     { route: 'profiles', label: 'Profils', icon: '👤' },
+    { route: 'devices', label: 'Appareils', icon: '📱' },
     { route: 'settings', label: 'Réglages', icon: '⚙️' },
   ];
 
@@ -541,6 +543,9 @@ export const App: Component = () => {
             <ProfilesView onProfileChanged={() => navigateTo('live', { reset: true })} />
           </Match>
 
+          <Match when={currentRoute() === 'devices'}>
+            <SettingsView section="household" onRequestExit={openExitDialog} />
+          </Match>
           <Match when={currentRoute() === 'settings'}>
             <SettingsView onRequestExit={openExitDialog} />
           </Match>

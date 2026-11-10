@@ -27,6 +27,7 @@ public struct HouseholdView: View {
     #endif
     @State private var showingNearbyInvite = false
     @State private var showingNearbyJoin = false
+    @State private var showingAddTV = false
 
     public init(localSync: LocalSyncService?) {
         self.localSync = localSync
@@ -62,6 +63,11 @@ public struct HouseholdView: View {
             } onClose: {
                 showingScanner = false
             }
+        }
+        #endif
+        #if !os(tvOS)
+        .sheet(isPresented: $showingAddTV) {
+            HouseholdAddTVSheet { showingAddTV = false }
         }
         #endif
         .sheet(isPresented: $showingNearbyInvite) {
@@ -329,6 +335,11 @@ public struct HouseholdView: View {
                 }
             }
             #if !os(tvOS)
+            Button {
+                showingAddTV = true
+            } label: {
+                Label("Ajouter une TV Samsung (scanner son QR code)…", systemImage: "tv.badge.wifi")
+            }
             Button {
                 showingNearbyInvite = true
             } label: {

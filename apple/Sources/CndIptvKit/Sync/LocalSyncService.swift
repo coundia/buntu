@@ -313,6 +313,7 @@ public final class LocalSyncService: @unchecked Sendable {
                 }
             }
         }
+        samsungTransport.onLog = { [weak self] text, warning in self?.log(text, warning: warning) }
         samsungTransport.onEnvelopeReceived = { [weak self] envelope in
             guard let self else { return }
             // Same queue as the TCP messages: the routing tables are not shared across threads.

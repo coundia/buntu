@@ -22,6 +22,8 @@ import { LocalSyncService } from '../../core/sync/LocalSyncService';
 
 export interface SettingsViewProps {
   onRequestExit?: () => void;
+  /** `household`: only « Appareils de la maison » (sidebar entry « Appareils »); default: every section. */
+  section?: 'all' | 'household';
 }
 
 export const SettingsView: Component<SettingsViewProps> = (props) => {
@@ -35,6 +37,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
   const [tvModel, setTvModel] = createSignal('Samsung Smart TV (Tizen 3.0+)');
   const [purgeMsg, setPurgeMsg] = createSignal('');
   const [focusId] = spatialNav.getFocusSignal();
+  const householdOnly = () => props.section === 'household';
 
   // AI Assistant state
   const initialSettings = getAiSettings();
@@ -261,6 +264,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
         },
         onError: (err) => {
           setAiTestResult(`Erreur appairage : ${err}`);
+          setSyncStatusMsg(`Erreur appairage : ${err}`);
         },
       });
 
@@ -270,6 +274,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     } catch (e: any) {
       setPairingActive(false);
       setAiTestResult(e?.message || 'Impossible de démarrer l’appairage');
+      setSyncStatusMsg(e?.message || 'Impossible de démarrer l’appairage');
       updateGrid();
     }
   };
@@ -317,9 +322,9 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     const grid: FocusableItem[][] = [];
 
     // AI Section buttons
-    grid.push([{ id: 'btn-ai-provider', onSelect: cycleProvider }]);
+    if (!householdOnly()) grid.push([{ id: 'btn-ai-provider', onSelect: cycleProvider }]);
 
-    if (aiProvider() !== 'local_only') {
+    if (!householdOnly() && aiProvider() !== 'local_only') {
       // Type or paste the key right here
       grid.push([
         {
@@ -369,9 +374,11 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     }
 
     // Diagnostics & maintenance
-    grid.push([{ id: 'btn-single-conn', onSelect: toggleSingleConnection }]);
-    grid.push([{ id: 'btn-purge-cache', onSelect: purgeCache }]);
-    grid.push([{ id: 'btn-exit-app', onSelect: handleExit }]);
+    if (!householdOnly()) {
+      grid.push([{ id: 'btn-single-conn', onSelect: toggleSingleConnection }]);
+      grid.push([{ id: 'btn-purge-cache', onSelect: purgeCache }]);
+      grid.push([{ id: 'btn-exit-app', onSelect: handleExit }]);
+    }
 
     spatialNav.setGrid(grid);
   };
@@ -406,6 +413,63 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     if (unsubSync) unsubSync();
   });
 
+  /** QR of the pairing service (AI key or household join): shown in the AI section or on the devices screen. */
+  const renderPairingQr = () => (
+    <>
+              {/* QR Modal when pairing key */}
+              <Show when={pairingActive() && qrOffer()}>
+                <div
+                  style={{
+                    background: '#0F172A',
+                    padding: '20px',
+                    'border-radius': '12px',
+                    border: '2px solid var(--buntu-gold)',
+                    display: 'flex',
+                    'flex-direction': 'column',
+                    'align-items': 'center',
+                    gap: '12px',
+                  }}
+                >
+                  <div style={{ 'font-size': '18px', color: 'var(--buntu-gold)' }}>
+                    {householdOnly()
+                      ? 'Scannez avec un appareil du foyer pour y ajouter cette TV'
+                      : "Scannez pour envoyer votre clé d'IA de manière chiffrée"}
+                  </div>
+                  <canvas
+                    ref={(el) => {
+                      if (!el || !qrOffer()) return;
+                      const offer = qrOffer()!;
+                      const ctx = el.getContext('2d');
+                      if (!ctx) return;
+                      const size = offer.qrSize;
+                      const scale = 4;
+                      el.width = size * scale;
+                      el.height = size * scale;
+                      ctx.fillStyle = '#FFFFFF';
+                      ctx.fillRect(0, 0, el.width, el.height);
+                      ctx.fillStyle = '#000000';
+                      for (let r = 0; r < size; r++) {
+                        for (let c = 0; c < size; c++) {
+                          if (offer.qrModules[r * size + c] === '1') {
+                            ctx.fillRect(c * scale, r * scale, scale, scale);
+                          }
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    id="btn-ai-stop-qr"
+                    tabindex="-1"
+                    class={`tv-btn ${focusId() === 'btn-ai-stop-qr' ? 'focused' : ''}`}
+                    onClick={stopKeyPairing}
+                  >
+                    Fermer le QR Code
+                  </button>
+                </div>
+              </Show>
+    </>
+  );
+
   return (
     <div
       style={{
@@ -419,11 +483,14 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
       }}
     >
       <div class="tv-header">
-        <h2 style={{ 'font-size': '32px', color: 'var(--buntu-gold)' }}>Paramètres & Diagnostics</h2>
+        <h2 style={{ 'font-size': '32px', color: 'var(--buntu-gold)' }}>
+          {householdOnly() ? 'Appareils' : 'Paramètres & Diagnostics'}
+        </h2>
       </div>
 
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: '24px', 'max-width': '900px', 'padding-bottom': '40px' }}>
         {/* Section Assistant IA (PRD 40) */}
+        <Show when={!householdOnly()}>
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '1px solid rgba(212, 160, 23, 0.4)' }}>
           <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px', color: 'var(--buntu-gold)' }}>
             ✨ Assistant IA (Recherche, Commandes & Recommandations)
@@ -569,55 +636,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                 </Show>
               </div>
 
-              {/* QR Modal when pairing key */}
-              <Show when={pairingActive() && qrOffer()}>
-                <div
-                  style={{
-                    background: '#0F172A',
-                    padding: '20px',
-                    'border-radius': '12px',
-                    border: '2px solid var(--buntu-gold)',
-                    display: 'flex',
-                    'flex-direction': 'column',
-                    'align-items': 'center',
-                    gap: '12px',
-                  }}
-                >
-                  <div style={{ 'font-size': '18px', color: 'var(--buntu-gold)' }}>
-                    Scannez pour envoyer votre clé d'IA de manière chiffrée
-                  </div>
-                  <canvas
-                    ref={(el) => {
-                      if (!el || !qrOffer()) return;
-                      const offer = qrOffer()!;
-                      const ctx = el.getContext('2d');
-                      if (!ctx) return;
-                      const size = offer.qrSize;
-                      const scale = 4;
-                      el.width = size * scale;
-                      el.height = size * scale;
-                      ctx.fillStyle = '#FFFFFF';
-                      ctx.fillRect(0, 0, el.width, el.height);
-                      ctx.fillStyle = '#000000';
-                      for (let r = 0; r < size; r++) {
-                        for (let c = 0; c < size; c++) {
-                          if (offer.qrModules[r * size + c] === '1') {
-                            ctx.fillRect(c * scale, r * scale, scale, scale);
-                          }
-                        }
-                      }
-                    }}
-                  />
-                  <button
-                    id="btn-ai-stop-qr"
-                    tabindex="-1"
-                    class={`tv-btn ${focusId() === 'btn-ai-stop-qr' ? 'focused' : ''}`}
-                    onClick={stopKeyPairing}
-                  >
-                    Fermer le QR Code
-                  </button>
-                </div>
-              </Show>
+              {renderPairingQr()}
 
               {/* Consent & Test Buttons */}
               <div style={{ display: 'flex', gap: '12px', 'align-items': 'center' }}>
@@ -672,6 +691,8 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             </Show>
           </div>
         </div>
+
+        </Show>
 
         {/* Section Appareils de la maison & Continuité (PRD 41) */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '1px solid rgba(56, 189, 248, 0.4)' }}>
@@ -864,8 +885,13 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               </Show>
             </div>
           </Show>
+          {/* « Rejoindre (QR) » on the devices screen: the QR lives here, not in the hidden AI section. */}
+          <Show when={householdOnly()}>
+            <div style={{ 'margin-top': '16px' }}>{renderPairingQr()}</div>
+          </Show>
         </div>
 
+        <Show when={!householdOnly()}>
         {/* Connection Settings */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px' }}>
           <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Gestion de connexion fournisseur</h3>
@@ -944,6 +970,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             ⏻ Fermer Buntu
           </button>
         </div>
+        </Show>
       </div>
     </div>
   );
