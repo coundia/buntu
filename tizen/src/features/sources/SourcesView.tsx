@@ -7,6 +7,7 @@ import { RemoteKey, RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
 import { hostOf } from '../../core/pairing/ShareImport';
 import { PairingView } from '../pairing/PairingView';
 import { ManualSourceForm } from '../onboarding/ManualSourceForm';
+import { LocalSyncService } from '../../core/sync/LocalSyncService';
 
 export interface SourcesViewProps {
   onBack: () => void;
@@ -111,13 +112,19 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
     return false;
   };
 
+  let syncUnsub: (() => void) | null = null;
+
   onMount(async () => {
     keyUnsub = RemoteKeyHandler.getInstance().addListener(handleRemoteKey);
+    syncUnsub = LocalSyncService.getInstance().onStatusChange(() => {
+      void loadSources();
+    });
     await loadSources();
   });
 
   onCleanup(() => {
     if (keyUnsub) keyUnsub();
+    if (syncUnsub) syncUnsub();
   });
 
   return (
@@ -235,7 +242,15 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                     <h3 style={{ 'font-size': '26px', margin: '0 0 8px 0', color: '#FFFFFF' }}>{source.name}</h3>
                     <p style={{ color: 'var(--buntu-text-muted)', margin: 0, 'font-size': '18px' }}>
                       Type : <strong style={{ color: 'var(--buntu-gold)' }}>{source.source_type.toUpperCase()}</strong> · Serveur :{' '}
-                      {hostOf(source.server || source.url || '') || 'local'} · {source.item_count} chaînes / flux
+                      {hostOf(source.server || source.url || '') || 'local'} ·{' '}
+                      {source.item_count > 0 ? (
+                        <span>{source.item_count} chaînes / flux</span>
+                      ) : (
+                        <span style={{ color: 'var(--buntu-cyan)' }}>⏳ Indexation des flux en cours…</span>
+                      )}
+                      {source.source_type === 'xtream' && !source.password && (
+                        <span style={{ color: '#FF6B6B', 'margin-left': '8px' }}>⚠️ Mot de passe manquant</span>
+                      )}
                     </p>
                   </div>
                   <div style={{ display: 'flex', 'align-items': 'center', gap: '20px' }}>

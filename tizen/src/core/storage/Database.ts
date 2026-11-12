@@ -169,6 +169,34 @@ export class Database {
     return this.add('sources', source);
   }
 
+  public async updateSource(source: SourceRecord): Promise<void> {
+    return this.put('sources', source);
+  }
+
+  public async upsertSource(source: Omit<SourceRecord, 'id'> & { id?: number }): Promise<number> {
+    const existing = await this.getSources();
+    const match = existing.find(
+      (s) =>
+        (source.uuid && s.uuid === source.uuid) ||
+        (source.source_type === s.source_type &&
+          (source.server || source.url) === (s.server || s.url) &&
+          source.username === s.username)
+    );
+    if (match) {
+      const updated: SourceRecord = {
+        ...match,
+        ...source,
+        id: match.id,
+        password: source.password || match.password,
+        item_count: source.item_count || match.item_count || 0,
+      };
+      await this.put('sources', updated);
+      return match.id;
+    } else {
+      return this.add('sources', source);
+    }
+  }
+
   public async deleteSource(sourceId: number): Promise<void> {
     if (!this.db) return;
     return new Promise<void>((resolve, reject) => {
@@ -565,6 +593,19 @@ export class Database {
 
   public async getItemById(id: number): Promise<ItemRecord | null> {
     return this.getById<ItemRecord>('items', id);
+  }
+
+  /**
+   * Index lookup only (no scan): for the household sync, which looks up dozens of keys in a row.
+   * The full scan of `getItemByStableHash` takes several seconds per key on a TV with 65 000 items.
+   */
+  public async getItemByStableHashIndexed(stableHash: string): Promise<ItemRecord | null> {
+    if (!this.db || !stableHash) return null;
+    return new Promise((resolve) => {
+      const req = this.db!.transaction(['items'], 'readonly').objectStore('items').index('stable_hash').get(stableHash);
+      req.onsuccess = () => resolve((req.result as ItemRecord) || null);
+      req.onerror = () => resolve(null);
+    });
   }
 
   public async getItemByStableHash(stableHash: string): Promise<ItemRecord | null> {

@@ -18,7 +18,7 @@ import { describeKeyShape, normalizeApiKey } from '../../core/ai/keyInput';
 import { AiClient } from '../../core/ai/AiClient';
 import { PairingOffer, PairingService } from '../../core/pairing/PairingService';
 import { HouseholdStore, HouseholdInfo, PairedDevice } from '../../core/sync/HouseholdStore';
-import { LocalSyncService } from '../../core/sync/LocalSyncService';
+import { LocalSyncService, SyncLogEntry } from '../../core/sync/LocalSyncService';
 
 export interface SettingsViewProps {
   onRequestExit?: () => void;
@@ -60,10 +60,12 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
   const [pairedDevices, setPairedDevices] = createSignal<PairedDevice[]>([]);
   const [syncConnected, setSyncConnected] = createSignal(false);
   const [syncStatusMsg, setSyncStatusMsg] = createSignal('');
+  const [syncLogs, setSyncLogs] = createSignal<SyncLogEntry[]>([]);
   const [householdQr, setHouseholdQr] = createSignal<{ size: number; modules: string; text: string } | null>(null);
 
   let pairingService: PairingService | null = null;
   let unsubSync: (() => void) | null = null;
+  let unsubLogs: (() => void) | null = null;
 
   const PROVIDER_CYCLE: AiProviderType[] = ['local_only', 'gemini', 'openai_compatible', 'anthropic'];
 
@@ -205,10 +207,11 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
   };
 
   const triggerSyncNow = async () => {
-    setSyncStatusMsg('Synchronisation en cours…');
+    setSyncStatusMsg('Synchronisation demandée au foyer…');
+    await LocalSyncService.getInstance().requestFullSync();
     await LocalSyncService.getInstance().triggerSync();
     await refreshHouseholdState();
-    setSyncStatusMsg(`Synchronisation effectuée à ${new Date().toLocaleTimeString()}.`);
+    setSyncStatusMsg(`Synchronisation demandée à ${new Date().toLocaleTimeString()}.`);
   };
 
   const showInviteDeviceQr = async () => {
@@ -391,6 +394,9 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
       setSyncConnected(status.connected);
       setPairedDevices(HouseholdStore.getInstance().getPairedDevices());
     });
+    unsubLogs = LocalSyncService.getInstance().onLogChange((logs) => {
+      setSyncLogs(logs);
+    });
     updateGrid();
 
     try {
@@ -411,6 +417,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
   onCleanup(() => {
     pairingService?.stop();
     if (unsubSync) unsubSync();
+    if (unsubLogs) unsubLogs();
   });
 
   /** QR of the pairing service (AI key or household join): shown in the AI section or on the devices screen. */
@@ -881,6 +888,37 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               <Show when={syncStatusMsg()}>
                 <div style={{ color: 'var(--buntu-cyan)', 'font-size': '16px' }}>
                   {syncStatusMsg()}
+                </div>
+              </Show>
+
+              {/* Journal d'activité / synchronisation du foyer */}
+              <Show when={syncLogs().length > 0}>
+                <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px', 'margin-top': '8px' }}>
+                  <div style={{ 'font-weight': '600', color: 'var(--buntu-gold)', 'font-size': '15px' }}>
+                    Journal d'activité du foyer :
+                  </div>
+                  <div
+                    style={{
+                      background: '#070D18',
+                      border: '1px solid #1E293B',
+                      'border-radius': '8px',
+                      padding: '10px 12px',
+                      'max-height': '180px',
+                      'overflow-y': 'auto',
+                      display: 'flex',
+                      'flex-direction': 'column',
+                      gap: '4px',
+                      'font-family': 'monospace',
+                      'font-size': '13px',
+                    }}
+                  >
+                    {syncLogs().map((log) => (
+                      <div style={{ display: 'flex', gap: '8px', color: log.warning ? '#F59E0B' : '#94A3B8' }}>
+                        <span style={{ color: '#64748B', 'flex-shrink': 0 }}>[{log.time}]</span>
+                        <span>{log.text}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </Show>
             </div>

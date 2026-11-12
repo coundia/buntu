@@ -51,7 +51,7 @@ final class HouseholdAddTVModel {
     }
 
     /// This device's household: any member may add a device, not only the one that created it.
-    static func currentCredentials() -> Credentials? {
+    nonisolated static func currentCredentials() -> Credentials? {
         let store = HouseholdStore.shared
         guard store.isJoined, let id = store.householdId, let key = store.currentHouseholdKeyHex() else { return nil }
         return Credentials(householdId: id, keyHex: key, deviceId: store.deviceId, deviceName: store.deviceName)

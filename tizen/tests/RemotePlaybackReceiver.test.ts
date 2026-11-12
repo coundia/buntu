@@ -142,4 +142,51 @@ describe('PRD-45 Samsung TV Playback Receiver & Single Stream Rule', () => {
     expect(playedItem?.stable_hash).toBe('movie_test_hash');
     expect(playedPos).toBe(45000);
   });
+
+  it('finds a channel sent by the iPhone by its stream id, without the slow scan', async () => {
+    const db = Database.getInstance();
+    const liveItem: ItemRecord = { ...mockItem, id: 202, stable_hash: 'live_1234', kind: 'live', name: 'TF1' };
+    vi.spyOn(db, 'getItemByStableHashIndexed').mockImplementation(async (hash: string) =>
+      hash === 'live_1234' ? liveItem : null
+    );
+    const slowScan = vi.spyOn(db, 'getItemByStableHash');
+
+    await (coordinator as any).handleIncomingMessage(
+      {
+        type: 'play_request',
+        request_id: 'req_iphone_live',
+        // The iPhone's own hash: blake3(<account uuid>:xtream_live:1234), unknown to the TV.
+        content_key: 'ef246dddb1a33d3150ed631c00000000000000000000000000000000000000aa',
+        provider_ref: '1234',
+        item_kind: 'live',
+        target_device_id: 'tv_samsung_001',
+        title: 'TF1',
+      },
+      'sender_iphone'
+    );
+
+    expect(sentMessages.find((m) => m.type === 'play_ready')?.request_id).toBe('req_iphone_live');
+    expect(slowScan).not.toHaveBeenCalled();
+  });
+
+  it('refuses at once (unknown_content) when the stream id is not on the TV', async () => {
+    const db = Database.getInstance();
+    vi.spyOn(db, 'getItemByStableHashIndexed').mockResolvedValue(null);
+    const slowScan = vi.spyOn(db, 'getItemByStableHash');
+
+    await (coordinator as any).handleIncomingMessage(
+      {
+        type: 'play_request',
+        request_id: 'req_missing',
+        content_key: 'ef246dddb1a33d3150ed631c00000000000000000000000000000000000000bb',
+        provider_ref: '999999',
+        item_kind: 'movie',
+        target_device_id: 'tv_samsung_001',
+      },
+      'sender_iphone_2'
+    );
+
+    expect(sentMessages.find((m) => m.type === 'play_refused')?.reason).toBe('unknown_content');
+    expect(slowScan).not.toHaveBeenCalled();
+  });
 });

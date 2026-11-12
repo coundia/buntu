@@ -174,10 +174,26 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
         positionMs: UInt64,
         sourceKey: String?
     ) {
-        startRemotePlayback(
-            targetPeer: targetPeer, contentKey: item.stableHash, kind: item.kind,
-            title: item.name, positionMs: positionMs, sourceKey: sourceKey
-        )
+        // The target does not know this device's item hash (it depends on the local account id): it finds
+        // the item by the provider's stream id in the account named by its key (PRD-42 § 6).
+        let providerRef = URL(string: item.streamUrl).flatMap(Self.providerRef(from:))
+        let send: @Sendable (String?) -> Void = { [weak self] key in
+            guard let coordinator = self else { return }
+            coordinator.onMain {
+                coordinator.startRemotePlayback(
+                    targetPeer: targetPeer, contentKey: item.stableHash, kind: item.kind,
+                    title: item.name, positionMs: positionMs, sourceKey: key, providerRef: providerRef
+                )
+            }
+        }
+        if let sourceKey {
+            send(sourceKey)
+        } else {
+            // Reading the accounts is a database call: off the main thread (AGENTS.md § 3.4).
+            let engine = self.engine
+            let sourceId = item.sourceId
+            Task.detached(priority: .userInitiated) { send(Self.accountKey(engine: engine, sourceId: sourceId)) }
+        }
     }
 
     /// Sends what is playing here to `targetPeer`. Nothing is stopped here until the target answers
@@ -527,6 +543,14 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
     /// The provider's own id of a stream (`…/12345.mkv` → `12345`), so another device that added the same
     /// account by itself (its catalog ids differ) can find the content. Only this id leaves the device:
     /// never the URL, which carries the account's name and password. `nil` when it does not look like an id.
+    /// `source_key` of a local account (PRD-41 identity, computed in Rust), `nil` when unknown.
+    private static func accountKey(engine: CndEngine?, sourceId: Int64) -> String? {
+        guard let source = (try? engine?.listSources())??.first(where: { $0.id == sourceId }) else { return nil }
+        return syncComputeSourceKey(
+            sourceType: source.sourceType, serverOrUrl: source.server ?? source.url ?? "", username: source.username
+        )
+    }
+
     public static func providerRef(from url: URL) -> String? {
         guard url.scheme == "http" || url.scheme == "https" else { return nil }
         let last = url.deletingPathExtension().lastPathComponent

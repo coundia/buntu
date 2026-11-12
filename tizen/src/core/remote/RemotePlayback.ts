@@ -170,7 +170,7 @@ export class RemotePlaybackCoordinator {
     }
 
     const sourceKey: string | null = msg.source_key || null;
-    const item = await this.resolveItem(msg.content_key, sourceKey);
+    const item = await this.resolveItem(msg.content_key, sourceKey, msg.provider_ref, msg.item_kind);
     if (!item) {
       await this.refuse(requestId, 'unknown_content');
       return;
@@ -296,9 +296,33 @@ export class RemotePlaybackCoordinator {
   // Content resolution & profile rules
   // --------------------------------------------------------------------------
 
-  private async resolveItem(contentKey: string, sourceKey: string | null): Promise<ItemRecord | null> {
-    if (!contentKey) return null;
-    const item = await this.db.getItemByStableHash(contentKey);
+  /**
+   * Finds the requested item on this TV. The `content_key` of an Apple or Android device is ITS item hash
+   * (`blake3(<account uuid>:xtream_live:<id>)`), never the TV's (`live_<id>` / `vod_<id>`): the TV finds it
+   * by the provider's stream id (`provider_ref`) in the account named by `source_key`, like
+   * `cnd-core::item_by_content_key` does. Index lookups only: the full scan of 65 000 items took longer
+   * than the 5 s the origin waits.
+   */
+  private async resolveItem(
+    contentKey: string,
+    sourceKey: string | null,
+    providerRef?: string | null,
+    itemKind?: string | null
+  ): Promise<ItemRecord | null> {
+    if (!contentKey && !providerRef) return null;
+    let item = contentKey ? await this.db.getItemByStableHashIndexed(contentKey) : null;
+
+    const ref = typeof providerRef === 'string' ? providerRef.trim() : '';
+    if (!item && ref && /^[A-Za-z0-9_-]{1,40}$/.test(ref)) {
+      const kind = String(itemKind || '').toLowerCase();
+      const prefixes = kind === 'live' ? ['live_'] : kind === 'movie' ? ['vod_'] : kind === 'episode' ? [] : ['live_', 'vod_'];
+      for (const prefix of prefixes) {
+        item = await this.db.getItemByStableHashIndexed(prefix + ref);
+        if (item) break;
+      }
+    }
+    // Old senders without `provider_ref` (legacy `live_<id>` suffix keys): the slow scan, as before.
+    if (!item && contentKey && !ref) item = await this.db.getItemByStableHash(contentKey);
     if (!item) return null;
     // `getItemByStableHash` also accepts suffix matches (legacy `live_<id>` keys): when the origin names the
     // account, make sure the item really belongs to it, or the wrong content could play.
