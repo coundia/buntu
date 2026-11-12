@@ -223,7 +223,7 @@ export class CndEngine {
     const maxConnections = userInfo?.max_connections ? Number(userInfo.max_connections) || undefined : undefined;
     const activeCons = userInfo?.active_cons != null ? Number(userInfo.active_cons) || 0 : undefined;
 
-    const sourceId = await this.db.insertSource({
+    const sourceId = await this.db.upsertSource({
       uuid,
       name,
       source_type: 'xtream',
@@ -355,7 +355,7 @@ export class CndEngine {
     }
 
     onProgress?.(`Enregistrement de ${items.length} contenus…`, 75);
-    const sourceId = await this.db.insertSource({
+    const sourceId = await this.db.upsertSource({
       uuid,
       name,
       source_type: src.sourceType,

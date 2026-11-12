@@ -608,6 +608,8 @@ public final class LocalSyncService: @unchecked Sendable {
         if let connection {
             deviceConnections[senderDeviceId] = connection
             connectionDeviceIds[ObjectIdentifier(connection)] = senderDeviceId
+        } else {
+            samsungTransport.markTv(senderDeviceId)
         }
 
         switch type {
@@ -639,9 +641,8 @@ public final class LocalSyncService: @unchecked Sendable {
                 // A device seen for the first time, or back after a while, gets everything (accounts,
                 // favorites, progress): that is how a device that just joined the household catches up.
                 let previous = self.activePeers.first(where: { $0.id == senderDeviceId })
-                // Not to the Samsung TV: it does not read this format yet (PRD-45 § 1.4).
-                let needsFullSync = !channelTv
-                    && (previous == nil || peer.lastSeen.timeIntervalSince(previous?.lastSeen ?? .distantPast) > 120)
+                let needsFullSync = previous == nil
+                    || peer.lastSeen.timeIntervalSince(previous?.lastSeen ?? .distantPast) > 120
                 self.updatePeer(peer)
                 if previous == nil { self.log("\(name) est connecté.") }
                 if needsFullSync { self.sendFullSync(to: senderDeviceId) }
@@ -1004,8 +1005,9 @@ public final class LocalSyncService: @unchecked Sendable {
     public func syncNow(full: Bool = false) {
         guard let engine, store.isJoined else { return }
         let peers = reachableConnections()
+        let hasSamsung = samsungTransport.isConnected
         // Nobody is connected: keep the cursor, or what changed meanwhile would never be sent.
-        guard !peers.isEmpty else {
+        guard !peers.isEmpty || hasSamsung else {
             if full {
                 syncStatusMessage = "Aucun autre appareil joignable : ouvrez Buntu sur l'autre appareil, sur le même Wi‑Fi."
                 log("Synchroniser : aucun autre appareil joignable (même Wi‑Fi ? Buntu ouvert sur l'autre appareil ? « Réseau local » autorisé ?).", warning: true)
@@ -1020,10 +1022,12 @@ public final class LocalSyncService: @unchecked Sendable {
             if let messageJson = self.deltaMessageJson(engine: engine, since: since),
                let sealed = self.sealOrLog(messageJson) {
                 for conn in peers { self.sendEnvelope(sealed, on: conn) }
+                if hasSamsung { self.samsungTransport.sendEnvelope(sealed) }
             }
             if full, let sealed = self.sealOrLog(#"{"type":"sync_request"}"#) {
                 for conn in peers { self.sendEnvelope(sealed, on: conn) }
-                self.log("Synchroniser : données envoyées et demandées sur \(peers.count) connexion(s).")
+                if hasSamsung { self.samsungTransport.sendEnvelope(sealed) }
+                self.log("Synchroniser : données envoyées et demandées sur \(peers.count + (hasSamsung ? 1 : 0)) connexion(s).")
             }
             if !full {
                 self.lastExportTimestamp = nowTs
@@ -1031,7 +1035,7 @@ public final class LocalSyncService: @unchecked Sendable {
             }
             Task { @MainActor in
                 self.lastSyncDate = Date()
-                if full { self.syncStatusMessage = "Synchronisation demandée à \(peers.count) connexion(s)…" }
+                if full { self.syncStatusMessage = "Synchronisation demandée à \(peers.count + (hasSamsung ? 1 : 0)) connexion(s)…" }
             }
         }
     }
@@ -1137,7 +1141,7 @@ public final class LocalSyncService: @unchecked Sendable {
             return true
         }
         // The TV has no TCP connection: the relay broadcasts, the message carries `target_device_id`.
-        if samsungTransport.isTv(peerId) {
+        if samsungTransport.isTv(peerId) || (deviceConnections[peerId] == nil && connections[peerId] == nil && samsungTransport.isConnected) {
             return samsungTransport.sendEnvelope(sealed)
         }
         return false

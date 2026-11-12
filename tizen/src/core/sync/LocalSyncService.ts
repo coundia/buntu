@@ -13,12 +13,21 @@ import { WorkerBridge } from '../../worker/worker-bridge';
 import { Database, ItemRecord } from '../storage/Database';
 import { HouseholdStore } from './HouseholdStore';
 import { AVPlayerService } from '../player/AVPlayerService';
+import { CndEngine } from '../engine/CndEngine';
+import { hostOf } from '../pairing/ShareImport';
 
 export interface RemotePlayEvent {
   content_key: string;
   position_ms: number;
   title?: string;
   source_key?: string;
+}
+
+export interface SyncLogEntry {
+  id: string;
+  time: string;
+  text: string;
+  warning?: boolean;
 }
 
 export type SyncStatusListener = (status: {
@@ -44,6 +53,9 @@ export class LocalSyncService {
   private localSeq = 1;
   private lastSyncHlc = '';
 
+  private syncLogs: SyncLogEntry[] = [];
+  private logListeners: ((logs: SyncLogEntry[]) => void)[] = [];
+
   private playRemoteListeners: ((e: RemotePlayEvent) => void)[] = [];
   private remoteKeyListeners: ((key: string) => void)[] = [];
   private remoteTextListeners: ((text: string) => void)[] = [];
@@ -53,6 +65,9 @@ export class LocalSyncService {
   public static getInstance(): LocalSyncService {
     if (!LocalSyncService.instance) {
       LocalSyncService.instance = new LocalSyncService();
+      if (typeof window !== 'undefined') {
+        (window as any).__cndSyncService = LocalSyncService.instance;
+      }
     }
     return LocalSyncService.instance;
   }
@@ -91,6 +106,45 @@ export class LocalSyncService {
     return () => {
       this.statusListeners = this.statusListeners.filter((l) => l !== fn);
     };
+  }
+
+  public log(text: string, warning = false): void {
+    const d = new Date();
+    const time = d.toLocaleTimeString();
+    const entry: SyncLogEntry = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      time,
+      text,
+      warning,
+    };
+    this.syncLogs.unshift(entry);
+    if (this.syncLogs.length > 50) this.syncLogs.pop();
+    if (warning) {
+      console.warn(`[LocalSyncService] ${text}`);
+    } else {
+      console.log(`[LocalSyncService] ${text}`);
+    }
+    for (const fn of this.logListeners) {
+      fn(this.getLogs());
+    }
+  }
+
+  public getLogs(): SyncLogEntry[] {
+    return [...this.syncLogs];
+  }
+
+  public onLogChange(fn: (logs: SyncLogEntry[]) => void): () => void {
+    this.logListeners.push(fn);
+    fn(this.getLogs());
+    return () => {
+      this.logListeners = this.logListeners.filter((l) => l !== fn);
+    };
+  }
+
+  public peerName(deviceId: string): string {
+    const devices = this.store.getPairedDevices();
+    const found = devices.find((d) => d.device_id === deviceId);
+    return found?.device_name || (deviceId.length > 12 ? deviceId.slice(0, 12) + '…' : deviceId);
   }
 
   private notifyStatus() {
@@ -162,6 +216,7 @@ export class LocalSyncService {
     const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : '127.0.0.1';
     const channelName = `buntu.sync.${householdId}`;
     const url = `ws://${host}:8001/api/v2/channels/${channelName}`;
+    this.log(`Connexion au canal de synchronisation local (${host}:8001)…`);
 
     try {
       this.ws = new WebSocket(url);
@@ -169,8 +224,10 @@ export class LocalSyncService {
       this.ws.onopen = () => {
         this.isConnected = true;
         this.seenPeersOnConnection.clear();
+        this.log('Canal de synchronisation ouvert : TV connectée au foyer.');
         this.notifyStatus();
         this.broadcastDeviceAnnounce();
+        void this.requestFullSync();
         this.startHeartbeat();
       };
 
@@ -185,6 +242,7 @@ export class LocalSyncService {
           this.heartbeatTimer = null;
         }
         this.seenPeersOnConnection.clear();
+        this.log('Canal de synchronisation fermé : nouvel essai dans 5 s.', true);
         this.notifyStatus();
         if (this.isRunning) {
           this.reconnectTimer = setTimeout(() => this.connectWs(householdId), 5_000);
@@ -193,10 +251,12 @@ export class LocalSyncService {
 
       this.ws.onerror = () => {
         this.isConnected = false;
+        this.log('Erreur réseau sur le canal de synchronisation.', true);
         this.notifyStatus();
       };
-    } catch {
+    } catch (e: any) {
       this.isConnected = false;
+      this.log(`Impossible d'ouvrir le canal de synchronisation : ${e?.message || e}`, true);
       this.notifyStatus();
       if (this.isRunning) {
         this.reconnectTimer = setTimeout(() => this.connectWs(householdId), 5_000);
@@ -259,6 +319,15 @@ export class LocalSyncService {
     try {
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       if (parsed.event === 'ms.channel.connect') {
+        this.log('Relais Samsung MSF : canal actif.');
+        return;
+      }
+      if (parsed.event === 'ms.channel.clientConnect') {
+        this.log('Un appareil du foyer s’est connecté au canal.');
+        return;
+      }
+      if (parsed.event === 'ms.channel.clientDisconnect') {
+        this.log('Un appareil du foyer s’est déconnecté du canal.');
         return;
       }
 
@@ -283,14 +352,24 @@ export class LocalSyncService {
       }
 
       const key = await this.store.getHouseholdKey();
-      if (!key) return;
+      if (!key) {
+        this.log('Enveloppe reçue mais clé de foyer introuvable.', true);
+        return;
+      }
 
       const lastSeq = this.store.getLastSeenSeq(envelope.sender_device_id);
-      const message = await this.bridge.post('SYNC_OPEN_ENVELOPE', {
-        householdKeyHex: key,
-        envelope,
-        lastSeenSequence: lastSeq,
-      });
+      let message: any;
+      try {
+        message = await this.bridge.post('SYNC_OPEN_ENVELOPE', {
+          householdKeyHex: key,
+          envelope,
+          lastSeenSequence: lastSeq,
+        });
+      } catch (openErr: any) {
+        const sender = this.peerName(envelope.sender_device_id);
+        this.log(`Message rejeté de ${sender} (seq ${envelope.sequence}): ${openErr?.message || openErr}`, true);
+        return;
+      }
 
       this.store.recordDeviceActivity(
         envelope.sender_device_id,
@@ -299,9 +378,11 @@ export class LocalSyncService {
         envelope.sequence
       );
 
+      const sender = this.peerName(envelope.sender_device_id);
+      this.log(`Message « ${message?.type || 'inconnu'} » reçu de ${sender}.`);
       this.dispatchSyncMessage(message, envelope.sender_device_id);
-    } catch (e) {
-      // Replay rejected, decryption failure, or ping message
+    } catch (e: any) {
+      this.log(`Erreur message entrant : ${e?.message || e}`, true);
     }
   }
 
@@ -313,8 +394,17 @@ export class LocalSyncService {
     }
 
     switch (message.type) {
+      case 'household_data_delta':
+        void this.applyHouseholdDataDelta(message.delta, senderId);
+        break;
+
+      case 'sync_request':
+        this.log(`${this.peerName(senderId)} demande les données du foyer.`);
+        void this.sendHouseholdDataDelta();
+        break;
+
       case 'sync_delta':
-        void this.applyIncomingDelta(message);
+        void this.applyIncomingDelta(message, senderId);
         break;
 
       case 'play_remote':
@@ -348,6 +438,7 @@ export class LocalSyncService {
           0
         );
         this.notifyStatus();
+        this.log(`Appareil en ligne : ${message.device_name} (${message.device_type || 'appareil'}).`);
         if (!this.seenPeersOnConnection.has(senderId)) {
           this.seenPeersOnConnection.add(senderId);
           this.broadcastDeviceAnnounce();
@@ -358,6 +449,7 @@ export class LocalSyncService {
 
   private broadcastDeviceAnnounce(): void {
     const isPlaying = AVPlayerService.getInstance().isActive();
+    this.log(`Diffusion de la présence TV (« ${this.store.getLocalDeviceName()} »)…`);
     void this.sendMessage({
       type: 'device_announce',
       device_id: this.store.getLocalDeviceId(),
@@ -371,48 +463,103 @@ export class LocalSyncService {
   }
 
   /**
+   * Asks all household members on the channel to send their full state.
+   */
+  public async requestFullSync(): Promise<void> {
+    this.log('Demande de synchronisation envoyée au foyer (sync_request)…');
+    await this.sendMessage({
+      type: 'sync_request',
+    });
+  }
+
+  /**
+   * Sends the TV's full data (sources and favorites) formatted as `household_data_delta`.
+   */
+  public async sendHouseholdDataDelta(): Promise<void> {
+    const key = await this.store.getHouseholdKey();
+    if (!key) return;
+
+    const favorites = await this.db.getFavorites();
+    const sources = await this.db.getSources();
+    const profile = LocalSyncService.PROFILE_UUID;
+    const now = Date.now();
+
+    const favDtos = favorites.map((f) => ({
+      stable_hash: f.stable_hash,
+      item_kind: f.kind,
+      created_at: now,
+      profile_uuid: profile,
+    }));
+
+    const sourceDtos = sources.map((s) => ({
+      uuid: s.uuid,
+      name: s.name,
+      source_type: s.source_type,
+      server: s.server,
+      username: s.username,
+      password: s.password,
+      url: s.url,
+      epg_url: s.epg_url,
+      updated_at: s.last_sync_at || now,
+    }));
+
+    this.log(`Envoi des données du foyer : ${sourceDtos.length} compte(s), ${favDtos.length} favori(s)…`);
+    await this.sendMessage({
+      type: 'household_data_delta',
+      delta: {
+        sources: sourceDtos,
+        profiles: [],
+        favorites: favDtos,
+        watch_history: [],
+        tombstones: [],
+      },
+    });
+  }
+
+  /**
    * Triggers export and broadcast of local state changes to the household.
    */
   public async triggerSync(): Promise<void> {
     const key = await this.store.getHouseholdKey();
     if (!key) return;
 
-    // Only the CHANGES since the last export are sent. Re-sending every favorite with a fresh
-    // timestamp each minute (the previous behaviour) made a favorite removed on another device
-    // come back, because the TV's copy always looked newer than the removal.
     const profile = LocalSyncService.PROFILE_UUID;
     const favorites = await this.db.getFavorites();
     const current = new Set(favorites.map((f) => f.stable_hash));
     const previous = this.loadFavoriteSnapshot();
 
-    const node = this.store.getLocalDeviceId();
-    const now = Date.now();
-    const hlc = `${now}.0.${node}`;
-
     const added = favorites.filter((f) => !previous.has(f.stable_hash));
     const removed = Array.from(previous).filter((k) => !current.has(k));
-    if (added.length === 0 && removed.length === 0) return;
 
+    if (added.length === 0 && removed.length === 0) {
+      this.log('Synchronisation locale : aucun nouveau favori ni suppression à envoyer.');
+      return;
+    }
+
+    const now = Date.now();
+    this.log(`Diffusion des changements locaux : +${added.length} favori(s), -${removed.length} supprimé(s).`);
+
+    // Standard cross-platform format recognized by Apple & Android
     await this.sendMessage({
-      type: 'sync_delta',
-      to_hlc: hlc,
-      sources: [],
-      profiles: [],
-      progress: [],
-      recents: [],
-      favorites: added.map((f) => ({
-        profile_uuid: profile,
-        content_key: f.stable_hash,
-        item_kind: f.kind,
-        hlc,
-      })),
-      tombstones: removed.map((k) => ({
-        kind: 'favorite',
-        key: `${profile}:${k}`,
-        hlc,
-      })),
+      type: 'household_data_delta',
+      delta: {
+        sources: [],
+        profiles: [],
+        favorites: added.map((f) => ({
+          stable_hash: f.stable_hash,
+          item_kind: f.kind,
+          created_at: now,
+          profile_uuid: profile,
+        })),
+        watch_history: [],
+        tombstones: removed.map((k) => ({
+          kind: 'favorite',
+          key: k,
+          deleted_at: now,
+        })),
+      },
     });
-    this.lastSyncHlc = hlc;
+
     this.saveFavoriteSnapshot(current);
   }
 
@@ -445,83 +592,217 @@ export class LocalSyncService {
     durationMs: number,
     completed: boolean
   ): Promise<void> {
-    const node = this.store.getLocalDeviceId();
     const now = Date.now();
     await this.sendMessage({
-      type: 'sync_delta',
-      to_hlc: `${now}.0.${node}`,
-      progress: [
-        {
-          profile_uuid: '00000000-0000-0000-0000-000000000001',
-          content_key: contentKey,
-          item_kind: 'movie',
-          position_ms: positionMs,
-          duration_ms: durationMs,
-          completed,
-          hlc: `${now}.0.${node}`,
-        },
-      ],
-      sources: [],
-      profiles: [],
-      favorites: [],
-      recents: [],
-      tombstones: [],
+      type: 'household_data_delta',
+      delta: {
+        sources: [],
+        profiles: [],
+        favorites: [],
+        watch_history: [
+          {
+            stable_hash: contentKey,
+            position_ms: positionMs,
+            duration_ms: durationMs,
+            completed,
+            last_watched_at: now,
+            profile_uuid: LocalSyncService.PROFILE_UUID,
+          },
+        ],
+        tombstones: [],
+      },
     });
   }
 
   /**
-   * Applies an incoming SyncDelta from a remote household device.
+   * Applies an incoming household_data_delta from a remote household device (Apple, Android or another TV).
    */
-  public async applyIncomingDelta(delta: any): Promise<void> {
-    if (!delta) return;
+  public async applyHouseholdDataDelta(delta: any, senderId?: string): Promise<void> {
+    if (!delta) {
+      if (senderId) this.log(`Delta vide reçu de ${this.peerName(senderId)}.`, true);
+      return;
+    }
 
-    const snapshot = this.loadFavoriteSnapshot();
-    let snapshotChanged = false;
+    const fromWho = senderId ? ` de ${this.peerName(senderId)}` : '';
+    let appliedFavs = 0;
+    let removedFavs = 0;
+    let appliedProgress = 0;
 
-    // Favorites added elsewhere
-    if (Array.isArray(delta.favorites)) {
-      for (const fav of delta.favorites) {
-        if (!fav.content_key) continue;
-        const item = await this.db.getItemByStableHash(fav.content_key);
+    let appliedSources = 0;
+    // 1. Sources / IPTV accounts FIRST: what the user waits for. Favorites and progress come after,
+    //    and must never keep the accounts from arriving.
+    const sources = Array.isArray(delta.sources) ? delta.sources : [];
+
+    this.log(
+      `Données reçues${fromWho} : ${sources.length} compte(s), ` +
+      `${Array.isArray(delta.favorites) ? delta.favorites.length : 0} favori(s), ` +
+      `${Array.isArray(delta.watch_history) ? delta.watch_history.length : 0} reprise(s).`
+    );
+
+    if (sources.length > 0) {
+      try {
+      const existing = await this.db.getSources();
+      for (const src of sources) {
+        if (!src) continue;
+        const srcType = String(src.source_type || 'xtream').toLowerCase() as 'xtream' | 'm3u';
+        const srcName = String(src.name || 'Compte IPTV').trim();
+        const server = (src.server || src.url || '').trim();
+        const url = (src.url || src.server || '').trim();
+        const username = src.username ? String(src.username).trim() : undefined;
+        const password = src.password ? String(src.password) : undefined;
+        const host = hostOf(server || url || '') || 'local';
+
+        this.log(
+          `Compte récupéré du foyer : « ${srcName} » (${srcType.toUpperCase()}, serveur: ${host}, ` +
+          `identifiant: ${username ? 'fourni' : 'aucun'}, mot de passe: ${password ? 'fourni' : 'absent'}).`
+        );
+
+        const match = existing.find(
+          (e) =>
+            (src.uuid && e.uuid === src.uuid) ||
+            (e.source_type === srcType && (e.server === server || e.url === url) && (!username || e.username === username))
+        );
+
+        if (match) {
+          if (!match.password && password) {
+            await this.db.upsertSource({ ...match, password });
+            this.log(`Mot de passe mis à jour pour le compte « ${srcName} ».`);
+            this.notifyStatus();
+          } else {
+            this.log(`Compte « ${srcName} » déjà enregistré sur la TV.`);
+          }
+          continue;
+        }
+
+        try {
+          // 1. Immediately register the source in the TV database so it is visible in SourcesView
+          const newUuid = src.uuid || `src_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          await this.db.upsertSource({
+            uuid: newUuid,
+            name: srcName,
+            source_type: srcType,
+            server: server || undefined,
+            url: url || undefined,
+            username: username,
+            password: password,
+            epg_url: src.epg_url || undefined,
+            item_count: src.item_count || 0,
+            last_sync_at: Date.now(),
+          });
+          appliedSources++;
+          this.log(`Compte « ${srcName} » enregistré dans les sources de la TV.`);
+          this.notifyStatus();
+
+          // 2. Background download of catalog/channels
+          if (srcType === 'xtream') {
+            if (server && username && password) {
+              this.log(`Téléchargement des chaînes et VOD pour « ${srcName} »…`);
+              void CndEngine.getInstance()
+                .syncXtreamSource(srcName, server, username, password, src.epg_url)
+                .then((count) => {
+                  this.log(`Chaînes de « ${srcName} » prêtes (${count} flux indexés).`);
+                  this.notifyStatus();
+                })
+                .catch((e: any) => {
+                  this.log(`Erreur téléchargement flux « ${srcName} » : ${e?.message || e}`, true);
+                });
+            } else if (!password) {
+              this.log(`Compte Xtream « ${srcName} » enregistré, mais le mot de passe est manquant pour le direct.`, true);
+            }
+          } else if (srcType === 'm3u') {
+            if (url) {
+              this.log(`Téléchargement de la playlist « ${srcName} »…`);
+              void CndEngine.getInstance()
+                .syncM3uSource(srcName, url)
+                .then((count) => {
+                  this.log(`Playlist « ${srcName} » prête (${count} flux indexés).`);
+                  this.notifyStatus();
+                })
+                .catch((e: any) => {
+                  this.log(`Erreur téléchargement playlist « ${srcName} » : ${e?.message || e}`, true);
+                });
+            }
+          }
+        } catch (e: any) {
+          this.log(`Échec enregistrement compte « ${srcName} » : ${e?.message || e}`, true);
+        }
+      }
+      } catch (e: any) {
+        this.log(`Erreur pendant l'import des comptes${fromWho} : ${e?.message || e}`, true);
+      }
+    }
+
+    // 2. Favorites, removals and progress: index lookups only, and an error here is logged, not lost.
+    try {
+
+      const snapshot = this.loadFavoriteSnapshot();
+      let snapshotChanged = false;
+
+      // 1. Favorites
+      const favorites = Array.isArray(delta.favorites) ? delta.favorites : [];
+      for (const fav of favorites) {
+        const hash = fav.stable_hash || fav.content_key;
+        if (!hash) continue;
+        const item = await this.db.getItemByStableHashIndexed(hash);
         if (item && item.is_favorite !== 1) {
           await this.db.toggleFavorite(item.id);
+          appliedFavs++;
         }
-        // Known to this device now: it must not be re-exported as one of its own changes.
         if (item) {
           snapshot.add(item.stable_hash);
           snapshotChanged = true;
         }
       }
-    }
 
-    // Favorites removed elsewhere (tombstones were ignored before: removals never arrived)
-    if (Array.isArray(delta.tombstones)) {
-      for (const t of delta.tombstones) {
+      // 2. Tombstones (removals)
+      const tombstones = Array.isArray(delta.tombstones) ? delta.tombstones : [];
+      for (const t of tombstones) {
         if (!t || t.kind !== 'favorite' || typeof t.key !== 'string') continue;
         const contentKey = t.key.indexOf(':') >= 0 ? t.key.slice(t.key.indexOf(':') + 1) : t.key;
-        const item = await this.db.getItemByStableHash(contentKey);
+        const item = await this.db.getItemByStableHashIndexed(contentKey);
         if (item && item.is_favorite === 1) {
           await this.db.toggleFavorite(item.id);
+          removedFavs++;
         }
         if (item) {
           snapshot.delete(item.stable_hash);
           snapshotChanged = true;
         }
       }
-    }
-    if (snapshotChanged) this.saveFavoriteSnapshot(snapshot);
+      if (snapshotChanged) this.saveFavoriteSnapshot(snapshot);
 
-    // Watch progress (the previous code called a `put` method that does not exist: nothing was saved)
-    if (Array.isArray(delta.progress)) {
-      for (const prg of delta.progress) {
-        if (!prg.content_key) continue;
-        const item = await this.db.getItemByStableHash(prg.content_key);
+      // 3. Watch history / progress
+      const history = Array.isArray(delta.watch_history)
+        ? delta.watch_history
+        : Array.isArray(delta.progress)
+        ? delta.progress
+        : [];
+      for (const prg of history) {
+        const hash = prg.stable_hash || prg.content_key;
+        if (!hash) continue;
+        const item = await this.db.getItemByStableHashIndexed(hash);
         if (item) {
-          await this.db.updateWatchProgress(item.id, prg.position_ms || 0, prg.duration_ms || item.duration_ms || 0);
+          const pos = prg.position_ms || 0;
+          const dur = prg.duration_ms || item.duration_ms || 0;
+          await this.db.updateWatchProgress(item.id, pos, dur);
+          appliedProgress++;
         }
       }
+    } catch (e: any) {
+      this.log(`Erreur pendant l'import des favoris et reprises${fromWho} : ${e?.message || e}`, true);
     }
 
+    this.log(
+      `Synchronisation appliquée${fromWho} : ${appliedFavs} favori(s), ${removedFavs} supprimé(s), ` +
+      `${appliedProgress} reprise(s), ${appliedSources} compte(s) ajouté(s).`
+    );
     this.notifyStatus();
+  }
+
+  /**
+   * Applies an incoming SyncDelta (legacy HLC format or alternative client).
+   */
+  public async applyIncomingDelta(delta: any, senderId?: string): Promise<void> {
+    return this.applyHouseholdDataDelta(delta, senderId);
   }
 }

@@ -570,6 +570,12 @@ class LocalSyncService @Inject constructor(
         }
         val root = try { JSONObject(json) } catch (_: Exception) { return }
 
+        if (connection != null) {
+            deviceConnections[senderDeviceId] = connection
+        } else {
+            samsung.markTv(senderDeviceId)
+        }
+
         when (root.optString("type")) {
             "device_announce" -> handleAnnounce(root, senderDeviceId, connection)
 
@@ -659,8 +665,7 @@ class LocalSyncService @Inject constructor(
         refreshActivePeers()
 
         if (previous == null || !wasOnline) log("$name est connecté.")
-        // Not to the Samsung TV: it does not read this format yet (PRD-45 § 1.4).
-        if (isNewOrBack && !channelTv) sendFullSync(senderDeviceId)
+        if (isNewOrBack) sendFullSync(senderDeviceId)
     }
 
     /**
@@ -782,7 +787,8 @@ class LocalSyncService @Inject constructor(
     private suspend fun sendDelta(full: Boolean) {
         if (!store.isJoined.value) return
         val peers = reachableConnections()
-        if (peers.isEmpty()) {
+        val hasSamsung = samsung.isConnected
+        if (peers.isEmpty() && !hasSamsung) {
             if (full) {
                 _syncStatus.value = "Aucun autre appareil joignable : ouvrez Buntu sur l'autre appareil, sur le même Wi‑Fi."
                 log("Synchroniser : aucun autre appareil joignable (même Wi‑Fi ?).", isWarning = true)
@@ -793,14 +799,19 @@ class LocalSyncService @Inject constructor(
         val deltaJson = engineBridge.exportHouseholdDelta(if (full) 0L else lastExportTimestamp)
         if (deltaJson.isNotEmpty()) {
             val wrapped = JSONObject().put("type", "household_data_delta").put("delta", JSONObject(deltaJson)).toString()
-            sealMessage(wrapped)?.let { sealed -> peers.forEach { sendEnvelope(sealed, it) } }
+            sealMessage(wrapped)?.let { sealed ->
+                peers.forEach { sendEnvelope(sealed, it) }
+                if (hasSamsung) samsung.sendEnvelope(sealed)
+            }
         }
         if (full) {
             sealMessage(JSONObject().put("type", "sync_request").toString())?.let { sealed ->
                 peers.forEach { sendEnvelope(sealed, it) }
+                if (hasSamsung) samsung.sendEnvelope(sealed)
             }
-            log("Synchroniser : données envoyées et demandées sur ${peers.size} connexion(s).")
-            _syncStatus.value = "Synchronisation demandée à ${peers.size} connexion(s)…"
+            val totalTargets = peers.size + (if (hasSamsung) 1 else 0)
+            log("Synchroniser : données envoyées et demandées sur $totalTargets connexion(s).")
+            _syncStatus.value = "Synchronisation demandée à $totalTargets connexion(s)…"
         } else {
             lastExportTimestamp = nowTs
         }
@@ -823,7 +834,7 @@ class LocalSyncService @Inject constructor(
      */
     private suspend fun sendToPeer(peerId: String, messageJson: String): Boolean {
         val conn = (deviceConnections[peerId] ?: connections[peerId])?.takeIf { it.isAlive }
-        if (conn == null && !samsung.isTv(peerId)) return false
+        if (conn == null && !samsung.isTv(peerId) && !samsung.isConnected) return false
         val sealed = sealMessage(messageJson) ?: return false
         return if (conn != null) {
             sendEnvelope(sealed, conn)

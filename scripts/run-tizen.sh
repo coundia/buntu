@@ -149,9 +149,9 @@ if [[ "${DO_INSTALL}" -eq 1 ]]; then
   fi
   [[ -f "${WGT_PATH}" ]] || die "package not found: ${WGT_PATH}"
 
-  # 3. Stop any previous instance so the new package loads cleanly
+  # 3. Stop any previous instance so the new package loads cleanly (with 5s timeout to prevent hanging on stale sdb)
   step "Stopping any running instance of ${APP_ID}..."
-  sdb -s "${SERIAL}" shell 0 was_kill "${APP_ID}" >/dev/null 2>&1 || true
+  perl -e 'alarm shift; exec @ARGV' 5 sdb -s "${SERIAL}" shell 0 was_kill "${APP_ID}" >/dev/null 2>&1 || true
 
   # 4. Install (the TV profile needs `tizen install`; `sdb install` only pushes the file).
   #    Progress lines are hidden; the full log is shown only on failure.
@@ -173,7 +173,7 @@ if [[ "${DO_LAUNCH}" -eq 1 ]]; then
     step "Launching ${APP_ID} in debug mode..."
     # The TV only starts a debuggable instance when the app is not already running, and
     # the command can hang: read its output with a 15 s limit.
-    sdb -s "${SERIAL}" shell 0 was_kill "${APP_ID}" >/dev/null 2>&1 || true
+    perl -e 'alarm shift; exec @ARGV' 5 sdb -s "${SERIAL}" shell 0 was_kill "${APP_ID}" >/dev/null 2>&1 || true
     sleep 2
     DEBUG_LOG="$(mktemp -t tizen-debug)"
     sdb -s "${SERIAL}" shell 0 debug "${APP_ID}" >"${DEBUG_LOG}" 2>&1 &
