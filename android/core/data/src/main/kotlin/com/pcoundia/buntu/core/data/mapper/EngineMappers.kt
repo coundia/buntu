@@ -22,7 +22,11 @@ import com.pcoundia.buntu.core.domain.model.SeasonInfo
 import com.pcoundia.buntu.core.domain.model.SeriesItem
 import com.pcoundia.buntu.core.domain.model.SourceKind
 import com.pcoundia.buntu.core.domain.model.SourceSummary
+import com.pcoundia.buntu.core.domain.model.StreamKind
 import com.pcoundia.buntu.core.domain.model.SyncReport
+import com.pcoundia.buntu.core.domain.model.UpNextContext
+import com.pcoundia.buntu.core.domain.model.UpNextItem
+import com.pcoundia.buntu.core.domain.model.UpNextReason
 import com.pcoundia.buntu.core.engine.ffi.AiProviderConfig
 import com.pcoundia.buntu.core.engine.ffi.AiProviderKind
 import com.pcoundia.buntu.core.engine.ffi.ChannelNowNext
@@ -36,6 +40,9 @@ import com.pcoundia.buntu.core.engine.ffi.ProfileRecord
 import com.pcoundia.buntu.core.engine.ffi.RecoCard
 import com.pcoundia.buntu.core.engine.ffi.RecoKind
 import com.pcoundia.buntu.core.engine.ffi.RecoShelf
+import com.pcoundia.buntu.core.engine.ffi.Recommendation
+import com.pcoundia.buntu.core.engine.ffi.RecommendationContext
+import com.pcoundia.buntu.core.engine.ffi.RecommendationReasonKind
 import com.pcoundia.buntu.core.engine.ffi.SearchHit
 import com.pcoundia.buntu.core.engine.ffi.SearchKind
 import com.pcoundia.buntu.core.engine.ffi.SearchResponse
@@ -129,6 +136,55 @@ object EngineMappers {
         nowProgress = (nowNext?.now?.progressRatio ?: 0.0).toFloat().coerceIn(0f, 1f),
         nextTitle = nowNext?.next?.title,
     )
+
+    /** Engine item kind (`live`, `movie`, `episode`) to the player's stream kind. */
+    fun streamKindOf(engineKind: String): StreamKind = when (engineKind) {
+        "live" -> StreamKind.LIVE
+        "episode" -> StreamKind.VOD_EPISODE
+        else -> StreamKind.VOD_MOVIE
+    }
+
+    /** PRD-27: a recommendation chosen by `cnd-core`, ready for the "À suivre" row or the end card. */
+    fun Recommendation.toUpNextDomain(): UpNextItem {
+        val kind = streamKindOf(item.kind)
+        val subtitle = when (kind) {
+            StreamKind.VOD_EPISODE -> {
+                val season = item.seasonNum?.toInt()
+                val episode = item.episodeNum?.toInt()
+                if (season != null && episode != null) "S%02dE%02d".format(season, episode) else item.groupTitle
+            }
+            StreamKind.LIVE -> item.groupTitle
+            else -> item.year?.toString() ?: item.groupTitle
+        }
+        return UpNextItem(
+            itemId = item.id,
+            stableHash = item.stableHash,
+            kind = kind,
+            title = item.nameClean.ifBlank { item.name },
+            subtitle = subtitle,
+            posterUrl = item.logoUrl,
+            reason = when (reasonKind) {
+                RecommendationReasonKind.SAGA_NEXT -> UpNextReason.SAGA_NEXT
+                RecommendationReasonKind.SAGA_MEMBER -> UpNextReason.SAGA_MEMBER
+                RecommendationReasonKind.NEXT_EPISODE -> UpNextReason.NEXT_EPISODE
+                RecommendationReasonKind.SAME_DIRECTOR -> UpNextReason.SAME_DIRECTOR
+                RecommendationReasonKind.SAME_ACTOR -> UpNextReason.SAME_ACTOR
+                RecommendationReasonKind.SIMILAR_GENRE -> UpNextReason.SIMILAR_GENRE
+                RecommendationReasonKind.RESUME -> UpNextReason.RESUME
+                RecommendationReasonKind.LIVE_NOW -> UpNextReason.LIVE_NOW
+            },
+            reasonText = reasonText,
+            alreadyWatched = alreadyWatched,
+            resumePositionMs = item.resumePositionMs,
+            durationMs = item.durationMs,
+        )
+    }
+
+    fun UpNextContext.toEngineContext(): RecommendationContext = when (this) {
+        UpNextContext.PLAYING -> RecommendationContext.PLAYING
+        UpNextContext.ENDING -> RecommendationContext.ENDING
+        UpNextContext.LIVE -> RecommendationContext.LIVE
+    }
 
     fun IptvItemRecord.toMovieDomain(): MovieItem = MovieItem(
         id = id,

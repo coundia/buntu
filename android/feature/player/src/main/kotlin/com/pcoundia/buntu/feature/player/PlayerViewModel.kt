@@ -9,12 +9,17 @@ import com.pcoundia.buntu.core.domain.model.MovieItem
 import com.pcoundia.buntu.core.domain.model.PlayableStream
 import com.pcoundia.buntu.core.domain.model.StreamKind
 import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
+import com.pcoundia.buntu.core.domain.model.UpNextContext
+import com.pcoundia.buntu.core.domain.model.UpNextItem
+import com.pcoundia.buntu.core.domain.model.UpNextPreferences
 import com.pcoundia.buntu.core.domain.repository.CatalogRepository
 import com.pcoundia.buntu.core.domain.repository.DownloadsRepository
 import com.pcoundia.buntu.core.domain.repository.EpgRepository
+import com.pcoundia.buntu.core.domain.repository.RecommendationsRepository
 import com.pcoundia.buntu.core.domain.repository.RemotePlaybackRepository
 import com.pcoundia.buntu.core.domain.repository.SettingsRepository
 import com.pcoundia.buntu.core.domain.repository.WatchNextPublisher
+import com.pcoundia.buntu.core.domain.usecase.NextUpTiming
 import com.pcoundia.buntu.core.domain.usecase.ZapToChannelUseCase
 import com.pcoundia.buntu.core.platform.device.DeviceCapabilities
 import com.pcoundia.buntu.core.platform.work.DownloadForegroundWorker
@@ -24,6 +29,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +48,23 @@ data class PlayerScreenUiState(
     val showVersionsSheet: Boolean = false,
     val otherVersions: ImmutableList<MovieItem> = persistentListOf(),
     val statusToast: String? = null,
+    /** Favorite button: shown for channels, films and episodes (an episode stars its series). */
+    val canToggleFavorite: Boolean = false,
+    val isFavorite: Boolean = false,
+    /** "À suivre" row under the player (PRD-27), chosen by the engine. Empty when disabled in settings. */
+    val upNextShelf: ImmutableList<UpNextItem> = persistentListOf(),
+    /** End-of-playback card; `null` when hidden. */
+    val nextUpCard: NextUpCardState? = null,
+)
+
+/** The "Film suivant / Épisode suivant" card shown near or at the end of a title. */
+@Immutable
+data class NextUpCardState(
+    val item: UpNextItem,
+    /** Seconds before the next title starts; `null` when no countdown runs. */
+    val countdownSecondsRemaining: Int? = null,
+    /** "Êtes-vous toujours là ?" after [NextUpTiming.MAX_AUTO_CHAIN] titles chained without a touch. */
+    val askStillWatching: Boolean = false,
 )
 
 /**
@@ -65,6 +88,7 @@ class PlayerViewModel @Inject constructor(
     val videoEngine: VideoEngine,
     deviceCapabilities: DeviceCapabilities,
     private val remotePlaybackRepo: RemotePlaybackRepository,
+    private val recommendationsRepository: RecommendationsRepository,
 ) : ViewModel() {
 
     private val itemId: Long = savedStateHandle.get<Long>("itemId")
@@ -116,9 +140,217 @@ class PlayerViewModel @Inject constructor(
     private var progressSaverJob: Job? = null
     private var pausedDownloadsForSession: Boolean = false
 
+    // PRD-27: end-of-playback state (same behaviour as Apple `UpNextModel`).
+    private var upNextPrefs = UpNextPreferences()
+    private var nextUp: UpNextItem? = null
+    private var currentMediaItemId: Long? = null
+    private var dismissedForCredits = false
+    private var endHandledForItemId: Long? = null
+    private var autoChainCount = 0
+    private var upNextLoadJob: Job? = null
+    private var countdownJob: Job? = null
+
     init {
         startRequestedStream()
         startPeriodicProgressSaver()
+        observePlaybackForUpNext()
+    }
+
+    /**
+     * Follows the engine: a new title (zapping, other version, next episode) reloads the "À suivre" data;
+     * the last minutes show the card; the real end starts the countdown.
+     */
+    private fun observePlaybackForUpNext() {
+        viewModelScope.launch {
+            upNextPrefs = runCatching { settingsRepository.currentPreferences().upNext }.getOrDefault(UpNextPreferences())
+            videoEngine.state.collect { snap ->
+                val stream = snap.activeStream
+                if (stream?.itemId != currentMediaItemId) {
+                    onMediaChanged(stream)
+                }
+                if (stream == null) return@collect
+                if (snap.isEnded) {
+                    if (endHandledForItemId != stream.itemId) {
+                        endHandledForItemId = stream.itemId
+                        onPlaybackEnded()
+                    }
+                } else {
+                    maybePresentCardNearEnd(snap.positionMs, snap.durationMs)
+                }
+            }
+        }
+    }
+
+    private fun onMediaChanged(stream: PlayableStream?) {
+        currentMediaItemId = stream?.itemId
+        countdownJob?.cancel()
+        upNextLoadJob?.cancel()
+        nextUp = null
+        dismissedForCredits = false
+        endHandledForItemId = null
+        val canFavorite = stream != null &&
+            (stream.kind == StreamKind.LIVE || stream.kind == StreamKind.VOD_MOVIE || stream.kind == StreamKind.VOD_EPISODE)
+        _screenState.update {
+            it.copy(
+                nextUpCard = null,
+                upNextShelf = persistentListOf(),
+                canToggleFavorite = canFavorite,
+                isFavorite = false,
+            )
+        }
+        if (stream == null || !canFavorite) return
+
+        val itemId = stream.itemId
+        val context = if (stream.kind == StreamKind.LIVE) UpNextContext.LIVE else UpNextContext.PLAYING
+        upNextLoadJob = viewModelScope.launch {
+            val favorite = runCatching { catalogRepository.isFavoriteForPlayback(itemId) }.getOrDefault(false)
+            val shelf = if (upNextPrefs.shelfEnabled) {
+                runCatching { recommendationsRepository.upNextFor(itemId, context) }.getOrDefault(persistentListOf())
+            } else {
+                persistentListOf()
+            }
+            // A channel has no "next" title; films and episodes ask the engine (saga, next episode…).
+            val next = if (stream.kind == StreamKind.LIVE) {
+                null
+            } else {
+                runCatching { recommendationsRepository.nextUpAfter(itemId) }.getOrNull() ?: shelf.firstOrNull()
+            }
+            if (currentMediaItemId != itemId) return@launch
+            nextUp = next
+            _screenState.update { it.copy(isFavorite = favorite, upNextShelf = shelf) }
+        }
+    }
+
+    private fun maybePresentCardNearEnd(positionMs: Long, durationMs: Long) {
+        val next = nextUp ?: return
+        if (!upNextPrefs.nextUpCardEnabled || dismissedForCredits) return
+        if (_screenState.value.nextUpCard != null) return
+        if (NextUpTiming.isNearEnd(positionMs, durationMs)) {
+            _screenState.update { it.copy(nextUpCard = NextUpCardState(item = next)) }
+        }
+    }
+
+    private fun onPlaybackEnded() {
+        viewModelScope.launch {
+            // Saved at the very end, so the engine counts the title as watched.
+            persistCurrentProgress()
+            upNextLoadJob?.join()
+            val next = nextUp
+            if (next == null) {
+                _screenState.update { it.copy(controlsVisible = true) }
+                return@launch
+            }
+            dismissedForCredits = false
+            if (!upNextPrefs.autoPlayNext) {
+                _screenState.update { it.copy(nextUpCard = NextUpCardState(item = next)) }
+            } else if (autoChainCount >= NextUpTiming.MAX_AUTO_CHAIN) {
+                _screenState.update { it.copy(nextUpCard = NextUpCardState(item = next, askStillWatching = true)) }
+            } else {
+                startCountdown(next)
+            }
+        }
+    }
+
+    private fun startCountdown(next: UpNextItem) {
+        countdownJob?.cancel()
+        countdownJob = viewModelScope.launch {
+            var remaining = upNextPrefs.countdownSeconds.coerceAtLeast(1)
+            while (remaining > 0) {
+                _screenState.update { it.copy(nextUpCard = NextUpCardState(item = next, countdownSecondsRemaining = remaining)) }
+                delay(1_000L)
+                remaining -= 1
+            }
+            autoChainCount += 1
+            openUpNext(next)
+        }
+    }
+
+    /** "Lire maintenant" on the card. */
+    fun playNextUpNow() {
+        val next = _screenState.value.nextUpCard?.item ?: nextUp ?: return
+        countdownJob?.cancel()
+        autoChainCount += 1
+        openUpNext(next)
+    }
+
+    /** A title picked in the "À suivre" row: a deliberate choice, so the auto-chain counter restarts. */
+    fun playUpNextItem(item: UpNextItem) {
+        countdownJob?.cancel()
+        autoChainCount = 0
+        openUpNext(item)
+    }
+
+    /** "Générique": hides the card until the real end of the title. */
+    fun dismissNextUpForCredits() {
+        countdownJob?.cancel()
+        dismissedForCredits = true
+        _screenState.update { it.copy(nextUpCard = null) }
+    }
+
+    /** "Annuler" during the countdown: the card stays, nothing starts by itself. */
+    fun cancelNextUpCountdown() {
+        countdownJob?.cancel()
+        autoChainCount = 0
+        _screenState.update { state ->
+            state.copy(nextUpCard = state.nextUpCard?.copy(countdownSecondsRemaining = null))
+        }
+    }
+
+    /** "Continuer" after "Êtes-vous toujours là ?". */
+    fun confirmStillWatching() {
+        autoChainCount = 0
+        val next = _screenState.value.nextUpCard?.item ?: return
+        openUpNext(next)
+    }
+
+    /** "Arrêter" after "Êtes-vous toujours là ?", or closing the card at the end. */
+    fun closeNextUpCard() {
+        countdownJob?.cancel()
+        autoChainCount = 0
+        _screenState.update { it.copy(nextUpCard = null, controlsVisible = true) }
+    }
+
+    /** "Pas intéressé" (long press / Menu key on a card of the row). */
+    fun dismissUpNextItem(item: UpNextItem) {
+        viewModelScope.launch {
+            runCatching { recommendationsRepository.dismissUpNext(item.stableHash) }
+            val remaining = _screenState.value.upNextShelf.filterNot { it.stableHash == item.stableHash }.toImmutableList()
+            if (nextUp?.stableHash == item.stableHash) {
+                nextUp = remaining.firstOrNull { it.kind != StreamKind.LIVE }
+            }
+            _screenState.update { it.copy(upNextShelf = remaining) }
+        }
+    }
+
+    private fun openUpNext(item: UpNextItem) {
+        viewModelScope.launch {
+            _screenState.update { it.copy(nextUpCard = null) }
+            persistCurrentProgress()
+            // Start 0: the repository resumes at the saved position unless the title was finished.
+            val stream = catalogRepository.resolvePlayableStream(item.itemId, 0L) ?: return@launch
+            if (stream.kind == StreamKind.LIVE) {
+                settingsRepository.setLastChannelId(stream.itemId)
+                videoEngine.zap(stream)
+            } else {
+                // Same player: ExoPlayer drops the previous provider connection before opening this one.
+                videoEngine.play(stream)
+            }
+            loadAlternateVersionsIfMovie(stream)
+        }
+    }
+
+    fun toggleFavorite() {
+        val stream = videoEngine.state.value.activeStream ?: return
+        if (!_screenState.value.canToggleFavorite) return
+        viewModelScope.launch {
+            val newState = runCatching { catalogRepository.toggleFavoriteForPlayback(stream.itemId) }
+                .getOrElse { return@launch }
+            _screenState.update { it.copy(isFavorite = newState) }
+        }
+    }
+
+    fun setPlaybackSpeed(speed: Float) {
+        videoEngine.setPlaybackSpeed(speed)
     }
 
     private fun startRequestedStream() {
@@ -151,7 +383,10 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun loadAlternateVersionsIfMovie(stream: PlayableStream) {
-        if (stream.kind != StreamKind.VOD_MOVIE) return
+        if (stream.kind != StreamKind.VOD_MOVIE) {
+            _screenState.update { it.copy(otherVersions = persistentListOf()) }
+            return
+        }
         viewModelScope.launch {
             runCatching { catalogRepository.getMovieDetail(stream.itemId) }
                 .onSuccess { detail ->
@@ -195,6 +430,10 @@ class PlayerViewModel @Inject constructor(
 
     fun toggleControls() {
         _screenState.update { it.copy(controlsVisible = !it.controlsVisible) }
+    }
+
+    fun hideControls() {
+        _screenState.update { it.copy(controlsVisible = false) }
     }
 
     fun showControls() {
@@ -257,6 +496,7 @@ class PlayerViewModel @Inject constructor(
 
     override fun onCleared() {
         progressSaverJob?.cancel()
+        countdownJob?.cancel()
         super.onCleared()
     }
 }

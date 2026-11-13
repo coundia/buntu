@@ -1,8 +1,12 @@
 package com.pcoundia.buntu.core.data.repository
 
 import com.pcoundia.buntu.core.domain.model.RemoteItemDescriptor
+import com.pcoundia.buntu.core.domain.model.containerExtOf
+import com.pcoundia.buntu.core.domain.model.providerRefOf
 import com.pcoundia.buntu.core.domain.repository.HouseholdSyncEngineBridge
 import com.pcoundia.buntu.core.domain.repository.SecretStore
+import com.pcoundia.buntu.core.domain.repository.SourcesRepository
+import com.pcoundia.buntu.core.domain.usecase.SyncSourceUseCase
 import com.pcoundia.buntu.core.engine.EngineProvider
 import com.pcoundia.buntu.core.engine.ffi.SyncDelta
 import com.pcoundia.buntu.core.engine.ffi.SyncFavorite
@@ -11,7 +15,12 @@ import com.pcoundia.buntu.core.engine.ffi.SyncSource
 import com.pcoundia.buntu.core.engine.ffi.SyncTombstone
 import com.pcoundia.buntu.core.engine.ffi.SyncWatchProgress
 import com.pcoundia.buntu.core.engine.ffi.syncComputeSourceKey
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -22,7 +31,13 @@ import javax.inject.Singleton
 class RustHouseholdSyncEngineBridge @Inject constructor(
     private val engineProvider: EngineProvider,
     private val secretStore: SecretStore,
+    private val sourcesRepository: SourcesRepository,
+    private val syncSourceUseCase: SyncSourceUseCase,
 ) : HouseholdSyncEngineBridge {
+
+    /** Catalogs of accounts received from the household are downloaded here, one at a time (one connection). */
+    private val catalogScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val catalogMutex = Mutex()
 
     override suspend fun resolveItemByContentKey(
         contentKey: String,
@@ -66,6 +81,9 @@ class RustHouseholdSyncEngineBridge @Inject constructor(
                 itemKind = kind,
                 title = item.name,
                 resumePositionMs = if (kind == "live" || item.isCompleted) 0L else item.resumePositionMs.coerceAtLeast(0L),
+                providerRef = providerRefOf(item.streamUrl),
+                containerExt = item.containerExt?.trim()?.trimStart('.')?.lowercase()?.takeIf { it.isNotEmpty() }
+                    ?: containerExtOf(item.streamUrl),
             )
         }.getOrNull()
     }
@@ -75,12 +93,24 @@ class RustHouseholdSyncEngineBridge @Inject constructor(
             val root = JSONObject(deltaJson)
             val sourcesJson = root.optJSONArray("sources") ?: JSONArray()
             val sources = mutableListOf<SyncSource>()
+            val engine = engineProvider.awaitEngine()
+            // Last write wins (as Apple `storeReceivedPasswords`): a password replaces the local one only when
+            // the incoming account is new or not older than this device's copy.
+            val localUpdatedAt = runCatching { engine.listSources().associate { it.uuid to it.updatedAt } }
+                .getOrDefault(emptyMap())
 
             for (i in 0 until sourcesJson.length()) {
                 val s = sourcesJson.getJSONObject(i)
                 val uuid = s.getString("uuid")
+                val updatedAt = s.optLong("updated_at", System.currentTimeMillis() / 1000)
+                // The password goes where this device looks for it: the account's `password_ref`, or the
+                // alias Apple uses (`KeychainStore.xtreamKey`). It was stored under `source_pwd_<uuid>`
+                // while the account kept another reference, so received Xtream accounts could not sync.
+                val passwordRef = s.optString("password_ref").takeIf { it.isNotEmpty() } ?: "cnd.xtream.$uuid"
                 val pwd = s.optString("password").takeIf { it.isNotEmpty() }
-                if (pwd != null) {
+                val local = localUpdatedAt[uuid]
+                if (pwd != null && (local == null || updatedAt >= local)) {
+                    secretStore.putSecret(passwordRef, pwd)
                     secretStore.putSecret("source_pwd_$uuid", pwd)
                 }
 
@@ -92,9 +122,10 @@ class RustHouseholdSyncEngineBridge @Inject constructor(
                         url = s.optString("url").takeIf { it.isNotEmpty() },
                         server = s.optString("server").takeIf { it.isNotEmpty() },
                         username = s.optString("username").takeIf { it.isNotEmpty() },
-                        passwordRef = s.optString("password_ref").takeIf { it.isNotEmpty() },
+                        passwordRef = passwordRef.takeIf { s.optString("source_type") == "xtream" }
+                            ?: s.optString("password_ref").takeIf { it.isNotEmpty() },
                         epgUrl = s.optString("epg_url").takeIf { it.isNotEmpty() },
-                        updatedAt = s.optLong("updated_at", System.currentTimeMillis() / 1000),
+                        updatedAt = updatedAt,
                     )
                 )
             }
@@ -165,11 +196,30 @@ class RustHouseholdSyncEngineBridge @Inject constructor(
                 tombstones = tombstones,
             )
 
-            val engine = engineProvider.awaitEngine()
-            engine.importSyncDelta(syncDelta)
+            val summary = engine.importSyncDelta(syncDelta)
+            // The Sources screen shows the received accounts at once.
+            runCatching { sourcesRepository.refreshSourcesList() }
+            downloadCatalogsOf(summary.insertedSourceIds)
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    /**
+     * New accounts arrive empty: download their channels, films and series, one account after the other
+     * (never two connections at once), as Apple does with `onSourcesInserted`.
+     */
+    private fun downloadCatalogsOf(sourceIds: List<Long>) {
+        if (sourceIds.isEmpty()) return
+        catalogScope.launch {
+            catalogMutex.withLock {
+                val sources = runCatching { sourcesRepository.refreshSourcesList() }.getOrNull() ?: return@withLock
+                for (id in sourceIds) {
+                    val source = sources.firstOrNull { it.id == id } ?: continue
+                    runCatching { syncSourceUseCase(source) }
+                }
+            }
         }
     }
 

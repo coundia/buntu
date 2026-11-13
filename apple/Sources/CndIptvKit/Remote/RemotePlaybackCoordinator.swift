@@ -176,13 +176,16 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
     ) {
         // The target does not know this device's item hash (it depends on the local account id): it finds
         // the item by the provider's stream id in the account named by its key (PRD-42 § 6).
-        let providerRef = URL(string: item.streamUrl).flatMap(Self.providerRef(from:))
+        let streamURL = URL(string: item.streamUrl)
+        let providerRef = streamURL.flatMap(Self.providerRef(from:))
+        let containerExt = streamURL.flatMap(Self.containerExt(from:))
         let send: @Sendable (String?) -> Void = { [weak self] key in
             guard let coordinator = self else { return }
             coordinator.onMain {
                 coordinator.startRemotePlayback(
                     targetPeer: targetPeer, contentKey: item.stableHash, kind: item.kind,
-                    title: item.name, positionMs: positionMs, sourceKey: key, providerRef: providerRef
+                    title: item.name, positionMs: positionMs, sourceKey: key, providerRef: providerRef,
+                    containerExt: containerExt
                 )
             }
         }
@@ -206,7 +209,8 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
         title: String,
         positionMs: UInt64,
         sourceKey: String?,
-        providerRef: String? = nil
+        providerRef: String? = nil,
+        containerExt: String? = nil
     ) {
         guard let localSync, !isInitiatingHandoff else { return }
 
@@ -230,6 +234,8 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
         ]
         if let sourceKey { dict["source_key"] = sourceKey }
         if let providerRef { dict["provider_ref"] = providerRef }
+        // The Samsung TV rebuilds the Xtream address of an item it does not store (episodes): `.mkv`, `.mp4`…
+        if let containerExt { dict["container_ext"] = containerExt }
 
         guard let json = Self.json(dict), localSync.sendToPeer(peerId: targetPeer.id, messageJson: json) else {
             clearPending()
@@ -540,9 +546,6 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
 
     // MARK: - Helpers
 
-    /// The provider's own id of a stream (`…/12345.mkv` → `12345`), so another device that added the same
-    /// account by itself (its catalog ids differ) can find the content. Only this id leaves the device:
-    /// never the URL, which carries the account's name and password. `nil` when it does not look like an id.
     /// `source_key` of a local account (PRD-41 identity, computed in Rust), `nil` when unknown.
     private static func accountKey(engine: CndEngine?, sourceId: Int64) -> String? {
         guard let source = (try? engine?.listSources())??.first(where: { $0.id == sourceId }) else { return nil }
@@ -551,12 +554,22 @@ public final class RemotePlaybackCoordinator: @unchecked Sendable {
         )
     }
 
+    /// The provider's own id of a stream (`…/12345.mkv` → `12345`), so another device that added the same
+    /// account by itself (its catalog ids differ) can find the content. Only this id leaves the device:
+    /// never the URL, which carries the account's name and password. `nil` when it does not look like an id.
     public static func providerRef(from url: URL) -> String? {
         guard url.scheme == "http" || url.scheme == "https" else { return nil }
         let last = url.deletingPathExtension().lastPathComponent
         guard !last.isEmpty, last.count <= 40,
               last.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }) else { return nil }
         return last
+    }
+
+    /// File extension of a stream (`mkv`, `mp4`, `ts`), `nil` when there is none or it does not look like one.
+    public static func containerExt(from url: URL) -> String? {
+        let ext = url.pathExtension
+        guard !ext.isEmpty, ext.count <= 8, ext.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else { return nil }
+        return ext.lowercased()
     }
 
     private func onMain(_ work: @escaping @Sendable () -> Void) {

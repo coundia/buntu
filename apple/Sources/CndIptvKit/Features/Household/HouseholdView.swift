@@ -245,7 +245,7 @@ public struct HouseholdView: View {
         if let localSync {
             Section {
                 if localSync.syncLog.isEmpty {
-                    Text("Rien pour l'instant. Appuyez sur « Synchroniser maintenant ».")
+                    Text("Rien pour l'instant. Appuyez sur « Recevoir les données ».")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
@@ -328,10 +328,17 @@ public struct HouseholdView: View {
     private var actionsSection: some View {
         Section {
             if let localSync {
+                // Two additive buttons instead of "Synchroniser": nothing is ever deleted on another device,
+                // and an account is never added twice (merged by identity in Rust).
                 Button {
-                    localSync.syncNow(full: true)
+                    localSync.sendNow()
                 } label: {
-                    Label("Synchroniser maintenant", systemImage: "arrow.triangle.2.circlepath")
+                    Label("Envoyer mes données", systemImage: "square.and.arrow.up")
+                }
+                Button {
+                    localSync.receiveNow()
+                } label: {
+                    Label("Recevoir les données", systemImage: "square.and.arrow.down")
                 }
             }
             #if !os(tvOS)
@@ -362,7 +369,7 @@ public struct HouseholdView: View {
                 Label("Quitter le foyer", systemImage: "rectangle.portrait.and.arrow.right")
             }
         } footer: {
-            Text("La clé du foyer donne accès à vos favoris et à vos comptes IPTV : ne la partagez qu'avec vos propres appareils. Retirer un appareil (menu « … » de sa ligne) change la clé du foyer.")
+            Text("Envoyer et Recevoir ajoutent comptes, favoris et reprises sans jamais rien supprimer ; supprimer un compte ne le retire que de cet appareil. La clé du foyer donne accès à vos favoris et à vos comptes IPTV : ne la partagez qu'avec vos propres appareils. Retirer un appareil (menu « … » de sa ligne) change la clé du foyer.")
         }
     }
 

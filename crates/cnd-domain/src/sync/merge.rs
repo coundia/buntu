@@ -275,3 +275,26 @@ impl HouseholdState {
         }
     }
 }
+
+/// Whether a deletion of this kind travels to the other devices of the household.
+///
+/// An IPTV account (`"source"`) is never deleted by synchronisation: removing it on one device leaves it on
+/// the others, and a deletion received from an older app is ignored. The same account can carry a different
+/// uuid on each device (accounts are merged by `identity::account_identity_key`), so a deleted "duplicate"
+/// on one device was the account kept by another, and every account of the household could vanish.
+/// Favorites and profiles still propagate their deletions.
+pub fn deletion_propagates(kind: &str) -> bool {
+    kind != "source"
+}
+
+#[cfg(test)]
+mod deletion_rule_tests {
+    use super::deletion_propagates;
+
+    #[test]
+    fn account_deletions_stay_on_their_device() {
+        assert!(!deletion_propagates("source"));
+        assert!(deletion_propagates("favorite"));
+        assert!(deletion_propagates("profile"));
+    }
+}

@@ -10,6 +10,7 @@ import com.pcoundia.buntu.core.data.repository.RustCatalogRepository
 import com.pcoundia.buntu.core.data.repository.RustDiagnosticsRepository
 import com.pcoundia.buntu.core.data.repository.RustDownloadsRepository
 import com.pcoundia.buntu.core.data.repository.RustEpgRepository
+import com.pcoundia.buntu.core.data.repository.RustHouseholdInviteCodec
 import com.pcoundia.buntu.core.data.repository.RustProfilesRepository
 import com.pcoundia.buntu.core.data.repository.RustRecommendationsRepository
 import com.pcoundia.buntu.core.data.repository.RustSearchRepository
@@ -19,6 +20,7 @@ import com.pcoundia.buntu.core.domain.repository.CatalogRepository
 import com.pcoundia.buntu.core.domain.repository.DownloadsRepository
 import com.pcoundia.buntu.core.domain.repository.EngineDiagnosticsRepository
 import com.pcoundia.buntu.core.domain.repository.EpgRepository
+import com.pcoundia.buntu.core.domain.repository.HouseholdInviteCodec
 import com.pcoundia.buntu.core.domain.repository.ProfilesRepository
 import com.pcoundia.buntu.core.domain.repository.RecommendationsRepository
 import com.pcoundia.buntu.core.domain.repository.SearchRepository
@@ -87,6 +89,10 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindDiagnosticsRepository(impl: RustDiagnosticsRepository): EngineDiagnosticsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindHouseholdInviteCodec(impl: RustHouseholdInviteCodec): HouseholdInviteCodec
 
     companion object {
         @Provides

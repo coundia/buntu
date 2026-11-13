@@ -1065,6 +1065,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1101,6 +1105,10 @@ fun uniffi_cnd_core_checksum_func_sync_compute_source_key(
 fun uniffi_cnd_core_checksum_func_sync_create_household(
 ): Short
 fun uniffi_cnd_core_checksum_func_sync_derive_household_id(
+): Short
+fun uniffi_cnd_core_checksum_func_sync_household_invite_link(
+): Short
+fun uniffi_cnd_core_checksum_func_sync_household_key_from_scanned(
 ): Short
 fun uniffi_cnd_core_checksum_func_sync_open_envelope(
 ): Short
@@ -1817,6 +1825,10 @@ fun uniffi_cnd_core_fn_func_sync_create_household(`entropy`: RustBuffer.ByValue,
 ): RustBuffer.ByValue
 fun uniffi_cnd_core_fn_func_sync_derive_household_id(`householdKeyHex`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_sync_household_invite_link(`keyHex`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_sync_household_key_from_scanned(`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_cnd_core_fn_func_sync_open_envelope(`householdKeyHex`: RustBuffer.ByValue,`envelope`: RustBuffer.ByValue,`lastSeenSequence`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_cnd_core_fn_func_sync_seal_envelope(`householdKeyHex`: RustBuffer.ByValue,`senderDeviceId`: RustBuffer.ByValue,`sequence`: Long,`nonceBytes`: RustBuffer.ByValue,`messageJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1978,6 +1990,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cnd_core_checksum_func_sync_derive_household_id() != 40074.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_sync_household_invite_link() != 35548.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_sync_household_key_from_scanned() != 62061.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cnd_core_checksum_func_sync_open_envelope() != 21125.toShort()) {
@@ -12658,6 +12676,31 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
     uniffiRustCallWithError(CndException) { _status ->
     UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_sync_derive_household_id(
         FfiConverterString.lower(`householdKeyHex`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The text of the QR code that adds a device to the household (`buntu://household?key=…`, PRD-41),
+         * or `None` when `key_hex` is not a 64-character hexadecimal key. Never log the result: it holds the key.
+         */ fun `syncHouseholdInviteLink`(`keyHex`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_sync_household_invite_link(
+        FfiConverterString.lower(`keyHex`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The household key read from a scanned QR code (link or bare key), or `None` for any other code.
+         */ fun `syncHouseholdKeyFromScanned`(`text`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_sync_household_key_from_scanned(
+        FfiConverterString.lower(`text`),_status)
 }
     )
     }

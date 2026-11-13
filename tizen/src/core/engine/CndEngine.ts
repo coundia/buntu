@@ -11,6 +11,7 @@ import { Database, ItemRecord, SourceRecord, FAVORITES_CATEGORY, RECENT_CATEGORY
 import { HttpClient } from '../net/HttpClient';
 import { AVPlayerService } from '../player/AVPlayerService';
 import { WorkerBridge } from '../../worker/worker-bridge';
+import { findSameAccount } from '../sync/AccountIdentity';
 import { AiClient, AiTaskResult } from '../ai/AiClient';
 import { gatherCommandCandidates, buildRecommendationCandidates } from '../ai/candidates';
 
@@ -124,6 +125,16 @@ export class CndEngine {
   /**
    * Source Synchronization.
    */
+  /**
+   * Saves an account, never twice: an account already here (same uuid, or same identity computed in Rust:
+   * added from another device, re-synchronised, typed again) is updated and keeps its uuid and its name.
+   */
+  private async saveSource(source: Omit<SourceRecord, 'id'>): Promise<number> {
+    const same = await findSameAccount(source, await this.db.getSources());
+    if (!same) return this.db.upsertSource(source);
+    return this.db.upsertSource({ ...source, id: same.id, uuid: same.uuid, name: same.name || source.name });
+  }
+
   public async syncM3uSource(name: string, url: string, onProgress?: SyncProgressCallback): Promise<number> {
     return this.syncPlaylist({ name, url, sourceType: 'm3u' }, onProgress);
   }
@@ -223,7 +234,7 @@ export class CndEngine {
     const maxConnections = userInfo?.max_connections ? Number(userInfo.max_connections) || undefined : undefined;
     const activeCons = userInfo?.active_cons != null ? Number(userInfo.active_cons) || 0 : undefined;
 
-    const sourceId = await this.db.upsertSource({
+    const sourceId = await this.saveSource({
       uuid,
       name,
       source_type: 'xtream',
@@ -355,7 +366,7 @@ export class CndEngine {
     }
 
     onProgress?.(`Enregistrement de ${items.length} contenus…`, 75);
-    const sourceId = await this.db.upsertSource({
+    const sourceId = await this.saveSource({
       uuid,
       name,
       source_type: src.sourceType,
@@ -518,6 +529,8 @@ export class CndEngine {
   }
 
   public recordRecent(item: ItemRecord): void {
+    // An item rebuilt for a playback sent from another device is not a database row (negative id).
+    if (!(item.id > 0)) return;
     const kindKey = item.kind === 'episode' ? 'series' : item.kind;
     const storageKey = `cnd_recent_${kindKey}`;
     try {

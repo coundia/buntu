@@ -26,7 +26,9 @@ import init, {
   wasm_ai_validate,
   wasm_ai_resolve_local,
   wasm_source_key,
+  wasm_account_identity_key,
   wasm_content_key,
+  wasm_remote_reconstruct_xtream_url,
   wasm_sync_create_household,
   wasm_sync_seal_envelope,
   wasm_sync_open_envelope,
@@ -201,6 +203,28 @@ export async function handleRequest(type: string, payload: any): Promise<any> {
         result = wasm_source_key(
           payload.sourceType || payload.sourceKind,
           payload.serverOrUrl || payload.serverUrl || payload.url,
+          payload.username || ''
+        );
+        break;
+
+      // PRD 42 § 6.2 — address of an Xtream stream that is not in this TV's catalog.
+      case 'REMOTE_RECONSTRUCT_XTREAM_URL':
+        result = wasm_remote_reconstruct_xtream_url(
+          payload.server || '',
+          payload.username || '',
+          payload.password || '',
+          payload.kind || '',
+          payload.providerRef || '',
+          payload.containerExt || undefined
+        );
+        break;
+
+      // The same IPTV account, whatever device added it: never stored twice.
+      case 'ACCOUNT_IDENTITY_KEY':
+        result = wasm_account_identity_key(
+          payload.sourceType || '',
+          payload.server || '',
+          payload.url || '',
           payload.username || ''
         );
         break;

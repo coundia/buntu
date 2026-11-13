@@ -206,11 +206,11 @@ fn the_same_source_is_recognised_and_skipped_by_default() {
     assert_eq!(b.db.get_source_by_id(mine).unwrap().name, "Premium");
     assert_eq!(b.db.list_sources().unwrap().len(), 1, "replace does not create a second source");
 
-    let duplicated = b.import_share_document(json, vec![ShareDecision { index: 0, action: ShareImportAction::Import }], tmp().display().to_string()).unwrap();
-    assert!(!duplicated.imported[0].replaced);
-    assert_eq!(b.db.list_sources().unwrap().len(), 2);
-    let uuids: std::collections::HashSet<_> = b.db.list_sources().unwrap().into_iter().map(|s| s.uuid).collect();
-    assert_eq!(uuids.len(), 2);
+    // Even "Import" never adds the same account a second time: it lands on the existing one.
+    let again = b.import_share_document(json, vec![ShareDecision { index: 0, action: ShareImportAction::Import }], tmp().display().to_string()).unwrap();
+    assert!(!again.imported[0].replaced);
+    assert_eq!(again.imported[0].source_id, mine);
+    assert_eq!(b.db.list_sources().unwrap().len(), 1);
 }
 
 #[test]

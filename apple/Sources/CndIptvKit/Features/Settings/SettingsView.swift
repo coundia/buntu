@@ -582,8 +582,11 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    Button("Synchroniser maintenant") {
-                        localSync.syncNow(full: true)
+                    Button("Envoyer mes données") {
+                        localSync.sendNow()
+                    }
+                    Button("Recevoir les données") {
+                        localSync.receiveNow()
                     }
                 }
                 #if os(macOS)

@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.BuntuPrimaryActionButton
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
+import com.pcoundia.buntu.core.domain.model.UpNextPreferences
 import com.pcoundia.buntu.core.domain.model.AiProviderType
 
 @Composable
@@ -113,6 +114,40 @@ fun SettingsRoute(
                         checked = prefs.downloadOverCellular,
                         onCheckedChange = viewModel::setDownloadOverCellular,
                     )
+                }
+            }
+        }
+
+        // PRD-27: same choices as the Apple "À suivre" section.
+        item(key = "upnext_section", contentType = "settings_card") {
+            val upNext = prefs.upNext
+            SettingsCard(title = "Lecture · À suivre") {
+                SettingToggleRow(
+                    label = "Afficher « À suivre » sous le lecteur",
+                    checked = upNext.shelfEnabled,
+                    onCheckedChange = { viewModel.setUpNextPreferences(upNext.copy(shelfEnabled = it)) },
+                )
+                SettingToggleRow(
+                    label = "Carte « Film suivant » en fin de lecture",
+                    checked = upNext.nextUpCardEnabled,
+                    onCheckedChange = { viewModel.setUpNextPreferences(upNext.copy(nextUpCardEnabled = it)) },
+                )
+                SettingToggleRow(
+                    label = "Lecture automatique du titre suivant",
+                    checked = upNext.autoPlayNext,
+                    onCheckedChange = { viewModel.setUpNextPreferences(upNext.copy(autoPlayNext = it)) },
+                )
+                if (upNext.autoPlayNext) {
+                    Text("Compte à rebours", color = BuntuPalette.PureWhite)
+                    Row(horizontalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
+                        UpNextPreferences.COUNTDOWN_CHOICES.forEach { secs ->
+                            FilterChip(
+                                selected = upNext.countdownSeconds == secs,
+                                onClick = { viewModel.setUpNextPreferences(upNext.copy(countdownSeconds = secs)) },
+                                label = { Text("$secs s") },
+                            )
+                        }
+                    }
                 }
             }
         }

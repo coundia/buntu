@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.pcoundia.buntu.core.domain.model.AiProviderType
 import com.pcoundia.buntu.core.domain.model.AiSettingsConfig
 import com.pcoundia.buntu.core.domain.model.AppPreferences
+import com.pcoundia.buntu.core.domain.model.UpNextPreferences
 import com.pcoundia.buntu.core.domain.model.NetworkLogItem
 import com.pcoundia.buntu.core.domain.repository.EngineDiagnosticsRepository
 import com.pcoundia.buntu.core.domain.repository.SecretStore
@@ -117,6 +118,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.setTvPlaybackOptions(autoFrameRate, audioPassthrough, tunneling)
         }
+    }
+
+    fun setUpNextPreferences(preferences: UpNextPreferences) {
+        viewModelScope.launch { settingsRepository.setUpNextPreferences(preferences) }
     }
 
     fun updateAiProvider(provider: AiProviderType, model: String, endpoint: String) {

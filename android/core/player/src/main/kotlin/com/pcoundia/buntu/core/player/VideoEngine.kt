@@ -23,6 +23,10 @@ data class PlayerEngineState(
     val activeStream: PlayableStream? = null,
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
+    /** The film or episode reached its end (ExoPlayer `STATE_ENDED`); reset when another stream opens. */
+    val isEnded: Boolean = false,
+    /** 1.0 = normal speed. Always 1.0 on a live channel. */
+    val playbackSpeed: Float = 1.0f,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
     val bufferedPositionMs: Long = 0L,
@@ -53,6 +57,8 @@ interface VideoEngine {
     fun selectAudioTrack(groupIndex: Int, trackIndex: Int)
     fun selectSubtitleTrack(groupIndex: Int?, trackIndex: Int?)
     fun setSubtitleOffsetMs(offsetMs: Long)
+    /** Ignored on a live channel, which always plays at normal speed. */
+    fun setPlaybackSpeed(speed: Float)
     fun dismissBandwidthWarning()
     fun stop()
 }

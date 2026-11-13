@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.pcoundia.buntu.core.domain.model.AiProviderType
 import com.pcoundia.buntu.core.domain.model.AiSettingsConfig
+import com.pcoundia.buntu.core.domain.model.UpNextPreferences
 import com.pcoundia.buntu.core.domain.model.AppPreferences
 import com.pcoundia.buntu.core.domain.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,11 @@ class DataStoreSettingsRepository @Inject constructor(
         val AI_MODEL = stringPreferencesKey("ai_model")
         val AI_ENDPOINT = stringPreferencesKey("ai_endpoint")
         val AI_SEND_RECENT = booleanPreferencesKey("ai_send_recent_titles")
+
+        val UPNEXT_SHELF = booleanPreferencesKey("upnext_shelf_enabled")
+        val UPNEXT_CARD = booleanPreferencesKey("upnext_card_enabled")
+        val UPNEXT_AUTOPLAY = booleanPreferencesKey("upnext_autoplay_enabled")
+        val UPNEXT_COUNTDOWN = intPreferencesKey("upnext_countdown_seconds")
     }
 
     override val preferencesFlow: Flow<AppPreferences> = dataStore.data
@@ -98,6 +104,13 @@ class DataStoreSettingsRepository @Inject constructor(
         it[Keys.AI_SEND_RECENT] = config.sendRecentTitles
     }
 
+    override suspend fun setUpNextPreferences(preferences: UpNextPreferences) = updatePref {
+        it[Keys.UPNEXT_SHELF] = preferences.shelfEnabled
+        it[Keys.UPNEXT_CARD] = preferences.nextUpCardEnabled
+        it[Keys.UPNEXT_AUTOPLAY] = preferences.autoPlayNext
+        it[Keys.UPNEXT_COUNTDOWN] = preferences.countdownSeconds.coerceIn(3, 60)
+    }
+
     private suspend inline fun updatePref(crossinline block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         withContext(Dispatchers.IO) {
             dataStore.edit { block(it) }
@@ -124,6 +137,13 @@ class DataStoreSettingsRepository @Inject constructor(
                 model = this[Keys.AI_MODEL].orEmpty(),
                 endpointUrl = this[Keys.AI_ENDPOINT].orEmpty(),
                 sendRecentTitles = this[Keys.AI_SEND_RECENT] ?: false,
+            ),
+            upNext = UpNextPreferences(
+                shelfEnabled = this[Keys.UPNEXT_SHELF] ?: true,
+                nextUpCardEnabled = this[Keys.UPNEXT_CARD] ?: true,
+                autoPlayNext = this[Keys.UPNEXT_AUTOPLAY] ?: true,
+                countdownSeconds = (this[Keys.UPNEXT_COUNTDOWN] ?: UpNextPreferences.DEFAULT_COUNTDOWN_SECONDS)
+                    .coerceIn(3, 60),
             ),
         )
     }

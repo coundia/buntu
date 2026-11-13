@@ -219,6 +219,7 @@ data class AppPreferences(
     val adultCategoriesUnlocked: Boolean = false,
     val lastChannelId: Long? = null,
     val aiConfig: AiSettingsConfig = AiSettingsConfig(),
+    val upNext: UpNextPreferences = UpNextPreferences(),
 )
 
 data class NetworkLogItem(

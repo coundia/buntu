@@ -2,10 +2,14 @@ package com.pcoundia.buntu.core.data.repository
 
 import com.pcoundia.buntu.core.data.mapper.EngineMappers.toDomain
 import com.pcoundia.buntu.core.data.mapper.EngineMappers.toEngineConfig
+import com.pcoundia.buntu.core.data.mapper.EngineMappers.toEngineContext
 import com.pcoundia.buntu.core.data.mapper.EngineMappers.toEngineKind
+import com.pcoundia.buntu.core.data.mapper.EngineMappers.toUpNextDomain
 import com.pcoundia.buntu.core.domain.model.AiSettingsConfig
 import com.pcoundia.buntu.core.domain.model.RecoDomainKind
 import com.pcoundia.buntu.core.domain.model.RecoShelfGroup
+import com.pcoundia.buntu.core.domain.model.UpNextContext
+import com.pcoundia.buntu.core.domain.model.UpNextItem
 import com.pcoundia.buntu.core.domain.repository.ProfilesRepository
 import com.pcoundia.buntu.core.domain.repository.RecommendationsRepository
 import com.pcoundia.buntu.core.engine.EngineProvider
@@ -72,5 +76,23 @@ class RustRecommendationsRepository @Inject constructor(
     override suspend fun resetTaste(kind: RecoDomainKind) = withContext(Dispatchers.IO) {
         engineProvider.awaitEngine().resetTaste(kind.toEngineKind())
     }
-}
 
+    override suspend fun upNextFor(
+        itemId: Long,
+        context: UpNextContext,
+        limit: Int,
+    ): ImmutableList<UpNextItem> = withContext(Dispatchers.IO) {
+        engineProvider.awaitEngine()
+            .recommendationsFor(itemId, context.toEngineContext(), limit.coerceIn(1, 40).toUInt())
+            .map { it.toUpNextDomain() }
+            .toImmutableList()
+    }
+
+    override suspend fun nextUpAfter(itemId: Long): UpNextItem? = withContext(Dispatchers.IO) {
+        engineProvider.awaitEngine().nextUp(itemId)?.toUpNextDomain()
+    }
+
+    override suspend fun dismissUpNext(stableHash: String) = withContext(Dispatchers.IO) {
+        engineProvider.awaitEngine().dismissRecommendation(stableHash)
+    }
+}

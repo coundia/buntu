@@ -584,6 +584,17 @@ impl DatabaseManager {
     pub fn add_source(&self, name: &str, source_type: &str, url: Option<&str>, server: Option<&str>, username: Option<&str>, password_ref: Option<&str>) -> std::result::Result<i64, DbError> {
         let conn = self.conn.lock().map_err(|e| DbError::Lock(e.to_string()))?;
         let now = chrono_now_ts();
+
+        // The same account is never added twice (`account_identity_key`): the existing one is returned,
+        // with the new password reference when one is given (the password may have changed).
+        if let Some((id, _)) = sync_repo::same_account_source(&conn, source_type, server, url, username)? {
+            conn.execute(
+                "UPDATE iptv_sources SET password_ref = COALESCE(?2, password_ref), updated_at = ?3 WHERE id = ?1",
+                params![id, password_ref, now],
+            )?;
+            return Ok(id);
+        }
+
         let uuid = new_source_uuid(name, now);
 
         conn.execute(

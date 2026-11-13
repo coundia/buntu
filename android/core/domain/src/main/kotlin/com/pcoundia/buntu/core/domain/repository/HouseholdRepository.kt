@@ -20,8 +20,14 @@ interface HouseholdRepository {
     suspend fun createHousehold(): DomainHouseholdCredentials
     suspend fun joinHousehold(keyHex: String): String
     suspend fun leaveHousehold()
-    /** "Synchroniser maintenant": sends everything to every connected device and asks for theirs. */
-    suspend fun syncNow()
+    /**
+     * "Envoyer mes données": sends this device's accounts, favorites and resume points to every connected
+     * device. Additive: it never deletes anything there (accounts are merged by identity, never duplicated).
+     */
+    suspend fun sendNow()
+
+    /** "Recevoir les données": asks every connected device for its data; nothing is sent from here. */
+    suspend fun receiveNow()
     suspend fun currentHouseholdKeyHex(): String?
     fun startSyncService()
     fun stopSyncService()

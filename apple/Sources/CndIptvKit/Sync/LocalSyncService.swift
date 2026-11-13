@@ -705,7 +705,7 @@ public final class LocalSyncService: @unchecked Sendable {
             }
 
         case "sync_request":
-            // A device asks for everything (its "Synchroniser maintenant", or it has just joined).
+            // A device asks for everything (its "Recevoir les données", or it has just joined).
             log("\(peerName(senderDeviceId)) demande les données du foyer.")
             sendFullSync(to: senderDeviceId)
 
@@ -1000,8 +1000,34 @@ public final class LocalSyncService: @unchecked Sendable {
         }
     }
 
-    /// `full` is the button "Synchroniser maintenant": sends everything this device has to every
-    /// connected device and asks them to send theirs, instead of only what changed since the last round.
+    /// "Envoyer mes données": everything this device has, to every connected device. Additive: the receivers
+    /// merge accounts by identity (never duplicated) and never delete one (`cnd_domain::sync::deletion_propagates`).
+    public func sendNow() {
+        syncNow(full: true)
+    }
+
+    /// "Recevoir les données": asks every connected device for its data; nothing is sent from here.
+    public func receiveNow() {
+        guard store.isJoined else { return }
+        let peers = reachableConnections()
+        let hasSamsung = samsungTransport.isConnected
+        guard !peers.isEmpty || hasSamsung else {
+            syncStatusMessage = "Aucun autre appareil joignable : ouvrez Buntu sur l'autre appareil, sur le même Wi‑Fi."
+            log("Recevoir : aucun autre appareil joignable (même Wi‑Fi ? Buntu ouvert sur l'autre appareil ? « Réseau local » autorisé ?).", warning: true)
+            return
+        }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self, let sealed = self.sealOrLog(#"{"type":"sync_request"}"#) else { return }
+            for conn in peers { self.sendEnvelope(sealed, on: conn) }
+            if hasSamsung { self.samsungTransport.sendEnvelope(sealed) }
+            let count = peers.count + (hasSamsung ? 1 : 0)
+            self.log("Recevoir : données demandées à \(count) connexion(s).")
+            Task { @MainActor in self.syncStatusMessage = "Données demandées à \(count) connexion(s)…" }
+        }
+    }
+
+    /// `full` sends everything this device has ("Envoyer mes données") instead of only what changed since
+    /// the last round; nothing is asked back (that is "Recevoir les données").
     public func syncNow(full: Bool = false) {
         guard let engine, store.isJoined else { return }
         let peers = reachableConnections()
@@ -1024,10 +1050,8 @@ public final class LocalSyncService: @unchecked Sendable {
                 for conn in peers { self.sendEnvelope(sealed, on: conn) }
                 if hasSamsung { self.samsungTransport.sendEnvelope(sealed) }
             }
-            if full, let sealed = self.sealOrLog(#"{"type":"sync_request"}"#) {
-                for conn in peers { self.sendEnvelope(sealed, on: conn) }
-                if hasSamsung { self.samsungTransport.sendEnvelope(sealed) }
-                self.log("Synchroniser : données envoyées et demandées sur \(peers.count + (hasSamsung ? 1 : 0)) connexion(s).")
+            if full {
+                self.log("Envoyer : toutes les données envoyées à \(peers.count + (hasSamsung ? 1 : 0)) connexion(s).")
             }
             if !full {
                 self.lastExportTimestamp = nowTs
@@ -1035,7 +1059,7 @@ public final class LocalSyncService: @unchecked Sendable {
             }
             Task { @MainActor in
                 self.lastSyncDate = Date()
-                if full { self.syncStatusMessage = "Synchronisation demandée à \(peers.count + (hasSamsung ? 1 : 0)) connexion(s)…" }
+                if full { self.syncStatusMessage = "Données envoyées à \(peers.count + (hasSamsung ? 1 : 0)) connexion(s)." }
             }
         }
     }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from apple/Sources/CndIptvKit/Shared/AppLogoView.swift (same geometry and colours). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M39.23,33.78L39.23,74.22M39.23,33.78L54,33.78A10.11,10.11 0 0,1 54,54L39.23,54M39.23,54L56.33,54A10.11,10.11 0 0,1 56.33,74.22L39.23,74.22"
+        android:strokeColor="#FFFFFFFF" android:strokeWidth="6.61"
+        android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>

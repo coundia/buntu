@@ -1,5 +1,7 @@
 package com.pcoundia.buntu.ui
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,11 +29,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
+import com.pcoundia.buntu.core.designsystem.BuntuBrandMark
 import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.BuntuWindowWidth
 import com.pcoundia.buntu.navigation.BuntuNavHost
@@ -88,15 +90,18 @@ fun MobileShell(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(BuntuPalette.Midnight)
+                            .horizontalScroll(rememberScrollState())
                             .padding(horizontal = 16.dp, vertical = 6.dp),
                     ) {
                         listOf(
                             TopLevelDestination.GUIDE,
                             TopLevelDestination.FOR_YOU,
                             TopLevelDestination.DOWNLOADS,
+                            TopLevelDestination.SOURCES,
+                            TopLevelDestination.DEVICES,
                         ).forEach { secondary ->
                             FilterChip(
-                                selected = currentRoute == secondary.route,
+                                selected = secondary.matches(currentRoute),
                                 onClick = { navigateTopLevel(secondary.route) },
                                 label = { Text(secondary.label) },
                                 colors = FilterChipDefaults.filterChipColors(
@@ -111,7 +116,7 @@ fun MobileShell(
                     NavigationBar(containerColor = BuntuPalette.Slate) {
                         bottomItems.forEach { dest ->
                             NavigationBarItem(
-                                selected = currentRoute == dest.route,
+                                selected = dest.matches(currentRoute),
                                 onClick = { navigateTopLevel(dest.route) },
                                 icon = { Icon(dest.icon, contentDescription = dest.label) },
                                 label = { Text(dest.label) },
@@ -147,7 +152,7 @@ fun MobileShell(
                 NavigationRail(containerColor = BuntuPalette.Slate) {
                     TopLevelDestination.entries.forEach { dest ->
                         NavigationRailItem(
-                            selected = currentRoute == dest.route,
+                            selected = dest.matches(currentRoute),
                             onClick = { navigateTopLevel(dest.route) },
                             icon = { Icon(dest.icon, contentDescription = dest.label) },
                             label = { Text(dest.label) },
@@ -186,15 +191,12 @@ fun MobileShell(
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        text = "BUNTU",
-                        color = BuntuPalette.TerangaGold,
-                        fontWeight = FontWeight.ExtraBold,
+                    BuntuBrandMark(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     )
                     TopLevelDestination.entries.forEach { dest ->
                         NavigationDrawerItem(
-                            selected = currentRoute == dest.route,
+                            selected = dest.matches(currentRoute),
                             onClick = { navigateTopLevel(dest.route) },
                             icon = { Icon(dest.icon, contentDescription = dest.label) },
                             label = { Text(dest.label) },

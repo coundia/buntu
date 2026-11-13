@@ -177,6 +177,7 @@ export class Database {
     const existing = await this.getSources();
     const match = existing.find(
       (s) =>
+        (source.id != null && s.id === source.id) ||
         (source.uuid && s.uuid === source.uuid) ||
         (source.source_type === s.source_type &&
           (source.server || source.url) === (s.server || s.url) &&
@@ -187,6 +188,8 @@ export class Database {
         ...match,
         ...source,
         id: match.id,
+        // The account keeps its uuid: the other devices of the household know it by it.
+        uuid: match.uuid || source.uuid,
         password: source.password || match.password,
         item_count: source.item_count || match.item_count || 0,
       };
@@ -604,6 +607,36 @@ export class Database {
     return new Promise((resolve) => {
       const req = this.db!.transaction(['items'], 'readonly').objectStore('items').index('stable_hash').get(stableHash);
       req.onsuccess = () => resolve((req.result as ItemRecord) || null);
+      req.onerror = () => resolve(null);
+    });
+  }
+
+  /**
+   * Item of ONE account whose address ends with the provider's id (`…/<ref>.<ext>` or `…/<ref>`): for
+   * M3U catalogs, whose keys are not the provider's id. Reads that account only, never the whole base.
+   */
+  public async findItemByStreamRef(
+    sourceId: number,
+    ref: string,
+    kind: 'live' | 'movie' | 'episode' | null
+  ): Promise<ItemRecord | null> {
+    if (!this.db || !ref) return null;
+    const withExt = `/${ref}.`;
+    const bare = `/${ref}`;
+    return new Promise((resolve) => {
+      const index = this.db!.transaction(['items'], 'readonly').objectStore('items').index('source_id');
+      const req = index.openCursor(IDBKeyRange.only(sourceId));
+      req.onsuccess = (ev: any) => {
+        const cursor = ev.target.result as IDBCursorWithValue | null;
+        if (!cursor) return resolve(null);
+        const val = cursor.value as ItemRecord;
+        const url = (val.stream_url || '').split('?')[0];
+        const slash = url.lastIndexOf('/');
+        const tail = slash >= 0 ? url.slice(slash) : '';
+        const matches = (tail === bare || tail.indexOf(withExt) === 0) && (!kind || val.kind === kind);
+        if (matches) return resolve(val);
+        cursor.continue();
+      };
       req.onerror = () => resolve(null);
     });
   }

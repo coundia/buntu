@@ -302,6 +302,35 @@ class RustCatalogRepository @Inject constructor(
             engineProvider.awaitEngine().toggleFavorite(stableHash, kind)
         }
 
+    override suspend fun isFavoriteForPlayback(itemId: Long): Boolean =
+        withContext(Dispatchers.IO) {
+            val engine = engineProvider.awaitEngine()
+            val item = engine.getItemById(itemId) ?: return@withContext false
+            val seriesId = item.seriesId
+            if (item.kind == "episode" && seriesId != null) {
+                engine.getSeriesById(seriesId)?.isFavorite ?: false
+            } else {
+                item.isFavorite
+            }
+        }
+
+    override suspend fun toggleFavoriteForPlayback(itemId: Long): Boolean =
+        withContext(Dispatchers.IO) {
+            facetsCache.clear()
+            val engine = engineProvider.awaitEngine()
+            val item = engine.getItemById(itemId) ?: return@withContext false
+            val seriesId = item.seriesId
+            val series = if (item.kind == "episode" && seriesId != null) engine.getSeriesById(seriesId) else null
+            if (series != null) {
+                // Same as Apple `AppState.toggleFavorite(for:)`: the series carries the favorite, the episode follows.
+                val newState = engine.toggleFavorite(series.stableHash, "series")
+                runCatching { engine.toggleFavorite(item.stableHash, "episode") }
+                newState
+            } else {
+                engine.toggleFavorite(item.stableHash, item.kind)
+            }
+        }
+
     override suspend fun recordWatchProgress(
         stableHash: String,
         positionMs: Long,

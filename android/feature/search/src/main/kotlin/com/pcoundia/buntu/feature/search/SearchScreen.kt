@@ -1,5 +1,17 @@
 package com.pcoundia.buntu.feature.search
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -22,7 +34,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -92,41 +103,75 @@ fun SearchRoute(
                     color = BuntuPalette.PureWhite,
                 )
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    OutlinedTextField(
-                        value = state.query,
-                        onValueChange = viewModel::updateQuery,
-                        placeholder = { Text("Ex. : match ce soir, thriller coréen, RTS 1…") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                putExtra(
-                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
-                                )
-                                putExtra(RecognizerIntent.EXTRA_PROMPT, "Dictez votre recherche Buntu")
-                            }
-                            runCatching { voiceLauncher.launch(intent) }
-                        },
-                    ) {
-                        Text("🎤 Voix", color = BuntuPalette.PureWhite)
+                val launchVoice = {
+                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(
+                            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                        )
+                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Dictez votre recherche Buntu")
                     }
-                    BuntuPrimaryActionButton(
-                        label = "Demander",
-                        onClick = viewModel::submitSmartSearch,
-                    )
+                    runCatching { voiceLauncher.launch(intent) }
+                    Unit
+                }
+                // Phones in portrait (< 600 dp): the field takes the whole width and "Demander" goes below,
+                // so neither the text nor the buttons are squeezed. Wider screens keep everything on one row.
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val compact = maxWidth < 600.dp
+                    val field = @Composable { fieldModifier: Modifier ->
+                        OutlinedTextField(
+                            value = state.query,
+                            onValueChange = viewModel::updateQuery,
+                            placeholder = {
+                                Text(
+                                    text = if (compact) "Chaîne, film, envie…" else "Ex. : match ce soir, thriller coréen, RTS 1…",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            trailingIcon = {
+                                IconButton(onClick = launchVoice) {
+                                    Icon(Icons.Default.Mic, contentDescription = "Recherche vocale")
+                                }
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { viewModel.submitSmartSearch() }),
+                            modifier = fieldModifier,
+                        )
+                    }
+                    if (compact) {
+                        Column(verticalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
+                            field(Modifier.fillMaxWidth())
+                            BuntuPrimaryActionButton(
+                                label = "Demander",
+                                onClick = viewModel::submitSmartSearch,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            field(Modifier.weight(1f))
+                            BuntuPrimaryActionButton(
+                                label = "Demander",
+                                onClick = viewModel::submitSmartSearch,
+                            )
+                        }
+                    }
                 }
 
+                // The filters scroll sideways instead of overflowing on a narrow screen.
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
                     verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                 ) {
                     ScopeChip("Tout", SearchScopeKind.ALL, state.scope, viewModel::selectScope)
                     ScopeChip("Direct", SearchScopeKind.LIVE, state.scope, viewModel::selectScope)
