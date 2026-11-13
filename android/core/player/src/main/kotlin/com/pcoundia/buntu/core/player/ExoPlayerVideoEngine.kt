@@ -133,7 +133,21 @@ class ExoPlayerVideoEngine @Inject constructor(
             val buffering = playbackState == Player.STATE_BUFFERING
             if (playbackState == Player.STATE_READY) {
                 errorRetryAttempt = 0
-                _state.update { it.copy(isBuffering = false, diagnosis = null) }
+                _state.update { it.copy(isBuffering = false, isEnded = false, diagnosis = null) }
+            } else if (playbackState == Player.STATE_ENDED) {
+                val kind = _state.value.activeStream?.kind
+                // A live channel never "ends": a stop there is a network problem, left to the watchdog.
+                val ended = kind == StreamKind.VOD_MOVIE || kind == StreamKind.VOD_EPISODE ||
+                    kind == StreamKind.LOCAL_FILE || kind == StreamKind.CATCHUP
+                val dur = exoPlayer.duration.takeIf { it > 0L }
+                _state.update {
+                    it.copy(
+                        isBuffering = false,
+                        isEnded = ended,
+                        positionMs = dur ?: it.positionMs,
+                        durationMs = dur ?: it.durationMs,
+                    )
+                }
             } else {
                 _state.update { it.copy(isBuffering = buffering) }
             }
@@ -231,10 +245,15 @@ class ExoPlayerVideoEngine @Inject constructor(
             )
             .build()
 
+        // A live channel always plays at normal speed; films keep the speed chosen by the user.
+        val speed = if (stream.kind == StreamKind.LIVE) 1.0f else _state.value.playbackSpeed
+        exoPlayer.setPlaybackSpeed(speed)
         _state.update {
             it.copy(
                 activeStream = stream,
                 isBuffering = true,
+                isEnded = false,
+                playbackSpeed = speed,
                 diagnosis = null,
                 bandwidthWarning = null,
             )
@@ -413,6 +432,15 @@ class ExoPlayerVideoEngine @Inject constructor(
 
     override fun setSubtitleOffsetMs(offsetMs: Long) {
         _state.update { it.copy(subtitleOffsetMs = offsetMs) }
+    }
+
+    override fun setPlaybackSpeed(speed: Float) {
+        mainScope.launch {
+            if (_state.value.activeStream?.kind == StreamKind.LIVE) return@launch
+            val clamped = speed.coerceIn(0.5f, 2.0f)
+            exoPlayer.setPlaybackSpeed(clamped)
+            _state.update { it.copy(playbackSpeed = clamped) }
+        }
     }
 
     override fun dismissBandwidthWarning() {

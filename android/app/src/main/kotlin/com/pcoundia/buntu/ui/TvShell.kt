@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
+import com.pcoundia.buntu.core.designsystem.BuntuBrandMark
 import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
 import com.pcoundia.buntu.navigation.BuntuNavHost
@@ -72,7 +73,7 @@ fun TvShell(
         }
     }
 
-    val isRootTab = tvDestinations.any { it.route == currentRoute }
+    val isRootTab = tvDestinations.any { it.matches(currentRoute) }
     BackHandler(enabled = isRootTab) {
         if (confirmExitPending) {
             onExitApp()
@@ -108,11 +109,9 @@ fun TvShell(
                         bottom = 8.dp,
                     ),
             ) {
-                Text(
-                    text = "BUNTU",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = BuntuPalette.TerangaGold,
+                BuntuBrandMark(
+                    logoSize = 40.dp,
+                    textStyle = MaterialTheme.typography.titleLarge,
                 )
                 Spacer(modifier = Modifier.width(metrics.spacingXL))
 
@@ -123,7 +122,7 @@ fun TvShell(
                     ) { dest ->
                         TvNavPill(
                             destination = dest,
-                            isSelected = currentRoute == dest.route,
+                            isSelected = dest.matches(currentRoute),
                             onClick = {
                                 navController.navigate(dest.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {

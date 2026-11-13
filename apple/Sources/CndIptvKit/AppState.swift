@@ -248,7 +248,8 @@ public final class AppState {
             title: media.title,
             positionMs: live ? 0 : UInt64(max(0, player.positionMs)),
             sourceKey: remoteSourceKey,
-            providerRef: RemotePlaybackCoordinator.providerRef(from: media.url)
+            providerRef: RemotePlaybackCoordinator.providerRef(from: media.url),
+            containerExt: RemotePlaybackCoordinator.containerExt(from: media.url)
         )
     }
 

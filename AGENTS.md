@@ -33,6 +33,8 @@ Commandes courantes : `task --list` (voir `Taskfile.yml`).
 - **Demander avant tout geste hors du dépôt** : installer un outil, modifier les réglages d'un appareil, télécharger un gros fichier (annoncer nom, source, taille).
 - **Appareils de l'utilisateur** (iPhone, TV) : n'installer **que sur l'appareil désigné par l'utilisateur**. L'adresse IP de la TV change souvent ; si elle ne répond plus, la chercher, mais **demander confirmation** avant d'installer sur une autre adresse.
 - **Ne pas « réparer en passant »** ce qui est hors du sujet ; le signaler.
+- **Suivi des tâches dans [`progress.md`](progress.md)** : noter chaque tâche, y compris les tâches de fond (tests, builds, scripts lancés en arrière-plan), avec son état (⏳ en cours, ✅ terminé, ❌ échec et pourquoi). Mettre l'état à jour dès que la tâche se termine.
+- **Annoncer chaque fin de tâche à l'utilisateur**, réussie ou non, avec le résultat (« Terminé : tests `:feature:player`, 8/8 »). Une tâche de fond ne se termine jamais en silence.
 
 ### 2.1. Plusieurs agents travaillent dans ce même dossier
 
@@ -106,6 +108,7 @@ Lancer ce qui correspond aux couches touchées :
 
 - **Plan et règles :** `PRD/00_INDEX_ROADMAP.md`.
 - **Passation entre agents :** `reprise.md` (état, pièges, procédures d'installation sur la TV et l'iPhone).
+- **Tâches en cours des agents :** `progress.md` (qui fait quoi, état de chaque tâche, y compris les tâches de fond).
 - **Build par plateforme :** `docs/BUILD_IPHONE.md`, `docs/BUILD_ANDROID.md`, `docs/BUILD_TIZEN.md`.
 - **Appairage téléphone → TV :** `docs/PAIRING.md` (`PRD-39`).
 - **IA sur la TV :** `docs/AI_TIZEN.md` (`PRD-40`).

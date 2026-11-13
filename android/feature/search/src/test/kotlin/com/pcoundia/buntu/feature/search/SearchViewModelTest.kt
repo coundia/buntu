@@ -109,6 +109,7 @@ class SearchViewModelTest {
             override suspend fun setAdultCategoriesUnlocked(unlocked: Boolean) = Unit
             override suspend fun setLastChannelId(channelId: Long) = Unit
             override suspend fun updateAiConfig(config: AiSettingsConfig) = Unit
+            override suspend fun setUpNextPreferences(preferences: com.pcoundia.buntu.core.domain.model.UpNextPreferences) = Unit
         }
         val secretStore = object : SecretStore {
             override suspend fun putSecret(alias: String, plaintext: String) = Unit

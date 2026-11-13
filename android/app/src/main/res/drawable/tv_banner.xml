@@ -1,21 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android TV / Google TV 320x180dp Leanback Home Banner -->
+<!-- Generated from apple/Sources/CndIptvKit/Shared/AppLogoView.swift (same geometry and colours). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="320dp"
-    android:height="180dp"
-    android:viewportWidth="320"
-    android:viewportHeight="180">
-    <path
-        android:fillColor="#0A0E17"
-        android:pathData="M0,0h320v180h-320z" />
-    <path
-        android:fillColor="#131A2A"
-        android:pathData="M16,16h288v148h-288z" />
-    <path
-        android:fillColor="#F5A524"
-        android:pathData="M124,52 L198,90 L124,128 Z" />
-    <path
-        android:fillColor="#38BDF8"
-        android:pathData="M110,52 L118,52 L118,128 L110,128 Z" />
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="320dp" android:height="180dp"
+    android:viewportWidth="320" android:viewportHeight="180">
+    <path android:pathData="M0,0H320V180H0Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="64" android:startY="0"
+                android:endX="256" android:endY="180"
+                android:startColor="#FF161B26" android:endColor="#FF0B0E14" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M106,90a46.5,42 0 1,0 93,0a46.5,42 0 1,0 -93,0Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="152.5" android:centerY="90"
+                android:gradientRadius="48"
+                android:startColor="#6BFF9F0A" android:endColor="#00FF9F0A" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M131.5,51L131.5,129M131.5,51L160,51A19.5,19.5 0 0,1 160,90L131.5,90M131.5,90L164.5,90A19.5,19.5 0 0,1 164.5,129L131.5,129"
+        android:strokeColor="#FFF5F7FA" android:strokeWidth="12.75"
+        android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M148.9,64.05A2.55,2.55 0 0,1 154,64.05L154,79.2A2.55,2.55 0 0,1 148.9,79.2Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="151" android:startY="61.5"
+                android:endX="151" android:endY="81.75"
+                android:startColor="#8CFF9F0A" android:endColor="#FFFF9F0A" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M148.9,100.8A2.55,2.55 0 0,1 154,100.8L154,115.95A2.55,2.55 0 0,1 148.9,115.95Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="151" android:startY="98.25"
+                android:endX="151" android:endY="118.5"
+                android:startColor="#8CFF9F0A" android:endColor="#FFFF9F0A" />
+        </aapt:attr>
+    </path>
 </vector>
-

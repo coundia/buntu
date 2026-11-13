@@ -5,6 +5,7 @@ import { Database, ItemRecord } from '../src/core/storage/Database';
 import { HouseholdStore } from '../src/core/sync/HouseholdStore';
 import { AVPlayerService } from '../src/core/player/AVPlayerService';
 import { CndEngine } from '../src/core/engine/CndEngine';
+import { WorkerBridge } from '../src/worker/worker-bridge';
 
 describe('PRD-45 Samsung TV Playback Receiver & Single Stream Rule', () => {
   let coordinator: RemotePlaybackCoordinator;
@@ -169,7 +170,23 @@ describe('PRD-45 Samsung TV Playback Receiver & Single Stream Rule', () => {
     expect(slowScan).not.toHaveBeenCalled();
   });
 
-  it('refuses at once (unknown_content) when the stream id is not on the TV', async () => {
+  /** The Rust calls of the worker (WebAssembly is not loaded under Node). */
+  function mockWorker(rebuilt: string[] = []) {
+    vi.spyOn(WorkerBridge.getInstance(), 'post').mockImplementation(async (type: string, payload: any) => {
+      if (type === 'COMPUTE_SOURCE_KEY') return (`key_${payload.serverOrUrl}_${payload.username}`) as any;
+      if (type === 'REMOTE_RECONSTRUCT_XTREAM_URL') {
+        const ext = payload.kind === 'live' ? 'ts' : payload.containerExt || 'mp4';
+        const path = payload.kind === 'episode' ? 'series' : payload.kind;
+        const url = `${payload.server}/${path}/${payload.username}/${payload.password}/${payload.providerRef}.${ext}`;
+        rebuilt.push(url);
+        return url as any;
+      }
+      throw new Error(`unexpected ${type}`);
+    });
+  }
+
+  it('refuses at once (unknown_content) when the account named by the origin is not on the TV', async () => {
+    mockWorker();
     const db = Database.getInstance();
     vi.spyOn(db, 'getItemByStableHashIndexed').mockResolvedValue(null);
     const slowScan = vi.spyOn(db, 'getItemByStableHash');
@@ -179,6 +196,7 @@ describe('PRD-45 Samsung TV Playback Receiver & Single Stream Rule', () => {
         type: 'play_request',
         request_id: 'req_missing',
         content_key: 'ef246dddb1a33d3150ed631c00000000000000000000000000000000000000bb',
+        source_key: 'key_of_an_account_the_tv_does_not_have',
         provider_ref: '999999',
         item_kind: 'movie',
         target_device_id: 'tv_samsung_001',
@@ -188,5 +206,93 @@ describe('PRD-45 Samsung TV Playback Receiver & Single Stream Rule', () => {
 
     expect(sentMessages.find((m) => m.type === 'play_refused')?.reason).toBe('unknown_content');
     expect(slowScan).not.toHaveBeenCalled();
+  });
+
+  it('finds a channel saved as "<source id>_live_<id>" in the account named by the origin', async () => {
+    mockWorker();
+    const db = Database.getInstance();
+    const liveItem: ItemRecord = { ...mockItem, id: 303, stable_hash: '1_live_1234', kind: 'live', name: 'TF1' };
+    const looked: string[] = [];
+    vi.spyOn(db, 'getItemByStableHashIndexed').mockImplementation(async (hash: string) => {
+      looked.push(hash);
+      return hash === '1_live_1234' ? liveItem : null;
+    });
+    let played: ItemRecord | null = null;
+    coordinator.onPlayItem = async (item) => {
+      played = item;
+    };
+
+    await (coordinator as any).handleIncomingMessage(
+      {
+        type: 'play_request',
+        request_id: 'req_android_live',
+        content_key: 'ef246dddb1a33d3150ed631c00000000000000000000000000000000000000cc',
+        source_key: 'key_http://test.server_user',
+        provider_ref: '1234',
+        item_kind: 'live',
+        target_device_id: 'tv_samsung_001',
+      },
+      'sender_android'
+    );
+    expect(sentMessages.find((m) => m.type === 'play_ready')?.request_id).toBe('req_android_live');
+    expect(looked).toContain('1_live_1234');
+
+    await (coordinator as any).handleIncomingMessage({ type: 'play_go', request_id: 'req_android_live', position_ms: 0 }, 'sender_android');
+    expect(played!.id).toBe(303);
+  });
+
+  it('rebuilds the address of an episode the TV does not store, with the sent extension', async () => {
+    const rebuilt: string[] = [];
+    mockWorker(rebuilt);
+    const db = Database.getInstance();
+    vi.spyOn(db, 'getItemByStableHashIndexed').mockResolvedValue(null);
+    let played: ItemRecord | null = null;
+    coordinator.onPlayItem = async (item) => {
+      played = item;
+    };
+
+    await (coordinator as any).handleIncomingMessage(
+      {
+        type: 'play_request',
+        request_id: 'req_mac_episode',
+        content_key: 'ef246dddb1a33d3150ed631c00000000000000000000000000000000000000dd',
+        source_key: 'key_http://test.server_user',
+        provider_ref: '777',
+        container_ext: 'mkv',
+        item_kind: 'episode',
+        title: 'Série - S01E02',
+        target_device_id: 'tv_samsung_001',
+      },
+      'sender_mac'
+    );
+    expect(sentMessages.find((m) => m.type === 'play_ready')?.request_id).toBe('req_mac_episode');
+
+    await (coordinator as any).handleIncomingMessage({ type: 'play_go', request_id: 'req_mac_episode', position_ms: 120000 }, 'sender_mac');
+    expect(rebuilt).toEqual(['http://test.server/series/user/pass/777.mkv']);
+    expect(played!.stream_url).toBe('http://test.server/series/user/pass/777.mkv');
+    expect(played!.kind).toBe('episode');
+    expect(played!.name).toBe('Série - S01E02');
+    expect(played!.id).toBeLessThan(0);
+  });
+
+  it('never plays a rebuilt item (unknown category) on a Kids profile', async () => {
+    mockWorker();
+    const db = Database.getInstance();
+    vi.spyOn(db, 'getItemByStableHashIndexed').mockResolvedValue(null);
+    vi.spyOn(CndEngine.getInstance(), 'getActiveProfile').mockReturnValue({ isKids: true } as any);
+
+    await (coordinator as any).handleIncomingMessage(
+      {
+        type: 'play_request',
+        request_id: 'req_kids',
+        content_key: 'ef246dddb1a33d3150ed631c00000000000000000000000000000000000000ee',
+        source_key: 'key_http://test.server_user',
+        provider_ref: '888',
+        item_kind: 'movie',
+        target_device_id: 'tv_samsung_001',
+      },
+      'sender_kid_tablet'
+    );
+    expect(sentMessages.find((m) => m.type === 'play_refused')?.reason).toBe('kids_restricted');
   });
 });

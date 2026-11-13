@@ -22,6 +22,9 @@ import com.pcoundia.buntu.core.domain.model.SearchScopeKind
 import com.pcoundia.buntu.core.domain.model.SeriesItem
 import com.pcoundia.buntu.core.domain.model.SourceSummary
 import com.pcoundia.buntu.core.domain.model.SyncReport
+import com.pcoundia.buntu.core.domain.model.UpNextContext
+import com.pcoundia.buntu.core.domain.model.UpNextItem
+import com.pcoundia.buntu.core.domain.model.UpNextPreferences
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.flow.Flow
 
@@ -70,6 +73,16 @@ interface CatalogRepository {
     suspend fun getEpisodeById(episodeId: Long): EpisodeItem?
 
     suspend fun toggleFavorite(stableHash: String, kind: String): Boolean
+
+    /** Whether the title being played is a favorite (for an episode: its series, as on Apple). */
+    suspend fun isFavoriteForPlayback(itemId: Long): Boolean
+
+    /**
+     * Toggles the favorite from the player and returns the new state. An episode toggles its series
+     * (`AppState.toggleFavorite(for:)` on Apple); a film or a channel toggles itself.
+     */
+    suspend fun toggleFavoriteForPlayback(itemId: Long): Boolean
+
     suspend fun recordWatchProgress(stableHash: String, positionMs: Long, durationMs: Long)
 
     /**
@@ -137,6 +150,15 @@ interface RecommendationsRepository {
 
     suspend fun markLessLikeThis(kind: RecoDomainKind, stableHash: String)
     suspend fun resetTaste(kind: RecoDomainKind)
+
+    /** "À suivre" row under the player (PRD-27), computed by `CndEngine.recommendations_for`. */
+    suspend fun upNextFor(itemId: Long, context: UpNextContext, limit: Int = 12): ImmutableList<UpNextItem>
+
+    /** The title of the end-of-playback card, computed by `CndEngine.next_up`. */
+    suspend fun nextUpAfter(itemId: Long): UpNextItem?
+
+    /** "Pas intéressé": the engine stops proposing this title for the active profile. */
+    suspend fun dismissUpNext(stableHash: String)
 }
 
 interface DownloadsRepository {
@@ -176,6 +198,7 @@ interface SettingsRepository {
     suspend fun setAdultCategoriesUnlocked(unlocked: Boolean)
     suspend fun setLastChannelId(channelId: Long)
     suspend fun updateAiConfig(config: AiSettingsConfig)
+    suspend fun setUpNextPreferences(preferences: UpNextPreferences)
 }
 
 interface SecretStore {

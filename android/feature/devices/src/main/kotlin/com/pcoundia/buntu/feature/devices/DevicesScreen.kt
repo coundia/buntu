@@ -3,6 +3,7 @@ package com.pcoundia.buntu.feature.devices
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,7 +26,10 @@ import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.WifiOff
@@ -49,9 +53,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,6 +70,7 @@ import com.pcoundia.buntu.core.designsystem.BuntuPrimaryActionButton
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
 import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
 import com.pcoundia.buntu.core.domain.model.SyncLogEntry
+import com.pcoundia.buntu.core.platform.tv.QrMatrix
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -156,15 +165,32 @@ fun DevicesRoute(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(modifier = Modifier.height(metrics.spacingM))
-                    Row(horizontalArrangement = Arrangement.spacedBy(metrics.spacingM)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
                         BuntuPrimaryActionButton(
                             label = "Créer un foyer",
                             onClick = viewModel::createHousehold,
                         )
+                        // Android TV has no camera: there, the phone scans the code shown by the TV.
+                        if (!state.isTv) {
+                            OutlinedButton(
+                                onClick = { viewModel.scanToJoin(context) },
+                                enabled = !state.isScanning,
+                            ) {
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = BuntuPalette.PureWhite)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Scanner un QR code", color = BuntuPalette.PureWhite)
+                            }
+                        }
                         OutlinedButton(onClick = { showJoinDialog = true }) {
                             Text("Rejoindre avec la clé…", color = BuntuPalette.PureWhite)
                         }
                     }
+                    Spacer(modifier = Modifier.height(metrics.spacingS))
+                    Text(
+                        text = "Sur un appareil déjà dans le foyer, ouvrez Appareils puis « Afficher le QR code », et visez-le avec la caméra.",
+                        color = BuntuPalette.MutedSilver,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
         } else {
@@ -243,15 +269,32 @@ fun DevicesRoute(
             // Actions
             item(key = "actions") {
                 DeviceSectionCard(title = "Gestion du foyer") {
+                    // One button per line: both stay readable on a small phone.
+                    Column(verticalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
+                        // Two additive buttons instead of "Synchroniser": nothing is ever deleted, an account is
+                        // never duplicated (merged by identity in Rust).
+                        OutlinedButton(onClick = viewModel::sendNow) {
+                            Icon(Icons.Default.Upload, contentDescription = null, tint = BuntuPalette.PureWhite)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Envoyer mes données", color = BuntuPalette.PureWhite)
+                        }
+                        OutlinedButton(onClick = viewModel::receiveNow) {
+                            Icon(Icons.Default.Download, contentDescription = null, tint = BuntuPalette.PureWhite)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Recevoir les données", color = BuntuPalette.PureWhite)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(metrics.spacingS))
+                    Text(
+                        text = "Envoyer et Recevoir ajoutent les comptes, favoris et reprises sans jamais rien supprimer ; un même compte n'est jamais ajouté deux fois. Supprimer un compte ne le retire que de cet appareil.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = BuntuPalette.MutedSilver,
+                    )
+                    Spacer(modifier = Modifier.height(metrics.spacingS))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(metrics.spacingM),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        OutlinedButton(onClick = viewModel::syncNow) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, tint = BuntuPalette.PureWhite)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Synchroniser maintenant", color = BuntuPalette.PureWhite)
-                        }
                         OutlinedButton(onClick = {
                             coroutineScope.launch {
                                 val key = viewModel.getHouseholdKeyHex()
@@ -265,6 +308,12 @@ fun DevicesRoute(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Copier la clé", color = BuntuPalette.PureWhite)
                         }
+                    }
+                    Spacer(modifier = Modifier.height(metrics.spacingS))
+                    OutlinedButton(onClick = viewModel::showInviteQr) {
+                        Icon(Icons.Default.QrCode, contentDescription = null, tint = BuntuPalette.PureWhite)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Afficher le QR code (pour ajouter un appareil)", color = BuntuPalette.PureWhite)
                     }
                     Spacer(modifier = Modifier.height(metrics.spacingS))
                     Button(
@@ -308,7 +357,7 @@ fun DevicesRoute(
             title = { Text("Rejoindre un foyer") },
             text = {
                 Column {
-                    Text("Collez la clé affichée sur un autre appareil du foyer (64 caractères).")
+                    Text("Collez la clé affichée sur un autre appareil du foyer (écran Appareils, « Copier la clé »), ou le lien buntu://household.")
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = joinKeyInput,
@@ -331,6 +380,34 @@ fun DevicesRoute(
             dismissButton = {
                 TextButton(onClick = { showJoinDialog = false }) {
                     Text("Annuler")
+                }
+            },
+        )
+    }
+
+    state.inviteQr?.let { qr ->
+        AlertDialog(
+            onDismissRequest = viewModel::hideInviteQr,
+            title = { Text("Ajouter un appareil au foyer") },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    HouseholdQrCode(
+                        matrix = qr,
+                        modifier = Modifier.size(if (state.isTv) 280.dp else 240.dp),
+                    )
+                    Text("Sur l'autre appareil : Appareils, puis « Scanner un QR code ».")
+                    Text(
+                        text = "Ce code donne accès à vos favoris et à vos comptes IPTV. Ne le montrez qu'à vos propres appareils, et fermez cet écran ensuite.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::hideInviteQr) {
+                    Text("Fermer")
                 }
             },
         )
@@ -360,6 +437,30 @@ fun DevicesRoute(
                 }
             },
         )
+    }
+}
+
+/** Black on white with a quiet zone, readable by any phone camera. */
+@Composable
+private fun HouseholdQrCode(matrix: QrMatrix, modifier: Modifier = Modifier) {
+    Canvas(
+        modifier = modifier
+            .background(Color.White, RoundedCornerShape(12.dp))
+            .padding(8.dp)
+            .semantics { contentDescription = "QR code pour ajouter un appareil au foyer" },
+    ) {
+        val cell = size.minDimension / matrix.size.toFloat()
+        for (y in 0 until matrix.size) {
+            for (x in 0 until matrix.size) {
+                if (matrix.pixels[y * matrix.size + x]) {
+                    drawRect(
+                        color = Color.Black,
+                        topLeft = Offset(x * cell, y * cell),
+                        size = Size(cell + 0.5f, cell + 0.5f),
+                    )
+                }
+            }
+        }
     }
 }
 

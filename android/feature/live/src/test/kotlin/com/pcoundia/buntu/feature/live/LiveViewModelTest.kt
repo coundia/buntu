@@ -97,6 +97,9 @@ class LiveViewModelTest {
             ): ImmutableList<RecoShelfGroup> = persistentListOf()
             override suspend fun markLessLikeThis(kind: RecoDomainKind, stableHash: String) = Unit
             override suspend fun resetTaste(kind: RecoDomainKind) = Unit
+            override suspend fun upNextFor(itemId: Long, context: com.pcoundia.buntu.core.domain.model.UpNextContext, limit: Int) = kotlinx.collections.immutable.persistentListOf<com.pcoundia.buntu.core.domain.model.UpNextItem>()
+            override suspend fun nextUpAfter(itemId: Long): com.pcoundia.buntu.core.domain.model.UpNextItem? = null
+            override suspend fun dismissUpNext(stableHash: String) = Unit
         }
         val profilesRepo = object : ProfilesRepository {
             override val profilesFlow: Flow<ImmutableList<ProfileSummary>> = flowOf(persistentListOf())
@@ -153,6 +156,7 @@ private class FakeVideoEngine : VideoEngine {
     override fun selectAudioTrack(groupIndex: Int, trackIndex: Int) = Unit
     override fun selectSubtitleTrack(groupIndex: Int?, trackIndex: Int?) = Unit
     override fun setSubtitleOffsetMs(offsetMs: Long) = Unit
+    override fun setPlaybackSpeed(speed: Float) = Unit
     override fun dismissBandwidthWarning() = Unit
     override fun stop() { _state.value = PlayerEngineState() }
 }
@@ -197,6 +201,8 @@ private class FakeLiveCatalogRepository : CatalogRepository {
     ): MediaDetail? = null
     override suspend fun getEpisodeById(episodeId: Long): EpisodeItem? = null
     override suspend fun toggleFavorite(stableHash: String, kind: String): Boolean = true
+    override suspend fun isFavoriteForPlayback(itemId: Long): Boolean = false
+    override suspend fun toggleFavoriteForPlayback(itemId: Long): Boolean = true
     override suspend fun recordWatchProgress(stableHash: String, positionMs: Long, durationMs: Long) = Unit
     override suspend fun resolvePlayableStream(itemId: Long, startPositionMs: Long): PlayableStream =
         PlayableStream(
@@ -225,6 +231,7 @@ private class FakeLiveSettingsRepository : SettingsRepository {
         prefs.value = prefs.value.copy(lastChannelId = channelId)
     }
     override suspend fun updateAiConfig(config: com.pcoundia.buntu.core.domain.model.AiSettingsConfig) = Unit
+    override suspend fun setUpNextPreferences(preferences: com.pcoundia.buntu.core.domain.model.UpNextPreferences) = Unit
 }
 
 

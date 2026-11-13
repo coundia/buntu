@@ -1,5 +1,14 @@
 package com.pcoundia.buntu.feature.devices
 
+import android.content.Context
+import com.pcoundia.buntu.core.domain.repository.HouseholdInviteCodec
+import com.pcoundia.buntu.core.platform.device.DeviceCapabilities
+import com.pcoundia.buntu.core.platform.phone.PhoneQrScanResult
+import com.pcoundia.buntu.core.platform.phone.PhoneQrScanner
+import com.pcoundia.buntu.core.platform.tv.QrCodeEncoder
+import com.pcoundia.buntu.core.platform.tv.QrMatrix
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
@@ -26,15 +35,26 @@ data class DevicesUiState(
     val syncLog: List<SyncLogEntry> = emptyList(),
     val errorMessage: String? = null,
     val infoMessage: String? = null,
+    /** Android TV has no camera: it shows the household QR code, the phone scans it. */
+    val isTv: Boolean = false,
+    /** QR code to add a device (`buntu://household?key=…`); `null` when hidden. Holds the key: never logged. */
+    val inviteQr: QrMatrix? = null,
+    val isScanning: Boolean = false,
 )
 
 @HiltViewModel
 class DevicesViewModel @Inject constructor(
     private val householdRepo: HouseholdRepository,
+    private val inviteCodec: HouseholdInviteCodec,
+    private val qrScanner: PhoneQrScanner,
+    deviceCapabilities: DeviceCapabilities,
 ) : ViewModel() {
 
+    private val isTv = deviceCapabilities.isTelevision
     private val _errorMessage = MutableStateFlow<String?>(null)
     private val _infoMessage = MutableStateFlow<String?>(null)
+    private val _inviteQr = MutableStateFlow<QrMatrix?>(null)
+    private val _isScanning = MutableStateFlow(false)
 
     private data class HouseholdSnapshot(
         val isJoined: Boolean,
@@ -58,7 +78,9 @@ class DevicesViewModel @Inject constructor(
         householdState,
         _errorMessage,
         _infoMessage,
-    ) { snap, error, info ->
+        _inviteQr,
+        _isScanning,
+    ) { snap, error, info, inviteQr, scanning ->
         DevicesUiState(
             isJoined = snap.isJoined,
             householdId = snap.householdId,
@@ -70,6 +92,9 @@ class DevicesViewModel @Inject constructor(
             syncLog = snap.log,
             errorMessage = error,
             infoMessage = info,
+            isTv = isTv,
+            inviteQr = inviteQr,
+            isScanning = scanning,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -78,6 +103,7 @@ class DevicesViewModel @Inject constructor(
             deviceId = householdRepo.deviceId,
             deviceName = householdRepo.deviceName,
             deviceType = householdRepo.deviceType,
+            isTv = isTv,
         ),
     )
 
@@ -93,21 +119,66 @@ class DevicesViewModel @Inject constructor(
         }
     }
 
-    fun joinHousehold(keyHex: String) {
+    /** "Rejoindre avec la clé…": the 64-character key, or the `buntu://household?key=…` link, pasted. */
+    fun joinHousehold(keyOrLink: String) {
+        viewModelScope.launch { joinWith(keyOrLink, fromScan = false) }
+    }
+
+    /** "Scanner un QR code": the code shown by another device of the household (Appareils, "Afficher le QR code"). */
+    fun scanToJoin(activityContext: Context) {
+        if (_isScanning.value) return
+        _isScanning.value = true
+        _errorMessage.value = null
         viewModelScope.launch {
             try {
-                _errorMessage.value = null
-                val trimmed = keyHex.trim().lowercase()
-                if (trimmed.length != 64) {
-                    _errorMessage.value = "Clé invalide (64 caractères attendus)"
-                    return@launch
+                when (val result = qrScanner.scanQrCode(activityContext)) {
+                    is PhoneQrScanResult.Scanned -> joinWith(result.rawValue, fromScan = true)
+                    PhoneQrScanResult.Cancelled -> Unit
+                    is PhoneQrScanResult.Unavailable -> _errorMessage.value =
+                        "Scanner indisponible sur cet appareil (${result.message}). Utilisez « Rejoindre avec la clé… »."
                 }
-                householdRepo.joinHousehold(trimmed)
-                _infoMessage.value = "Foyer rejoint avec succès !"
-            } catch (e: Exception) {
-                _errorMessage.value = "Échec pour rejoindre le foyer: ${e.message}"
+            } finally {
+                _isScanning.value = false
             }
         }
+    }
+
+    private suspend fun joinWith(text: String, fromScan: Boolean) {
+        try {
+            _errorMessage.value = null
+            // The format of the code is decided in Rust (`cnd_domain::sync::invite`).
+            val key = inviteCodec.keyFromScanned(text)
+            if (key == null) {
+                _errorMessage.value = if (fromScan) {
+                    "Ce QR code n'est pas celui d'un foyer Buntu. Sur l'autre appareil : Appareils, puis « Afficher le QR code »."
+                } else {
+                    "Clé invalide : collez les 64 caractères affichés sur l'autre appareil."
+                }
+                return
+            }
+            householdRepo.joinHousehold(key)
+            _infoMessage.value = "Foyer rejoint avec succès !"
+        } catch (e: Exception) {
+            _errorMessage.value = "Échec pour rejoindre le foyer: ${e.message}"
+        }
+    }
+
+    /** "Afficher le QR code": shown only on request, never stored. */
+    fun showInviteQr() {
+        viewModelScope.launch {
+            _errorMessage.value = null
+            val key = householdRepo.currentHouseholdKeyHex()
+            val link = key?.let { inviteCodec.inviteLink(it) }
+            if (link == null) {
+                _errorMessage.value = "Impossible de créer le QR code : aucun foyer sur cet appareil."
+                return@launch
+            }
+            _inviteQr.value = withContext(Dispatchers.Default) { QrCodeEncoder.encode(link) }
+        }
+    }
+
+    fun hideInviteQr() {
+        _inviteQr.value = null
     }
 
     fun leaveHousehold() {
@@ -121,13 +192,26 @@ class DevicesViewModel @Inject constructor(
         }
     }
 
-    fun syncNow() {
+    /** "Envoyer mes données": additive, never deletes an account on the other devices. */
+    fun sendNow() {
         viewModelScope.launch {
             try {
                 _errorMessage.value = null
-                householdRepo.syncNow()
+                householdRepo.sendNow()
             } catch (e: Exception) {
-                _errorMessage.value = "Erreur de synchronisation: ${e.message}"
+                _errorMessage.value = "Erreur d'envoi: ${e.message}"
+            }
+        }
+    }
+
+    /** "Recevoir les données": asks the other devices; their accounts are added, never duplicated. */
+    fun receiveNow() {
+        viewModelScope.launch {
+            try {
+                _errorMessage.value = null
+                householdRepo.receiveNow()
+            } catch (e: Exception) {
+                _errorMessage.value = "Erreur de réception: ${e.message}"
             }
         }
     }

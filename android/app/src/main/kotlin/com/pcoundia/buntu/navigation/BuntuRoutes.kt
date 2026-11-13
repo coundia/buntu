@@ -2,6 +2,7 @@ package com.pcoundia.buntu.navigation
 
 import android.net.Uri
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.LiveTv
@@ -9,6 +10,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SettingsInputAntenna
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.ViewTimeline
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -69,6 +71,21 @@ enum class TopLevelDestination(
         showOnPhoneBottomBar = false,
         showOnTvRail = false,
     ),
+    // Accounts (Xtream, M3U) and the household, as in the iPhone and Mac sidebar (Sources, Appareils).
+    SOURCES(
+        route = BuntuRoutes.SOURCES,
+        label = "Sources",
+        icon = Icons.Default.SettingsInputAntenna,
+        showOnPhoneBottomBar = false,
+        showOnTvRail = true,
+    ),
+    DEVICES(
+        route = BuntuRoutes.DEVICES,
+        label = "Appareils",
+        icon = Icons.Default.Devices,
+        showOnPhoneBottomBar = false,
+        showOnTvRail = true,
+    ),
     PROFILES(
         route = BuntuRoutes.PROFILES,
         label = "Profils",
@@ -83,6 +100,10 @@ enum class TopLevelDestination(
         showOnPhoneBottomBar = true,
         showOnTvRail = true,
     ),
+    ;
+
+    /** `sources?pairLink=…` is still the Sources tab. */
+    fun matches(currentRoute: String): Boolean = currentRoute.substringBefore('?') == route
 }
 
 object BuntuRoutes {

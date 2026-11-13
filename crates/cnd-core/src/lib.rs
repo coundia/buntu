@@ -1782,6 +1782,19 @@ pub struct HouseholdSealedEnvelope {
     pub ciphertext_hex: String,
 }
 
+/// The text of the QR code that adds a device to the household (`buntu://household?key=…`, PRD-41),
+/// or `None` when `key_hex` is not a 64-character hexadecimal key. Never log the result: it holds the key.
+#[uniffi::export]
+pub fn sync_household_invite_link(key_hex: String) -> Option<String> {
+    cnd_domain::sync::household_invite_link(&key_hex)
+}
+
+/// The household key read from a scanned QR code (link or bare key), or `None` for any other code.
+#[uniffi::export]
+pub fn sync_household_key_from_scanned(text: String) -> Option<String> {
+    cnd_domain::sync::household_key_from_scanned(&text)
+}
+
 #[uniffi::export]
 pub fn sync_create_household(entropy: Vec<u8>) -> Result<HouseholdCredentials, CndError> {
     if entropy.len() < 32 {

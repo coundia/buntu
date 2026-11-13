@@ -449,7 +449,8 @@ mod tests {
 
     /// A channel on a new source with the given connection limit; returns (source id, item id).
     fn channel(db: &DatabaseManager, name: &str, max_connections: Option<i64>) -> (i64, i64) {
-        let source = db.add_source(name, "xtream", None, Some("http://srv"), Some("u"), None).expect("source");
+        // One account per channel: the same server and user would be the same account.
+        let source = db.add_source(name, "xtream", None, Some("http://srv"), Some(name), None).expect("source");
         let item = db
             .with_conn(|conn| {
                 conn.execute(

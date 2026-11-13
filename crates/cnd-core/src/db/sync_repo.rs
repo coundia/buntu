@@ -20,6 +20,39 @@ pub const TOMBSTONE_PROFILE: &str = "profile";
 /// (no profile uuid), so what was synced before profiles existed stays valid.
 pub const MAIN_PROFILE_UUID: &str = "00000000-0000-0000-0000-000000000001";
 
+/// Local source of the same IPTV account (`cnd_domain::identity::account_identity_key`), whatever its
+/// uuid: `(id, updated_at)` of the oldest one.
+pub(crate) fn same_account_source(
+    conn: &rusqlite::Connection,
+    source_type: &str,
+    server: Option<&str>,
+    url: Option<&str>,
+    username: Option<&str>,
+) -> Result<Option<(i64, i64)>, rusqlite::Error> {
+    let wanted = cnd_domain::identity::account_identity_key(source_type, server, url, username);
+    let mut stmt = conn.prepare(
+        "SELECT id, updated_at, source_type, server, url, username FROM iptv_sources ORDER BY id ASC",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, Option<i64>>(1)?.unwrap_or(0),
+            r.get::<_, String>(2)?,
+            r.get::<_, Option<String>>(3)?,
+            r.get::<_, Option<String>>(4)?,
+            r.get::<_, Option<String>>(5)?,
+        ))
+    })?;
+    for row in rows {
+        let (id, updated_at, st, srv, u, user) = row?;
+        let key = cnd_domain::identity::account_identity_key(&st, srv.as_deref(), u.as_deref(), user.as_deref());
+        if key == wanted {
+            return Ok(Some((id, updated_at)));
+        }
+    }
+    Ok(None)
+}
+
 /// Key of a favorite in tombstones and record names: the bare hash for the main profile, `uuid|hash` for others.
 pub fn favorite_key(profile_uuid: Option<&str>, stable_hash: &str) -> String {
     match profile_uuid {
@@ -220,7 +253,11 @@ impl DatabaseManager {
                     deleted_at: r.get(2)?,
                 })
             })? {
-                tombstones.push(row?);
+                let tomb = row?;
+                // Account deletions stay on their device (`cnd_domain::sync::deletion_propagates`).
+                if cnd_domain::sync::deletion_propagates(&tomb.kind) {
+                    tombstones.push(tomb);
+                }
             }
 
             Ok(SyncDelta {
@@ -297,6 +334,10 @@ impl DatabaseManager {
                         }
                         upsert_tombstone(&tx, TOMBSTONE_PROFILE, &tomb.key, tomb.deleted_at)?;
                     }
+                    // Sent by an older app: an account is never deleted by another device.
+                    TOMBSTONE_SOURCE if !cnd_domain::sync::deletion_propagates(TOMBSTONE_SOURCE) => {
+                        summary.skipped += 1;
+                    }
                     TOMBSTONE_SOURCE => {
                         let local: Option<i64> = tx
                             .query_row(
@@ -369,7 +410,10 @@ impl DatabaseManager {
                         |r| r.get(0),
                     )
                     .optional()?;
-                if matches!(tomb, Some(deleted) if deleted >= src.updated_at) {
+                // A local deletion no longer blocks an account sent by another device: "Recevoir" brings it back.
+                if cnd_domain::sync::deletion_propagates(TOMBSTONE_SOURCE)
+                    && matches!(tomb, Some(deleted) if deleted >= src.updated_at)
+                {
                     summary.skipped += 1;
                     continue;
                 }
@@ -380,6 +424,29 @@ impl DatabaseManager {
                         |r| r.get(0),
                     )
                     .optional()?;
+                // Same account under another uuid (added on each device, or re-created by the TV): one row.
+                if local.is_none() {
+                    if let Some((same_id, same_ts)) = same_account_source(&tx, &src.source_type, src.server.as_deref(), src.url.as_deref(), src.username.as_deref())? {
+                        if src.updated_at > same_ts {
+                            // This device keeps its own uuid and its password reference (the secret lives here).
+                            tx.execute(
+                                "UPDATE iptv_sources
+                                 SET name = ?2, url = COALESCE(?3, url), server = COALESCE(?4, server),
+                                     username = COALESCE(?5, username), password_ref = COALESCE(password_ref, ?6),
+                                     epg_url = COALESCE(?7, epg_url), updated_at = ?8
+                                 WHERE id = ?1",
+                                params![
+                                    same_id, src.name, src.url, src.server, src.username,
+                                    src.password_ref, src.epg_url, src.updated_at
+                                ],
+                            )?;
+                            summary.sources_applied += 1;
+                        } else {
+                            summary.skipped += 1;
+                        }
+                        continue;
+                    }
+                }
                 match local {
                     None => {
                         tx.execute(
@@ -541,7 +608,8 @@ mod tests {
             uuid: uuid.to_string(),
             name: name.to_string(),
             source_type: "m3u".to_string(),
-            url: Some("http://example.com/list.m3u".to_string()),
+            // One playlist per test account: the same address is the same account.
+            url: Some(format!("http://example.com/{uuid}.m3u")),
             server: None,
             username: None,
             password_ref: None,
@@ -580,6 +648,82 @@ mod tests {
             .into_iter()
             .find(|s| s.uuid == uuid)
             .map(|s| s.name)
+    }
+
+    fn xtream(uuid: &str, server: &str, user: &str, updated_at: i64) -> SyncSource {
+        SyncSource {
+            uuid: uuid.to_string(),
+            name: "Premium".to_string(),
+            source_type: "xtream".to_string(),
+            url: None,
+            server: Some(server.to_string()),
+            username: Some(user.to_string()),
+            password_ref: Some(format!("cnd.xtream.{uuid}")),
+            epg_url: None,
+            updated_at,
+        }
+    }
+
+    fn delta_of(sources: Vec<SyncSource>) -> SyncDelta {
+        SyncDelta { profiles: vec![], sources, favorites: vec![], watch_history: vec![], tombstones: vec![] }
+    }
+
+    #[test]
+    fn the_same_account_from_another_device_is_not_duplicated() {
+        let tv = db();
+        let local = tv
+            .add_source("Mon compte", "xtream", None, Some("http://srv.example:8080"), Some("bob"), Some("cnd.xtream.local"))
+            .unwrap();
+
+        // Added on the iPhone by itself: another uuid, the server written differently.
+        let summary = tv
+            .import_sync_delta(&delta_of(vec![xtream("src_iphone", "http://SRV.example:8080/", "Bob ", 1)]))
+            .unwrap();
+        assert!(summary.inserted_source_ids.is_empty());
+        let sources = tv.list_sources().unwrap();
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].id, local);
+        // This device keeps its own password reference.
+        assert_eq!(sources[0].password_ref.as_deref(), Some("cnd.xtream.local"));
+
+        // Importing it again, or a newer version of it, still gives one account.
+        tv.import_sync_delta(&delta_of(vec![xtream("src_iphone", "http://srv.example:8080", "bob", i64::MAX / 2)]))
+            .unwrap();
+        assert_eq!(tv.list_sources().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_delta_carrying_one_account_twice_adds_it_once() {
+        let mac = db();
+        let summary = mac
+            .import_sync_delta(&delta_of(vec![
+                xtream("src_a", "http://srv.example:8080", "bob", 10),
+                xtream("src_b", "http://srv.example:8080/", "BOB", 11),
+                xtream("src_c", "http://srv.example:8080", "alice", 12),
+            ]))
+            .unwrap();
+        assert_eq!(summary.inserted_source_ids.len(), 2);
+        assert_eq!(mac.list_sources().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn adding_an_existing_account_returns_it() {
+        let phone = db();
+        let first = phone
+            .add_source("Premium", "xtream", None, Some("http://srv.example:8080"), Some("bob"), Some("ref.1"))
+            .unwrap();
+        let again = phone
+            .add_source("Premium bis", "m3u", Some("http://srv.example:8080/get.php?username=bob&password=x&type=m3u_plus"), None, None, Some("ref.2"))
+            .unwrap();
+        assert_eq!(first, again);
+        let sources = phone.list_sources().unwrap();
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].password_ref.as_deref(), Some("ref.2"));
+
+        let other = phone
+            .add_source("Alice", "xtream", None, Some("http://srv.example:8080"), Some("alice"), None)
+            .unwrap();
+        assert_ne!(first, other);
     }
 
     #[test]
@@ -721,27 +865,35 @@ mod tests {
     }
 
     #[test]
-    fn deleting_a_source_propagates_with_its_catalog() {
+    fn deleting_an_account_stays_on_its_device() {
         let a = db();
         let b = db();
-        let id = a.add_source("Doomed", "m3u", Some("http://x/l.m3u"), None, None, None).unwrap();
+        let id = a.add_source("Kept", "m3u", Some("http://x/l.m3u"), None, None, None).unwrap();
         b.import_sync_delta(&a.export_sync_delta(0).unwrap()).unwrap();
         assert_eq!(b.list_sources().unwrap().len(), 1);
 
+        // Deleted on A: nothing about it leaves A, B keeps its account.
         a.delete_source(id).unwrap();
         let delta = a.export_sync_delta(0).unwrap();
         assert!(delta.sources.is_empty());
-        assert_eq!(delta.tombstones.len(), 1);
-        assert_eq!(delta.tombstones[0].kind, TOMBSTONE_SOURCE);
+        assert!(delta.tombstones.iter().all(|t| t.kind != TOMBSTONE_SOURCE));
+        b.import_sync_delta(&delta).unwrap();
+        assert_eq!(b.list_sources().unwrap().len(), 1);
 
-        let summary = b.import_sync_delta(&delta).unwrap();
-        assert_eq!(summary.deletions_applied, 1);
-        assert!(b.list_sources().unwrap().is_empty());
+        // A deletion sent by an older app is ignored too.
+        let uuid = b.list_sources().unwrap()[0].uuid.clone();
+        let old_app = SyncDelta {
+            tombstones: vec![SyncTombstone { kind: TOMBSTONE_SOURCE.to_string(), key: uuid, deleted_at: i64::MAX / 2 }],
+            ..Default::default()
+        };
+        let summary = b.import_sync_delta(&old_app).unwrap();
+        assert_eq!(summary.deletions_applied, 0);
+        assert_eq!(b.list_sources().unwrap().len(), 1);
 
-        // The deleted source cannot come back from a stale copy.
-        let stale = SyncDelta { sources: vec![src(&delta.tombstones[0].key, "Doomed", 1)], ..Default::default() };
-        assert_eq!(b.import_sync_delta(&stale).unwrap().sources_applied, 0);
-        assert!(b.list_sources().unwrap().is_empty());
+        // "Recevoir" on A brings the account back, once.
+        a.import_sync_delta(&b.export_sync_delta(0).unwrap()).unwrap();
+        a.import_sync_delta(&b.export_sync_delta(0).unwrap()).unwrap();
+        assert_eq!(a.list_sources().unwrap().len(), 1);
     }
 
     #[test]

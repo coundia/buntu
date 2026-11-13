@@ -11,7 +11,7 @@
  * yet: keep both in line with the Rust tests.
  */
 
-import { Database, ItemRecord } from '../storage/Database';
+import { Database, ItemRecord, SourceRecord } from '../storage/Database';
 import { HouseholdStore } from '../sync/HouseholdStore';
 import { LocalSyncService, RemotePlayEvent } from '../sync/LocalSyncService';
 import { AVPlayerService } from '../player/AVPlayerService';
@@ -170,7 +170,14 @@ export class RemotePlaybackCoordinator {
     }
 
     const sourceKey: string | null = msg.source_key || null;
-    const item = await this.resolveItem(msg.content_key, sourceKey, msg.provider_ref, msg.item_kind);
+    const item = await this.resolveItem(
+      msg.content_key,
+      sourceKey,
+      msg.provider_ref,
+      msg.item_kind,
+      msg.title,
+      msg.container_ext
+    );
     if (!item) {
       await this.refuse(requestId, 'unknown_content');
       return;
@@ -298,27 +305,53 @@ export class RemotePlaybackCoordinator {
 
   /**
    * Finds the requested item on this TV. The `content_key` of an Apple or Android device is ITS item hash
-   * (`blake3(<account uuid>:xtream_live:<id>)`), never the TV's (`live_<id>` / `vod_<id>`): the TV finds it
-   * by the provider's stream id (`provider_ref`) in the account named by `source_key`, like
-   * `cnd-core::item_by_content_key` does. Index lookups only: the full scan of 65 000 items took longer
-   * than the 5 s the origin waits.
+   * (`blake3(<account uuid>:xtream_live:<id>)`), never the TV's: the TV finds it by the provider's stream
+   * id (`provider_ref`) in the account named by `source_key`, like `cnd-core::item_by_content_key` does.
+   *
+   * The TV stores an Xtream item as `<source id>_live_<id>` / `<source id>_vod_<id>`
+   * (`Database.insertItemsBatch`), so the lookup is made per account, by index. When the catalog does not
+   * hold it (episodes are never stored, playlist read through `get.php`, catalog still downloading), the
+   * Xtream address is rebuilt from the account (PRD-42 § 6.2, rule in Rust). The full scan of 65 000 items
+   * took longer than the 5 s the origin waits: it is kept for M3U accounts only, limited to that account.
    */
   private async resolveItem(
     contentKey: string,
     sourceKey: string | null,
     providerRef?: string | null,
-    itemKind?: string | null
+    itemKind?: string | null,
+    title?: string | null,
+    containerExt?: string | null
   ): Promise<ItemRecord | null> {
     if (!contentKey && !providerRef) return null;
     let item = contentKey ? await this.db.getItemByStableHashIndexed(contentKey) : null;
 
     const ref = typeof providerRef === 'string' ? providerRef.trim() : '';
     if (!item && ref && /^[A-Za-z0-9_-]{1,40}$/.test(ref)) {
-      const kind = String(itemKind || '').toLowerCase();
+      const kind = RemotePlaybackCoordinator.normalizeKind(itemKind);
       const prefixes = kind === 'live' ? ['live_'] : kind === 'movie' ? ['vod_'] : kind === 'episode' ? [] : ['live_', 'vod_'];
-      for (const prefix of prefixes) {
-        item = await this.db.getItemByStableHashIndexed(prefix + ref);
+      const accounts = await this.accountsFor(sourceKey);
+
+      for (const account of accounts) {
+        for (const prefix of prefixes) {
+          item = await this.db.getItemByStableHashIndexed(`${account.id}_${prefix}${ref}`);
+          if (item) break;
+        }
         if (item) break;
+      }
+      // Catalogs saved before the `<source id>_` prefix.
+      if (!item) {
+        for (const prefix of prefixes) {
+          item = await this.db.getItemByStableHashIndexed(prefix + ref);
+          if (item) break;
+        }
+      }
+      if (!item) item = await this.rebuildXtreamItem(accounts, !!sourceKey, kind, ref, title, containerExt);
+      if (!item) {
+        for (const account of accounts) {
+          if (account.source_type !== 'm3u') continue;
+          item = await this.db.findItemByStreamRef(account.id, ref, kind === 'unknown' ? null : kind);
+          if (item) break;
+        }
       }
     }
     // Old senders without `provider_ref` (legacy `live_<id>` suffix keys): the slow scan, as before.
@@ -333,8 +366,90 @@ export class RemotePlaybackCoordinator {
     return item;
   }
 
+  private static normalizeKind(itemKind?: string | null): 'live' | 'movie' | 'episode' | 'unknown' {
+    const kind = String(itemKind || '').trim().toLowerCase();
+    if (kind === 'live') return 'live';
+    if (kind === 'movie' || kind === 'vod') return 'movie';
+    if (kind === 'episode') return 'episode';
+    return 'unknown';
+  }
+
+  /** Accounts of this TV named by `source_key`; every account when the origin did not name one. */
+  private async accountsFor(sourceKey: string | null): Promise<SourceRecord[]> {
+    let sources: SourceRecord[] = [];
+    try {
+      sources = await this.db.getSources();
+    } catch {
+      return [];
+    }
+    const wanted = (sourceKey || '').trim().toLowerCase();
+    if (!wanted) return sources;
+    const matching: SourceRecord[] = [];
+    for (const source of sources) {
+      const key = await this.sourceKeyOfSource(source);
+      if (key && key.toLowerCase() === wanted) matching.push(source);
+    }
+    return matching;
+  }
+
+  /**
+   * The item is not in this TV's catalog: an Xtream account is enough to play it, its address follows a
+   * fixed pattern (`cnd-domain::remote::resolve::reconstruct_xtream_url`). It needs the account named by
+   * the origin, or a single Xtream account here: never a guess among several (the same id exists in each).
+   */
+  private async rebuildXtreamItem(
+    accounts: SourceRecord[],
+    accountNamed: boolean,
+    kind: 'live' | 'movie' | 'episode' | 'unknown',
+    ref: string,
+    title?: string | null,
+    containerExt?: string | null
+  ): Promise<ItemRecord | null> {
+    if (kind === 'unknown') return null;
+    const xtream = accounts.filter((a) => a.source_type === 'xtream' && a.server && a.username && a.password);
+    // Several records of the SAME named account (added twice) are equivalent; unnamed, it must be unique.
+    if (xtream.length === 0 || (!accountNamed && xtream.length > 1)) return null;
+    const account = xtream[0];
+    const ext = typeof containerExt === 'string' && /^[A-Za-z0-9]{1,8}$/.test(containerExt.trim()) ? containerExt.trim() : null;
+    let url = '';
+    try {
+      url = await this.bridge.post<string>('REMOTE_RECONSTRUCT_XTREAM_URL', {
+        server: account.server,
+        username: account.username,
+        password: account.password,
+        kind,
+        providerRef: ref,
+        containerExt: ext,
+      });
+    } catch {
+      return null;
+    }
+    if (typeof url !== 'string' || !url) return null;
+    const name = (typeof title === 'string' && title.trim()) || (kind === 'live' ? 'Chaîne' : 'Vidéo');
+    const extOfUrl = url.slice(url.lastIndexOf('.') + 1);
+    // Not a database row: a negative id that never matches one, the same for the same stream (zapping and
+    // "already playing" compare ids), and never written to the recents (`CndEngine.recordRecent`).
+    const numeric = /^[0-9]{1,15}$/.test(ref) ? Number(ref) : 0;
+    return {
+      id: numeric > 0 ? -numeric : -1 - Math.floor(Math.random() * 1e9),
+      source_id: account.id,
+      stable_hash: `${account.id}_${kind === 'live' ? 'live' : kind === 'movie' ? 'vod' : 'episode'}_${ref}`,
+      kind,
+      name,
+      name_clean: name,
+      stream_url: url,
+      container_ext: extOfUrl,
+      is_favorite: 0,
+      playback_position_ms: 0,
+      duration_ms: 0,
+    };
+  }
+
   private async isAllowedForProfile(item: ItemRecord): Promise<boolean> {
-    return CndEngine.getInstance().isItemAllowedForActiveProfile(item);
+    const engine = CndEngine.getInstance();
+    // A rebuilt item (negative id) has no category to check: never on a Kids profile.
+    if (item.id < 0 && engine.getActiveProfile().isKids) return false;
+    return engine.isItemAllowedForActiveProfile(item);
   }
 
   private async sourceKeyOf(item: ItemRecord): Promise<string | null> {
@@ -343,7 +458,17 @@ export class RemotePlaybackCoordinator {
     try {
       const sources = await this.db.getSources();
       const source = sources.find((s) => s.id === item.source_id);
-      if (!source) return null;
+      return source ? await this.sourceKeyOfSource(source) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** `source_key` of an account (PRD-41 identity, computed in Rust), cached by account id. */
+  private async sourceKeyOfSource(source: SourceRecord): Promise<string | null> {
+    const cached = this.sourceKeyCache.get(source.id);
+    if (cached) return cached;
+    try {
       const isXtream = source.source_type === 'xtream';
       const key = await this.bridge.post<string>('COMPUTE_SOURCE_KEY', {
         sourceType: source.source_type,
@@ -351,7 +476,7 @@ export class RemotePlaybackCoordinator {
         username: source.username || '',
       });
       if (typeof key === 'string' && key) {
-        this.sourceKeyCache.set(item.source_id, key);
+        this.sourceKeyCache.set(source.id, key);
         return key;
       }
     } catch {

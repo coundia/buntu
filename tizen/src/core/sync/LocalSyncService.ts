@@ -15,6 +15,7 @@ import { HouseholdStore } from './HouseholdStore';
 import { AVPlayerService } from '../player/AVPlayerService';
 import { CndEngine } from '../engine/CndEngine';
 import { hostOf } from '../pairing/ShareImport';
+import { findSameAccount } from './AccountIdentity';
 
 export interface RemotePlayEvent {
   content_key: string;
@@ -657,10 +658,10 @@ export class LocalSyncService {
           `identifiant: ${username ? 'fourni' : 'aucun'}, mot de passe: ${password ? 'fourni' : 'absent'}).`
         );
 
-        const match = existing.find(
-          (e) =>
-            (src.uuid && e.uuid === src.uuid) ||
-            (e.source_type === srcType && (e.server === server || e.url === url) && (!username || e.username === username))
+        // The same account (same uuid, or same server + user computed in Rust), never a second copy.
+        const match = await findSameAccount(
+          { uuid: src.uuid, source_type: srcType, server: server || undefined, url: url || undefined, username },
+          existing
         );
 
         if (match) {
@@ -690,6 +691,8 @@ export class LocalSyncService {
             last_sync_at: Date.now(),
           });
           appliedSources++;
+          // A delta may carry the same account twice (a device that still has a duplicate).
+          existing.push(...(await this.db.getSources()).filter((s) => !existing.some((e) => e.id === s.id)));
           this.log(`Compte « ${srcName} » enregistré dans les sources de la TV.`);
           this.notifyStatus();
 

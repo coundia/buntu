@@ -777,14 +777,34 @@ class LocalSyncService @Inject constructor(
         sealMessage(announceJson())?.let { samsung.sendEnvelope(it) }
     }
 
-    override suspend fun syncNow() = sendDelta(full = true)
+    /** "Envoyer mes données": everything this device has, to every connected device; nothing is asked back. */
+    override suspend fun sendNow() = sendDelta(full = true, askBack = false)
+
+    /** "Recevoir les données": a `sync_request` to every connected device; each one answers with its data. */
+    override suspend fun receiveNow() {
+        if (!store.isJoined.value) return
+        val peers = reachableConnections()
+        val hasSamsung = samsung.isConnected
+        if (peers.isEmpty() && !hasSamsung) {
+            _syncStatus.value = "Aucun autre appareil joignable : ouvrez Buntu sur l'autre appareil, sur le même Wi‑Fi."
+            log("Recevoir : aucun autre appareil joignable (même Wi‑Fi ?).", isWarning = true)
+            return
+        }
+        sealMessage(JSONObject().put("type", "sync_request").toString())?.let { sealed ->
+            peers.forEach { sendEnvelope(sealed, it) }
+            if (hasSamsung) samsung.sendEnvelope(sealed)
+        }
+        val totalTargets = peers.size + (if (hasSamsung) 1 else 0)
+        log("Recevoir : données demandées à $totalTargets connexion(s).")
+        _syncStatus.value = "Données demandées à $totalTargets connexion(s)…"
+    }
 
     /**
-     * `full` is the "Synchroniser maintenant" button: everything, plus `sync_request` so the others send
-     * theirs. The 60 s round only sends what changed (a `sync_request` every minute would make every device
+     * `full` sends everything ("Envoyer mes données"); `askBack` also asks the others for theirs.
+     * The 60 s round only sends what changed (a `sync_request` every minute would make every device
      * resend all its data, passwords included, every minute).
      */
-    private suspend fun sendDelta(full: Boolean) {
+    private suspend fun sendDelta(full: Boolean, askBack: Boolean = false) {
         if (!store.isJoined.value) return
         val peers = reachableConnections()
         val hasSamsung = samsung.isConnected
@@ -805,13 +825,15 @@ class LocalSyncService @Inject constructor(
             }
         }
         if (full) {
-            sealMessage(JSONObject().put("type", "sync_request").toString())?.let { sealed ->
-                peers.forEach { sendEnvelope(sealed, it) }
-                if (hasSamsung) samsung.sendEnvelope(sealed)
+            if (askBack) {
+                sealMessage(JSONObject().put("type", "sync_request").toString())?.let { sealed ->
+                    peers.forEach { sendEnvelope(sealed, it) }
+                    if (hasSamsung) samsung.sendEnvelope(sealed)
+                }
             }
             val totalTargets = peers.size + (if (hasSamsung) 1 else 0)
-            log("Synchroniser : données envoyées et demandées sur $totalTargets connexion(s).")
-            _syncStatus.value = "Synchronisation demandée à $totalTargets connexion(s)…"
+            log("Envoyer : toutes les données envoyées à $totalTargets connexion(s).")
+            _syncStatus.value = "Données envoyées à $totalTargets connexion(s)."
         } else {
             lastExportTimestamp = nowTs
         }
@@ -984,6 +1006,20 @@ class LocalSyncService @Inject constructor(
         val targetName = peerName(targetPeerId)
         _activeHandoffStatus.value = "Connexion à $targetName…"
 
+        // The target does not know this device's item hash (it depends on the local account id): it finds
+        // the item by the provider's stream id in the account named by its key (PRD-42 § 6). Every caller
+        // (player, details, catalog menus) gets them here, read from the local item.
+        val local = if (providerRef == null || sourceKey == null) {
+            runCatching {
+                engineBridge.resolveItemByContentKey(contentKey, null, null, null)?.let { engineBridge.remoteItem(it) }
+            }.getOrNull()
+        } else {
+            null
+        }
+        val wireSourceKey = sourceKey ?: local?.sourceKey
+        val wireProviderRef = providerRef ?: local?.providerRef
+        val containerExt = local?.containerExt
+
         val requestId = UUID.randomUUID().toString()
         val readyDeferred = CompletableDeferred<Unit>()
         pendingHandoffs[requestId] = PendingHandoff(requestId, targetPeerId, readyDeferred)
@@ -993,9 +1029,10 @@ class LocalSyncService @Inject constructor(
             put("target_device_id", targetPeerId)
             put("request_id", requestId)
             put("content_key", contentKey)
-            if (sourceKey != null) put("source_key", sourceKey)
+            if (wireSourceKey != null) put("source_key", wireSourceKey)
             put("item_kind", itemKind)
-            if (providerRef != null) put("provider_ref", providerRef)
+            if (wireProviderRef != null) put("provider_ref", wireProviderRef)
+            if (containerExt != null) put("container_ext", containerExt)
             if (title != null) put("title", title)
             put("position_ms", positionMs)
             put("replace", true)
@@ -1059,7 +1096,7 @@ class LocalSyncService @Inject constructor(
             contentKey = item.contentKey,
             sourceKey = item.sourceKey,
             itemKind = item.itemKind,
-            providerRef = null,
+            providerRef = item.providerRef,
             title = item.title,
             positionMs = item.resumePositionMs,
         )

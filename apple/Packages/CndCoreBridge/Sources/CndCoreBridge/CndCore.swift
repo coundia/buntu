@@ -14306,6 +14306,27 @@ public func syncDeriveHouseholdId(householdKeyHex: String)throws  -> String  {
     )
 })
 }
+/**
+ * The text of the QR code that adds a device to the household (`buntu://household?key=…`, PRD-41),
+ * or `None` when `key_hex` is not a 64-character hexadecimal key. Never log the result: it holds the key.
+ */
+public func syncHouseholdInviteLink(keyHex: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_cnd_core_fn_func_sync_household_invite_link(
+        FfiConverterString.lower(keyHex),$0
+    )
+})
+}
+/**
+ * The household key read from a scanned QR code (link or bare key), or `None` for any other code.
+ */
+public func syncHouseholdKeyFromScanned(text: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_cnd_core_fn_func_sync_household_key_from_scanned(
+        FfiConverterString.lower(text),$0
+    )
+})
+}
 public func syncOpenEnvelope(householdKeyHex: String, envelope: HouseholdSealedEnvelope, lastSeenSequence: UInt64)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_func_sync_open_envelope(
@@ -14373,6 +14394,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_func_sync_derive_household_id() != 40074) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_sync_household_invite_link() != 35548) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_sync_household_key_from_scanned() != 62061) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_func_sync_open_envelope() != 21125) {

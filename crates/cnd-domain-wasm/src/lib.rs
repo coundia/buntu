@@ -359,6 +359,13 @@ pub fn wasm_ai_resolve_local(
 // PRD 41 — Continuité Multi-Appareils & Identité Commune
 // -----------------------------------------------------------------------------
 
+/// Identity of an IPTV account (`cnd_domain::identity::account_identity_key`): the same account added on
+/// several devices is recognised and never stored twice. Empty strings mean "absent".
+#[wasm_bindgen]
+pub fn wasm_account_identity_key(source_type: &str, server: &str, url: &str, username: &str) -> String {
+    cnd_domain::identity::account_identity_key(source_type, Some(server), Some(url), Some(username))
+}
+
 #[wasm_bindgen]
 pub fn wasm_source_key(source_type: &str, server_or_url: &str, username: &str) -> String {
     let user_opt = if username.trim().is_empty() {

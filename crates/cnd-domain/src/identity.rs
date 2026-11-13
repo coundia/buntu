@@ -96,6 +96,73 @@ pub fn compute_source_key(source_type: &str, server_or_url: &str, username: Opti
     }
 }
 
+/// Identity of an IPTV **account**, to recognise the same account wherever it was added (another device
+/// of the household, the Samsung TV, a second manual add): the `uuid` of a source is random per device.
+///
+/// - Xtream: server + username (same as [`source_key_xtream`]).
+/// - M3U whose address carries `username` and `password` (`…/get.php?username=…&password=…`): that is the
+///   Xtream account it reads, so it gets the Xtream identity of `<scheme>://<host>[:port]` + username.
+///   [`source_key_m3u`] blanks the credentials, so two accounts of one panel would share its key.
+/// - Any other M3U: [`source_key_m3u`] of its address.
+///
+/// Empty strings count as absent. The password never takes part: changing it keeps the same account.
+pub fn account_identity_key(
+    source_type: &str,
+    server: Option<&str>,
+    url: Option<&str>,
+    username: Option<&str>,
+) -> String {
+    let server = present(server);
+    let url = present(url);
+    let username = present(username);
+
+    if source_type.trim().eq_ignore_ascii_case("xtream") {
+        if let Some(server) = server {
+            if let Some(user) = username {
+                return source_key_xtream(server, user);
+            }
+        }
+        if let Some((origin, user)) = url.and_then(xtream_account_in_url) {
+            return source_key_xtream(&origin, username.unwrap_or(&user));
+        }
+        return source_key_xtream(server.or(url).unwrap_or(""), username.unwrap_or(""));
+    }
+
+    let locator = url.or(server).unwrap_or("");
+    match xtream_account_in_url(locator) {
+        Some((origin, user)) => source_key_xtream(&origin, &user),
+        None => source_key_m3u(locator),
+    }
+}
+
+fn present(v: Option<&str>) -> Option<&str> {
+    v.map(str::trim).filter(|v| !v.is_empty())
+}
+
+/// `http://host:8080/get.php?username=bob&password=x&type=m3u` → (`http://host:8080`, `bob`).
+fn xtream_account_in_url(raw: &str) -> Option<(String, String)> {
+    let parsed = Url::parse(raw.trim()).ok()?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return None;
+    }
+    let mut user = None;
+    let mut has_password = false;
+    for (k, v) in parsed.query_pairs() {
+        match k.trim().to_ascii_lowercase().as_str() {
+            "username" if !v.trim().is_empty() => user = Some(v.trim().to_string()),
+            "password" if !v.trim().is_empty() => has_password = true,
+            _ => {}
+        }
+    }
+    let user = user.filter(|_| has_password)?;
+    let host = parsed.host_str()?;
+    let origin = match parsed.port() {
+        Some(port) => format!("{}://{host}:{port}", parsed.scheme()),
+        None => format!("{}://{host}", parsed.scheme()),
+    };
+    Some((origin, user))
+}
+
 /// Computes the deterministic 256-bit content key for a channel, movie, series, or episode.
 pub fn compute_content_key(source_key: &str, kind: &str, provider_id: &str) -> String {
     let norm_kind = kind.trim().to_ascii_lowercase();
@@ -134,6 +201,55 @@ mod tests {
         // Sensitive credentials stripped -> canonical endpoint matches
         assert_eq!(k1, k2);
         assert!(is_content_key(&k1));
+    }
+
+    #[test]
+    fn account_identity_ignores_case_slash_spaces_and_password() {
+        let a = account_identity_key("xtream", Some("http://Srv.Example:8080/"), None, Some(" Bob"));
+        let b = account_identity_key("XTREAM", Some("http://srv.example:8080"), Some(""), Some("bob"));
+        assert_eq!(a, b);
+        assert_ne!(a, account_identity_key("xtream", Some("http://srv.example:8080"), None, Some("alice")));
+        assert_ne!(a, account_identity_key("xtream", Some("http://srv.example:8081"), None, Some("bob")));
+    }
+
+    #[test]
+    fn account_identity_of_a_get_php_playlist_is_its_xtream_account() {
+        let xtream = account_identity_key("xtream", Some("http://srv.example:8080"), None, Some("bob"));
+        let playlist = account_identity_key(
+            "m3u",
+            None,
+            Some("http://srv.example:8080/get.php?username=bob&password=s3cret&type=m3u_plus&output=ts"),
+            None,
+        );
+        assert_eq!(xtream, playlist);
+        // Two accounts of the same panel stay two accounts (`source_key_m3u` would merge them).
+        let other = account_identity_key(
+            "m3u",
+            None,
+            Some("http://srv.example:8080/get.php?username=alice&password=x&type=m3u_plus"),
+            None,
+        );
+        assert_ne!(playlist, other);
+    }
+
+    #[test]
+    fn account_identity_of_an_xtream_source_saved_with_its_playlist_address() {
+        let by_server = account_identity_key("xtream", Some("http://srv.example:8080"), None, Some("bob"));
+        let by_url = account_identity_key(
+            "xtream",
+            None,
+            Some("http://srv.example:8080/get.php?username=bob&password=x&type=m3u_plus"),
+            None,
+        );
+        assert_eq!(by_server, by_url);
+    }
+
+    #[test]
+    fn account_identity_of_a_plain_playlist_is_its_address() {
+        let a = account_identity_key("m3u", None, Some("https://lists.example/My.m3u"), None);
+        let b = account_identity_key("m3u", Some(""), Some("https://lists.example/my.m3u/"), None);
+        assert_eq!(a, b);
+        assert_ne!(a, account_identity_key("m3u", None, Some("https://lists.example/other.m3u"), None));
     }
 
     #[test]
