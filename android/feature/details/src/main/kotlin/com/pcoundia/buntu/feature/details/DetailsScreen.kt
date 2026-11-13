@@ -5,15 +5,18 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -297,6 +300,7 @@ fun DetailsRoute(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DetailsHeroSection(
     detail: MediaDetail,
@@ -312,6 +316,7 @@ private fun DetailsHeroSection(
     onBack: () -> Unit,
 ) {
     val metrics = LocalBuntuMetrics.current
+    var plotExpanded by remember(detail.id) { mutableStateOf(false) }
     val primaryLabel = when {
         detail.isSeries && primaryEpisode != null -> {
             if (primaryEpisode.watchPositionMs >= 30_000L) {
@@ -324,100 +329,182 @@ private fun DetailsHeroSection(
         else -> "▶ Regarder maintenant"
     }
 
+    val metaParts = buildList {
+        detail.year?.let { add(it.toString()) }
+        detail.runtimeMinutes?.let { add("$it min") }
+        detail.rating?.takeIf { it.isNotBlank() }?.let { add("★ $it") }
+        detail.containerExtension?.uppercase()?.let { add(it) }
+        detail.genre?.takeIf { it.isNotBlank() }?.let { add(it) }
+    }
+
+    val actionButtons = @Composable {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
+            verticalArrangement = Arrangement.spacedBy(metrics.spacingS),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            BuntuPrimaryActionButton(
+                label = primaryLabel,
+                onClick = onPlayPrimary,
+                modifier = Modifier.focusRequester(primaryFocusRequester),
+            )
+
+            if (detail.movieItem?.hasResumePoint == true) {
+                OutlinedButton(onClick = onPlayFromBeginning) {
+                    Text("Depuis le début", color = BuntuPalette.PureWhite)
+                }
+            }
+
+            OutlinedButton(onClick = onToggleFavorite) {
+                Text(
+                    text = if (detail.isFavorite) "★ Favori" else "☆ Favori",
+                    color = BuntuPalette.TerangaGold,
+                )
+            }
+
+            if (hasOnlinePeers) {
+                OutlinedButton(onClick = onOpenRemoteDialog) {
+                    Text("Lire sur…", color = BuntuPalette.PureWhite)
+                }
+            }
+
+            if (!isTv) {
+                OutlinedButton(onClick = onDownload) {
+                    Text("⬇ Hors-ligne", color = BuntuPalette.PureWhite)
+                }
+            }
+        }
+    }
+
+    val plotAndCredits = @Composable {
+        val plotText = detail.plot
+        if (!plotText.isNullOrBlank()) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = plotText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = BuntuPalette.MutedSilver,
+                    maxLines = if (plotExpanded) Int.MAX_VALUE else 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (plotText.length > 180) {
+                    Text(
+                        text = if (plotExpanded) "Voir moins" else "Voir plus",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = BuntuPalette.LeerCyan,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clickable { plotExpanded = !plotExpanded },
+                    )
+                }
+            }
+        }
+        detail.director?.takeIf { it.isNotBlank() }?.let { director ->
+            Text(
+                text = "Réalisation : $director",
+                style = MaterialTheme.typography.bodySmall,
+                color = BuntuPalette.PureWhite.copy(alpha = 0.8f),
+            )
+        }
+        detail.cast?.takeIf { it.isNotBlank() }?.let { cast ->
+            Text(
+                text = "Avec : $cast",
+                style = MaterialTheme.typography.bodySmall,
+                color = BuntuPalette.MutedSilver,
+                maxLines = if (plotExpanded) Int.MAX_VALUE else 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(metrics.spacingM)) {
         OutlinedButton(onClick = onBack) {
             Text("← Retour", color = BuntuPalette.PureWhite)
         }
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(metrics.spacingL),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            if (!detail.posterUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = detail.posterUrl,
-                    contentDescription = detail.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .width(metrics.posterCardWidth)
-                        .height(metrics.posterCardHeight)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(BuntuPalette.Slate),
-                )
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(metrics.spacingS),
-            ) {
-                Text(
-                    text = detail.title,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = BuntuPalette.PureWhite,
-                )
-
-                val metaParts = buildList {
-                    detail.year?.let { add(it.toString()) }
-                    detail.runtimeMinutes?.let { add("$it min") }
-                    detail.rating?.takeIf { it.isNotBlank() }?.let { add("★ $it") }
-                    detail.containerExtension?.uppercase()?.let { add(it) }
-                    detail.genre?.takeIf { it.isNotBlank() }?.let { add(it) }
-                }
-                if (metaParts.isNotEmpty()) {
-                    Text(
-                        text = metaParts.joinToString(" · "),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = BuntuPalette.LeerCyan,
-                    )
-                }
-
-                val plotText = detail.plot
-                if (!plotText.isNullOrBlank()) {
-                    Text(
-                        text = plotText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = BuntuPalette.MutedSilver,
-                        maxLines = 5,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(metrics.spacingXS))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
-                    verticalAlignment = Alignment.CenterVertically,
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val isCompact = maxWidth < 600.dp
+            if (isCompact) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(metrics.spacingM),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    BuntuPrimaryActionButton(
-                        label = primaryLabel,
-                        onClick = onPlayPrimary,
-                        modifier = Modifier.focusRequester(primaryFocusRequester),
-                    )
-
-                    if (detail.movieItem?.hasResumePoint == true) {
-                        OutlinedButton(onClick = onPlayFromBeginning) {
-                            Text("Depuis le début", color = BuntuPalette.PureWhite)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(metrics.spacingM),
+                        verticalAlignment = Alignment.Top,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (!detail.posterUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = detail.posterUrl,
+                                contentDescription = detail.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .width(116.dp)
+                                    .aspectRatio(2f / 3f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(BuntuPalette.Slate),
+                            )
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
+                        ) {
+                            Text(
+                                text = detail.title,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = BuntuPalette.PureWhite,
+                            )
+                            if (metaParts.isNotEmpty()) {
+                                Text(
+                                    text = metaParts.joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = BuntuPalette.LeerCyan,
+                                )
+                            }
                         }
                     }
-
-                    OutlinedButton(onClick = onToggleFavorite) {
-                        Text(
-                            text = if (detail.isFavorite) "★ Favori" else "☆ Favori",
-                            color = BuntuPalette.TerangaGold,
+                    plotAndCredits()
+                    actionButtons()
+                }
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(metrics.spacingL),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (!detail.posterUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = detail.posterUrl,
+                            contentDescription = detail.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .width(metrics.posterCardWidth)
+                                .height(metrics.posterCardHeight)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(BuntuPalette.Slate),
                         )
                     }
 
-                    if (hasOnlinePeers) {
-                        OutlinedButton(onClick = onOpenRemoteDialog) {
-                            Text("Lire sur…", color = BuntuPalette.PureWhite)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(metrics.spacingS),
+                    ) {
+                        Text(
+                            text = detail.title,
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = BuntuPalette.PureWhite,
+                        )
+                        if (metaParts.isNotEmpty()) {
+                            Text(
+                                text = metaParts.joinToString(" · "),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = BuntuPalette.LeerCyan,
+                            )
                         }
-                    }
-
-                    if (!isTv) {
-                        OutlinedButton(onClick = onDownload) {
-                            Text("⬇ Hors-ligne", color = BuntuPalette.PureWhite)
-                        }
+                        plotAndCredits()
+                        Spacer(modifier = Modifier.height(metrics.spacingXS))
+                        actionButtons()
                     }
                 }
             }
@@ -441,38 +528,58 @@ private fun EpisodeRowCard(
             .focusable()
             .clickable(onClick = onPlay),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.padding(metrics.spacingM),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "${episode.code} · ${episode.title}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = BuntuPalette.PureWhite,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (episode.watchPositionMs >= 30_000L) {
-                    val mins = episode.watchPositionMs / 60_000L
+        BoxWithConstraints(modifier = Modifier.padding(metrics.spacingM)) {
+            val isNarrow = maxWidth < 400.dp
+            val episodeMeta = @Composable { modifier: Modifier ->
+                Column(modifier = modifier) {
                     Text(
-                        text = "Reprise à ${mins} min",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = BuntuPalette.TerangaGold,
+                        text = "${episode.code} · ${episode.title}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = BuntuPalette.PureWhite,
+                        maxLines = if (isNarrow) 2 else 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
+                    if (episode.watchPositionMs >= 30_000L) {
+                        val mins = episode.watchPositionMs / 60_000L
+                        Text(
+                            text = "Reprise à ${mins} min",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = BuntuPalette.TerangaGold,
+                        )
+                    }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
-                BuntuPrimaryActionButton(
-                    label = "Lecture",
-                    onClick = onPlay,
-                )
-                if (!isTv) {
-                    OutlinedButton(onClick = onDownload) {
-                        Text("⬇", color = BuntuPalette.PureWhite)
+            val episodeActions = @Composable {
+                Row(horizontalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
+                    BuntuPrimaryActionButton(
+                        label = "Lecture",
+                        onClick = onPlay,
+                    )
+                    if (!isTv) {
+                        OutlinedButton(onClick = onDownload) {
+                            Text("⬇", color = BuntuPalette.PureWhite)
+                        }
                     }
+                }
+            }
+            if (isNarrow) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(metrics.spacingS),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    episodeMeta(Modifier.fillMaxWidth())
+                    episodeActions()
+                }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    episodeMeta(Modifier.weight(1f))
+                    Spacer(modifier = Modifier.width(metrics.spacingS))
+                    episodeActions()
                 }
             }
         }

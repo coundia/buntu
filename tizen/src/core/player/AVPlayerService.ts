@@ -13,6 +13,7 @@
  * `setDisplayRect` set to that area. Without them the sound plays and the screen stays black.
  */
 
+import { BufferHint, bufferPolicy } from './bufferPolicy';
 import { StreamSummary, summarizeStream } from './streamInfo';
 
 export type PlayerState = 'NONE' | 'IDLE' | 'READY' | 'PLAYING' | 'PAUSED' | 'BUFFERING';
@@ -118,6 +119,7 @@ export class AVPlayerService {
   private currentTimeMs = 0;
   private listener: AVPlayerListener = {};
   private stallWatchdogTimer: any = null;
+  private bufferHint: BufferHint = {};
   private lastPlayTimeTick = 0;
   private lastTickTimestamp = 0;
   private isSuspended = false;
@@ -136,6 +138,26 @@ export class AVPlayerService {
 
   private get avplay(): any {
     return (window as any).webapis?.avplay || null;
+  }
+
+  private healthListeners = new Set<(state: 'failed' | 'playing') => void>();
+  private healthTimeMs = 0;
+
+  /** Independent of the current screen's listener; also observes audio-only live playback. */
+  public onStreamHealth(listener: (state: 'failed' | 'playing') => void): () => void {
+    this.healthListeners.add(listener);
+    return () => { this.healthListeners.delete(listener); };
+  }
+  private reportFailure(): void {
+    for (const listener of this.healthListeners) listener('failed');
+  }
+  private reportPlayback(timeMs: number): void {
+    const advancing = timeMs > this.healthTimeMs;
+    this.healthTimeMs = timeMs;
+    if (advancing) {
+      if (this.state === 'BUFFERING') this.setState('PLAYING');
+      for (const listener of this.healthListeners) listener('playing');
+    }
   }
 
   public setListener(listener: AVPlayerListener) {
@@ -286,14 +308,16 @@ export class AVPlayerService {
   /**
    * Opens stream and sets up buffering and callbacks.
    */
-  public async open(url: string, isLive: boolean): Promise<void> {
+  public async open(url: string, isLive: boolean, hint: BufferHint = {}): Promise<void> {
     this.closeCurrent();
+    this.bufferHint = hint;
     const token = ++this.openToken;
     this.currentUrl = url;
     this.videoAspect = 0;
     this.isLive = isLive;
     this.durationMs = 0;
     this.currentTimeMs = 0;
+    this.healthTimeMs = 0;
 
     if (!this.avplay) {
       console.log(`[AVPlayer Mock] Open: ${url} (isLive=${isLive})`);
@@ -308,15 +332,11 @@ export class AVPlayerService {
       this.setState('IDLE');
       this.applyDisplayArea(); // window + display mode (see applyDisplayArea)
 
-      // Direct: rapid startup (small initial buffer). Movies: longer buffer for stability.
+      // Direct: rapid startup (small buffer). Films: larger, and larger still in 4K (see bufferPolicy).
       try {
-        if (isLive) {
-          this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', 2);
-          this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', 3);
-        } else {
-          this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', 4);
-          this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', 6);
-        }
+        const buffer = bufferPolicy(isLive, hint);
+        this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', buffer.play);
+        this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', buffer.resume);
       } catch {
         /* not supported for this stream type */
       }
@@ -340,6 +360,7 @@ export class AVPlayerService {
           (err: any) => {
             if (token !== this.openToken) return resolve();
             const msg = describePlayerError(err);
+            this.reportFailure();
             this.listener.onError?.(msg);
             reject(new Error(msg));
           }
@@ -347,6 +368,7 @@ export class AVPlayerService {
       });
     } catch (e: any) {
       const msg = describePlayerError(e);
+      this.reportFailure();
       this.listener.onError?.(msg);
       throw new Error(msg);
     }
@@ -364,6 +386,7 @@ export class AVPlayerService {
       this.applyDisplayArea();
       this.startStallWatchdog();
     } catch (err: any) {
+      this.reportFailure();
       this.listener.onError?.(describePlayerError(err));
     }
   }
@@ -516,7 +539,7 @@ export class AVPlayerService {
       } catch {
         // Reopen fresh if restore fails
         if (this.currentUrl) {
-          await this.open(this.currentUrl, this.isLive);
+          await this.open(this.currentUrl, this.isLive, this.bufferHint);
           if (this.resumeTimeMs > 0 && !this.isLive) {
             this.seekTo(this.resumeTimeMs);
           }
@@ -549,11 +572,13 @@ export class AVPlayerService {
         this.currentTimeMs = timeMs;
         this.lastPlayTimeTick = timeMs;
         this.lastTickTimestamp = Date.now();
+        this.reportPlayback(timeMs);
         this.listener.onCurrentPlayTime?.(timeMs);
       },
       onerror: (eventType: string) => {
         if (!current()) return;
         this.stopStallWatchdog();
+        this.reportFailure();
         this.listener.onError?.(describePlayerError(eventType));
       },
       onevent: (eventType: string, eventData: any) => {
@@ -580,11 +605,12 @@ export class AVPlayerService {
     this.stopStallWatchdog();
     this.lastTickTimestamp = Date.now();
     this.stallWatchdogTimer = setInterval(() => {
-      if (this.state === 'PLAYING') {
+      if (this.state === 'PLAYING' || this.state === 'BUFFERING') {
         const gap = Date.now() - this.lastTickTimestamp;
         if (gap > 8000) {
           // Playhead stalled for 8s
           this.lastTickTimestamp = Date.now();
+          this.reportFailure();
           this.listener.onStallDetected?.();
         }
       }
@@ -605,6 +631,7 @@ export class AVPlayerService {
         current += 1000;
         this.currentTimeMs = current;
         this.durationMs = this.isLive ? 0 : 7200000; // 2 hours
+        this.reportPlayback(current);
         this.listener.onCurrentPlayTime?.(current);
       }
     }, 1000);

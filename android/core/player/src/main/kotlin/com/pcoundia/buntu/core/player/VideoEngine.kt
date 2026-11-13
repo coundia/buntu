@@ -22,6 +22,7 @@ data class TrackOption(
 data class PlayerEngineState(
     val activeStream: PlayableStream? = null,
     val isPlaying: Boolean = false,
+    val isBroken: Boolean = false,
     val isBuffering: Boolean = false,
     /** The film or episode reached its end (ExoPlayer `STATE_ENDED`); reset when another stream opens. */
     val isEnded: Boolean = false,

@@ -9,6 +9,7 @@ import com.pcoundia.buntu.core.designsystem.BuntuDevicePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -19,11 +20,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -70,6 +75,7 @@ private val LocalOpenRemoteMenu = staticCompositionLocalOf<((Long, String) -> Un
 fun LiveRoute(
     onOpenFullscreenPlayer: (Long) -> Unit,
     onOpenSources: () -> Unit,
+    onOpenSearch: () -> Unit = {},
     viewModel: LiveViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -156,6 +162,7 @@ fun LiveRoute(
                     if (targetId != null) onOpenFullscreenPlayer(targetId)
                 },
                 onOpenSources = onOpenSources,
+                onOpenSearch = onOpenSearch,
             )
         } else {
             CompactLiveLayout(
@@ -175,6 +182,7 @@ fun LiveRoute(
                     if (targetId != null) onOpenFullscreenPlayer(targetId)
                 },
                 onOpenSources = onOpenSources,
+                onOpenSearch = onOpenSearch,
             )
         }
 
@@ -212,6 +220,7 @@ private fun CompactLiveLayout(
     onZapCardId: (Long) -> Unit,
     onOpenFullscreen: () -> Unit,
     onOpenSources: () -> Unit,
+    onOpenSearch: () -> Unit,
 ) {
     val metrics = LocalBuntuMetrics.current
 
@@ -261,6 +270,7 @@ private fun CompactLiveLayout(
                     onSelectCategory = onSelectCategory,
                     onToggleFavorites = onToggleFavorites,
                     onUpdateSearch = onUpdateSearch,
+                    onOpenSearch = onOpenSearch,
                 )
             }
 
@@ -314,6 +324,7 @@ private fun ExpandedOrTvLiveLayout(
     onZapCardId: (Long) -> Unit,
     onOpenFullscreen: () -> Unit,
     onOpenSources: () -> Unit,
+    onOpenSearch: () -> Unit,
 ) {
     val metrics = LocalBuntuMetrics.current
 
@@ -341,6 +352,7 @@ private fun ExpandedOrTvLiveLayout(
                 onSelectCategory = onSelectCategory,
                 onToggleFavorites = onToggleFavorites,
                 onUpdateSearch = onUpdateSearch,
+                onOpenSearch = onOpenSearch,
                 compactPadding = true,
             )
 
@@ -501,35 +513,77 @@ private fun LiveFilterToolbar(
     onSelectCategory: (String?) -> Unit,
     onToggleFavorites: () -> Unit,
     onUpdateSearch: (String) -> Unit,
+    onOpenSearch: () -> Unit,
     compactPadding: Boolean = false,
 ) {
     val metrics = LocalBuntuMetrics.current
     val horizontalPad = if (compactPadding) 0.dp else metrics.horizontalScreenPadding
 
     Column(verticalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = horizontalPad),
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onUpdateSearch,
-                placeholder = { Text("Filtrer les chaînes…") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-            FilterChip(
-                selected = favoritesOnly,
-                onClick = onToggleFavorites,
-                label = { Text("★ Favoris") },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = BuntuPalette.TerangaGold,
-                    selectedLabelColor = BuntuPalette.Midnight,
-                ),
-            )
+            val isWide = maxWidth >= 520.dp
+            val filterField = @Composable { fieldModifier: Modifier ->
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = onUpdateSearch,
+                    placeholder = {
+                        Text(
+                            text = "Filtrer les chaînes…",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    singleLine = true,
+                    modifier = fieldModifier,
+                )
+            }
+            val actionChips = @Composable {
+                Row(horizontalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
+                    FilterChip(
+                        selected = false,
+                        onClick = onOpenSearch,
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                modifier = Modifier.size(FilterChipDefaults.IconSize),
+                            )
+                        },
+                        label = { Text("Rechercher") },
+                    )
+                    FilterChip(
+                        selected = favoritesOnly,
+                        onClick = onToggleFavorites,
+                        label = { Text("★ Favoris") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = BuntuPalette.TerangaGold,
+                            selectedLabelColor = BuntuPalette.Midnight,
+                        ),
+                    )
+                }
+            }
+            if (isWide) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    filterField(Modifier.weight(1f))
+                    actionChips()
+                }
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(metrics.spacingS),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    filterField(Modifier.fillMaxWidth())
+                    actionChips()
+                }
+            }
         }
         BuntuCategoryChips(
             categories = categories,

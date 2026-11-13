@@ -1069,6 +1069,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1109,6 +1111,8 @@ fun uniffi_cnd_core_checksum_func_sync_derive_household_id(
 fun uniffi_cnd_core_checksum_func_sync_household_invite_link(
 ): Short
 fun uniffi_cnd_core_checksum_func_sync_household_key_from_scanned(
+): Short
+fun uniffi_cnd_core_checksum_func_sync_missing_ai_credentials(
 ): Short
 fun uniffi_cnd_core_checksum_func_sync_open_envelope(
 ): Short
@@ -1829,6 +1833,8 @@ fun uniffi_cnd_core_fn_func_sync_household_invite_link(`keyHex`: RustBuffer.ByVa
 ): RustBuffer.ByValue
 fun uniffi_cnd_core_fn_func_sync_household_key_from_scanned(`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_cnd_core_fn_func_sync_missing_ai_credentials(`configsJson`: RustBuffer.ByValue,`existingProviders`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_cnd_core_fn_func_sync_open_envelope(`householdKeyHex`: RustBuffer.ByValue,`envelope`: RustBuffer.ByValue,`lastSeenSequence`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_cnd_core_fn_func_sync_seal_envelope(`householdKeyHex`: RustBuffer.ByValue,`senderDeviceId`: RustBuffer.ByValue,`sequence`: Long,`nonceBytes`: RustBuffer.ByValue,`messageJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1996,6 +2002,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cnd_core_checksum_func_sync_household_key_from_scanned() != 62061.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cnd_core_checksum_func_sync_missing_ai_credentials() != 41786.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cnd_core_checksum_func_sync_open_envelope() != 21125.toShort()) {
@@ -12701,6 +12710,21 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_sync_household_key_from_scanned(
         FfiConverterString.lower(`text`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The AI credentials of a received household delta (`ai_configs`, JSON array) that this device does not
+         * have yet, as a JSON array. The key of a provider already configured here is never replaced.
+         * Errors never include the credentials.
+         */
+    @Throws(CndException::class) fun `syncMissingAiCredentials`(`configsJson`: kotlin.String, `existingProviders`: List<kotlin.String>): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(CndException) { _status ->
+    UniffiLib.INSTANCE.uniffi_cnd_core_fn_func_sync_missing_ai_credentials(
+        FfiConverterString.lower(`configsJson`),FfiConverterSequenceString.lower(`existingProviders`),_status)
 }
     )
     }

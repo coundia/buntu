@@ -1,6 +1,7 @@
 package com.pcoundia.buntu.core.domain.repository
 
 import androidx.paging.PagingData
+import com.pcoundia.buntu.core.domain.model.AiProviderTestResult
 import com.pcoundia.buntu.core.domain.model.AiSettingsConfig
 import com.pcoundia.buntu.core.domain.model.AppPreferences
 import com.pcoundia.buntu.core.domain.model.CatalogQuery
@@ -8,6 +9,8 @@ import com.pcoundia.buntu.core.domain.model.CategoryFacet
 import com.pcoundia.buntu.core.domain.model.ChannelGuideRow
 import com.pcoundia.buntu.core.domain.model.ChannelItem
 import com.pcoundia.buntu.core.domain.model.DownloadItem
+import com.pcoundia.buntu.core.domain.model.EngineDbStats
+import com.pcoundia.buntu.core.domain.model.EngineRuntimeConfig
 import com.pcoundia.buntu.core.domain.model.EpisodeItem
 import com.pcoundia.buntu.core.domain.model.EpgSlot
 import com.pcoundia.buntu.core.domain.model.MediaDetail
@@ -224,5 +227,30 @@ interface EngineDiagnosticsRepository {
     suspend fun engineVersion(): String
     suspend fun pollNetworkLogs(afterSeqId: Long = 0L, limit: Int = 100): ImmutableList<NetworkLogItem>
     suspend fun clearLogs()
+
+    /**
+     * Tests the configured AI provider via `CndEngine.aiTestProvider`
+     * (mirrors `AssistantModel.testProvider()` on macOS).
+     */
+    suspend fun testAiProvider(
+        aiConfig: AiSettingsConfig,
+        apiKey: String?,
+    ): AiProviderTestResult = AiProviderTestResult(
+        ok = true,
+        latencyMs = 0L,
+        model = aiConfig.model.ifBlank { aiConfig.provider.defaultModel },
+        message = "Connexion réussie",
+    )
+
+    suspend fun getDbStats(): EngineDbStats = EngineDbStats()
+
+    suspend fun getRuntimeConfig(): EngineRuntimeConfig = EngineRuntimeConfig()
+
+    suspend fun updateRuntimeConfig(
+        config: EngineRuntimeConfig,
+        omdbKeyRef: String? = null,
+    ) = Unit
+
+    suspend fun resetDismissedRecommendations() = Unit
 }
 

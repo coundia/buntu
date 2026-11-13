@@ -60,7 +60,7 @@ describe.skipIf(!existsSync(WASM))('Same IPTV account never stored twice on the 
 
   it('does not add a second copy when the household sends an account the TV already has', async () => {
     const db = Database.getInstance();
-    vi.spyOn(db, 'getSources').mockResolvedValue([tvAccount]);
+    vi.spyOn(db, 'getSharedSources').mockResolvedValue([tvAccount]);
     const upsert = vi.spyOn(db, 'upsertSource').mockResolvedValue(7);
     const download = vi.spyOn(CndEngine.getInstance(), 'syncXtreamSource').mockResolvedValue(0);
 
@@ -84,7 +84,7 @@ describe.skipIf(!existsSync(WASM))('Same IPTV account never stored twice on the 
   it('adds a new account once, even when the delta carries it twice', async () => {
     const db = Database.getInstance();
     const saved: SourceRecord[] = [];
-    vi.spyOn(db, 'getSources').mockImplementation(async () => [...saved]);
+    vi.spyOn(db, 'getSharedSources').mockImplementation(async () => [...saved]);
     vi.spyOn(db, 'upsertSource').mockImplementation(async (s: any) => {
       saved.push({ ...s, id: saved.length + 1 });
       return saved.length;
@@ -109,7 +109,7 @@ describe.skipIf(!existsSync(WASM))('Same IPTV account never stored twice on the 
 
   it('re-synchronising or re-typing an account updates it and keeps its uuid and name', async () => {
     const db = Database.getInstance();
-    vi.spyOn(db, 'getSources').mockResolvedValue([tvAccount]);
+    vi.spyOn(db, 'getSharedSources').mockResolvedValue([tvAccount]);
     const upsert = vi.spyOn(db, 'upsertSource').mockResolvedValue(7);
 
     const id = await (CndEngine.getInstance() as any).saveSource({

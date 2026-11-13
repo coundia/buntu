@@ -14327,6 +14327,19 @@ public func syncHouseholdKeyFromScanned(text: String) -> String?  {
     )
 })
 }
+/**
+ * The AI credentials of a received household delta (`ai_configs`, JSON array) that this device does not
+ * have yet, as a JSON array. The key of a provider already configured here is never replaced.
+ * Errors never include the credentials.
+ */
+public func syncMissingAiCredentials(configsJson: String, existingProviders: [String])throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
+    uniffi_cnd_core_fn_func_sync_missing_ai_credentials(
+        FfiConverterString.lower(configsJson),
+        FfiConverterSequenceString.lower(existingProviders),$0
+    )
+})
+}
 public func syncOpenEnvelope(householdKeyHex: String, envelope: HouseholdSealedEnvelope, lastSeenSequence: UInt64)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCndError_lift) {
     uniffi_cnd_core_fn_func_sync_open_envelope(
@@ -14400,6 +14413,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_func_sync_household_key_from_scanned() != 62061) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_cnd_core_checksum_func_sync_missing_ai_credentials() != 41786) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_cnd_core_checksum_func_sync_open_envelope() != 21125) {

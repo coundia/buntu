@@ -1,8 +1,8 @@
 /**
  * Remote-control navigation for the mini player panel, shared by every screen that has one.
  *
- * Panel buttons, top to bottom: the preview screen, Play/Stop, Favorite, Full screen, then any
- * screen-specific extra actions. Their DOM ids are `${idPrefix}-screen|play|fav|full` (extras bring
+ * Panel buttons: the preview screen on top, then ONE row of actions (Play/Stop, Favorite, Full screen, then any
+ * screen-specific extra actions), left to right. Their DOM ids are `${idPrefix}-screen|play|fav|full` (extras bring
  * their own id).
  */
 
@@ -50,7 +50,22 @@ export function panelItemForRow(items: FocusableItem[], row: number): FocusableI
 }
 
 /**
- * LEFT from the panel goes back to the card the cursor came from (not to the first row).
+ * The panel buttons reachable with RIGHT from body row `row`: the preview screen on row 0, then the whole row of
+ * actions on every other row (the same ids repeat on each row: navigation skips same-id neighbours, so UP goes back
+ * to the preview screen and DOWN stays on the actions). The grid needs at least two body rows for this.
+ */
+export function panelItemsForRow(items: FocusableItem[], row: number): FocusableItem[] {
+  if (items.length === 0) return [];
+  if (row === 0 || items.length === 1) return [items[0]];
+  return items.slice(1);
+}
+
+/** Body rows the grid needs so the preview screen and the row of actions can both be reached. */
+export const PANEL_MIN_ROWS = 2;
+
+/**
+ * LEFT from the first panel stop (the preview screen, or the first action) goes back to the card the cursor came
+ * from (not to the first row); LEFT between two actions moves along the row.
  * Returns the function that removes the listener.
  */
 export function installPanelLeftReturn(
@@ -59,7 +74,8 @@ export function installPanelLeftReturn(
   lastContentFocus: () => string
 ): () => void {
   return RemoteKeyHandler.getInstance().addListener((key) => {
-    if (key !== 'LEFT' || !focusId().startsWith(`${idPrefix}-`)) return false;
+    const here = focusId();
+    if (key !== 'LEFT' || (here !== `${idPrefix}-screen` && here !== `${idPrefix}-play`)) return false;
     const target = lastContentFocus();
     if (!target || !document.getElementById(target)) return false;
     spatialNav.setFocusById(target);

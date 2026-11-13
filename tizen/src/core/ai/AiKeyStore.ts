@@ -1,3 +1,4 @@
+import { AiProviderType, getAiSettings } from './AiSettings';
 /**
  * CND IPTV Tizen - Secure AI API Key Storage (PRD 40 § 4.3)
  *
@@ -13,6 +14,9 @@ const DB_VERSION = 1;
 const STORE_NAME = 'keys';
 const MASTER_KEY_ID = 'master_key';
 const API_KEY_RECORD_ID = 'encrypted_api_key';
+
+/** What the vault can hold a key for: an AI provider, or the OMDb film-facts service. */
+export type KeySlot = AiProviderType | 'omdb';
 
 interface EncryptedPayload {
   iv: Uint8Array;
@@ -94,10 +98,10 @@ export class AiKeyStore {
     return newKey;
   }
 
-  public async setApiKey(apiKey: string): Promise<void> {
+  public async setApiKey(apiKey: string, provider: KeySlot = getAiSettings().provider): Promise<void> {
     const trimmed = apiKey.trim();
     if (!trimmed) {
-      await this.deleteApiKey();
+      await this.deleteApiKey(provider);
       return;
     }
 
@@ -120,21 +124,39 @@ export class AiKeyStore {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      const req = store.put(payload, API_KEY_RECORD_ID);
+      const req = store.put(payload, `${API_KEY_RECORD_ID}_${provider}`);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
   }
 
-  public async getApiKey(): Promise<string | null> {
+  public async getApiKey(provider: KeySlot = getAiSettings().provider): Promise<string | null> {
     const db = await this.openDb();
-    const record = await new Promise<EncryptedPayload | undefined>((resolve, reject) => {
+    let record = await new Promise<EncryptedPayload | undefined>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
-      const req = store.get(API_KEY_RECORD_ID);
+      const req = store.get(`${API_KEY_RECORD_ID}_${provider}`);
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
+
+    // Migrate the old single slot only for the provider selected by that old app.
+    if (!record && provider === getAiSettings().provider) {
+      record = await new Promise<EncryptedPayload | undefined>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.get(API_KEY_RECORD_ID);
+        request.onsuccess = () => {
+          const legacy = request.result;
+          if (legacy) {
+            store.put(legacy, `${API_KEY_RECORD_ID}_${provider}`);
+            store.delete(API_KEY_RECORD_ID);
+          }
+          tx.oncomplete = () => resolve(legacy);
+        };
+        tx.onerror = () => reject(new Error('Migration du coffre IA impossible'));
+      });
+    }
 
     if (!record || !record.iv || !record.ciphertext) {
       return null;
@@ -157,24 +179,25 @@ export class AiKeyStore {
     }
   }
 
-  public async deleteApiKey(): Promise<void> {
+  public async deleteApiKey(provider: KeySlot = getAiSettings().provider): Promise<void> {
     const db = await this.openDb();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      const req = store.delete(API_KEY_RECORD_ID);
+      const req = store.delete(`${API_KEY_RECORD_ID}_${provider}`);
+      if (provider === getAiSettings().provider) store.delete(API_KEY_RECORD_ID);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
   }
 
-  public async hasApiKey(): Promise<boolean> {
-    const key = await this.getApiKey();
+  public async hasApiKey(provider: KeySlot = getAiSettings().provider): Promise<boolean> {
+    const key = await this.getApiKey(provider);
     return Boolean(key && key.length > 0);
   }
 
-  public async getMaskedKey(): Promise<string | null> {
-    const key = await this.getApiKey();
+  public async getMaskedKey(provider: KeySlot = getAiSettings().provider): Promise<string | null> {
+    const key = await this.getApiKey(provider);
     if (!key) return null;
     if (key.length <= 4) return '••••';
     const last4 = key.slice(-4);

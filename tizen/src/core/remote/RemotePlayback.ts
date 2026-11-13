@@ -466,6 +466,10 @@ export class RemotePlaybackCoordinator {
 
   /** `source_key` of an account (PRD-41 identity, computed in Rust), cached by account id. */
   private async sourceKeyOfSource(source: SourceRecord): Promise<string | null> {
+    if (source.local_override) {
+      const original = (await this.db.getSharedSources()).find((s) => s.id === source.id);
+      if (original) source = original;
+    }
     const cached = this.sourceKeyCache.get(source.id);
     if (cached) return cached;
     try {

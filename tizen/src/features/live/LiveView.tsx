@@ -1,3 +1,6 @@
+import { aiSuggestions, mergeSuggestions, searchMode, searchModeLabel, toggleSearchMode } from '../../core/search/searchMode';
+import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
+import { registerYellowFavorite } from '../../ui/design/yellowFavorite';
 import { Component, createSignal, createMemo, createEffect, onMount, onCleanup, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { Database, EpgProgramRecord, ItemRecord, FAVORITES_CATEGORY, RECENT_CATEGORY } from '../../core/storage/Database';
@@ -13,7 +16,7 @@ import { createMiniPlayer } from '../../core/player/MiniPlayerController';
 import { MiniPlayerPanel } from '../../ui/components/MiniPlayerPanel';
 import { InfoChips, InfoSection, InfoProgress } from '../../ui/components/InfoParts';
 import { formatClock } from '../../core/utils/timeFormat';
-import { panelFocusItems, panelItemForRow, installPanelLeftReturn } from '../../ui/design/miniPlayerFocus';
+import { panelFocusItems, panelItemsForRow, installPanelLeftReturn, PANEL_MIN_ROWS } from '../../ui/design/miniPlayerFocus';
 
 export interface LiveViewProps {
   onPlayChannel: (channel: ItemRecord) => void;
@@ -36,8 +39,13 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   const [selectedCategory, setSelectedCategory] = createSignal<string>('');
   const [catFilter, setCatFilter] = createSignal<string>('');
   const [showCats, setShowCats] = createSignal(true);
+  // False until the first load is over: the counts would read 0 and the lists look empty.
+  const [loaded, setLoaded] = createSignal(false);
   const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
   // Bumped when a favorite flag changes (the records are mutated in place).
+  const [brokenStates, setBrokenStates] = createSignal<Record<number, boolean>>({});
+  const isChannelBroken = (item: ItemRecord) => brokenStates()[item.id] !== undefined ? brokenStates()[item.id] : item.is_broken === 1;
+  let brokenUnsubscribe: (() => void) | undefined;
   const [favTick, setFavTick] = createSignal(0);
   // Shared mini player: the right panel plays what you choose and shows the details of what you hover.
   const mini = createMiniPlayer<ItemRecord>({
@@ -63,6 +71,8 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
   const [recentChannels, setRecentChannels] = createSignal<ItemRecord[]>([]);
   const [favChannels, setFavChannels] = createSignal<ItemRecord[]>([]);
+  // « Recommandé pour vous »: channels like the ones watched lately or kept in favourites (computed after the first display).
+  const [recommendedChannels, setRecommendedChannels] = createSignal<ItemRecord[]>([]);
   const [epgMap, setEpgMap] = createSignal<Record<string, EpgProgramRecord | undefined>>({});
 
   const previewChannel = mini.focused; // the channel under the cursor (details of the panel)
@@ -149,6 +159,12 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     setRecentChannels(recents);
     setFavChannels(favs);
     void hydrateEpgForList([...recents, ...favs]);
+    // Computed behind the display: the shelf appears when it is ready, the screen never waits for it.
+    void engine.getRecommendedChannels(6).then((recommended) => {
+      setRecommendedChannels(recommended);
+      void hydrateEpgForList(recommended);
+      scheduleRebuildGrid(true);
+    });
   };
 
   const initScreen = async () => {
@@ -237,19 +253,42 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     }
   };
 
-  /** The mini player always resumes the channel watched last (also when coming back from full screen). */
+  /** Opening Live TV resumes the channel watched last in the mini player, but not when coming back from the full-screen player: what played there has been stopped and stays stopped. */
   const autoplayLast = async () => {
     if (!mini.visible() || mini.active()) return;
     const [last] = await engine.getRecentItems('live', 1);
     if (last && !mini.active()) void mini.playItem(last);
   };
 
+  // Yellow button: add or remove the highlighted chaîne from the favourites.
+  onCleanup(
+    registerYellowFavorite({
+      isItemFocus: (id) => /^(?:channel|recent-ch|fav-ch|rec-ch)-\d+$/.test(id) || id.startsWith('live-insp'),
+      current: () => mini.focused(),
+      toggle: (item) => handleToggleFavorite(item),
+    })
+  );
+
   onMount(async () => {
+    try {
+    brokenUnsubscribe = db.onBrokenChange((id, broken) => {
+      const records = [...scroller.items(), ...recentChannels(), ...favChannels(), ...searchResults()];
+      for (const item of records) if (item.id === id) item.is_broken = broken ? 1 : 0;
+      setBrokenStates((states) => ({ ...states, [id]: broken }));
+    });
+    const cameBackFromPlayer = screenState.isArmed('live');
     await initScreen();
-    void autoplayLast();
+    if (!cameBackFromPlayer) void autoplayLast();
+  
+    } catch (error) {
+      console.warn('Chargement initial impossible', error);
+    } finally {
+      setLoaded(true);
+    }
   });
 
   onCleanup(() => {
+    brokenUnsubscribe?.();
     unsubPanelKeys?.();
     screenState.save('live', {
       category: selectedCategory(),
@@ -338,6 +377,27 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     scheduleRebuildGrid(true);
   };
 
+  // The search engine (local / IA) is chosen with the button after the field. In IA mode, once typing pauses,
+  // the assistant's suggestions are put in front of the local results.
+  let aiTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(aiTimer));
+  const scheduleAiRefine = (query: string) => {
+    clearTimeout(aiTimer);
+    if (searchMode() !== 'ai' || query.trim().length < 3) return;
+    aiTimer = setTimeout(async () => {
+      const extra = await aiSuggestions(engine, query, 'live').catch(() => []);
+      if (searchQuery() !== query || extra.length === 0) return;
+      setSearchResults(mergeSuggestions(searchResults(), extra));
+      announce(`L’assistant propose ${extra.length} résultat(s)`);
+      scheduleRebuildGrid(true);
+    }, 900);
+  };
+  const switchSearchEngine = async () => {
+    const change = await toggleSearchMode();
+    announce(change.message);
+    if (searchQuery().trim()) void handleSearch(searchQuery());
+  };
+
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (!query.trim()) {
@@ -349,6 +409,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     setSearchResults(results);
     void hydrateEpgForList(results);
     announce(`${results.length} chaînes trouvées`);
+    scheduleAiRefine(query);
     scheduleRebuildGrid(true);
   };
 
@@ -395,30 +456,14 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
     // Row 0: Top Toolbar
     const toolbarRow: FocusableItem[] = [
-      { id: 'live-toggle-cats', onSelect: () => { setShowCats((v) => !v); scheduleRebuildGrid(true); } },
-      { id: 'live-mode-grid', onSelect: () => { setViewMode('grid'); scheduleRebuildGrid(true); } },
-      { id: 'live-mode-list', onSelect: () => { setViewMode('list'); scheduleRebuildGrid(true); } },
-      { id: 'live-toggle-inspector', onSelect: toggleInspector },
       { id: 'live-search-input', onSelect: () => focusDomInput('live-search-input') },
+      { id: 'live-search-mode', onSelect: switchSearchEngine },
     ];
-    if (searchQuery().trim()) {
-      toolbarRow.push({
-        id: 'live-search-clear',
-        onSelect: () => void handleSearch(''),
-      });
-    }
     grid.push(toolbarRow);
 
     // Build Left Category Column items
     const catColItems: FocusableItem[] = [];
     if (showCats()) {
-      catColItems.push({
-        id: 'live-cat-home',
-        onSelect: () => {
-          setCatFilter('');
-          void handleSelectCategory('');
-        },
-      });
       catColItems.push({
         id: 'live-cat-filter',
         onSelect: () => focusDomInput('live-cat-filter'),
@@ -467,6 +512,16 @@ export const LiveView: Component<LiveViewProps> = (props) => {
           }))
         );
       }
+      const recommended = recommendedChannels();
+      if (recommended.length > 0) {
+        contentRows.push(
+          recommended.slice(0, 6).map((ch) => ({
+            id: `rec-ch-${ch.id}`,
+            onFocus: () => void selectForPreview(ch),
+            onSelect: () => handleCardActivate(ch),
+          }))
+        );
+      }
     }
 
     const cols = detectGridColumns();
@@ -491,7 +546,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
         ? panelFocusItems(mini, 'live-insp', (ch) => void handleToggleFavorite(ch))
         : [];
 
-    const totalBodyRows = Math.max(catColItems.length, contentRows.length, inspectorItems.length);
+    const totalBodyRows = Math.max(catColItems.length, contentRows.length, inspectorItems.length > 0 ? PANEL_MIN_ROWS : 0);
     for (let r = 0; r < totalBodyRows; r++) {
       const row: FocusableItem[] = [];
       if (catColItems.length > 0) {
@@ -502,8 +557,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
         row.push(...cRow);
       }
       // The panel is reachable with RIGHT from every row.
-      const panelItem = panelItemForRow(inspectorItems, r);
-      if (panelItem) row.push(panelItem);
+      row.push(...panelItemsForRow(inspectorItems, r));
       if (row.length > 0) grid.push(row);
     }
 
@@ -527,7 +581,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     const quality = () => detectChannelQuality(ch.name);
     const nowProg = () => (ch.tvg_id ? epgMap()[ch.tvg_id] : undefined);
     const isPlaying = () => mini.isPlaying(ch.id) && mini.visible();
-    const isBroken = () => ch.is_broken === 1;
+    const isBroken = () => isChannelBroken(ch);
 
     return (
       <div
@@ -603,19 +657,6 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       {/* Top Buntu Toolbar */}
       <header class="buntu-toolbar">
         <div class="buntu-toolbar-left">
-          <button
-            id="live-toggle-cats"
-            type="button"
-            tabindex="-1"
-            class={`buntu-tool-btn ${showCats() ? 'active' : ''} ${focusId() === 'live-toggle-cats' ? 'focused' : ''}`}
-            title={showCats() ? 'Masquer les catégories' : 'Afficher les catégories'}
-            onClick={() => {
-              setShowCats((v) => !v);
-              scheduleRebuildGrid(true);
-            }}
-          >
-            ☰
-          </button>
           <h1 class="buntu-toolbar-title">Live TV</h1>
           <Show when={totalCount() > 0}>
             <span class="buntu-toolbar-subtitle">{formatBuntuCount(totalCount())} chaînes</span>
@@ -623,46 +664,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
         </div>
 
         <div class="buntu-toolbar-right">
-          <div class="buntu-seg-group" role="group" aria-label="Mode d'affichage">
-            <button
-              id="live-mode-grid"
-              type="button"
-              tabindex="-1"
-              class={`buntu-seg-btn ${viewMode() === 'grid' ? 'active' : ''} ${focusId() === 'live-mode-grid' ? 'focused' : ''}`}
-              title="Grille"
-              onClick={() => {
-                setViewMode('grid');
-                scheduleRebuildGrid(true);
-              }}
-            >
-              ⊞
-            </button>
-            <button
-              id="live-mode-list"
-              type="button"
-              tabindex="-1"
-              class={`buntu-seg-btn ${viewMode() === 'list' ? 'active' : ''} ${focusId() === 'live-mode-list' ? 'focused' : ''}`}
-              title="Liste"
-              onClick={() => {
-                setViewMode('list');
-                scheduleRebuildGrid(true);
-              }}
-            >
-              ☰
-            </button>
-          </div>
-
-          <button
-            id="live-toggle-inspector"
-            type="button"
-            tabindex="-1"
-            class={`buntu-tool-btn ${mini.visible() ? 'active' : ''} ${focusId() === 'live-toggle-inspector' ? 'focused' : ''}`}
-            title="Aperçu mini-lecteur"
-            onClick={toggleInspector}
-          >
-            ◫
-          </button>
-
+          <span class="buntu-key-hint"><i class="buntu-key-dot" />Favori</span>
           <div class="buntu-search-wrap">
             <span class="buntu-search-icon">🔍</span>
             <input
@@ -673,18 +675,17 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               class={`buntu-search-field ${focusId() === 'live-search-input' ? 'focused' : ''}`}
               onInput={(e) => void handleSearch(e.currentTarget.value)}
             />
-            <Show when={searchQuery().trim().length > 0}>
-              <button
-                id="live-search-clear"
-                type="button"
-                tabindex="-1"
-                class={`buntu-search-clear ${focusId() === 'live-search-clear' ? 'focused' : ''}`}
-                onClick={() => void handleSearch('')}
-              >
-                ✕
-              </button>
-            </Show>
           </div>
+          <button
+            id="live-search-mode"
+            type="button"
+            tabindex="-1"
+            class={`buntu-mode-btn ${searchMode() === 'ai' ? 'ai' : ''} ${focusId() === 'live-search-mode' ? 'focused' : ''}`}
+            aria-label={searchMode() === 'ai' ? 'Moteur de recherche : IA. OK pour passer en local' : 'Moteur de recherche : local. OK pour passer en IA'}
+            onClick={switchSearchEngine}
+          >
+            {searchModeLabel(searchMode())}
+          </button>
         </div>
       </header>
 
@@ -694,19 +695,6 @@ export const LiveView: Component<LiveViewProps> = (props) => {
         <Show when={showCats()}>
           <aside class="buntu-cat-pane" aria-label="Catégories Live TV">
             <div class="buntu-cat-filter-bar">
-              <button
-                id="live-cat-home"
-                type="button"
-                tabindex="-1"
-                class={`buntu-cat-home-btn ${focusId() === 'live-cat-home' ? 'focused' : ''}`}
-                title="Toutes les catégories"
-                onClick={() => {
-                  setCatFilter('');
-                  void handleSelectCategory('');
-                }}
-              >
-                ⌂
-              </button>
               <input
                 id="live-cat-filter"
                 type="text"
@@ -733,7 +721,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                   <span class="buntu-cat-row-icon">🕒</span>
                   <span class="buntu-cat-row-title">Récemment vus</span>
                 </div>
-                <span class="buntu-cat-count">{formatBuntuCount(recentCount())}</span>
+                <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(recentCount())}</span></Show>
               </div>
 
               {/* Favoris */}
@@ -748,7 +736,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                   <span class="buntu-cat-row-icon fav">★</span>
                   <span class="buntu-cat-row-title">Favoris</span>
                 </div>
-                <span class="buntu-cat-count">{formatBuntuCount(favCount())}</span>
+                <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(favCount())}</span></Show>
               </div>
 
               {/* Toutes les chaînes */}
@@ -763,7 +751,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                   <span class="buntu-cat-row-icon">⊞</span>
                   <span class="buntu-cat-row-title">Toutes</span>
                 </div>
-                <span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span>
+                <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span></Show>
               </div>
 
               {/* Provider Categories with Exact Counts */}
@@ -779,7 +767,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                     <div class="buntu-cat-row-left">
                       <span class="buntu-cat-row-title">{cat}</span>
                     </div>
-                    <span class="buntu-cat-count">{formatBuntuCount(catCounts()[cat] || 0)}</span>
+                    <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(catCounts()[cat] || 0)}</span></Show>
                   </div>
                 )}
               </For>
@@ -800,7 +788,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
           }}
         >
           <Show
-            when={totalCount() > 0 || activeChannels().length > 0}
+            when={!loaded() || totalCount() > 0 || activeChannels().length > 0}
             fallback={
               <div class="tv-loader-card" style={{ margin: 'auto', 'max-width': '520px' }}>
                 <div style={{ 'font-size': '44px' }}>📡</div>
@@ -854,6 +842,22 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               </div>
             </Show>
 
+            {/* Shelf 3: Recommandé pour vous */}
+            <Show when={showsShelves() && recommendedChannels().length > 0}>
+              <div class="buntu-section">
+                <div class="buntu-section-header">
+                  <h2 class="buntu-section-title">
+                    <span style={{ opacity: 0.7 }}>✨</span> Recommandé pour vous
+                  </h2>
+                </div>
+                <div class="buntu-shelf-scroll">
+                  <For each={recommendedChannels().slice(0, 6)}>
+                    {(ch, idx) => renderChannelCard(ch, `rec-ch-${ch.id}`, idx())}
+                  </For>
+                </div>
+              </div>
+            </Show>
+
             {/* Main Multi-Column Channel Grid */}
             <div class="buntu-section">
               <div class="buntu-section-header">
@@ -866,12 +870,21 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                       ? 'Favoris'
                       : selectedCategory() || 'Toutes les chaînes'}
                 </h2>
+                <Show when={loaded()}>
                 <span class="buntu-section-meta">
                   {isSearchMode()
                     ? `${searchResults().length} résultats`
                     : `${formatBuntuCount(scroller.total())} chaînes`}
                 </span>
+                </Show>
               </div>
+
+              <Show when={!loaded()}>
+              <div class="buntu-first-load" role="status" aria-live="polite">
+                <div class="tv-spinner" />
+                <span>Chargement des chaînes…</span>
+              </div>
+            </Show>
 
               <div
                 ref={gridRef}
@@ -929,7 +942,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                 </div>
                 <InfoChips
                   chips={[
-                    ch.is_broken === 1 ? { text: '⚠ HORS SERVICE', tone: 'quality' as const } : null,
+                    isChannelBroken(ch) ? { text: '⚠ HORS SERVICE', tone: 'quality' as const } : null,
                     quality ? { text: quality, tone: quality === '4K' ? 'uhd' : 'quality' } : null,
                     ch.country ? { text: ch.country.toUpperCase() } : null,
                     ch.language ? { text: ch.language.toUpperCase() } : null,

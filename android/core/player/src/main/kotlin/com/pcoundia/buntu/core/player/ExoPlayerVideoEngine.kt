@@ -56,6 +56,7 @@ class ExoPlayerVideoEngine @Inject constructor(
     private val downloadsRepository: DownloadsRepository,
     private val assessBandwidth: AssessStreamBandwidthUseCase,
     private val logger: RedactedAppLogger,
+    private val playbackHealth: com.pcoundia.buntu.core.domain.repository.PlaybackHealthRepository,
 ) : VideoEngine {
 
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -63,6 +64,23 @@ class ExoPlayerVideoEngine @Inject constructor(
 
     private val _state = MutableStateFlow(PlayerEngineState())
     override val state: StateFlow<PlayerEngineState> = _state.asStateFlow()
+
+    private var healthWrite: Job? = null
+    private val liveHealth = LiveStreamHealthObserver { hash, broken ->
+        _state.update {
+            it.copy(
+                isBroken = broken,
+                isBuffering = if (broken) it.isBuffering else false,
+                diagnosis = if (broken) it.diagnosis else null,
+            )
+        }
+        if (!broken) { retryJob?.cancel(); retryJob = null }
+        val previous = healthWrite
+        healthWrite = ioScope.launch {
+            previous?.join()
+            runCatching { playbackHealth.setLiveBroken(hash, broken) }
+        }
+    }
 
     private val totalBytesReceived = AtomicLong(0L)
     private var windowStartMs: Long = System.currentTimeMillis()
@@ -158,6 +176,7 @@ class ExoPlayerVideoEngine @Inject constructor(
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            liveHealth.failed()
             val httpCode = extractHttpStatusCode(error)
             val diagnosis = StallWatchdog.classifyFailure(httpCode, error.cause ?: error)
             logger.warn(
@@ -203,6 +222,7 @@ class ExoPlayerVideoEngine @Inject constructor(
             errorRetryAttempt = 0
             bandwidthWarningDismissedForItemId = null
         }
+        liveHealth.open(stream.stableHash.takeIf { stream.kind == StreamKind.LIVE })
         val now = System.currentTimeMillis()
         watchdog.reset(now)
         windowStartMs = now
@@ -251,6 +271,7 @@ class ExoPlayerVideoEngine @Inject constructor(
         _state.update {
             it.copy(
                 activeStream = stream,
+                isBroken = playbackHealth.brokenChannels.value[stream.stableHash] ?: false,
                 isBuffering = true,
                 isEnded = false,
                 playbackSpeed = speed,
@@ -303,6 +324,7 @@ class ExoPlayerVideoEngine @Inject constructor(
                 }
 
                 val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
+                liveHealth.progress(pos, exoPlayer.isPlaying)
                 val dur = exoPlayer.duration.takeIf { it > 0L } ?: 0L
                 val buf = exoPlayer.bufferedPosition.coerceAtLeast(0L)
 
@@ -338,6 +360,7 @@ class ExoPlayerVideoEngine @Inject constructor(
                         nowMs = now,
                     )
                 ) {
+                    liveHealth.failed()
                     logger.warn("PLAYER", "Blocage détecté sans octets reçus -> relance sur la même session")
                     openInternal(stream.copy(startPositionMs = pos), resetRetries = false)
                 }
@@ -450,6 +473,7 @@ class ExoPlayerVideoEngine @Inject constructor(
 
     override fun stop() {
         mainScope.launch {
+            liveHealth.open(null)
             retryJob?.cancel()
             tickerJob?.cancel()
             exoPlayer.stop()

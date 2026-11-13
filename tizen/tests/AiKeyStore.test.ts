@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { getAiSettings, saveAiSettings } from '../src/core/ai/AiSettings';
 import { AiKeyStore } from '../src/core/ai/AiKeyStore';
 
 function createMockIndexedDB() {
@@ -31,6 +32,7 @@ function createMockIndexedDB() {
             const map = stores.get(storeName)!;
 
             return {
+              set oncomplete(callback: () => void) { setTimeout(callback, 0); },
               objectStore(name: string) {
                 return {
                   get(key: string) {
@@ -101,7 +103,7 @@ describe('AiKeyStore', () => {
     // Verify stored data is encrypted (iv and ciphertext present, plaintext absent)
     const vault = mockIdb._stores.get('keys');
     expect(vault).toBeDefined();
-    const storedRecord = vault?.get('encrypted_api_key');
+    const storedRecord = vault?.get(`encrypted_api_key_${getAiSettings().provider}`);
     expect(storedRecord).toBeDefined();
     expect(storedRecord.iv).toBeInstanceOf(Uint8Array);
     expect(storedRecord.ciphertext).toBeDefined();
@@ -116,6 +118,29 @@ describe('AiKeyStore', () => {
 
     await store.setApiKey('123');
     expect(await store.getMaskedKey()).toBe('••••');
+  });
+
+  it('keeps each provider in a separate encrypted slot', async () => {
+    const store = AiKeyStore.getInstance();
+    await store.setApiKey('test-only-gemini', 'gemini');
+    await store.setApiKey('test-only-claude', 'anthropic');
+    expect(await store.getApiKey('gemini')).toBe('test-only-gemini');
+    expect(await store.getApiKey('anthropic')).toBe('test-only-claude');
+    await store.deleteApiKey('gemini');
+    expect(await store.getApiKey('gemini')).toBeNull();
+    expect(await store.getApiKey('anthropic')).toBe('test-only-claude');
+  });
+
+  it('migrates the old encrypted slot only to the selected provider', async () => {
+    saveAiSettings({ provider: 'gemini' });
+    const store = AiKeyStore.getInstance();
+    await store.setApiKey('test-only-legacy');
+    const records = mockIdb._stores.get('keys')!;
+    records.set('encrypted_api_key', records.get('encrypted_api_key_gemini'));
+    records.delete('encrypted_api_key_gemini');
+    expect(await store.getApiKey('anthropic')).toBeNull();
+    expect(await store.getApiKey('gemini')).toBe('test-only-legacy');
+    expect(records.has('encrypted_api_key')).toBe(false);
   });
 
   it('deletes API key from vault', async () => {

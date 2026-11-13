@@ -2,6 +2,9 @@ package com.pcoundia.buntu.core.data.repository
 
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
+import androidx.paging.map
+import kotlinx.coroutines.flow.combine
+import com.pcoundia.buntu.core.domain.repository.PlaybackHealthRepository
 import androidx.paging.PagingData
 import com.pcoundia.buntu.core.data.mapper.EngineMappers.parseHeadersJson
 import com.pcoundia.buntu.core.data.mapper.EngineMappers.toChannelDomain
@@ -41,6 +44,7 @@ class RustCatalogRepository @Inject constructor(
     private val engineProvider: EngineProvider,
     private val sourcesRepository: SourcesRepository,
     private val settingsRepository: SettingsRepository,
+    private val playbackHealth: PlaybackHealthRepository,
 ) : CatalogRepository {
 
     companion object {
@@ -68,7 +72,9 @@ class RustCatalogRepository @Inject constructor(
     override fun pagedLiveChannels(query: CatalogQuery): Flow<PagingData<ChannelItem>> =
         Pager(config = defaultPagingConfig()) {
             LiveChannelsPagingSource(engineProvider, query)
-        }.flow
+        }.flow.combine(playbackHealth.brokenChannels) { pages, statuses ->
+            pages.map { channel -> statuses[channel.stableHash]?.let { channel.copy(isBroken = it) } ?: channel }
+        }
 
     override fun pagedMovies(query: CatalogQuery): Flow<PagingData<MovieItem>> =
         Pager(config = defaultPagingConfig()) {

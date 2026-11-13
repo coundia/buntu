@@ -213,7 +213,7 @@ export class PairingService {
             maskedKey,
             accept: async () => {
               try {
-                await AiKeyStore.getInstance().setApiKey(apiKey);
+                await AiKeyStore.getInstance().setApiKey(apiKey, provider as any);
                 const current = getAiSettings();
                 saveAiSettings({
                   provider: provider as any,
@@ -257,6 +257,7 @@ export class PairingService {
             accept: async () => {
               try {
                 const store = HouseholdStore.getInstance();
+                LocalSyncService.getInstance().stop();
                 await store.setHouseholdKey(parsed.household_key);
                 store.saveHouseholdInfo({
                   household_id: parsed.household_id,

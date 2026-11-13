@@ -198,6 +198,14 @@ export class HouseholdStore {
         });
     }
 
+    public async joinHousehold(invite: string, name = 'Salon'): Promise<HouseholdInfo> {
+        const result = await WorkerBridge.getInstance().post('SYNC_HOUSEHOLD_JOIN', { invite });
+        await this.setHouseholdKey(result.household_key);
+        const info = { household_id: result.household_id, household_name: name.trim() || 'Salon', created_at: Date.now() };
+        this.saveHouseholdInfo(info);
+        return info;
+    }
+
     public async createHousehold(name = 'Maison'): Promise<HouseholdInfo> {
         const entropy = new Uint8Array(32);
         crypto.getRandomValues(entropy);

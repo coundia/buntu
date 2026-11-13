@@ -18,6 +18,9 @@ import javax.inject.Singleton
 abstract class PlatformModule {
 
     @Binds
+    abstract fun bindTvDataSender(impl: com.pcoundia.buntu.core.platform.phone.HouseholdTvDataSender): com.pcoundia.buntu.core.domain.repository.TvDataSender
+
+    @Binds
     @Singleton
     abstract fun bindSecretStore(impl: KeystoreSecretStore): SecretStore
 

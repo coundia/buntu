@@ -56,6 +56,7 @@ describe('Issue #2: Samsung TV Live TV Error Handling & Zapping', () => {
     RemoteKeyHandler.getInstance().destroy();
     player.stop();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('marks a channel as broken (HS) and heals it via Database.setBroken', async () => {
@@ -165,4 +166,73 @@ describe('Issue #2: Samsung TV Live TV Error Handling & Zapping', () => {
     expect(brokenChannel.is_broken).toBe(0);
     await vi.waitFor(() => expect(itemStore.get(brokenChannel.id)?.is_broken).toBe(0));
   });
+
+  it('hides the connection overlay when playback advances without buffering-complete', async () => {
+    vi.useFakeTimers();
+    const open = vi.spyOn(player, 'open').mockResolvedValue();
+    dispose = render(() => PlayerView({ item: { ...mockChannel }, onExit: vi.fn() }), container);
+    expect(container.textContent).toContain('Connexion… (tentative 1/3)');
+    // No buffering-complete notification: the picture has already started.
+    (player as any).listener.onCurrentPlayTime(1000);
+    expect(container.querySelector('[aria-label="Chargement du flux vidéo"]')).toBeNull();
+    await vi.advanceTimersByTimeAsync(14000);
+    expect(open).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain('Problème de lecture');
+    vi.useRealTimers();
+  });
+
+  it('cancels a pending reconnect when the current stream starts playing again', async () => {
+    vi.useFakeTimers();
+    const open = vi.spyOn(player, 'open').mockResolvedValue();
+    dispose = render(() => PlayerView({ item: { ...mockChannel }, onExit: vi.fn() }), container);
+    (player as any).listener.onError('Erreur transitoire');
+    expect(container.textContent).toContain('tentative 2/3');
+    (player as any).listener.onCurrentPlayTime(1000);
+    expect(container.querySelector('[aria-label="Chargement du flux vidéo"]')).toBeNull();
+    await vi.advanceTimersByTimeAsync(14000);
+    expect(open).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('keeps buffering visible for repeated timestamps and hides it on real progress', () => {
+    dispose = render(() => PlayerView({ item: { ...mockChannel }, onExit: vi.fn() }), container);
+    (player as any).listener.onCurrentPlayTime(1000);
+    (player as any).listener.onBufferingStart();
+    (player as any).listener.onCurrentPlayTime(1000);
+    expect(container.querySelector('[aria-label="Chargement du flux vidéo"]')).not.toBeNull();
+    (player as any).listener.onCurrentPlayTime(2000);
+    expect(container.querySelector('[aria-label="Chargement du flux vidéo"]')).toBeNull();
+  });
+
+  it('still retries a live connection stuck at timestamp zero', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(player, 'open').mockResolvedValue();
+    dispose = render(() => PlayerView({ item: { ...mockChannel }, onExit: vi.fn() }), container);
+    (player as any).listener.onCurrentPlayTime(0);
+    await vi.advanceTimersByTimeAsync(12000);
+    expect(container.textContent).toContain('tentative 2/3');
+    vi.useRealTimers();
+  });
+
+
+  it('removes the visible hors-service tag as soon as playback time advances', async () => {
+    const channel = { ...mockChannel, is_broken: 1 };
+    itemStore.set(channel.id, { ...channel });
+    dispose = render(() => PlayerView({ item: channel, onExit: vi.fn() }), container);
+    expect(container.textContent).toContain('HORS SERVICE');
+    (player as any).listener.onCurrentPlayTime(1000);
+    expect(container.textContent).not.toContain('HORS SERVICE');
+    await vi.waitFor(() => expect(itemStore.get(channel.id)?.is_broken).toBe(0));
+  });
+
+  it('applies failed and recovered status writes in order', async () => {
+    const events: boolean[] = [];
+    const unsubscribe = db.onBrokenChange((_id, broken) => events.push(broken));
+    try {
+      await Promise.all([db.setBroken(mockChannel.id, true), db.setBroken(mockChannel.id, false)]);
+      expect(events).toEqual([true, false]);
+      expect(itemStore.get(mockChannel.id)?.is_broken).toBe(0);
+    } finally { unsubscribe(); }
+  });
+
 });

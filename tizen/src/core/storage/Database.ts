@@ -1,3 +1,5 @@
+import { LocalSourceVault } from './LocalSourceVault';
+
 /**
  * CND IPTV Tizen - Storage & IndexedDB Database (PRD 38 § 2.2 & § 6)
  *
@@ -22,6 +24,8 @@ export interface SourceRecord {
   active_cons?: number;
   item_count: number;
   last_sync_at?: number;
+  /** Connection corrections are held in the device-only encrypted vault. */
+  local_override?: boolean;
 }
 
 export const FAVORITES_CATEGORY = '★ Favoris';
@@ -162,6 +166,17 @@ export class Database {
 
   // Sources CRUD
   public async getSources(): Promise<SourceRecord[]> {
+    const sources = await this.getSharedSources();
+    return Promise.all(sources.map(async (source) => {
+      if (!source.local_override) return source;
+      const edit = await LocalSourceVault.getInstance().get(source.uuid);
+      if (!edit) throw new Error('Coordonnées locales indisponibles');
+      return { ...source, ...edit };
+    }));
+  }
+
+  /** Original source connection, used for household identity, import and export. */
+  public async getSharedSources(): Promise<SourceRecord[]> {
     return this.getAll<SourceRecord>('sources');
   }
 
@@ -174,7 +189,7 @@ export class Database {
   }
 
   public async upsertSource(source: Omit<SourceRecord, 'id'> & { id?: number }): Promise<number> {
-    const existing = await this.getSources();
+    const existing = await this.getSharedSources();
     const match = existing.find(
       (s) =>
         (source.id != null && s.id === source.id) ||
@@ -580,13 +595,32 @@ export class Database {
     return item.is_favorite === 1;
   }
 
-  public async setBroken(itemId: number, broken = true): Promise<boolean> {
-    if (!this.db) return false;
-    const item = await this.getById<ItemRecord>('items', itemId);
-    if (!item) return false;
-    item.is_broken = broken ? 1 : 0;
-    await this.put('items', item);
-    return item.is_broken === 1;
+  private brokenListeners = new Set<(itemId: number, broken: boolean) => void>();
+  private brokenWrites = new Map<number, Promise<boolean>>();
+
+  public onBrokenChange(listener: (itemId: number, broken: boolean) => void): () => void {
+    this.brokenListeners.add(listener);
+    return () => { this.brokenListeners.delete(listener); };
+  }
+
+  public setBroken(itemId: number, broken = true): Promise<boolean> {
+    // Keep a late failed-state write from overwriting a subsequent recovery.
+    const previous = this.brokenWrites.get(itemId) || Promise.resolve(false);
+    const write = previous.catch(() => false).then(async () => {
+      if (!this.db) return false;
+      const item = await this.getById<ItemRecord>('items', itemId);
+      if (!item) return false;
+      if (item.is_broken !== (broken ? 1 : 0)) {
+        item.is_broken = broken ? 1 : 0;
+        await this.put('items', item);
+      }
+      for (const listener of this.brokenListeners) listener(itemId, broken);
+      return broken;
+    });
+    this.brokenWrites.set(itemId, write);
+    const cleanup = () => { if (this.brokenWrites.get(itemId) === write) this.brokenWrites.delete(itemId); };
+    void write.then(cleanup, cleanup);
+    return write;
   }
 
   public async getFavorites(): Promise<ItemRecord[]> {
@@ -726,6 +760,17 @@ export class Database {
     return { total, favCount, counts };
   }
 
+  /** Where each film or episode stopped, loaded once and kept up to date by `updateWatchProgress`. */
+  private progressCache: Map<number, { position_ms: number; duration_ms: number }> | null = null;
+
+  private async progressMap(): Promise<Map<number, { position_ms: number; duration_ms: number }>> {
+    if (!this.progressCache) {
+      const rows = await this.getAll<{ item_id: number; position_ms: number; duration_ms: number }>('progress');
+      this.progressCache = new Map(rows.map((r) => [r.item_id, { position_ms: r.position_ms, duration_ms: r.duration_ms }]));
+    }
+    return this.progressCache;
+  }
+
   public async updateWatchProgress(itemId: number, positionMs: number, durationMs: number): Promise<void> {
     await this.put('progress', {
       item_id: itemId,
@@ -733,6 +778,26 @@ export class Database {
       duration_ms: durationMs,
       updated_at: Date.now(),
     });
+    this.progressCache?.set(itemId, { position_ms: positionMs, duration_ms: durationMs });
+  }
+
+  /** Where this film or episode stopped on this TV, or `null`. */
+  public async getWatchProgress(itemId: number): Promise<{ position_ms: number; duration_ms: number } | null> {
+    return (await this.progressMap()).get(itemId) ?? null;
+  }
+
+  /** Fills `playback_position_ms` (and the length when unknown) of films and episodes from what was saved. */
+  public async withProgress<T extends ItemRecord>(items: T[]): Promise<T[]> {
+    if (items.length === 0) return items;
+    const map = await this.progressMap();
+    for (const item of items) {
+      if (item.kind === 'live') continue;
+      const saved = map.get(item.id);
+      if (!saved) continue;
+      if (!(item.playback_position_ms > 0)) item.playback_position_ms = saved.position_ms;
+      if (!(item.duration_ms > 0)) item.duration_ms = saved.duration_ms;
+    }
+    return items;
   }
 
   /** The programs of a channel that have not ended yet, in time order (read through the channel index). */

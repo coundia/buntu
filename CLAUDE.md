@@ -12,4 +12,5 @@ Les règles communes à tous les agents IA sont dans `AGENTS.md` ; elles s'appli
 - **Sous-agents et sessions parallèles :** ils travaillent souvent dans ce même dossier. Relire `git status` avant de commiter et n'ajouter que ses propres fichiers (`AGENTS.md § 2.1`).
 - **Commits :** seulement sur demande ; terminer le message par la ligne `Co-Authored-By` indiquée par l'outil.
 - **TV Samsung :** pour installer, inspecter ou simuler la télécommande, suivre `docs/TIZEN_CONTROLE_A_DISTANCE.md` (le script `scripts/run-tizen.sh --debug` ouvre l'inspecteur sur `localhost:9222`). Ne pas installer sur une adresse IP que l'utilisateur n'a pas confirmée.
-- **Commandes longues** (`xcodebuild`, `build-xcframework.sh`, Gradle complet) : les lancer en arrière-plan et attendre la notification plutôt que d'interroger en boucle.
+- **Builds : ne pas les lancer.** L'utilisateur les fait manuellement (`AGENTS.md § 2`). Indiquer le build à faire et pourquoi ; ne pas reconstruire le XCFramework, les liaisons Android, le `.wasm`, ni produire ou installer d'APK/app, même « pour vérifier ».
+- **Commandes longues** (tests Gradle ou `swift test` complets) : les lancer en arrière-plan et attendre la notification plutôt que d'interroger en boucle.

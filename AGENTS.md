@@ -34,6 +34,7 @@ Commandes courantes : `task --list` (voir `Taskfile.yml`).
 - **Appareils de l'utilisateur** (iPhone, TV) : n'installer **que sur l'appareil désigné par l'utilisateur**. L'adresse IP de la TV change souvent ; si elle ne répond plus, la chercher, mais **demander confirmation** avant d'installer sur une autre adresse.
 - **Ne pas « réparer en passant »** ce qui est hors du sujet ; le signaler.
 - **Suivi des tâches dans [`progress.md`](progress.md)** : noter chaque tâche, y compris les tâches de fond (tests, builds, scripts lancés en arrière-plan), avec son état (⏳ en cours, ✅ terminé, ❌ échec et pourquoi). Mettre l'état à jour dès que la tâche se termine.
+- **Ne pas lancer de build : l'utilisateur les fait lui-même** (`xcodebuild`, `build-xcframework.sh`, `build-android.sh`, `build-tizen.sh`, `assembleDebug`, `task run:*`, installation d'un APK ou d'une app). Quand un build est nécessaire (changement d'API UniFFI, de `cnd-domain` utilisé par la TV, nouveaux fichiers Swift…), **dire lequel et pourquoi** dans le récapitulatif et le noter dans `progress.md` (« à faire par l'utilisateur »). Les tests ciblés des modules touchés restent permis.
 - **Annoncer chaque fin de tâche à l'utilisateur**, réussie ou non, avec le résultat (« Terminé : tests `:feature:player`, 8/8 »). Une tâche de fond ne se termine jamais en silence.
 
 ### 2.1. Plusieurs agents travaillent dans ce même dossier

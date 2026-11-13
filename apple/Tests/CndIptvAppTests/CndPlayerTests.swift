@@ -87,6 +87,46 @@ private func media(_ name: String, kind: PlayableKind = .movie, headers: [String
 
 final class CndPlayerTests: XCTestCase {
 
+    @MainActor
+    func testLiveHealthClearsAfterAudioTimeAdvancesWithoutVideo() async {
+        var backend: MockBackend?
+        var timings = PlayerTimings()
+        timings.tick = 0.01
+        timings.watchdogInterval = 100
+        let recorder = PlaybackHealthRecorder()
+        let controller = makeController(timings: timings, behaviors: [.mpv: .freeze], created: { backend = $0 })
+        controller.playbackHealthHandler = { item, broken in await recorder.record(item.stableHash ?? "", broken) }
+        controller.open(media("audio-live.ts", kind: .live, hash: "audio-live"))
+        backend?.onStateChange?(.failed("Connexion interrompue"))
+        XCTAssertTrue(controller.isBroken)
+        backend?.onStateChange?(.playing)
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertTrue(controller.isBroken, "ready at timestamp zero is not recovery")
+        backend?.positionMs = 1000
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertFalse(controller.isBroken)
+        let states = await recorder.states
+        XCTAssertEqual(states.map { $0.1 }, [true, false])
+        XCTAssertTrue(states.allSatisfy { $0.0 == "audio-live" })
+        controller.close()
+    }
+
+    @MainActor
+    func testOldBackendFailureCannotMarkTheNewChannelBroken() async {
+        var backend: MockBackend?
+        var timings = PlayerTimings()
+        timings.tick = 0.01
+        timings.watchdogInterval = 100
+        let controller = makeController(timings: timings, behaviors: [.mpv: .freeze], created: { backend = $0 })
+        controller.open(media("old-health.ts", kind: .live, hash: "old-health"))
+        let oldEvent = backend?.onStateChange
+        controller.open(media("new-health.ts", kind: .live, hash: "new-health"))
+        oldEvent?(.failed("Ancienne chaîne"))
+        XCTAssertFalse(controller.isBroken)
+        XCTAssertEqual(controller.media?.stableHash, "new-health")
+        controller.close()
+    }
+
     // MARK: Routing
 
     func testRoutingPicksEngineFromExtensionAndPreference() {
@@ -536,4 +576,9 @@ final class CndPlayerTests: XCTestCase {
         XCTAssertFalse(backend.audioTracks().isEmpty)
     }
     #endif
+}
+
+private actor PlaybackHealthRecorder {
+    private(set) var states: [(String, Bool)] = []
+    func record(_ hash: String, _ broken: Bool) { states.append((hash, broken)) }
 }

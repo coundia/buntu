@@ -160,6 +160,12 @@ public final class CndPlayerController {
     public var brokenHandler: (@Sendable (PlayableMedia) async throws -> Bool)?
     /// Callback invoked whenever a broken toggle completes.
     public var onBrokenToggled: ((PlayableMedia, Bool) -> Void)?
+    /// Playback observations, persisted through the engine without requiring a video frame.
+    public var playbackHealthHandler: (@Sendable (PlayableMedia, Bool) async throws -> Void)?
+    private var healthWriteTask: Task<Void, Never>?
+    private var healthReported: Bool?
+    private var healthSourceId: String?
+    private var healthPositionMs: Int64 = 0
 
     /// Callbacks for external features (e.g. Up Next recommendations, Live Activity)
     public var onMediaChanged: ((PlayableMedia?) -> Void)?
@@ -307,6 +313,8 @@ public final class CndPlayerController {
         otherVersions = []
         slowDetector.reset()
         lastNetworkReadingAt = nil
+        healthSourceId = nil
+        healthReported = nil
         self.media = media
         self.isFavorite = media.isFavorite
         self.isBroken = media.isBroken
@@ -381,6 +389,7 @@ public final class CndPlayerController {
         audioTracks = []
         subtitleTracks = []
 
+        healthPositionMs = resumeAt
         newBackend.onStateChange = { [weak self] newState in
             guard let self, self.generation == token else { return }
             self.handleBackendState(newState)
@@ -549,12 +558,30 @@ public final class CndPlayerController {
 
     // MARK: Backend events, fallback
 
+    private func reportLiveHealth(broken: Bool) {
+        guard let media, media.kind == .live else { return }
+        if healthSourceId != media.id { healthSourceId = media.id; healthReported = nil }
+        guard healthReported != broken else { return }
+        healthReported = broken
+        isBroken = broken
+        self.media?.isBroken = broken
+        onBrokenToggled?(media, broken)
+        guard let handler = playbackHealthHandler else { return }
+        let previous = healthWriteTask
+        healthWriteTask = Task {
+            await previous?.value
+            do { try await handler(media, broken) }
+            catch { AppLog.shared.warn("PLAYER", "État de la chaîne non enregistré") }
+        }
+    }
+
     private func handleBackendState(_ newState: PlaybackState) {
         // During reconnection the recovery task owns the visible state transitions.
         let previous = state
         state = newState
         switch newState {
         case .failed(let reason):
+            reportLiveHealth(broken: true)
             AppLog.shared.error("PLAYER", "Échec de lecture (\(activeEngine.map(Self.engineName) ?? "?")) : \(reason)")
             if diagnosis?.isFinal == true { return }
             diagnoseFailure()
@@ -651,6 +678,11 @@ public final class CndPlayerController {
         guard let backend else { return }
         let now = Date()
         let position = backend.positionMs
+        if position > healthPositionMs && (state == .playing || state == .buffering) {
+            if isLive { cancelRecovery() }
+            reportLiveHealth(broken: false)
+        }
+        healthPositionMs = position
         positionMs = position
         durationMs = backend.durationMs
         subtitleOverlay.update(positionMs: position)
@@ -740,6 +772,7 @@ public final class CndPlayerController {
 
     private func beginRecovery() {
         guard recoveryTask == nil, let media else { return }
+        reportLiveHealth(broken: true)
         let now = Date()
         recentDropouts.append(now)
         recentDropouts = recentDropouts.filter { now.timeIntervalSince($0) <= 60 }

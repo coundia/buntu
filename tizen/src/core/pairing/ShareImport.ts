@@ -157,7 +157,7 @@ export async function applyShare(
   onProgress?: ImportProgressCallback,
   options: ApplyShareOptions = {}
 ): Promise<number> {
-  const existing = options.existingSources ?? (await Database.getInstance().getSources());
+  const existing = options.existingSources ?? (await Database.getInstance().getSharedSources());
   let added = 0;
   const actionable = preview.sources
     .map((meta, i) => ({ meta, source: preview.pending[i] }))
@@ -167,7 +167,7 @@ export async function applyShare(
     const { meta, source: s } = actionable[idx];
     if (meta.duplicate && options.replaceDuplicates) {
       const dup = findDuplicate(s, existing);
-      if (dup?.id) {
+      if (dup?.id && !dup.local_override) {
         await engine.deleteSource(dup.id);
       }
     }
@@ -191,5 +191,5 @@ export async function applyShare(
 }
 
 export async function existingSources(): Promise<SourceRecord[]> {
-  return Database.getInstance().getSources();
+  return Database.getInstance().getSharedSources();
 }

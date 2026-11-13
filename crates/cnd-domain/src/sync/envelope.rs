@@ -172,6 +172,81 @@ pub enum EnvelopeError {
     InvalidPayload(String),
 }
 
+/// AI credentials are allowed only inside the authenticated household envelope.
+/// Optional for older clients; errors never include the credential or payload.
+fn validate_ai_credentials(message: &SyncMessage) -> Result<(), EnvelopeError> {
+    let SyncMessage::HouseholdDataDelta { delta } = message else { return Ok(()) };
+    let Some(value) = delta.get("ai_configs") else { return Ok(()) };
+    let invalid = || EnvelopeError::InvalidPayload("configuration IA du foyer invalide".into());
+    let configs: Vec<crate::pairing::AiConfigPayload> =
+        serde_json::from_value(value.clone()).map_err(|_| invalid())?;
+    if configs.len() > 3 { return Err(invalid()); }
+    let mut providers = std::collections::HashSet::new();
+    for config in configs {
+        let Some(kind) = crate::ai::AiProviderKind::parse_str(&config.provider) else { return Err(invalid()) };
+        if kind == crate::ai::AiProviderKind::LocalOnly
+            || kind.label() != config.provider
+            || !providers.insert(config.provider)
+            || config.api_key.trim().is_empty()
+            || config.api_key.len() > 8192
+            || config.model.as_ref().is_some_and(|v| v.len() > 1024)
+            || config.base_url.as_ref().is_some_and(|v| v.len() > 4096)
+        { return Err(invalid()); }
+    }
+    Ok(())
+}
+
+/// Additive import: a household transfer never replaces an existing device credential.
+pub fn missing_household_ai_credentials(
+    configs: Vec<crate::pairing::AiConfigPayload>,
+    existing_providers: &[String],
+) -> Result<Vec<crate::pairing::AiConfigPayload>, EnvelopeError> {
+    validate_ai_credentials(&SyncMessage::HouseholdDataDelta {
+        delta: serde_json::json!({ "ai_configs": configs }),
+    })?;
+    Ok(configs.into_iter().filter(|config| !existing_providers.contains(&config.provider)).collect())
+}
+
+/// A key of a metadata service (not an AI provider) shared inside the household envelope, e.g. OMDb.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MetadataKeyPayload {
+    pub service: String,
+    pub api_key: String,
+}
+
+/// Services whose key may travel in `metadata_keys`.
+pub const HOUSEHOLD_METADATA_SERVICES: &[&str] = &["omdb"];
+
+/// `metadata_keys` of a household delta: known services only, no duplicates, no empty or oversized key.
+/// Optional for older clients; errors never include the key.
+fn validate_metadata_keys(message: &SyncMessage) -> Result<(), EnvelopeError> {
+    let SyncMessage::HouseholdDataDelta { delta } = message else { return Ok(()) };
+    let Some(value) = delta.get("metadata_keys") else { return Ok(()) };
+    let invalid = || EnvelopeError::InvalidPayload("clé de service du foyer invalide".into());
+    let keys: Vec<MetadataKeyPayload> = serde_json::from_value(value.clone()).map_err(|_| invalid())?;
+    if keys.len() > HOUSEHOLD_METADATA_SERVICES.len() { return Err(invalid()); }
+    let mut services = std::collections::HashSet::new();
+    for key in keys {
+        if !HOUSEHOLD_METADATA_SERVICES.contains(&key.service.as_str())
+            || !services.insert(key.service)
+            || key.api_key.trim().is_empty()
+            || key.api_key.len() > 256
+        { return Err(invalid()); }
+    }
+    Ok(())
+}
+
+/// Additive import: a household transfer never replaces a key the device already has.
+pub fn missing_household_metadata_keys(
+    keys: Vec<MetadataKeyPayload>,
+    existing_services: &[String],
+) -> Result<Vec<MetadataKeyPayload>, EnvelopeError> {
+    validate_metadata_keys(&SyncMessage::HouseholdDataDelta {
+        delta: serde_json::json!({ "metadata_keys": keys }),
+    })?;
+    Ok(keys.into_iter().filter(|key| !existing_services.contains(&key.service)).collect())
+}
+
 /// Derives a stable public household ID from the 32-byte secret key.
 pub fn derive_household_id(household_key: &[u8; 32]) -> String {
     let mut hasher = blake3::Hasher::new();
@@ -194,6 +269,8 @@ pub fn seal_envelope(
     nonce_bytes: &[u8; 12],
     message: &SyncMessage,
 ) -> Result<HouseholdEnvelope, EnvelopeError> {
+    validate_ai_credentials(message)?;
+    validate_metadata_keys(message)?;
     let household_id = derive_household_id(household_key);
     let cipher = Aes256Gcm::new_from_slice(household_key)
         .map_err(|_| EnvelopeError::InvalidKeyLength)?;
@@ -265,8 +342,11 @@ pub fn open_envelope(
         .decrypt(nonce, payload)
         .map_err(|_| EnvelopeError::DecryptionFailed)?;
 
-    serde_json::from_slice(&plaintext)
-        .map_err(|e| EnvelopeError::InvalidPayload(e.to_string()))
+    let message = serde_json::from_slice(&plaintext)
+        .map_err(|_| EnvelopeError::InvalidPayload("format du message invalide".into()))?;
+    validate_ai_credentials(&message)?;
+    validate_metadata_keys(&message)?;
+    Ok(message)
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -292,6 +372,66 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn household_ai_keys_are_encrypted_and_bound_to_the_household() {
+        let message = SyncMessage::HouseholdDataDelta { delta: serde_json::json!({
+            "sources": [], "ai_configs": [{"provider": "gemini", "api_key": "test-only-value"}]
+        }) };
+        let envelope = seal_envelope(&[42; 32], "phone", 1, &[7; 12], &message).unwrap();
+        assert!(!serde_json::to_string(&envelope).unwrap().contains("test-only-value"));
+        assert_eq!(open_envelope(&[42; 32], &envelope, 0).unwrap(), message);
+        assert!(open_envelope(&[43; 32], &envelope, 0).is_err());
+        assert!(open_envelope(&[42; 32], &envelope, 1).is_err());
+    }
+
+    #[test]
+    fn invalid_household_ai_keys_are_rejected_without_revealing_values() {
+        for configs in [
+            serde_json::json!([{"provider": "unknown", "api_key": "test-only-value"}]),
+            serde_json::json!([{"provider": "local_only", "api_key": "test-only-value"}]),
+            serde_json::json!([{"provider": "gemini", "api_key": ""}]),
+            serde_json::json!([{"provider": "gemini", "api_key": "test-only-value"}, {"provider": "gemini", "api_key": "test-only-value"}]),
+        ] {
+            let message = SyncMessage::HouseholdDataDelta { delta: serde_json::json!({"ai_configs": configs}) };
+            let error = seal_envelope(&[42; 32], "phone", 1, &[7; 12], &message).unwrap_err();
+            assert!(!error.to_string().contains("test-only-value"));
+        }
+    }
+
+
+    #[test]
+    fn household_metadata_keys_are_encrypted_validated_and_additive() {
+        let message = SyncMessage::HouseholdDataDelta { delta: serde_json::json!({
+            "sources": [], "metadata_keys": [{"service": "omdb", "api_key": "test-only-value"}]
+        }) };
+        let envelope = seal_envelope(&[42; 32], "mac", 1, &[7; 12], &message).unwrap();
+        assert!(!serde_json::to_string(&envelope).unwrap().contains("test-only-value"));
+        assert_eq!(open_envelope(&[42; 32], &envelope, 0).unwrap(), message);
+        for keys in [
+            serde_json::json!([{"service": "unknown", "api_key": "test-only-value"}]),
+            serde_json::json!([{"service": "omdb", "api_key": " "}]),
+            serde_json::json!([{"service": "omdb", "api_key": "a"}, {"service": "omdb", "api_key": "b"}]),
+        ] {
+            let bad = SyncMessage::HouseholdDataDelta { delta: serde_json::json!({"metadata_keys": keys}) };
+            let error = seal_envelope(&[42; 32], "mac", 1, &[7; 12], &bad).unwrap_err();
+            assert!(!error.to_string().contains("test-only-value"));
+        }
+        let keys = vec![MetadataKeyPayload { service: "omdb".into(), api_key: "test-only-value".into() }];
+        assert_eq!(missing_household_metadata_keys(keys.clone(), &[]).unwrap(), keys);
+        assert!(missing_household_metadata_keys(keys, &["omdb".into()]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn household_ai_import_preserves_existing_device_credentials() {
+        let configs: Vec<crate::pairing::AiConfigPayload> = serde_json::from_value(serde_json::json!([
+            {"provider": "gemini", "api_key": "test-only-value"},
+            {"provider": "anthropic", "api_key": "test-only-other"}
+        ])).unwrap();
+        let accepted = missing_household_ai_credentials(configs, &["gemini".into()]).unwrap();
+        assert_eq!(accepted.len(), 1);
+        assert_eq!(accepted[0].provider, "anthropic");
+    }
 
     #[test]
     fn test_seal_and_open_roundtrip() {

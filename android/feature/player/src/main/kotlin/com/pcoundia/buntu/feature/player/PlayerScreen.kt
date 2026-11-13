@@ -40,6 +40,8 @@ import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PictureInPictureAlt
@@ -186,14 +188,17 @@ fun PlayerRoute(
 
     LaunchedEffect(
         screenState.controlsVisible,
+        screenState.isScreenLocked,
         engineState.isPlaying,
         interactionTick,
         overlayHasFocus,
         openSheet,
         screenState.nextUpCard,
     ) {
-        val keepVisible = !engineState.isPlaying || overlayHasFocus || openSheet != PlayerSheet.NONE ||
-            screenState.nextUpCard != null
+        val keepVisible = !screenState.isScreenLocked && (
+            !engineState.isPlaying || overlayHasFocus || openSheet != PlayerSheet.NONE ||
+                screenState.nextUpCard != null
+            )
         if (screenState.controlsVisible && !keepVisible) {
             delay(if (screenState.isTv) AUTO_HIDE_TV_MS else AUTO_HIDE_MS)
             viewModel.hideControls()
@@ -207,6 +212,10 @@ fun PlayerRoute(
 
     BackHandler {
         when {
+            screenState.isScreenLocked -> {
+                interactionTick++
+                viewModel.showControls()
+            }
             screenState.nextUpCard != null -> viewModel.closeNextUpCard()
             openSheet != PlayerSheet.NONE -> closeSheet()
             else -> exit()
@@ -220,6 +229,14 @@ fun PlayerRoute(
         onSeekTo = { pos -> viewModel.videoEngine.seekTo(pos) },
         onZap = viewModel::zapAdjacentLive,
         onToggleFavorite = viewModel::toggleFavorite,
+        onLockScreen = {
+            closeSheet()
+            viewModel.lockScreen()
+        },
+        onUnlockScreen = {
+            interactionTick++
+            viewModel.unlockScreen()
+        },
         onOpenTracks = {
             closeSheet()
             viewModel.toggleTrackSheet(true)
@@ -255,6 +272,11 @@ fun PlayerRoute(
             .background(Color.Black)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (screenState.isScreenLocked) {
+                    interactionTick++
+                    viewModel.showControls()
+                    return@onPreviewKeyEvent false
+                }
                 val wasHidden = !screenState.controlsVisible
                 interactionTick++
                 viewModel.showControls()
@@ -337,13 +359,30 @@ fun PlayerRoute(
                         .fillMaxWidth()
                         .aspectRatio(16f / 9f),
                 )
-                PortraitDetails(
-                    engineState = engineState,
-                    capabilities = capabilities,
-                    actions = actions,
-                    upNext = screenState.upNextShelf,
-                    modifier = Modifier.weight(1f),
-                )
+                Box(modifier = Modifier.weight(1f)) {
+                    PortraitDetails(
+                        engineState = engineState,
+                        capabilities = capabilities,
+                        actions = actions,
+                        upNext = screenState.upNextShelf,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    if (screenState.isScreenLocked) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.45f))
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onTap = {
+                                            interactionTick++
+                                            viewModel.showControls()
+                                        },
+                                    )
+                                },
+                        )
+                    }
+                }
             }
         } else {
             VideoStage(
@@ -377,6 +416,14 @@ fun PlayerRoute(
                         .padding(12.dp)
                         .widthIn(max = 560.dp)
                         .fillMaxWidth(),
+                )
+            }
+
+            if (isLive && engineState.isBroken) {
+                Text(
+                    text = "⚠ HORS SERVICE",
+                    color = BuntuPalette.DangerRed,
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp),
                 )
             }
 
@@ -477,6 +524,8 @@ private class PlayerActions(
     val onSeekTo: (Long) -> Unit,
     val onZap: (Int) -> Unit,
     val onToggleFavorite: () -> Unit,
+    val onLockScreen: () -> Unit,
+    val onUnlockScreen: () -> Unit,
     val onOpenTracks: () -> Unit,
     val onOpenSettings: () -> Unit,
     val onOpenVersions: () -> Unit,
@@ -540,7 +589,7 @@ private fun VideoStage(
     }
 
     BoxWithConstraints(
-        modifier = modifier.pointerInput(isLive) {
+        modifier = modifier.pointerInput(isLive, screenState.isScreenLocked) {
             detectTapGestures(
                 onTap = {
                     onInteraction()
@@ -548,7 +597,9 @@ private fun VideoStage(
                 },
                 onDoubleTap = { offset ->
                     onInteraction()
-                    if (!isLive) {
+                    if (screenState.isScreenLocked) {
+                        viewModel.showControls()
+                    } else if (!isLive) {
                         val forward = offset.x > size.width / 2f
                         actions.onSeek(if (forward) SEEK_STEP_MS else -SEEK_STEP_MS)
                         seekFeedback = if (forward) 1 else -1
@@ -598,69 +649,77 @@ private fun VideoStage(
                 exit = fadeOut(),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .onFocusChanged { onOverlayFocus(it.hasFocus) },
-                ) {
-                    // YouTube-like scrims: dark at the top and the bottom only, the picture stays visible.
+                if (screenState.isScreenLocked) {
+                    LockedScreenOverlay(
+                        isTv = screenState.isTv,
+                        onUnlock = actions.onUnlockScreen,
+                        onOverlayFocus = onOverlayFocus,
+                    )
+                } else {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .fillMaxHeight(0.35f)
-                            .align(Alignment.TopCenter)
-                            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent))),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .fillMaxHeight(if (isFullscreen && !upNextShelf.isNullOrEmpty()) 0.6f else 0.4f)
-                            .align(Alignment.BottomCenter)
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)))),
-                    )
-
-                    TopBar(
-                        title = engineState.activeStream?.title,
-                        subtitle = engineState.activeStream?.subtitle,
-                        showTitle = isFullscreen,
-                        capabilities = capabilities,
-                        actions = actions,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .fillMaxWidth()
-                            .padding(
-                                horizontal = if (isFullscreen) 16.dp else 4.dp,
-                                vertical = if (isFullscreen) 12.dp else 2.dp,
-                            ),
-                    )
-
-                    CenterControls(
-                        isLive = isLive,
-                        isPlaying = engineState.isPlaying,
-                        bigIcon = bigIcon,
-                        smallIcon = smallIcon,
-                        actions = actions,
-                        modifier = Modifier.align(Alignment.Center),
-                    )
-
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .padding(
-                                horizontal = if (isFullscreen) 16.dp else 8.dp,
-                                vertical = if (isFullscreen) 12.dp else 0.dp,
-                            ),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                            .fillMaxSize()
+                            .onFocusChanged { onOverlayFocus(it.hasFocus) },
                     ) {
-                        if (isFullscreen && !upNextShelf.isNullOrEmpty() && screenState.nextUpCard == null) {
-                            UpNextShelfRow(
-                                items = upNextShelf,
-                                onPlay = actions.onPlayUpNext,
-                                onLongPress = actions.onUpNextMenu,
-                            )
+                        // YouTube-like scrims: dark at the top and the bottom only, the picture stays visible.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(0.35f)
+                                .align(Alignment.TopCenter)
+                                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent))),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(if (isFullscreen && !upNextShelf.isNullOrEmpty()) 0.6f else 0.4f)
+                                .align(Alignment.BottomCenter)
+                                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)))),
+                        )
+
+                        TopBar(
+                            title = engineState.activeStream?.title,
+                            subtitle = engineState.activeStream?.subtitle,
+                            showTitle = isFullscreen,
+                            capabilities = capabilities,
+                            actions = actions,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .padding(
+                                    horizontal = if (isFullscreen) 16.dp else 4.dp,
+                                    vertical = if (isFullscreen) 12.dp else 2.dp,
+                                ),
+                        )
+
+                        CenterControls(
+                            isLive = isLive,
+                            isPlaying = engineState.isPlaying,
+                            bigIcon = bigIcon,
+                            smallIcon = smallIcon,
+                            actions = actions,
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .padding(
+                                    horizontal = if (isFullscreen) 16.dp else 8.dp,
+                                    vertical = if (isFullscreen) 12.dp else 0.dp,
+                                ),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            if (isFullscreen && !upNextShelf.isNullOrEmpty() && screenState.nextUpCard == null) {
+                                UpNextShelfRow(
+                                    items = upNextShelf,
+                                    onPlay = actions.onPlayUpNext,
+                                    onLongPress = actions.onUpNextMenu,
+                                )
+                            }
+                            SeekBar(engineState = engineState, isLive = isLive, onSeekTo = actions.onSeekTo)
                         }
-                        SeekBar(engineState = engineState, isLive = isLive, onSeekTo = actions.onSeekTo)
                     }
                 }
             }
@@ -723,7 +782,64 @@ private fun TopBar(
         if (capabilities.hasTracks) {
             OverlayIcon(Icons.Filled.ClosedCaption, "Audio et sous-titres", onClick = actions.onOpenTracks)
         }
+        OverlayIcon(Icons.Filled.Lock, "Verrouiller l'écran", onClick = actions.onLockScreen)
         OverlayIcon(Icons.Filled.Settings, "Réglages de lecture", onClick = actions.onOpenSettings)
+    }
+}
+
+/**
+ * YouTube-style screen lock overlay: all playback controls are hidden and accidental taps/seeks are
+ * ignored; only a compact pill at the bottom allows unlocking the screen.
+ */
+@Composable
+private fun LockedScreenOverlay(
+    isTv: Boolean,
+    onUnlock: () -> Unit,
+    onOverlayFocus: (Boolean) -> Unit,
+) {
+    val unlockFocus = remember { FocusRequester() }
+    LaunchedEffect(isTv) {
+        if (isTv) runCatching { unlockFocus.requestFocus() }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .onFocusChanged { onOverlayFocus(it.hasFocus) },
+    ) {
+        Surface(
+            onClick = onUnlock,
+            color = Color.Black.copy(alpha = 0.78f),
+            shape = RoundedCornerShape(50),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 24.dp)
+                .focusRequester(unlockFocus),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.LockOpen,
+                    contentDescription = null,
+                    tint = BuntuPalette.TerangaGold,
+                )
+                Column {
+                    Text(
+                        text = "Écran verrouillé",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = "Appuyer pour déverrouiller",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.78f),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -860,6 +976,7 @@ private fun PortraitDetails(
                     .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                ActionChip(Icons.Filled.Lock, "Verrouiller", onClick = actions.onLockScreen)
                 if (capabilities.canFavorite) {
                     ActionChip(
                         icon = if (capabilities.isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
@@ -1056,6 +1173,13 @@ private fun PlayerSheetHost(
             }
             when (sheet) {
                 PlayerSheet.SETTINGS -> {
+                    item(key = "lock_screen") {
+                        SheetRow(
+                            icon = Icons.Filled.Lock,
+                            label = "Verrouiller l'écran",
+                            onClick = actions.onLockScreen,
+                        )
+                    }
                     if (!isLive) {
                         item(key = "speed_hdr") { SheetHeader("Vitesse de lecture") }
                         item(key = "speeds") {

@@ -686,6 +686,14 @@ public final class LocalSyncService: @unchecked Sendable {
                         + "(\(inserted.count) nouveau(x)), \(summary.favoritesApplied) favori(s), \(summary.watchApplied) reprise(s) ; "
                         + "\(summary.skipped) déjà à jour.")
                     if passwords.stored > 0 { log("Mot de passe enregistré pour \(passwords.stored) compte(s).") }
+                    if let aiConfigs = (deltaObject as? [String: Any])?["ai_configs"] as? [[String: Any]], !aiConfigs.isEmpty {
+                        let stored = Self.storeReceivedAiCredentials(aiConfigs)
+                        if stored > 0 { log("Clé IA reçue de \(sender) et enregistrée dans le Trousseau (\(stored) fournisseur(s)). Choisissez le fournisseur dans Réglages > IA pour l'utiliser.") }
+                    }
+                    if let keys = (deltaObject as? [String: Any])?["metadata_keys"] as? [[String: Any]], !keys.isEmpty {
+                        let stored = Self.storeReceivedMetadataKeys(keys)
+                        if stored > 0 { log("Clé OMDb reçue de \(sender) et enregistrée dans le Trousseau. Elle sert aux fiches des films.") }
+                    }
                     for name in passwords.missing {
                         log("Compte « \(name) » reçu sans mot de passe : mettez à jour Buntu sur \(sender), ou saisissez le mot de passe ici.", warning: true)
                     }
@@ -1093,8 +1101,10 @@ public final class LocalSyncService: @unchecked Sendable {
     /// of the accounts it contains. `nil` when there is nothing to send.
     private func deltaMessageJson(engine: CndEngine, since: Int64) -> String? {
         guard let delta = try? engine.exportSyncDelta(sinceTs: since) else { return nil }
+        let aiConfigs = since == 0 ? Self.householdAiCredentials() : []
+        let metadataKeys = since == 0 ? Self.householdMetadataKeys() : []
         guard !(delta.profiles.isEmpty && delta.sources.isEmpty && delta.favorites.isEmpty
-                && delta.watchHistory.isEmpty && delta.tombstones.isEmpty) else { return nil }
+                && delta.watchHistory.isEmpty && delta.tombstones.isEmpty && aiConfigs.isEmpty && metadataKeys.isEmpty) else { return nil }
         var dto = SyncDeltaDTO(delta)
         dto.sources = dto.sources.map { source in
             var source = source
@@ -1107,10 +1117,115 @@ public final class LocalSyncService: @unchecked Sendable {
         // `household_data_delta` is the message the protocol (cnd-domain `SyncMessage`) knows for this
         // format; a bare `sync_delta` in this shape was refused by the sealer, so nothing was ever sent.
         guard let data = try? JSONEncoder().encode(dto),
-              let deltaObject = try? JSONSerialization.jsonObject(with: data) else { return nil }
+              var deltaObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if !aiConfigs.isEmpty { deltaObject["ai_configs"] = aiConfigs }
+        if !metadataKeys.isEmpty { deltaObject["metadata_keys"] = metadataKeys }
         let wrapped: [String: Any] = ["type": "household_data_delta", "delta": deltaObject]
         guard let message = try? JSONSerialization.data(withJSONObject: wrapped) else { return nil }
         return String(data: message, encoding: .utf8)
+    }
+
+    /// Only the user's own Keychain entries: bundled build keys are never exported.
+    static func householdAiCredentials(
+        readSecret: (String) throws -> String? = { try KeychainStore.shared.readSecret(forKey: $0) }
+    ) -> [[String: String]] {
+        return householdAiProviders.compactMap { provider, reference in
+            guard let key = try? readSecret(reference),
+                  !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return ["provider": provider, "api_key": key]
+        }
+    }
+
+    /// The user's own OMDb key (Keychain), for the household devices that show film facts (the TV).
+    /// The key bundled in the build is never exported. Checked by cnd-domain (`metadata_keys`) on the other side.
+    static func householdMetadataKeys(
+        readSecret: (String) throws -> String? = { try KeychainStore.shared.readSecret(forKey: $0) }
+    ) -> [[String: String]] {
+        guard let key = (try? readSecret(KeychainStore.omdbApiKeyRef)) ?? nil else { return [] }
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? [] : [["service": "omdb", "api_key": trimmed]]
+    }
+
+    /// TEMPORARY Swift copy of `cnd_domain::sync::missing_household_metadata_keys` (known service, no duplicate,
+    /// no empty or oversized key, nothing already saved). Once `./scripts/build-xcframework.sh` has been run,
+    /// replace it with `syncMissingMetadataKeys(keysJson:existingServices:)` (exported by `cnd-core`) so the rule
+    /// lives only in Rust.
+    static func missingMetadataKeys(_ keys: [[String: Any]], existing: [String]) -> [[String: Any]] {
+        var seen = Set<String>()
+        var accepted: [[String: Any]] = []
+        for entry in keys {
+            guard let service = entry["service"] as? String, service == "omdb",
+                  let apiKey = entry["api_key"] as? String,
+                  !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, apiKey.count <= 256,
+                  seen.insert(service).inserted else { return [] }
+            if !existing.contains(service) { accepted.append(entry) }
+        }
+        return accepted
+    }
+
+    /// Additive import of the metadata-service keys of a household delta (OMDb): the rule is
+    /// `cnd_domain::sync::missing_household_metadata_keys` (Rust, also used by the TV); a key the user already saved is kept
+    /// (the build's default key does not count). Returns how many were stored. Values are never logged.
+    @discardableResult
+    static func storeReceivedMetadataKeys(
+        _ keys: [[String: Any]],
+        readSecret: (String) throws -> String? = { try KeychainStore.shared.readSecret(forKey: $0) },
+        saveSecret: (String, String) throws -> Void = { key, reference in
+            try KeychainStore.shared.saveSecret(key, forKey: reference, scope: KeychainStore.shared.passwordScope)
+        },
+        missing: ([[String: Any]], [String]) throws -> [[String: Any]] = LocalSyncService.missingMetadataKeys
+    ) -> Int {
+        let references = ["omdb": KeychainStore.omdbApiKeyRef]
+        let existing = references.compactMap { service, reference -> String? in
+            guard let key = (try? readSecret(reference)) ?? nil,
+                  !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return service
+        }
+        guard let accepted = try? missing(keys, existing) else { return 0 }
+        var stored = 0
+        for entry in accepted {
+            guard let service = entry["service"] as? String, let apiKey = entry["api_key"] as? String,
+                  let reference = references[service] else { continue }
+            if (try? saveSecret(apiKey, reference)) != nil { stored += 1 }
+        }
+        return stored
+    }
+
+    /// Wire name of a provider in `ai_configs` -> this device's Keychain reference (`AiChoice.keychainKey`).
+    static let householdAiProviders = [("gemini", "cnd.ai.gemini.apikey"),
+                                       ("openai_compatible", "cnd.ai.openAiCompatible.apikey"),
+                                       ("anthropic", "cnd.ai.anthropic.apikey")]
+
+    /// Additive import of the AI keys of a household delta: which providers are missing is the Rust rule
+    /// (`cnd_domain::sync::missing_household_ai_credentials`); a key already saved here is never replaced.
+    /// Returns how many keys were stored. Key values are never logged.
+    @discardableResult
+    static func storeReceivedAiCredentials(
+        _ configs: [[String: Any]],
+        readSecret: (String) throws -> String? = { try KeychainStore.shared.readSecret(forKey: $0) },
+        saveSecret: (String, String) throws -> Void = { key, reference in
+            try KeychainStore.shared.saveSecret(key, forKey: reference, scope: KeychainStore.shared.passwordScope)
+        },
+        missing: ([[String: Any]], [String]) throws -> [[String: Any]] = { configs, existing in
+            guard let data = try? JSONSerialization.data(withJSONObject: configs),
+                  let json = String(data: data, encoding: .utf8) else { return [] }
+            let accepted = try syncMissingAiCredentials(configsJson: json, existingProviders: existing)
+            return (try? JSONSerialization.jsonObject(with: Data(accepted.utf8)) as? [[String: Any]]) ?? []
+        }
+    ) -> Int {
+        let existing = householdAiProviders.compactMap { provider, reference -> String? in
+            guard let key = (try? readSecret(reference)) ?? nil,
+                  !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return provider
+        }
+        guard let accepted = try? missing(configs, existing) else { return 0 }
+        var stored = 0
+        for config in accepted {
+            guard let provider = config["provider"] as? String, let apiKey = config["api_key"] as? String,
+                  let reference = householdAiProviders.first(where: { $0.0 == provider })?.1 else { continue }
+            if (try? saveSecret(apiKey, reference)) != nil { stored += 1 }
+        }
+        return stored
     }
 
     /// Puts the passwords of received accounts in this device's Keychain (never in the database).

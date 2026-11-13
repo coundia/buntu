@@ -1795,6 +1795,31 @@ pub fn sync_household_key_from_scanned(text: String) -> Option<String> {
     cnd_domain::sync::household_key_from_scanned(&text)
 }
 
+/// The AI credentials of a received household delta (`ai_configs`, JSON array) that this device does not
+/// have yet, as a JSON array. The key of a provider already configured here is never replaced.
+/// Errors never include the credentials.
+#[uniffi::export]
+pub fn sync_missing_ai_credentials(configs_json: String, existing_providers: Vec<String>) -> Result<String, CndError> {
+    let invalid = || CndError::Internal { message: "configuration IA du foyer invalide".to_string() };
+    let configs: Vec<cnd_domain::pairing::AiConfigPayload> =
+        serde_json::from_str(&configs_json).map_err(|_| invalid())?;
+    let accepted = cnd_domain::sync::missing_household_ai_credentials(configs, &existing_providers)
+        .map_err(|_| invalid())?;
+    serde_json::to_string(&accepted).map_err(|_| invalid())
+}
+
+/// The metadata-service keys (`metadata_keys`, JSON array, e.g. OMDb) of a received household delta that this
+/// device does not have yet, as a JSON array. A key already saved here is never replaced. Errors never include keys.
+#[uniffi::export]
+pub fn sync_missing_metadata_keys(keys_json: String, existing_services: Vec<String>) -> Result<String, CndError> {
+    let invalid = || CndError::Internal { message: "clé de service du foyer invalide".to_string() };
+    let keys: Vec<cnd_domain::sync::MetadataKeyPayload> =
+        serde_json::from_str(&keys_json).map_err(|_| invalid())?;
+    let accepted = cnd_domain::sync::missing_household_metadata_keys(keys, &existing_services)
+        .map_err(|_| invalid())?;
+    serde_json::to_string(&accepted).map_err(|_| invalid())
+}
+
 #[uniffi::export]
 pub fn sync_create_household(entropy: Vec<u8>) -> Result<HouseholdCredentials, CndError> {
     if entropy.len() < 32 {

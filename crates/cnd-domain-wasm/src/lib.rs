@@ -410,6 +410,21 @@ fn parse_hex_12(hex_str: &str) -> Result<[u8; 12], JsValue> {
 }
 
 #[wasm_bindgen]
+pub fn wasm_sync_household_invite(key_hex: &str) -> Result<String, JsValue> {
+    cnd_domain::sync::household_invite_link(key_hex)
+        .ok_or_else(|| JsValue::from_str("Invitation de salon invalide"))
+}
+
+#[wasm_bindgen]
+pub fn wasm_sync_household_join(scanned: &str) -> Result<String, JsValue> {
+    let key = cnd_domain::sync::household_key_from_scanned(scanned)
+        .ok_or_else(|| JsValue::from_str("Invitation de salon invalide"))?;
+    let bytes = parse_hex_32(&key)?;
+    let id = cnd_domain::sync::derive_household_id(&bytes);
+    Ok(serde_json::json!({"household_key": key, "household_id": id}).to_string())
+}
+
+#[wasm_bindgen]
 pub fn wasm_sync_create_household(entropy_hex: &str) -> Result<String, JsValue> {
     let entropy = parse_hex_32(entropy_hex)?;
     let household_key = cnd_domain::sync::create_household_key(&entropy);
@@ -456,6 +471,28 @@ pub fn wasm_sync_open_envelope(
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     serde_json::to_string(&message).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn wasm_sync_missing_ai_credentials(configs_json: &str, existing_json: &str) -> Result<String, JsValue> {
+    let configs = serde_json::from_str(configs_json)
+        .map_err(|_| JsValue::from_str("configuration IA du foyer invalide"))?;
+    let existing: Vec<String> = serde_json::from_str(existing_json)
+        .map_err(|_| JsValue::from_str("liste des fournisseurs invalide"))?;
+    let accepted = cnd_domain::sync::missing_household_ai_credentials(configs, &existing)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    serde_json::to_string(&accepted).map_err(|_| JsValue::from_str("configuration IA invalide"))
+}
+
+#[wasm_bindgen]
+pub fn wasm_sync_missing_metadata_keys(keys_json: &str, existing_json: &str) -> Result<String, JsValue> {
+    let keys = serde_json::from_str(keys_json)
+        .map_err(|_| JsValue::from_str("clé de service du foyer invalide"))?;
+    let existing: Vec<String> = serde_json::from_str(existing_json)
+        .map_err(|_| JsValue::from_str("liste des services invalide"))?;
+    let accepted = cnd_domain::sync::missing_household_metadata_keys(keys, &existing)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    serde_json::to_string(&accepted).map_err(|_| JsValue::from_str("clé de service invalide"))
 }
 
 #[wasm_bindgen]
@@ -564,4 +601,17 @@ pub fn wasm_remote_should_stop_stream(
         current_source_key.as_deref(),
         release_source_key,
     )
+}
+
+#[wasm_bindgen]
+pub fn wasm_validate_source_edit(edit_json: &str) -> Result<String, JsValue> {
+    let edit = serde_json::from_str(edit_json).map_err(|_| JsValue::from_str("Modification invalide"))?;
+    let edit = cnd_domain::source_edit::validate_source_edit(edit).map_err(JsValue::from_str)?;
+    serde_json::to_string(&edit).map_err(|_| JsValue::from_str("Modification invalide"))
+}
+
+#[wasm_bindgen]
+pub fn wasm_rewrite_source_locator(locator: &str, edit_json: &str) -> Result<String, JsValue> {
+    let edit = serde_json::from_str(edit_json).map_err(|_| JsValue::from_str("Modification invalide"))?;
+    cnd_domain::source_edit::rewrite_source_locator(locator, edit).map_err(JsValue::from_str)
 }

@@ -47,6 +47,8 @@ class DataStoreSettingsRepository @Inject constructor(
         val AI_MODEL = stringPreferencesKey("ai_model")
         val AI_ENDPOINT = stringPreferencesKey("ai_endpoint")
         val AI_SEND_RECENT = booleanPreferencesKey("ai_send_recent_titles")
+        val AI_CONSENT = booleanPreferencesKey("ai_consent")
+        val AI_AUTO_SEARCH = booleanPreferencesKey("ai_auto_search")
 
         val UPNEXT_SHELF = booleanPreferencesKey("upnext_shelf_enabled")
         val UPNEXT_CARD = booleanPreferencesKey("upnext_card_enabled")
@@ -102,6 +104,8 @@ class DataStoreSettingsRepository @Inject constructor(
         it[Keys.AI_MODEL] = config.model
         it[Keys.AI_ENDPOINT] = config.endpointUrl
         it[Keys.AI_SEND_RECENT] = config.sendRecentTitles
+        it[Keys.AI_CONSENT] = config.consent
+        it[Keys.AI_AUTO_SEARCH] = config.autoSearch
     }
 
     override suspend fun setUpNextPreferences(preferences: UpNextPreferences) = updatePref {
@@ -137,6 +141,8 @@ class DataStoreSettingsRepository @Inject constructor(
                 model = this[Keys.AI_MODEL].orEmpty(),
                 endpointUrl = this[Keys.AI_ENDPOINT].orEmpty(),
                 sendRecentTitles = this[Keys.AI_SEND_RECENT] ?: false,
+                consent = this[Keys.AI_CONSENT] ?: true,
+                autoSearch = this[Keys.AI_AUTO_SEARCH] ?: true,
             ),
             upNext = UpNextPreferences(
                 shelfEnabled = this[Keys.UPNEXT_SHELF] ?: true,

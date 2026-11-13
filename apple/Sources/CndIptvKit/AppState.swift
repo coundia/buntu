@@ -131,6 +131,13 @@ public final class AppState {
             guard let self, let engine else { return false }
             return try await self.toggleBroken(for: media, using: engine)
         }
+        player.playbackHealthHandler = { [weak self, weak engine] media, broken in
+            guard let engine, let hash = media.stableHash else { return }
+            _ = try await Task.detached(priority: .utility) {
+                try engine.setBroken(stableHash: hash, itemKind: "live", broken: broken)
+            }.value
+            await self?.refreshLiveHealthCatalog()
+        }
         player.mirrorFinder = { [weak engine] itemId in
             guard let engine else { return [] }
             return try engine.findMirrors(itemId: itemId)
@@ -433,6 +440,8 @@ public final class AppState {
         self.reloadSnapshot(notifyScreens: false)
         return newFav
     }
+
+    private func refreshLiveHealthCatalog() { catalogRevision += 1 }
 
     func toggleBroken(for media: PlayableMedia, using engine: CndEngine) async throws -> Bool {
         if media.kind == .episode {

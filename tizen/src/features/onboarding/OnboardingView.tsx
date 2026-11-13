@@ -1,5 +1,5 @@
 import { Component, createSignal, Show } from 'solid-js';
-import { PairingView } from '../pairing/PairingView';
+import { HouseholdJoinView } from '../pairing/HouseholdJoinView';
 import { ManualSourceForm } from './ManualSourceForm';
 
 export interface OnboardingProps {
@@ -19,13 +19,12 @@ export const OnboardingView: Component<OnboardingProps> = (props) => {
         />
       </Show>
       <Show when={!isManualInput()}>
-        <PairingView
-          title="Bienvenue sur Buntu"
-          subtitle="Ajoutez votre abonnement depuis votre smartphone en scannant le QR code."
-          onSuccess={() => props.onComplete()}
+        <HouseholdJoinView
+          title="Bienvenue sur Buntu — Ajouter cette TV à votre salon"
+          onJoined={() => props.onComplete()}
           onBack={() => props.onComplete()}
-          onSwitchToManual={() => setIsManualInput(true)}
-          onSkip={() => props.onComplete()}
+          backLabel="Passer / Explorer Buntu"
+          onManualInput={() => setIsManualInput(true)}
         />
       </Show>
     </div>

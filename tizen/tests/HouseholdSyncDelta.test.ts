@@ -104,7 +104,7 @@ describe('HouseholdSyncDelta Tests (PRD-45 Sync & Logging on Tizen)', () => {
     const db = Database.getInstance();
 
     let upsertedSource: any = null;
-    vi.spyOn(db, 'getSources').mockResolvedValue([]);
+    vi.spyOn(db, 'getSharedSources').mockResolvedValue([]);
     vi.spyOn(db, 'upsertSource').mockImplementation(async (src: any) => {
       upsertedSource = src;
       return 42;
@@ -151,7 +151,7 @@ describe('HouseholdSyncDelta Tests (PRD-45 Sync & Logging on Tizen)', () => {
     const db = Database.getInstance();
 
     let upserted = 0;
-    vi.spyOn(db, 'getSources').mockResolvedValue([]);
+    vi.spyOn(db, 'getSharedSources').mockResolvedValue([]);
     vi.spyOn(db, 'upsertSource').mockImplementation(async () => {
       upserted++;
       return 7;

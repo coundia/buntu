@@ -1,5 +1,8 @@
-import { Component, createSignal, createMemo, createEffect, onMount, onCleanup, For, Show } from 'solid-js';
-import { CndEngine } from '../../core/engine/CndEngine';
+import { aiSuggestions, mergeSuggestions, searchMode, searchModeLabel, toggleSearchMode } from '../../core/search/searchMode';
+import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
+import { registerYellowFavorite } from '../../ui/design/yellowFavorite';
+import { Component, createSignal, createMemo, createEffect, onMount, onCleanup, For, Show, untrack } from 'solid-js';
+import { CndEngine, MovieInfo } from '../../core/engine/CndEngine';
 import { ItemRecord, FAVORITES_CATEGORY, RECENT_CATEGORY } from '../../core/storage/Database';
 import { AVPlayerService } from '../../core/player/AVPlayerService';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
@@ -12,7 +15,7 @@ import { createMiniPlayer } from '../../core/player/MiniPlayerController';
 import { MiniPlayerPanel } from '../../ui/components/MiniPlayerPanel';
 import { InfoChips, InfoSection, InfoProgress } from '../../ui/components/InfoParts';
 import { formatDuration, formatRuntime, percentOf } from '../../core/utils/timeFormat';
-import { panelFocusItems, panelItemForRow, installPanelLeftReturn } from '../../ui/design/miniPlayerFocus';
+import { panelFocusItems, panelItemsForRow, installPanelLeftReturn, PANEL_MIN_ROWS } from '../../ui/design/miniPlayerFocus';
 
 export interface MoviesViewProps {
   onSelectMovie: (movie: ItemRecord) => void;
@@ -33,6 +36,8 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
   const [selectedCat, setSelectedCat] = createSignal<string>('');
   const [catFilter, setCatFilter] = createSignal<string>('');
   const [showCats, setShowCats] = createSignal(true);
+  // False until the first load is over: the counts would read 0 and the lists look empty.
+  const [loaded, setLoaded] = createSignal(false);
   const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
   // Bumped when a favorite flag changes (the records are mutated in place).
   const [favTick, setFavTick] = createSignal(0);
@@ -43,6 +48,14 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     onFullscreen: (mv) => (props.onPlayMovie ? props.onPlayMovie(mv) : props.onSelectMovie(mv)),
     startTimeoutMs: 45000, // a film resolves its final address first, then buffers more than a channel
     timeoutMessage: 'Le serveur ne répond pas',
+    // OK on a film plays it in the panel and moves the cursor there, to read its text; full screen is chosen in the panel.
+    focusPanelOnActivate: () => {
+      spatialNav.setFocusById('mv-insp-screen');
+      setTimeout(() => {
+        // The panel may only exist once the grid is rebuilt for the film: try again unless the cursor is already there.
+        if (!spatialNav.getCurrentFocusId().startsWith('mv-insp-')) spatialNav.setFocusById('mv-insp-screen');
+      }, 150);
+    },
   });
   let unsubPanelKeys: (() => void) | null = null;
 
@@ -115,7 +128,31 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     setFavMovies(favs);
   };
 
+  // What the provider says about the highlighted film (synopsis, genre, cast…): fetched once the cursor rests on it.
+  const [movieInfos, setMovieInfos] = createSignal<Record<number, MovieInfo | null>>({});
+  let infoTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(() => {
+    const mv = mini.focused();
+    clearTimeout(infoTimer);
+    if (!mv || mv.id in untrack(movieInfos)) return;
+    infoTimer = setTimeout(async () => {
+      const info = await engine.getMovieInfo(mv).catch(() => null);
+      setMovieInfos((prev) => ({ ...prev, [mv.id]: info }));
+    }, 350);
+  });
+  onCleanup(() => clearTimeout(infoTimer));
+
+  // Yellow button: add or remove the highlighted film from the favourites.
+  onCleanup(
+    registerYellowFavorite({
+      isItemFocus: (id) => /^(?:movie|recent-mv|fav-mv)-\d+$/.test(id) || id.startsWith('mv-insp'),
+      current: () => mini.focused(),
+      toggle: (item) => handleToggleFavorite(item),
+    })
+  );
+
   onMount(async () => {
+    try {
     resizeHandler = () => {
       mini.syncRect();
       scheduleRebuildGrid(true);
@@ -184,6 +221,12 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       spatialNav.setFocusById(firstId);
     } else if (cats.length > 0) {
       spatialNav.setFocusById('movie-cat-all');
+    }
+  
+    } catch (error) {
+      console.warn('Chargement initial impossible', error);
+    } finally {
+      setLoaded(true);
     }
   });
 
@@ -260,6 +303,27 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     scheduleRebuildGrid(true);
   };
 
+  // The search engine (local / IA) is chosen with the button after the field. In IA mode, once typing pauses,
+  // the assistant's suggestions are put in front of the local results.
+  let aiTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(aiTimer));
+  const scheduleAiRefine = (query: string) => {
+    clearTimeout(aiTimer);
+    if (searchMode() !== 'ai' || query.trim().length < 3) return;
+    aiTimer = setTimeout(async () => {
+      const extra = await aiSuggestions(engine, query, 'movie').catch(() => []);
+      if (searchQuery() !== query || extra.length === 0) return;
+      setSearchResults(mergeSuggestions(searchResults(), extra));
+      announce(`L’assistant propose ${extra.length} résultat(s)`);
+      scheduleRebuildGrid(true);
+    }, 900);
+  };
+  const switchSearchEngine = async () => {
+    const change = await toggleSearchMode();
+    announce(change.message);
+    if (searchQuery().trim()) void handleSearch(searchQuery());
+  };
+
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (!query.trim()) {
@@ -270,6 +334,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     const results = await engine.searchCatalog(query, 'movie', 100);
     setSearchResults(results);
     announce(`${results.length} films trouvés`);
+    scheduleAiRefine(query);
     scheduleRebuildGrid(true);
   };
 
@@ -307,27 +372,14 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
 
     // Row 0: Toolbar
     const toolbarRow: FocusableItem[] = [
-      { id: 'mv-toggle-cats', onSelect: () => { setShowCats((v) => !v); scheduleRebuildGrid(true); } },
-      { id: 'mv-mode-grid', onSelect: () => { setViewMode('grid'); scheduleRebuildGrid(true); } },
-      { id: 'mv-mode-list', onSelect: () => { setViewMode('list'); scheduleRebuildGrid(true); } },
-      { id: 'mv-toggle-inspector', onSelect: toggleInspector },
       { id: 'mv-search-input', onSelect: () => focusDomInput('mv-search-input') },
+      { id: 'mv-search-mode', onSelect: switchSearchEngine },
     ];
-    if (searchQuery().trim()) {
-      toolbarRow.push({ id: 'mv-search-clear', onSelect: () => void handleSearch('') });
-    }
     grid.push(toolbarRow);
 
     // Left Category Column
     const catColItems: FocusableItem[] = [];
     if (showCats()) {
-      catColItems.push({
-        id: 'mv-cat-home',
-        onSelect: () => {
-          setCatFilter('');
-          void handleSelectCategory('');
-        },
-      });
       catColItems.push({
         id: 'mv-cat-filter',
         onSelect: () => focusDomInput('mv-cat-filter'),
@@ -402,7 +454,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
           ])
         : [];
 
-    const totalBodyRows = Math.max(catColItems.length, contentRows.length, inspectorItems.length);
+    const totalBodyRows = Math.max(catColItems.length, contentRows.length, inspectorItems.length > 0 ? PANEL_MIN_ROWS : 0);
     for (let r = 0; r < totalBodyRows; r++) {
       const row: FocusableItem[] = [];
       if (catColItems.length > 0) {
@@ -412,8 +464,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
         row.push(...contentRows[Math.min(r, contentRows.length - 1)]);
       }
       // The panel is reachable with RIGHT from every row.
-      const panelItem = panelItemForRow(inspectorItems, r);
-      if (panelItem) row.push(panelItem);
+      row.push(...panelItemsForRow(inspectorItems, r));
       if (row.length > 0) grid.push(row);
     }
 
@@ -508,18 +559,6 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       {/* Top Toolbar */}
       <header class="buntu-toolbar">
         <div class="buntu-toolbar-left">
-          <button
-            id="mv-toggle-cats"
-            type="button"
-            tabindex="-1"
-            class={`buntu-tool-btn ${showCats() ? 'active' : ''} ${focusId() === 'mv-toggle-cats' ? 'focused' : ''}`}
-            onClick={() => {
-              setShowCats((v) => !v);
-              scheduleRebuildGrid(true);
-            }}
-          >
-            ☰
-          </button>
           <h1 class="buntu-toolbar-title">Films</h1>
           <Show when={totalCount() > 0}>
             <span class="buntu-toolbar-subtitle">{formatBuntuCount(totalCount())} films</span>
@@ -527,43 +566,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
         </div>
 
         <div class="buntu-toolbar-right">
-          <div class="buntu-seg-group">
-            <button
-              id="mv-mode-grid"
-              type="button"
-              tabindex="-1"
-              class={`buntu-seg-btn ${viewMode() === 'grid' ? 'active' : ''} ${focusId() === 'mv-mode-grid' ? 'focused' : ''}`}
-              onClick={() => {
-                setViewMode('grid');
-                scheduleRebuildGrid(true);
-              }}
-            >
-              ⊞
-            </button>
-            <button
-              id="mv-mode-list"
-              type="button"
-              tabindex="-1"
-              class={`buntu-seg-btn ${viewMode() === 'list' ? 'active' : ''} ${focusId() === 'mv-mode-list' ? 'focused' : ''}`}
-              onClick={() => {
-                setViewMode('list');
-                scheduleRebuildGrid(true);
-              }}
-            >
-              ☰
-            </button>
-          </div>
-
-          <button
-            id="mv-toggle-inspector"
-            type="button"
-            tabindex="-1"
-            class={`buntu-tool-btn ${mini.visible() ? 'active' : ''} ${focusId() === 'mv-toggle-inspector' ? 'focused' : ''}`}
-            onClick={toggleInspector}
-          >
-            ◫
-          </button>
-
+          <span class="buntu-key-hint"><i class="buntu-key-dot" />Favori</span>
           <div class="buntu-search-wrap">
             <span class="buntu-search-icon">🔍</span>
             <input
@@ -574,18 +577,17 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
               class={`buntu-search-field ${focusId() === 'mv-search-input' ? 'focused' : ''}`}
               onInput={(e) => void handleSearch(e.currentTarget.value)}
             />
-            <Show when={searchQuery().trim().length > 0}>
-              <button
-                id="mv-search-clear"
-                type="button"
-                tabindex="-1"
-                class={`buntu-search-clear ${focusId() === 'mv-search-clear' ? 'focused' : ''}`}
-                onClick={() => void handleSearch('')}
-              >
-                ✕
-              </button>
-            </Show>
           </div>
+          <button
+            id="mv-search-mode"
+            type="button"
+            tabindex="-1"
+            class={`buntu-mode-btn ${searchMode() === 'ai' ? 'ai' : ''} ${focusId() === 'mv-search-mode' ? 'focused' : ''}`}
+            aria-label={searchMode() === 'ai' ? 'Moteur de recherche : IA. OK pour passer en local' : 'Moteur de recherche : local. OK pour passer en IA'}
+            onClick={switchSearchEngine}
+          >
+            {searchModeLabel(searchMode())}
+          </button>
         </div>
       </header>
 
@@ -594,19 +596,6 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
         <Show when={showCats()}>
           <aside class="buntu-cat-pane" aria-label="Catégories Films">
             <div class="buntu-cat-filter-bar">
-              <button
-                id="mv-cat-home"
-                type="button"
-                tabindex="-1"
-                class={`buntu-cat-home-btn ${focusId() === 'mv-cat-home' ? 'focused' : ''}`}
-                title="Toutes les catégories"
-                onClick={() => {
-                  setCatFilter('');
-                  void handleSelectCategory('');
-                }}
-              >
-                ⌂
-              </button>
               <input
                 id="mv-cat-filter"
                 type="text"
@@ -633,7 +622,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
                   <span class="buntu-cat-row-icon">🕒</span>
                   <span class="buntu-cat-row-title">Récemment vus</span>
                 </div>
-                <span class="buntu-cat-count">{formatBuntuCount(recentCount())}</span>
+                <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(recentCount())}</span></Show>
               </div>
 
               <div
@@ -647,7 +636,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
                   <span class="buntu-cat-row-icon">⊞</span>
                   <span class="buntu-cat-row-title">Tous les films</span>
                 </div>
-                <span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span>
+                <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span></Show>
               </div>
 
               <div
@@ -661,7 +650,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
                   <span class="buntu-cat-row-icon fav">★</span>
                   <span class="buntu-cat-row-title">Favoris</span>
                 </div>
-                <span class="buntu-cat-count">{formatBuntuCount(favCount())}</span>
+                <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(favCount())}</span></Show>
               </div>
 
               <For each={filteredCategories()}>
@@ -676,7 +665,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
                     <div class="buntu-cat-row-left">
                       <span class="buntu-cat-row-title">{cat}</span>
                     </div>
-                    <span class="buntu-cat-count">{formatBuntuCount(catCounts()[cat] || 0)}</span>
+                    <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(catCounts()[cat] || 0)}</span></Show>
                   </div>
                 )}
               </For>
@@ -739,12 +728,21 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
                     ? 'Favoris'
                     : selectedCat() || 'Tous les films'}
               </h2>
+              <Show when={loaded()}>
               <span class="buntu-section-meta">
                 {isSearchMode()
                   ? `${searchResults().length} résultats`
                   : `${formatBuntuCount(scroller.total())} films`}
               </span>
+              </Show>
             </div>
+
+            <Show when={!loaded()}>
+              <div class="buntu-first-load" role="status" aria-live="polite">
+                <div class="tv-spinner" />
+                <span>Chargement des films…</span>
+              </div>
+            </Show>
 
             <div
               ref={gridRef}
@@ -796,7 +794,14 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
             const year = mv.year || parsed.year;
             const quality = detectChannelQuality(mv.name);
             // The length is known from the catalog, or from the stream once this film plays.
-            const total = () => (mv.duration_ms > 0 ? mv.duration_ms : mini.isPlaying(mv.id) ? mini.durationMs() : 0);
+            const total = () => (mv.duration_ms > 0 ? mv.duration_ms : info()?.durationMs ?? (mini.isPlaying(mv.id) ? mini.durationMs() : 0));
+            const info = () => movieInfos()[mv.id] ?? null;
+            const releaseYear = () => {
+              const y = parseInt((info()?.releaseDate ?? '').slice(0, 4), 10);
+              return Number.isFinite(y) && y > 1800 ? y : undefined;
+            };
+            const rating = () => (mv.imdb_rating && mv.imdb_rating > 0 ? mv.imdb_rating : info()?.rating);
+            const plot = () => mv.plot || info()?.plot;
             const resumed = () => (mv.playback_position_ms > 0 ? percentOf(mv.playback_position_ms, total()) : 0);
             return (
               <>
@@ -808,11 +813,14 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
                 <InfoChips
                   chips={[
                     quality ? { text: quality, tone: quality === '4K' ? 'uhd' : 'quality' } : null,
-                    mv.imdb_rating && mv.imdb_rating > 0 ? { text: `★ ${mv.imdb_rating.toFixed(1)}`, tone: 'rating' } : null,
-                    year ? { text: String(year) } : null,
+                    rating() ? { text: `★ ${rating()!.toFixed(1)}`, tone: 'rating' } : null,
+                    year || releaseYear() ? { text: String(year || releaseYear()) } : null,
+                    info()?.age ? { text: info()!.age! } : null,
                     total() > 0 ? { text: formatRuntime(total()) } : null,
                     mv.language ? { text: mv.language.toUpperCase() } : null,
                     mv.container_ext ? { text: mv.container_ext.toUpperCase() } : null,
+                    info()?.genre ? { text: info()!.genre! } : null,
+                    info()?.country ? { text: info()!.country! } : null,
                     mv.group_title ? { text: mv.group_title } : null,
                   ]}
                 />
@@ -828,9 +836,26 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
 
                 <InfoSection label="SYNOPSIS">
                   <p class="buntu-inspector-desc buntu-insp-clamp buntu-insp-plot">
-                    {mv.plot || 'Aucun résumé disponible pour ce film.'}
+                    {plot() || 'Aucun résumé disponible pour ce film.'}
                   </p>
                 </InfoSection>
+
+                {/* Only what the provider gave: nothing is shown for a missing fact */}
+                <Show when={info()?.director}>
+                  <InfoSection label="RÉALISATION">
+                    <p class="buntu-inspector-desc">{info()!.director}</p>
+                  </InfoSection>
+                </Show>
+                <Show when={info()?.cast}>
+                  <InfoSection label="DISTRIBUTION">
+                    <p class="buntu-inspector-desc buntu-insp-clamp">{info()!.cast}</p>
+                  </InfoSection>
+                </Show>
+                <Show when={info()?.releaseDate}>
+                  <InfoSection label="SORTIE">
+                    <p class="buntu-inspector-desc">{info()!.releaseDate}</p>
+                  </InfoSection>
+                </Show>
               </>
             );
           }}

@@ -1,3 +1,4 @@
+import { UiSounds } from '../core/audio/UiSounds';
 import { Component, createEffect, createSignal, onMount, onCleanup, Switch, Match, Show } from 'solid-js';
 import { CndEngine } from '../core/engine/CndEngine';
 import { AVPlayerService } from '../core/player/AVPlayerService';
@@ -6,7 +7,7 @@ import { Database, ItemRecord } from '../core/storage/Database';
 import { spatialNav } from '../ui/design/SpatialNav';
 import { PlatformService } from '../core/platform/PlatformService';
 import { announce } from '../ui/design/a11y';
-import { formatBuntuCount } from '../core/utils/categoryMeta';
+import { HomeView, HomeSection } from '../features/home/HomeView';
 
 import { LiveView } from '../features/live/LiveView';
 import { GuideView } from '../features/guide/GuideView';
@@ -29,6 +30,7 @@ import { LocalSyncService } from '../core/sync/LocalSyncService';
 import { RemotePlaybackCoordinator } from '../core/remote/RemotePlayback';
 
 export type ScreenRoute =
+  | 'home'
   | 'onboarding'
   | 'live'
   | 'guide'
@@ -46,7 +48,9 @@ export type ScreenRoute =
 export const App: Component = () => {
   const engine = CndEngine.getInstance();
   const player = AVPlayerService.getInstance();
-  const [currentRoute, setCurrentRoute] = createSignal<ScreenRoute>('live');
+  const [currentRoute, setCurrentRoute] = createSignal<ScreenRoute>('home');
+  // No navigation sound over the video played full screen.
+  createEffect(() => UiSounds.getInstance().setSuppressed(currentRoute() === 'player'));
   // Screens query the database: they must not mount before the engine has opened it.
   const [engineReady, setEngineReady] = createSignal(false);
   const history = new NavigationHistory<ItemRecord>();
@@ -55,38 +59,33 @@ export const App: Component = () => {
   const [showExitDialog, setShowExitDialog] = createSignal(false);
   const [showAssistantModal, setShowAssistantModal] = createSignal(false);
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
-  const [globalCounts, setGlobalCounts] = createSignal({ live: 0, movie: 0, series: 0, sources: 0 });
+  const [homeSection, setHomeSection] = createSignal<HomeSection>('live');
   const [focusId] = spatialNav.getFocusSignal();
+  const showSidebar = () => !['home', 'player', 'live', 'movies', 'series', 'details', 'sources', 'devices', 'settings', 'profiles'].includes(currentRoute());
 
   let keyUnsub: (() => void) | null = null;
   let unsubRemotePlay: (() => void) | null = null;
   let unsubRemoteKey: (() => void) | null = null;
   let unsubRemoteText: (() => void) | null = null;
 
-  const IPTV_NAV_ITEMS: { route: ScreenRoute; label: string; icon: string; countKey?: 'live' | 'movie' | 'series' }[] = [
-    { route: 'live', label: 'Live TV', icon: '📺', countKey: 'live' },
+  const IPTV_NAV_ITEMS: { route: ScreenRoute; label: string; icon: string }[] = [
+    { route: 'home', label: 'Accueil', icon: '⌂' },
+    { route: 'live', label: 'Live TV', icon: '📺' },
     { route: 'guide', label: 'Guide TV', icon: '📅' },
-    { route: 'movies', label: 'Films', icon: '🎬', countKey: 'movie' },
-    { route: 'series', label: 'Séries', icon: '🍿', countKey: 'series' },
+    { route: 'movies', label: 'Films', icon: '🎬' },
+    { route: 'series', label: 'Séries', icon: '🍿' },
     { route: 'recommendations', label: 'Pour vous', icon: '✨' },
     { route: 'search', label: 'Recherche', icon: '🔍' },
   ];
 
-  const SYSTEM_NAV_ITEMS: { route: ScreenRoute; label: string; icon: string; countKey?: 'sources' }[] = [
-    { route: 'sources', label: 'Sources', icon: '📡', countKey: 'sources' },
+  const SYSTEM_NAV_ITEMS: { route: ScreenRoute; label: string; icon: string }[] = [
+    { route: 'sources', label: 'Sources', icon: '📡' },
     { route: 'profiles', label: 'Profils', icon: '👤' },
     { route: 'devices', label: 'Appareils', icon: '📱' },
     { route: 'settings', label: 'Réglages', icon: '⚙️' },
   ];
 
   const ALL_NAV_ITEMS = [...IPTV_NAV_ITEMS, ...SYSTEM_NAV_ITEMS];
-
-  const refreshGlobalCounts = async () => {
-    try {
-      const c = await engine.getGlobalCounts();
-      setGlobalCounts(c);
-    } catch {}
-  };
 
   const openExitDialog = () => {
     setShowExitDialog(true);
@@ -102,7 +101,7 @@ export const App: Component = () => {
           onSelect: closeExitDialog,
         },
       ],
-    ], 0, 0);
+    ], 0, 1);
   };
 
   const closeExitDialog = () => {
@@ -119,11 +118,10 @@ export const App: Component = () => {
   // Keep Left Buntu Sidebar registered with SpatialNav (vertical orientation) whenever visible
   createEffect(() => {
     const route = currentRoute();
-    if (route === 'player' || showExitDialog()) {
+    if (!engineReady() || !showSidebar() || showExitDialog()) {
       spatialNav.setHeader([]);
       return;
     }
-    void refreshGlobalCounts();
     const activeIdx = Math.max(0, ALL_NAV_ITEMS.findIndex((n) => n.route === route));
     const headerItems = [
       ...ALL_NAV_ITEMS.map((nav) => ({
@@ -148,7 +146,6 @@ export const App: Component = () => {
     try {
       await engine.init();
       const storedSources = await Database.getInstance().getSources();
-      await refreshGlobalCounts();
       if (storedSources.length === 0) {
         setHasSources(false);
         setCurrentRoute('onboarding');
@@ -242,10 +239,11 @@ export const App: Component = () => {
     if (currentRoute() === 'player' && route !== 'player') {
       engine.stopPlayback();
     }
+    if (route === 'live' || route === 'movies' || route === 'series') setHomeSection(route);
     screenState.disarm();
     zapContext.category = ''; // only opening the player from a Live TV list keeps a zapping list
     zapContext.frozen = null;
-    if (opts.reset) {
+    if (opts.reset || route === 'home') {
       history.reset();
       screenState.clear();
     } else {
@@ -305,15 +303,15 @@ export const App: Component = () => {
         if (goBack()) {
           return true;
         }
-        if (currentRoute() !== 'live') {
-          navigateTo('live', { reset: true });
+        if (currentRoute() !== 'home') {
+          navigateTo('home', { reset: true });
           return true;
         }
         if (!hasSources()) {
           navigateTo('onboarding');
           return true;
         }
-        // When on home screen 'live', pressing BACK asks to exit
+        // BACK from the home screen asks to exit
         openExitDialog();
         return true;
       }
@@ -359,8 +357,8 @@ export const App: Component = () => {
     <div
       class={`app-root ${currentRoute() === 'player' ? 'video-mode' : ''}`}
     >
-      {/* Left Buntu Navigation Sidebar (hidden in full-screen player) */}
-      {currentRoute() !== 'player' && (
+      {/* Catalogues use their own title and categories; BACK returns to the home chooser. */}
+      {showSidebar() && (
         <aside
           class={`buntu-sidebar ${sidebarCollapsed() ? 'collapsed' : ''}`}
           role="navigation"
@@ -392,7 +390,6 @@ export const App: Component = () => {
           <nav class="buntu-nav-scroll" role="tablist" aria-label="Sections IPTV">
             <div class="buntu-nav-group-label">IPTV</div>
             {IPTV_NAV_ITEMS.map((nav) => {
-              const countVal = () => (nav.countKey ? globalCounts()[nav.countKey] : 0);
               return (
                 <button
                   id={`nav-${nav.route}`}
@@ -405,16 +402,12 @@ export const App: Component = () => {
                 >
                   <span class="buntu-nav-icon">{nav.icon}</span>
                   <span class="buntu-nav-label">{nav.label}</span>
-                  <Show when={countVal() > 0}>
-                    <span class="buntu-nav-count">{formatBuntuCount(countVal())}</span>
-                  </Show>
                 </button>
               );
             })}
 
             <div class="buntu-nav-group-label">Gestion</div>
             {SYSTEM_NAV_ITEMS.map((nav) => {
-              const countVal = () => (nav.countKey ? globalCounts()[nav.countKey] : 0);
               return (
                 <button
                   id={`nav-${nav.route}`}
@@ -427,9 +420,6 @@ export const App: Component = () => {
                 >
                   <span class="buntu-nav-icon">{nav.icon}</span>
                   <span class="buntu-nav-label">{nav.label}</span>
-                  <Show when={countVal() > 0}>
-                    <span class="buntu-nav-count">{formatBuntuCount(countVal())}</span>
-                  </Show>
                 </button>
               );
             })}
@@ -463,16 +453,24 @@ export const App: Component = () => {
           }
         >
         <Switch>
+          <Match when={currentRoute() === 'home'}>
+            <HomeView
+              initialSection={homeSection()}
+              onOpen={navigateTo}
+              onExit={openExitDialog}
+              onResume={(item) => (item.kind === 'series' ? handleSelectDetails(item) : void handlePlayItem(item))}
+            />
+          </Match>
           <Match when={currentRoute() === 'onboarding'}>
             <OnboardingView
               onComplete={() => {
                 setHasSources(true);
-                navigateTo('live');
+                navigateTo('home', { reset: true });
               }}
               onAddM3u={async (url) => {
                 await engine.syncM3uSource('Ma Source', url);
                 setHasSources(true);
-                navigateTo('live', { reset: true });
+                navigateTo('home', { reset: true });
               }}
             />
           </Match>
@@ -518,9 +516,10 @@ export const App: Component = () => {
           <Match when={currentRoute() === 'player' && selectedItem()}>
             <PlayerView
               item={selectedItem()!}
-              onExit={() => { if (!goBack()) navigateTo('live', { reset: true }); }}
+              onExit={() => { if (!goBack()) navigateTo('home', { reset: true }); }}
               onNextChannel={handleNextChannel}
               onPrevChannel={handlePrevChannel}
+              onPlayNext={handlePlayItem}
             />
           </Match>
 
@@ -534,20 +533,20 @@ export const App: Component = () => {
 
           <Match when={currentRoute() === 'sources'}>
             <SourcesView
-              onBack={() => { if (!goBack()) navigateTo('live', { reset: true }); }}
+              onBack={() => { if (!goBack()) navigateTo('home', { reset: true }); }}
               onAddNew={() => navigateTo('onboarding')}
             />
           </Match>
 
           <Match when={currentRoute() === 'profiles'}>
-            <ProfilesView onProfileChanged={() => navigateTo('live', { reset: true })} />
+            <ProfilesView onProfileChanged={() => navigateTo('home', { reset: true })} />
           </Match>
 
           <Match when={currentRoute() === 'devices'}>
             <SettingsView section="household" onRequestExit={openExitDialog} />
           </Match>
           <Match when={currentRoute() === 'settings'}>
-            <SettingsView onRequestExit={openExitDialog} />
+            <SettingsView onRequestExit={openExitDialog} onProfiles={() => navigateTo('profiles')} />
           </Match>
         </Switch>
         </Show>
@@ -556,15 +555,14 @@ export const App: Component = () => {
       {/* Exit Confirmation Modal */}
       <Show when={showExitDialog()}>
         <div class="tv-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="exit-modal-title">
-          <div class="tv-modal-card">
-            <div style={{ "font-size": "56px", color: "var(--buntu-danger)" }}>⏻</div>
+          <div class="tv-modal-card buntu-exit-card">
             <h2 id="exit-modal-title" style={{ "font-size": "36px", "font-weight": "800", color: "var(--buntu-gold)", margin: 0 }}>
               Quitter Buntu
             </h2>
             <p style={{ "font-size": "22px", color: "var(--buntu-text-muted)", margin: 0, "max-width": "500px" }}>
-              Voulez-vous vraiment fermer l'application et retourner au téléviseur ?
+              Fermer l’application et revenir à la télévision ?
             </p>
-            <div style={{ display: "flex", gap: "24px", "margin-top": "16px" }}>
+            <div class="buntu-simple-actions">
               <button
                 id="btn-exit-confirm"
                 role="button"
@@ -573,7 +571,7 @@ export const App: Component = () => {
                 class={`tv-btn tv-btn-danger ${focusId() === 'btn-exit-confirm' ? 'focused' : ''}`}
                 onClick={confirmExit}
               >
-                ⏻ Oui, quitter
+                Quitter
               </button>
               <button
                 id="btn-exit-cancel"
@@ -583,7 +581,7 @@ export const App: Component = () => {
                 class={`tv-btn ${focusId() === 'btn-exit-cancel' ? 'focused' : ''}`}
                 onClick={closeExitDialog}
               >
-                Annuler
+                Rester
               </button>
             </div>
           </div>
