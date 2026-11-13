@@ -8,12 +8,12 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsInputAntenna
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.ViewTimeline
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.pcoundia.buntu.core.domain.model.SearchScopeKind
 
 enum class TopLevelDestination(
     val route: String,
@@ -55,13 +55,6 @@ enum class TopLevelDestination(
         label = "Pour vous",
         icon = Icons.Default.Explore,
         showOnPhoneBottomBar = false,
-        showOnTvRail = true,
-    ),
-    SEARCH(
-        route = BuntuRoutes.SEARCH,
-        label = "Recherche",
-        icon = Icons.Default.Search,
-        showOnPhoneBottomBar = true,
         showOnTvRail = true,
     ),
     DOWNLOADS(
@@ -108,12 +101,15 @@ enum class TopLevelDestination(
 
 object BuntuRoutes {
     const val ONBOARDING = "onboarding"
+    /** TV only: the home chooser (Live, Films, Séries). */
+    const val HOME = "home"
     const val LIVE = "live"
     const val GUIDE = "guide"
     const val MOVIES = "movies"
     const val SERIES = "series"
     const val RECOMMENDATIONS = "recommendations"
     const val SEARCH = "search"
+    const val SEARCH_PATTERN = "search?scope={scope}"
     const val DOWNLOADS = "downloads"
     const val SOURCES = "sources"
     const val SOURCES_PATTERN = "sources?pairLink={pairLink}"
@@ -124,6 +120,9 @@ object BuntuRoutes {
     const val DETAILS_PATTERN = "details/{mediaId}?isSeries={isSeries}"
     const val PLAYER_PATTERN =
         "player/{itemId}?startPositionMs={startPositionMs}&catchupStartEpoch={catchupStartEpoch}&catchupEndEpoch={catchupEndEpoch}"
+
+    fun search(scope: SearchScopeKind = SearchScopeKind.ALL): String =
+        "search?scope=${scope.name}"
 
     fun sources(pairLink: String? = null): String =
         if (pairLink.isNullOrBlank()) SOURCES else "sources?pairLink=${Uri.encode(pairLink)}"

@@ -4,6 +4,7 @@ import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { getAiSettings } from '../../core/ai/AiSettings';
+import { SearchMode, searchMode, setSearchMode } from '../../core/search/searchMode';
 import { PairingOffer, PairingService } from '../../core/pairing/PairingService';
 
 export interface SearchViewProps {
@@ -23,6 +24,14 @@ export const SearchView: Component<SearchViewProps> = (props) => {
   const [pairingActive, setPairingActive] = createSignal(false);
   const [qrOffer, setQrOffer] = createSignal<PairingOffer | null>(null);
 
+  // Search mode (shared with Live, Films and Séries): "Local" looks in the catalogue only; "IA" also asks the assistant.
+  const mode = searchMode;
+  const setMode = async (next: SearchMode) => setAiNotice((await setSearchMode(next)).message);
+  const MODES: { key: SearchMode; label: string }[] = [
+    { key: 'local', label: 'Local' },
+    { key: 'ai', label: '✨ IA' },
+  ];
+
   let pairingService: PairingService | null = null;
   let typingTimer: any = null;
 
@@ -38,7 +47,7 @@ export const SearchView: Component<SearchViewProps> = (props) => {
     ['G', 'H', 'I', 'J', 'K', 'L', '4', '5', '6'],
     ['M', 'N', 'O', 'P', 'Q', 'R', '7', '8', '9'],
     ['S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0'],
-    ['ESPACE', 'EFFACER', 'RECHERCHER', '✨ ASSISTANT IA', '📱 TÉLÉPHONE'],
+    ['ESPACE', 'EFFACER', 'RECHERCHER', '📱 TÉLÉPHONE'],
   ];
 
   const rebuildGrid = (resList: any[]) => {
@@ -59,6 +68,11 @@ export const SearchView: Component<SearchViewProps> = (props) => {
       },
     }));
 
+    // The mode choice sits in the same row as the filters.
+    for (const m of MODES) {
+      tabRow.push({ id: `search-mode-${m.key}`, onSelect: () => setMode(m.key) });
+    }
+
     // Keyboard Rows
     const kbRows: FocusableItem[][] = KEYBOARD_ROWS.map((row) =>
       row.map((k) => ({
@@ -76,16 +90,12 @@ export const SearchView: Component<SearchViewProps> = (props) => {
     ]);
 
     spatialNav.setGrid([tabRow, ...kbRows, ...resRows]);
-    if (prevFocus.startsWith('key-') || prevFocus.startsWith('search-tab-')) {
+    if (prevFocus.startsWith('key-') || prevFocus.startsWith('search-tab-') || prevFocus.startsWith('search-mode-')) {
       spatialNav.setFocusById(prevFocus);
     }
   };
 
   const handleKeyClick = async (char: string) => {
-    if (char === '✨ ASSISTANT IA') {
-      await performAiSearch();
-      return;
-    }
     if (char === '📱 TÉLÉPHONE') {
       await startPhonePairing();
       return;
@@ -97,6 +107,7 @@ export const SearchView: Component<SearchViewProps> = (props) => {
       next = next.slice(0, -1);
     } else if (char === 'RECHERCHER') {
       await performLocalSearch();
+      if (mode() === 'ai') await performAiSearch();
       return;
     } else {
       next += char;
@@ -264,6 +275,25 @@ export const SearchView: Component<SearchViewProps> = (props) => {
           </For>
         </div>
 
+        {/* Search mode: local catalogue only, or with the assistant */}
+        <div style={{ display: 'flex', 'margin-left': '24px' }} role="radiogroup" aria-label="Mode de recherche">
+          <For each={MODES}>
+            {(m) => (
+              <button
+                id={`search-mode-${m.key}`}
+                role="radio"
+                tabindex="-1"
+                aria-checked={mode() === m.key}
+                aria-label={m.key === 'ai' ? 'Recherche avec l’assistant IA' : 'Recherche locale dans le catalogue'}
+                class={`tv-category-pill ${mode() === m.key ? 'active' : ''} ${focusId() === `search-mode-${m.key}` ? 'focused' : ''}`}
+                onClick={() => setMode(m.key)}
+              >
+                {m.label}
+              </button>
+            )}
+          </For>
+        </div>
+
         <div class="tv-live-badge">
           <span>{results().length} résultats</span>
         </div>
@@ -364,7 +394,7 @@ export const SearchView: Component<SearchViewProps> = (props) => {
               color: query() ? '#FFFFFF' : 'var(--buntu-text-muted)',
             }}
           >
-            {query() || 'Saisissez ou demandez à l’assistant…'}
+            {query() || (mode() === 'ai' ? 'Décrivez ce que vous cherchez…' : 'Saisissez un titre ou une chaîne…')}
           </div>
 
           <For each={KEYBOARD_ROWS}>
@@ -373,7 +403,7 @@ export const SearchView: Component<SearchViewProps> = (props) => {
                 <For each={row}>
                   {(k) => {
                     const isSpecial = k.length > 1;
-                    const isAi = k.includes('ASSISTANT');
+                    const isAi = k === 'RECHERCHER' && mode() === 'ai';
                     return (
                       <button
                         id={`key-${k}`}
@@ -389,7 +419,7 @@ export const SearchView: Component<SearchViewProps> = (props) => {
                         }}
                         onClick={() => void handleKeyClick(k)}
                       >
-                        {k}
+                        {k === 'RECHERCHER' && mode() === 'ai' ? 'RECHERCHER ✨' : k}
                       </button>
                     );
                   }}
@@ -447,9 +477,9 @@ export const SearchView: Component<SearchViewProps> = (props) => {
           <Show when={results().length === 0 && query().trim().length > 0 && !isAiLoading()}>
             <div style={{ 'text-align': 'center', color: 'var(--buntu-text-muted)', padding: '48px 0', 'font-size': '20px' }}>
               Aucun résultat trouvé pour "{query()}" dans {selectedKind() === 'all' ? 'le catalogue' : selectedKind()}.
-              <Show when={hasAi}>
+              <Show when={hasAi && mode() === 'local'}>
                 <div style={{ 'margin-top': '12px', color: 'var(--buntu-gold)', 'font-size': '16px' }}>
-                  Essayez « ✨ ASSISTANT IA » pour chercher par description ou comparaison.
+                  Passez en mode « ✨ IA » pour chercher par description ou comparaison.
                 </div>
               </Show>
             </div>

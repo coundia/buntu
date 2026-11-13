@@ -1,50 +1,48 @@
+import { SourceEditForm } from './SourceEditForm';
 import { Component, createSignal, onMount, onCleanup, For, Show } from 'solid-js';
 import { Database, SourceRecord } from '../../core/storage/Database';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { spatialNav } from '../../ui/design/SpatialNav';
 import { announce } from '../../ui/design/a11y';
 import { RemoteKey, RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
-import { hostOf } from '../../core/pairing/ShareImport';
 import { PairingView } from '../pairing/PairingView';
 import { ManualSourceForm } from '../onboarding/ManualSourceForm';
 import { LocalSyncService } from '../../core/sync/LocalSyncService';
+import { HouseholdStore } from '../../core/sync/HouseholdStore';
+import { HouseholdJoinView } from '../pairing/HouseholdJoinView';
 
 export interface SourcesViewProps {
   onBack: () => void;
   onAddNew?: () => void;
 }
 
-export type SourcesSubview = 'list' | 'pairing' | 'manual';
+export type SourcesSubview = 'list' | 'pairing' | 'manual' | 'household' | 'edit';
 
 export const SourcesView: Component<SourcesViewProps> = (props) => {
   const [sources, setSources] = createSignal<SourceRecord[]>([]);
-  const [subview, setSubview] = createSignal<SourcesSubview>('list');
+  const [subview, setSubview] = createSignal<SourcesSubview>(HouseholdStore.getInstance().getHouseholdInfo() ? 'list' : 'household');
+  const [sourceToEdit, setSourceToEdit] = createSignal<SourceRecord | null>(null);
   const [sourceToDelete, setSourceToDelete] = createSignal<SourceRecord | null>(null);
+  const [isDeleting, setIsDeleting] = createSignal(false);
+  const [deleteError, setDeleteError] = createSignal('');
+  const store = HouseholdStore.getInstance();
+  const [salon, setSalon] = createSignal(store.getHouseholdInfo());
   const [focusId] = spatialNav.getFocusSignal();
 
   let keyUnsub: (() => void) | null = null;
 
   const loadSources = async () => {
     const list = await Database.getInstance().getSources();
+    setSalon(store.getHouseholdInfo());
     setSources(list);
-    updateListGrid(list);
+    if (subview() === 'list') updateListGrid(list);
   };
 
   const updateListGrid = (list: SourceRecord[]) => {
-    if (sourceToDelete()) {
-      spatialNav.setGrid([
-        [
-          { id: 'btn-confirm-delete', onSelect: () => void confirmDelete() },
-          { id: 'btn-cancel-delete', onSelect: closeDeleteModal },
-        ],
-      ]);
-      return;
-    }
-
     const grid = [
       [
         {
-          id: 'btn-add-phone',
+          id: 'btn-import-phone',
           onSelect: () => setSubview('pairing'),
         },
         {
@@ -52,46 +50,74 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
           onSelect: () => setSubview('manual'),
         },
       ],
+      [
+        {
+          id: 'btn-add-phone',
+          onSelect: () => setSubview('household'),
+        },
+      ],
       ...list.map((s) => [
         {
           id: `source-item-${s.id}`,
-          onSelect: () => console.log('Select source', s.name),
+          onSelect: () => editSource(s),
         },
+        { id: `source-edit-${s.id}`, onSelect: () => editSource(s) },
         {
           id: `source-del-${s.id}`,
           onSelect: () => promptDelete(s),
         },
       ]),
     ];
-    spatialNav.setGrid(grid);
+    // Presence updates must not move the remote focus; during a modal this updates its saved list.
+    spatialNav.setGrid(grid, 0, 0, true);
+  };
+
+  const editSource = (source: SourceRecord) => {
+    setSourceToEdit(source);
+    setSubview('edit');
+  };
+  const closeEditor = () => {
+    setSourceToEdit(null);
+    setSubview('list');
+    void loadSources();
   };
 
   const promptDelete = (s: SourceRecord) => {
+    if (isDeleting()) return;
+    setDeleteError('');
     setSourceToDelete(s);
-    updateListGrid(sources());
-    setTimeout(() => {
-      spatialNav.setFocusById('btn-cancel-delete');
-    }, 50);
+    spatialNav.openModal([[
+      { id: 'btn-confirm-delete', onSelect: () => void confirmDelete() },
+      { id: 'btn-cancel-delete', onSelect: closeDeleteModal },
+    ]], 0, 1);
     announce(`Voulez-vous vraiment supprimer la source ${s.name} ?`);
   };
 
   const closeDeleteModal = () => {
+    if (isDeleting()) return;
     setSourceToDelete(null);
+    setDeleteError('');
+    spatialNav.closeModal();
     updateListGrid(sources());
   };
 
   const confirmDelete = async () => {
     const target = sourceToDelete();
-    if (!target) return;
+    if (!target || isDeleting()) return;
+    setIsDeleting(true);
+    setDeleteError('');
     try {
       await CndEngine.getInstance().deleteSource(target.id);
       announce(`Source ${target.name} supprimée.`);
-      setSourceToDelete(null);
       await loadSources();
-    } catch (err: any) {
-      announce(`Erreur lors de la suppression : ${err?.message ?? 'inconnue'}`);
-      setSourceToDelete(null);
-      updateListGrid(sources());
+      setIsDeleting(false);
+      closeDeleteModal();
+    } catch {
+      const message = 'La suppression a échoué. Réessayez.';
+      setDeleteError(message);
+      announce(message);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -123,12 +149,13 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
   });
 
   onCleanup(() => {
+    if (sourceToDelete()) spatialNav.closeModal();
     if (keyUnsub) keyUnsub();
     if (syncUnsub) syncUnsub();
   });
 
   return (
-    <div
+    <div class="buntu-sources-page"
       style={{
         width: '100%',
         height: '100%',
@@ -137,6 +164,17 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
         position: 'relative',
       }}
     >
+      <Show when={subview() === 'edit' && sourceToEdit()}>
+        <SourceEditForm source={sourceToEdit()!} onSaved={() => { closeEditor(); announce('Modifications enregistrées sur cette TV uniquement.'); }} onCancel={closeEditor} />
+      </Show>
+      <Show when={subview() === 'household'}>
+        <HouseholdJoinView onBack={() => { setSubview('list'); updateListGrid(sources()); }} onJoined={() => {
+          setSalon(store.getHouseholdInfo());
+          setSubview('list');
+          void loadSources();
+          announce('Cette TV a rejoint le foyer.');
+        }} />
+      </Show>
       <Show when={subview() === 'pairing'}>
         <PairingView
           title="Ajouter depuis votre smartphone"
@@ -175,7 +213,7 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
           style={{
             width: '100%',
             height: '100%',
-            padding: '24px 48px',
+            padding: '40px 64px',
             'box-sizing': 'border-box',
             overflow: 'hidden',
             display: 'flex',
@@ -186,21 +224,22 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
           <div class="tv-header" style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', 'margin-bottom': '28px' }}>
             <div>
               <h2 style={{ 'font-size': '36px', color: 'var(--buntu-gold)', margin: '0 0 6px 0' }}>
-                Gestion des abonnements & sources
+                Sources
               </h2>
               <p style={{ 'font-size': '18px', color: 'var(--buntu-text-muted)', margin: 0 }}>
                 {sources().length} source{sources().length > 1 ? 's' : ''} enregistrée{sources().length > 1 ? 's' : ''}
               </p>
+              <p class="buntu-return-hint">Retour : accueil</p>
             </div>
-            <div style={{ display: 'flex', gap: '16px' }}>
+            <div class="buntu-simple-actions">
               <button
-                id="btn-add-phone"
+                id="btn-import-phone"
                 tabindex="-1"
-                aria-label="Ajouter depuis votre smartphone via QR code"
-                class={`tv-btn ${focusId() === 'btn-add-phone' ? 'focused' : ''}`}
+                aria-label="Importer des comptes depuis un téléphone"
+                class={`tv-btn ${focusId() === 'btn-import-phone' ? 'focused' : ''}`}
                 onClick={() => setSubview('pairing')}
               >
-                📱 Ajouter depuis le téléphone
+                Ajouter par téléphone
               </button>
               <button
                 id="btn-add-manual"
@@ -209,16 +248,23 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                 class={`tv-btn ${focusId() === 'btn-add-manual' ? 'focused' : ''}`}
                 onClick={() => setSubview('manual')}
               >
-                ✍️ Saisie manuelle
+                Saisie manuelle
               </button>
             </div>
           </div>
+
+          <section class="buntu-source-household" aria-label="Foyer Buntu">
+            <span>{salon() ? `Foyer : ${salon()!.household_name}` : 'TV non associée à un foyer'}</span>
+            <button id="btn-add-phone" tabindex="-1" class={`tv-btn ${focusId() === 'btn-add-phone' ? 'focused' : ''}`} onClick={() => setSubview('household')}>
+              Associer la TV (QR)
+            </button>
+          </section>
 
           {/* Sources List */}
           <div
             role="list"
             aria-label="Liste des sources d'abonnements"
-            style={{ display: 'flex', 'flex-direction': 'column', gap: '16px', 'overflow-y': 'auto', flex: 1, padding: '4px' }}
+            class="buntu-source-list"
           >
             <For each={sources()}>
               {(source) => (
@@ -226,8 +272,9 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                   id={`source-item-${source.id}`}
                   role="button"
                   tabindex="-1"
-                  aria-label={`Source ${source.name}, type ${source.source_type}, ${source.item_count} éléments.`}
+                  aria-label={`Source ${source.name}, type ${source.source_type}, ${source.item_count} éléments. OK pour modifier.`}
                   class={`tv-card ${focusId() === `source-item-${source.id}` ? 'focused' : ''}`}
+                  onClick={() => editSource(source)}
                   style={{
                     padding: '24px 32px',
                     display: 'flex',
@@ -241,12 +288,11 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                   <div>
                     <h3 style={{ 'font-size': '26px', margin: '0 0 8px 0', color: '#FFFFFF' }}>{source.name}</h3>
                     <p style={{ color: 'var(--buntu-text-muted)', margin: 0, 'font-size': '18px' }}>
-                      Type : <strong style={{ color: 'var(--buntu-gold)' }}>{source.source_type.toUpperCase()}</strong> · Serveur :{' '}
-                      {hostOf(source.server || source.url || '') || 'local'} ·{' '}
+                      <strong style={{ color: 'var(--buntu-gold)' }}>{source.source_type.toUpperCase()}</strong> ·{' '}
                       {source.item_count > 0 ? (
                         <span>{source.item_count} chaînes / flux</span>
                       ) : (
-                        <span style={{ color: 'var(--buntu-cyan)' }}>⏳ Indexation des flux en cours…</span>
+                        <span style={{ color: 'var(--buntu-cyan)' }}>Préparation du catalogue…</span>
                       )}
                       {source.source_type === 'xtream' && !source.password && (
                         <span style={{ color: '#FF6B6B', 'margin-left': '8px' }}>⚠️ Mot de passe manquant</span>
@@ -254,9 +300,13 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                     </p>
                   </div>
                   <div style={{ display: 'flex', 'align-items': 'center', gap: '20px' }}>
-                    <div style={{ color: 'var(--buntu-cyan)', 'font-weight': '700', 'font-size': '18px' }}>
-                      Actif (1 connexion)
-                    </div>
+                    <button
+                      id={`source-edit-${source.id}`}
+                      tabindex="-1"
+                      class={`tv-btn ${focusId() === `source-edit-${source.id}` ? 'focused' : ''}`}
+                      onClick={(e) => { e.stopPropagation(); editSource(source); }}
+                      style={{ 'margin-right': '16px' }}
+                    >Modifier</button>
                     <button
                       id={`source-del-${source.id}`}
                       tabindex="-1"
@@ -290,16 +340,9 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                   Aucun abonnement enregistré
                 </h3>
                 <p style={{ 'font-size': '20px', 'max-width': '600px', margin: '0 auto 24px auto' }}>
-                  Ajoutez vos comptes IPTV en scannant le QR code depuis votre smartphone ou saisissez vos identifiants manuellement.
+                  Choisissez « Ajouter par téléphone » ou « Saisie manuelle ».
                 </p>
-                <button
-                  id="btn-add-phone-empty"
-                  tabindex="-1"
-                  class={`tv-btn ${focusId() === 'btn-add-phone' ? 'focused' : ''}`}
-                  onClick={() => setSubview('pairing')}
-                >
-                  📱 Scanner le QR code avec son téléphone
-                </button>
+
               </div>
             )}
           </div>
@@ -320,20 +363,25 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                 Voulez-vous vraiment supprimer « <strong style={{ color: '#FFFFFF' }}>{sourceToDelete()?.name}</strong> » ?
                 Toutes les chaînes, films, séries et favoris associés seront retirés de cette TV.
               </p>
+              <Show when={deleteError()}>
+                <p role="alert" style={{ color: 'var(--buntu-danger)' }}>{deleteError()}</p>
+              </Show>
               <div style={{ display: 'flex', gap: '20px', 'margin-top': '16px' }}>
                 <button
                   id="btn-confirm-delete"
                   tabindex="-1"
                   aria-label="Confirmer la suppression de la source"
+                  disabled={isDeleting()}
                   class={`tv-btn tv-btn-danger ${focusId() === 'btn-confirm-delete' ? 'focused' : ''}`}
                   onClick={() => void confirmDelete()}
                 >
-                  🗑️ Oui, supprimer
+                  {isDeleting() ? 'Suppression…' : '🗑️ Oui, supprimer'}
                 </button>
                 <button
                   id="btn-cancel-delete"
                   tabindex="-1"
                   aria-label="Annuler la suppression"
+                  disabled={isDeleting()}
                   class={`tv-btn ${focusId() === 'btn-cancel-delete' ? 'focused' : ''}`}
                   onClick={closeDeleteModal}
                 >

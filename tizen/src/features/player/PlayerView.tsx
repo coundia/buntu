@@ -14,12 +14,16 @@ import { formatClock, formatDuration, formatRuntime, percentOf } from '../../cor
 import { createPlayerInfo } from './playerInfo';
 import { AssistantModal } from '../assistant/AssistantModal';
 import { LocalSyncService } from '../../core/sync/LocalSyncService';
+import { getUpNextPrefs, upNextChain } from '../../core/player/upNext';
+import { isUhdTitle } from '../../core/player/uhd';
 
 export interface PlayerViewProps {
   item: ItemRecord;
   onExit: () => void;
   onNextChannel?: () => void;
   onPrevChannel?: () => void;
+  /** OK on a film of the « À suivre » shelf: play it next. */
+  onPlayNext?: (item: ItemRecord) => void;
 }
 
 export const PlayerView: Component<PlayerViewProps> = (props) => {
@@ -32,6 +36,8 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   const [showOsd, setShowOsd] = createSignal(true);
   const [isBuffering, setIsBuffering] = createSignal(true);
   const [bufferingPercent, setBufferingPercent] = createSignal(0);
+  const [brokenTag, setBrokenTag] = createSignal(props.item.is_broken === 1);
+  let brokenUnsubscribe: (() => void) | null = null;
   const [playerError, setPlayerError] = createSignal<string | null>(null);
   const [activeSubtitle, setActiveSubtitle] = createSignal<string>('');
   const [subtitleTimer, setSubtitleTimer] = createSignal<any>(null);
@@ -43,6 +49,58 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   const [showAssistant, setShowAssistant] = createSignal(false);
   const [focusId] = spatialNav.getFocusSignal();
   const [seekToast, setSeekToast] = createSignal('');
+  // « À suivre »: films similar to the one that plays, at the bottom of the controls.
+  const [similar, setSimilar] = createSignal<ItemRecord[]>([]);
+  let endShelfShown = false;
+  // A film that pauses to load after it has played: say why (speed), once the viewer did not just seek.
+  const [rebuffers, setRebuffers] = createSignal(0);
+  let hasPlayedOnce = false;
+  let lastSeekAt = 0;
+  const isUhd = () => info.stream()?.quality === '4K' || isUhdTitle(props.item);
+  const slowStreamMessage = () =>
+    isUhd()
+      ? { title: 'Débit trop faible pour ce film 4K', hint: 'Un câble Ethernet ou une version HD aident.' }
+      : { title: 'Débit trop faible pour ce flux', hint: 'Le serveur ou le réseau est lent : un câble Ethernet aide.' };
+  // Countdown before the first suggestion starts by itself (null: none running). `stillWatching`: the limit of films in a row.
+  const [countdown, setCountdown] = createSignal<number | null>(null);
+  const [stillWatching, setStillWatching] = createSignal(false);
+  let countdownTimer: ReturnType<typeof setInterval> | null = null;
+
+  const stopCountdown = () => {
+    if (countdownTimer) clearInterval(countdownTimer);
+    countdownTimer = null;
+    setCountdown(null);
+  };
+
+  /** A film chosen by a key press (shelf) starts the chain over; one started by the countdown adds to it. */
+  const playNext = (film: ItemRecord, automatic = false) => {
+    stopCountdown();
+    if (automatic) upNextChain.advance();
+    else upNextChain.reset();
+    props.onPlayNext?.(film);
+  };
+
+  const startCountdown = () => {
+    const first = similar()[0];
+    if (!first) return;
+    stopCountdown();
+    if (upNextChain.isStillWatchingDue()) {
+      setStillWatching(true);
+      announce('Toujours là ? Choisissez un film pour continuer.');
+      return;
+    }
+    let left = getUpNextPrefs().seconds;
+    setCountdown(left);
+    announce(`Film suivant dans ${left} secondes : ${filmTitle(first)}. Retour pour annuler.`);
+    countdownTimer = setInterval(() => {
+      left -= 1;
+      if (left <= 0) {
+        playNext(first, true);
+      } else {
+        setCountdown(left);
+      }
+    }, 1000);
+  };
 
   // Clock, decoded stream facts, TV program and favorite flag shown over the picture.
   const info = createPlayerInfo(() => props.item, {
@@ -84,7 +142,22 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   let hasResumed = false;
   let lastBroadcastMs = 0;
 
+  // Live stream that stops answering mid-playback: reopen it again and again (1 s, 2 s, 4 s, 8 s, 15 s) while the
+  // screen says what is happening; only then ask the viewer (retry / next channel). 0 = not reconnecting.
+  const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 15000];
+  const [reconnectAttempt, setReconnectAttempt] = createSignal(0);
+  let reconnectTimer: any = null;
+  let reconnectWatch: any = null;
+
   const clearTimers = () => {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (reconnectWatch) {
+      clearTimeout(reconnectWatch);
+      reconnectWatch = null;
+    }
     if (retryTimer) {
       clearTimeout(retryTimer);
       retryTimer = null;
@@ -113,6 +186,49 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         handleStreamError('Délai d’attente du serveur IPTV dépassé');
       }
     }, 12000);
+  };
+
+  const giveUpReconnecting = () => {
+    setReconnectAttempt(0);
+    setIsBuffering(false);
+    setPlayerError('Le serveur ne répond plus.');
+    announce('Le serveur ne répond plus. Réessayez ou changez de chaîne.');
+    updateGrid();
+    focusErrorAction();
+  };
+
+  const scheduleReconnect = (expectedItemId: number) => {
+    const attempt = reconnectAttempt() + 1;
+    if (attempt > RECONNECT_DELAYS_MS.length) {
+      giveUpReconnecting();
+      return;
+    }
+    setReconnectAttempt(attempt);
+    setIsBuffering(true);
+    announce(`Connexion perdue… reconnexion ${attempt} sur ${RECONNECT_DELAYS_MS.length}`);
+    reconnectTimer = setTimeout(async () => {
+      reconnectTimer = null;
+      if (props.item.id !== expectedItemId) return;
+      try {
+        // Through the engine: it closes the old connection first (one connection at the provider), keeps the
+        // account's local settings and re-arms the stream health.
+        await CndEngine.getInstance().play(props.item, { force: true });
+      } catch {
+        if (props.item.id === expectedItemId) scheduleReconnect(expectedItemId);
+        return;
+      }
+      if (props.item.id !== expectedItemId) return;
+      // Playing again is detected by `finishBuffering`; if nothing moves within 10 s, the next attempt.
+      reconnectWatch = setTimeout(() => {
+        reconnectWatch = null;
+        if (props.item.id === expectedItemId && reconnectAttempt() > 0) scheduleReconnect(expectedItemId);
+      }, 10000);
+    }, RECONNECT_DELAYS_MS[attempt - 1]);
+  };
+
+  const startReconnect = () => {
+    if (props.item.kind !== 'live' || playerError() || reconnectAttempt() > 0) return;
+    scheduleReconnect(props.item.id);
   };
 
   const executeRetry = async (expectedItemId: number) => {
@@ -148,8 +264,10 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     setPlayerError(errorMsg);
     announce(`Erreur de lecture : ${errorMsg}`);
 
+    setReconnectAttempt(0);
     // Mark channel as broken in DB & locally
     if (props.item.kind === 'live') {
+      setBrokenTag(true);
       props.item.is_broken = 1;
       void Database.getInstance().setBroken(props.item.id, true);
     }
@@ -201,7 +319,58 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       },
     ];
 
-    spatialNav.setGrid([actionRow]);
+    const shelfRow = !isLiveItem
+      ? similar().map((film) => ({ id: `player-next-${film.id}`, onSelect: () => playNext(film) }))
+      : [];
+    spatialNav.setGrid(shelfRow.length > 0 ? [actionRow, shelfRow] : [actionRow]);
+  };
+
+  const filmTitle = (film: ItemRecord) =>
+    film.name_clean && film.name_clean !== film.name ? film.name_clean : cleanMediaTitle(film.name).clean;
+
+  // Films that resemble the one playing: looked up when a film starts (local catalogue, one short API call).
+  createEffect(() => {
+    const current = props.item;
+    setSimilar([]);
+    endShelfShown = false;
+    stopCountdown();
+    setStillWatching(false);
+    if (current.kind !== 'movie') return;
+    const id = current.id;
+    void CndEngine.getInstance()
+      .getSimilarMovies(current)
+      .then((list) => {
+        if (props.item.id !== id) return;
+        setSimilar(list);
+        updateGrid();
+      })
+      .catch(() => {});
+  });
+
+  // Some Samsung firmwares omit buffering-complete, especially when the view attaches after
+  // playback starts. Advancing play time is also proof that the stream has recovered.
+  const finishBuffering = () => {
+    const hadError = !!playerError();
+    clearTimers();
+    setReconnectAttempt(0);
+    hasPlayedOnce = true;
+    setIsBuffering(false);
+    setIsPlaying(true);
+    setPlayerError(null);
+    setRetryCount(1);
+    setBrokenTag(false);
+    if (props.item.kind === 'live' && props.item.is_broken) {
+      props.item.is_broken = 0;
+      void Database.getInstance().setBroken(props.item.id, false);
+    }
+    if (!hasResumed && props.item.kind !== 'live') {
+      hasResumed = true;
+      // The engine already moved the stream to the saved position when it started it: do not seek twice.
+      if (!CndEngine.getInstance().takeResumed(props.item.id) && props.item.playback_position_ms > 0) {
+        player.seekTo(props.item.playback_position_ms);
+      }
+    }
+    if (hadError) updateGrid();
   };
 
   let previousItemId: number | null = null;
@@ -213,8 +382,12 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     }
     if (previousItemId === currentId) return;
     previousItemId = currentId;
+    setBrokenTag(props.item.is_broken === 1);
 
     clearTimers();
+    setReconnectAttempt(0);
+    setRebuffers(0);
+    hasPlayedOnce = false;
     setRetryCount(1);
     setPlayerError(null);
     setIsBuffering(true);
@@ -228,6 +401,11 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   });
 
   onMount(() => {
+    brokenUnsubscribe = Database.getInstance().onBrokenChange((id, broken) => {
+      if (props.item.id !== id) return;
+      props.item.is_broken = broken ? 1 : 0;
+      setBrokenTag(broken);
+    });
     // 1. Ensure AVPlay hardware video surface is sized to full screen
     player.setDisplayArea(FULL_SCREEN);
 
@@ -240,30 +418,26 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       onBufferingStart: () => {
         setIsBuffering(true);
         setPlayerError(null);
+        if (props.item.kind !== 'live' && hasPlayedOnce && Date.now() - lastSeekAt > 8000) setRebuffers((n) => n + 1);
       },
       onBufferingProgress: (pct) => setBufferingPercent(pct),
-      onBufferingComplete: () => {
-        clearTimers();
-        setIsBuffering(false);
-        setIsPlaying(true);
-        setPlayerError(null);
-        setRetryCount(1);
-        if (props.item.kind === 'live' && props.item.is_broken) {
-          props.item.is_broken = 0;
-          void Database.getInstance().setBroken(props.item.id, false);
-        }
-        if (!hasResumed && props.item.playback_position_ms && props.item.playback_position_ms > 0 && props.item.kind !== 'live') {
-          hasResumed = true;
-          player.seekTo(props.item.playback_position_ms);
-        }
-      },
+      onBufferingComplete: finishBuffering,
       onCurrentPlayTime: (ms) => {
-        if (connectionTimeoutTimer) {
-          clearTimeout(connectionTimeoutTimer);
-          connectionTimeoutTimer = null;
+        const advancing = ms > currentTimeMs();
+        if (advancing && (isBuffering() || playerError() || retryTimer || connectionTimeoutTimer)) {
+          finishBuffering();
         }
         setCurrentTimeMs(ms);
         setDurationMs(player.getDuration());
+        // The film is ending: bring up what to watch next and keep it on screen.
+        const total = player.getDuration();
+        if (!endShelfShown && props.item.kind === 'movie' && total > 0 && ms / total >= 0.97 && similar().length > 0) {
+          endShelfShown = true;
+          if (osdTimer) clearTimeout(osdTimer);
+          setShowOsd(true);
+          updateGrid();
+          setTimeout(() => spatialNav.setFocusById(`player-next-${similar()[0].id}`), 0);
+        }
         if (props.item.kind !== 'live' && Math.abs(ms - lastBroadcastMs) >= 15000) {
           lastBroadcastMs = ms;
           void LocalSyncService.getInstance().broadcastProgress(
@@ -289,10 +463,25 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       },
       onStallDetected: () => {
         console.warn('Playback stalled, attempting recovery...');
+        if (props.item.kind === 'live') {
+          startReconnect();
+          return;
+        }
         player.pause();
         player.play();
       },
       onStreamCompleted: () => {
+        // A film with suggestions does not close the player: the shelf and the countdown take over.
+        if (props.item.kind === 'movie' && similar().length > 0) {
+          void LocalSyncService.getInstance().broadcastProgress(props.item.stable_hash, durationMs(), durationMs(), true);
+          announce('Lecture terminée');
+          setShowOsd(true);
+          if (osdTimer) clearTimeout(osdTimer);
+          updateGrid();
+          setTimeout(() => spatialNav.setFocusById(`player-next-${similar()[0].id}`), 0);
+          if (getUpNextPrefs().auto) startCountdown();
+          return;
+        }
         if (props.item.kind !== 'live') {
           void LocalSyncService.getInstance().broadcastProgress(
             props.item.stable_hash,
@@ -325,6 +514,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   });
 
   onCleanup(() => {
+    stopCountdown();
+    upNextChain.reset(); // leaving the player: the next evening starts a new chain
+    brokenUnsubscribe?.();
     clearTimers();
     if (props.item.kind !== 'live' && currentTimeMs() > 0) {
       void LocalSyncService.getInstance().broadcastProgress(
@@ -334,6 +526,8 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         false
       );
     }
+    // Where the film stopped, before the stream is closed below.
+    void CndEngine.getInstance().saveProgress();
     if (keyUnsub) keyUnsub();
     if (osdTimer) clearTimeout(osdTimer);
     if (hudTimer) clearTimeout(hudTimer);
@@ -395,6 +589,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
 
   const seekDelta = (deltaMs: number) => {
     const target = Math.max(0, currentTimeMs() + deltaMs);
+    lastSeekAt = Date.now();
     player.seekTo(target);
     const secs = Math.abs(Math.round(deltaMs / 1000));
     showToast(deltaMs > 0 ? `⏩ +${secs} s` : `⏪ −${secs} s`);
@@ -440,6 +635,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
 
   const retryPlayback = async () => {
     clearTimers();
+    setReconnectAttempt(0);
     setRetryCount(1);
     setPlayerError(null);
     setIsBuffering(true);
@@ -455,6 +651,12 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   };
 
   const handleKey = (key: RemoteKey): boolean => {
+    // BACK during the countdown only cancels it; the next BACK leaves the player as usual.
+    if (key === 'BACK' && countdown() !== null) {
+      stopCountdown();
+      announce('Lecture automatique annulée');
+      return true;
+    }
     if (key === 'BACK') {
       // BACK always leaves the player and returns to the screen that opened it (no OSD detour).
       player.stop();
@@ -611,10 +813,19 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
           "z-index": 90
         }} role="status" aria-label="Chargement du flux vidéo">
           <div class="tv-spinner" style={{ width: "40px", height: "40px", "border-width": "4px" }} />
+          <div>
           <div style={{ "font-size": "24px", "font-weight": "700" }}>
             {isLive()
-              ? `Connexion… (tentative ${retryCount()}/${MAX_RETRIES})`
-              : `Chargement... ${bufferingPercent() > 0 ? `${bufferingPercent()}%` : ''}`}
+              ? reconnectAttempt() > 0
+                ? `Connexion perdue… reconnexion (${reconnectAttempt()}/${RECONNECT_DELAYS_MS.length})`
+                : `Connexion… (tentative ${retryCount()}/${MAX_RETRIES})`
+              : rebuffers() > 0
+                ? slowStreamMessage().title
+                : `Chargement... ${bufferingPercent() > 0 ? `${bufferingPercent()}%` : ''}`}
+          </div>
+          <Show when={!isLive() && rebuffers() > 0}>
+            <div style={{ "font-size": "16px", color: "var(--buntu-text-muted)" }}>{slowStreamMessage().hint}</div>
+          </Show>
           </div>
         </div>
       </Show>
@@ -629,9 +840,14 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
           <p style={{ "font-size": "22px", color: "var(--buntu-text)", margin: 0 }}>
             {playerError()}
           </p>
-          <Show when={isLive()}>
+          <Show when={isLive() && brokenTag()}>
             <p style={{ "font-size": "16px", color: "var(--buntu-text-muted)", margin: "4px 0 0 0" }}>
               Cette chaîne a été marquée temporairement hors service (HS).
+            </p>
+          </Show>
+          <Show when={isLive() && !brokenTag()}>
+            <p style={{ "font-size": "16px", color: "var(--buntu-text-muted)", margin: "4px 0 0 0" }}>
+              Le serveur a coupé la diffusion. « Réessayer » rouvre la chaîne, « Chaîne suivante » en change.
             </p>
           </Show>
           <div style={{ display: "flex", gap: "20px", "margin-top": "12px" }}>
@@ -725,7 +941,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
             chips={
               isLive()
                 ? [
-                    props.item.is_broken === 1 ? { text: '⚠ HORS SERVICE', tone: 'quality' as const } : null,
+                    brokenTag() ? { text: '⚠ HORS SERVICE', tone: 'quality' as const } : null,
                     qualityChip(),
                     props.item.country ? { text: props.item.country.toUpperCase() } : null,
                     props.item.language ? { text: props.item.language.toUpperCase() } : null,
@@ -878,6 +1094,41 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               ✨ Assistant
             </button>
           </div>
+
+          <Show when={!isLive() && similar().length > 0}>
+            <div class="tv-osd-next" role="group" aria-label="À suivre : films similaires">
+              <Show when={countdown() !== null}>
+                <div class="tv-osd-countdown" role="status" aria-live="polite">
+                  Film suivant dans <b>{countdown()} s</b> : {filmTitle(similar()[0])} · <b>OK</b> lancer maintenant · <b>RETOUR</b> annuler
+                </div>
+              </Show>
+              <Show when={stillWatching()}>
+                <div class="tv-osd-countdown" role="status">Toujours là ? Choisissez un film pour continuer.</div>
+              </Show>
+              <div class="tv-osd-next-label">À SUIVRE · FILMS SIMILAIRES</div>
+              <div class="tv-osd-next-row">
+                <For each={similar()}>
+                  {(film) => (
+                    <button
+                      id={`player-next-${film.id}`}
+                      type="button"
+                      tabindex="-1"
+                      class={`tv-osd-next-card ${focusId() === `player-next-${film.id}` ? 'focused' : ''}`}
+                      aria-label={`Lire ensuite : ${filmTitle(film)}`}
+                      onClick={() => playNext(film)}
+                    >
+                      <span class="tv-osd-next-title">{filmTitle(film)}</span>
+                      <span class="tv-osd-next-meta">
+                        {[film.year || cleanMediaTitle(film.name).year, film.imdb_rating && film.imdb_rating > 0 ? `★ ${film.imdb_rating.toFixed(1)}` : '', film.group_title]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
 
           <div class="tv-osd-hints">
             <span><b>◀ ▶ ▲ ▼</b> naviguer</span>

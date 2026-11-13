@@ -156,6 +156,22 @@ fun DevicesRoute(
             }
         }
 
+        if (!state.isTv) {
+            item(key = "scan_send_tv") {
+                DeviceSectionCard(title = "Envoyer vers une TV") {
+                    OutlinedButton(
+                        onClick = { viewModel.scanAndSend(context) },
+                        enabled = !state.isScanning,
+                    ) {
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = BuntuPalette.PureWhite)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (state.isScanning) "Scan / envoi en cours…" else "Scanner un QR et envoyer mes données", color = BuntuPalette.PureWhite)
+                    }
+                    Text("Sur la TV : affichez le QR d’ajout au foyer, puis confirmez à la télécommande. Un foyer sera créé sur ce téléphone si nécessaire.", color = BuntuPalette.MutedSilver)
+                }
+            }
+        }
+
         if (!state.isJoined) {
             item(key = "not_joined") {
                 DeviceSectionCard(title = "Aucun foyer configuré") {

@@ -45,6 +45,7 @@ class LoadShelvesUseCase @Inject constructor(
         val prefs = settingsRepository.currentPreferences()
         val aiConfig = prefs.aiConfig
         if (aiConfig.provider == AiProviderType.NONE) return@flow
+        if (!aiConfig.consent && !aiConfig.isEndpointLocal) return@flow
 
         val apiKey = secretStore.getSecret(aiConfig.keyAlias).orEmpty()
         if (apiKey.isBlank() && aiConfig.provider != AiProviderType.OPENAI_COMPATIBLE) {

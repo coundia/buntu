@@ -1,3 +1,6 @@
+import { aiSuggestions, mergeSuggestions, searchMode, searchModeLabel, toggleSearchMode } from '../../core/search/searchMode';
+import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
+import { registerYellowFavorite } from '../../ui/design/yellowFavorite';
 import { Component, createSignal, createMemo, createEffect, onMount, onCleanup, For, Show } from 'solid-js';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { ItemRecord, FAVORITES_CATEGORY, RECENT_CATEGORY } from '../../core/storage/Database';
@@ -27,6 +30,8 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
   const [selectedCat, setSelectedCat] = createSignal<string>('');
   const [catFilter, setCatFilter] = createSignal<string>('');
   const [showCats, setShowCats] = createSignal(true);
+  // False until the first load is over: the counts would read 0 and the lists look empty.
+  const [loaded, setLoaded] = createSignal(false);
   const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
   const [showInspector, setShowInspector] = createSignal(false);
 
@@ -112,7 +117,17 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     setFavSeries(favs);
   };
 
+  // Yellow button: add or remove the highlighted série from the favourites.
+  onCleanup(
+    registerYellowFavorite({
+      isItemFocus: (id) => /^(?:series|recent-s|fav-s)-\d+$/.test(id) || id.startsWith('s-insp'),
+      current: () => previewSeries(),
+      toggle: (item) => handleToggleFavorite(item),
+    })
+  );
+
   onMount(async () => {
+    try {
     resizeHandler = () => {
       syncAvPlayRect();
       scheduleRebuildGrid(true);
@@ -178,6 +193,12 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
       spatialNav.setFocusById(firstId);
     } else if (cats.length > 0) {
       spatialNav.setFocusById('series-cat-all');
+    }
+  
+    } catch (error) {
+      console.warn('Chargement initial impossible', error);
+    } finally {
+      setLoaded(true);
     }
   });
 
@@ -253,6 +274,27 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     scheduleRebuildGrid(true);
   };
 
+  // The search engine (local / IA) is chosen with the button after the field. In IA mode, once typing pauses,
+  // the assistant's suggestions are put in front of the local results.
+  let aiTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(aiTimer));
+  const scheduleAiRefine = (query: string) => {
+    clearTimeout(aiTimer);
+    if (searchMode() !== 'ai' || query.trim().length < 3) return;
+    aiTimer = setTimeout(async () => {
+      const extra = await aiSuggestions(engine, query, 'series').catch(() => []);
+      if (searchQuery() !== query || extra.length === 0) return;
+      setSearchResults(mergeSuggestions(searchResults(), extra));
+      announce(`L’assistant propose ${extra.length} résultat(s)`);
+      scheduleRebuildGrid(true);
+    }, 900);
+  };
+  const switchSearchEngine = async () => {
+    const change = await toggleSearchMode();
+    announce(change.message);
+    if (searchQuery().trim()) void handleSearch(searchQuery());
+  };
+
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (!query.trim()) {
@@ -263,6 +305,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     const results = await engine.searchCatalog(query, 'series', 100);
     setSearchResults(results);
     announce(`${results.length} séries trouvées`);
+    scheduleAiRefine(query);
     scheduleRebuildGrid(true);
   };
 
@@ -300,27 +343,14 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
 
     // Row 0: Toolbar
     const toolbarRow: FocusableItem[] = [
-      { id: 's-toggle-cats', onSelect: () => { setShowCats((v) => !v); scheduleRebuildGrid(true); } },
-      { id: 's-mode-grid', onSelect: () => { setViewMode('grid'); scheduleRebuildGrid(true); } },
-      { id: 's-mode-list', onSelect: () => { setViewMode('list'); scheduleRebuildGrid(true); } },
-      { id: 's-toggle-inspector', onSelect: toggleInspector },
       { id: 's-search-input', onSelect: () => focusDomInput('s-search-input') },
+      { id: 's-search-mode', onSelect: switchSearchEngine },
     ];
-    if (searchQuery().trim()) {
-      toolbarRow.push({ id: 's-search-clear', onSelect: () => void handleSearch('') });
-    }
     grid.push(toolbarRow);
 
     // Left Category Column
     const catColItems: FocusableItem[] = [];
     if (showCats()) {
-      catColItems.push({
-        id: 's-cat-home',
-        onSelect: () => {
-          setCatFilter('');
-          void handleSelectCategory('');
-        },
-      });
       catColItems.push({
         id: 's-cat-filter',
         onSelect: () => focusDomInput('s-cat-filter'),
@@ -493,18 +523,6 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
       {/* Top Toolbar */}
       <header class="buntu-toolbar">
         <div class="buntu-toolbar-left">
-          <button
-            id="s-toggle-cats"
-            type="button"
-            tabindex="-1"
-            class={`buntu-tool-btn ${showCats() ? 'active' : ''} ${focusId() === 's-toggle-cats' ? 'focused' : ''}`}
-            onClick={() => {
-              setShowCats((v) => !v);
-              scheduleRebuildGrid(true);
-            }}
-          >
-            ☰
-          </button>
           <h1 class="buntu-toolbar-title">Séries</h1>
           <Show when={totalCount() > 0}>
             <span class="buntu-toolbar-subtitle">{formatBuntuCount(totalCount())} séries</span>
@@ -512,43 +530,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
         </div>
 
         <div class="buntu-toolbar-right">
-          <div class="buntu-seg-group">
-            <button
-              id="s-mode-grid"
-              type="button"
-              tabindex="-1"
-              class={`buntu-seg-btn ${viewMode() === 'grid' ? 'active' : ''} ${focusId() === 's-mode-grid' ? 'focused' : ''}`}
-              onClick={() => {
-                setViewMode('grid');
-                scheduleRebuildGrid(true);
-              }}
-            >
-              ⊞
-            </button>
-            <button
-              id="s-mode-list"
-              type="button"
-              tabindex="-1"
-              class={`buntu-seg-btn ${viewMode() === 'list' ? 'active' : ''} ${focusId() === 's-mode-list' ? 'focused' : ''}`}
-              onClick={() => {
-                setViewMode('list');
-                scheduleRebuildGrid(true);
-              }}
-            >
-              ☰
-            </button>
-          </div>
-
-          <button
-            id="s-toggle-inspector"
-            type="button"
-            tabindex="-1"
-            class={`buntu-tool-btn ${showInspector() ? 'active' : ''} ${focusId() === 's-toggle-inspector' ? 'focused' : ''}`}
-            onClick={toggleInspector}
-          >
-            ◫
-          </button>
-
+          <span class="buntu-key-hint"><i class="buntu-key-dot" />Favori</span>
           <div class="buntu-search-wrap">
             <span class="buntu-search-icon">🔍</span>
             <input
@@ -559,18 +541,17 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
               class={`buntu-search-field ${focusId() === 's-search-input' ? 'focused' : ''}`}
               onInput={(e) => void handleSearch(e.currentTarget.value)}
             />
-            <Show when={searchQuery().trim().length > 0}>
-              <button
-                id="s-search-clear"
-                type="button"
-                tabindex="-1"
-                class={`buntu-search-clear ${focusId() === 's-search-clear' ? 'focused' : ''}`}
-                onClick={() => void handleSearch('')}
-              >
-                ✕
-              </button>
-            </Show>
           </div>
+          <button
+            id="s-search-mode"
+            type="button"
+            tabindex="-1"
+            class={`buntu-mode-btn ${searchMode() === 'ai' ? 'ai' : ''} ${focusId() === 's-search-mode' ? 'focused' : ''}`}
+            aria-label={searchMode() === 'ai' ? 'Moteur de recherche : IA. OK pour passer en local' : 'Moteur de recherche : local. OK pour passer en IA'}
+            onClick={switchSearchEngine}
+          >
+            {searchModeLabel(searchMode())}
+          </button>
         </div>
       </header>
 
@@ -579,19 +560,6 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
         <Show when={showCats()}>
           <aside class="buntu-cat-pane" aria-label="Catégories Séries">
             <div class="buntu-cat-filter-bar">
-              <button
-                id="s-cat-home"
-                type="button"
-                tabindex="-1"
-                class={`buntu-cat-home-btn ${focusId() === 's-cat-home' ? 'focused' : ''}`}
-                title="Toutes les catégories"
-                onClick={() => {
-                  setCatFilter('');
-                  void handleSelectCategory('');
-                }}
-              >
-                ⌂
-              </button>
               <input
                 id="s-cat-filter"
                 type="text"
@@ -618,7 +586,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
                   <span class="buntu-cat-row-icon">🕒</span>
                   <span class="buntu-cat-row-title">Récemment vus</span>
                 </div>
-                <span class="buntu-cat-count">{formatBuntuCount(recentCount())}</span>
+                <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(recentCount())}</span></Show>
               </div>
 
               <div
@@ -632,7 +600,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
                   <span class="buntu-cat-row-icon">⊞</span>
                   <span class="buntu-cat-row-title">Toutes les séries</span>
                 </div>
-                <span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span>
+                <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span></Show>
               </div>
 
               <div
@@ -646,7 +614,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
                   <span class="buntu-cat-row-icon fav">★</span>
                   <span class="buntu-cat-row-title">Favoris</span>
                 </div>
-                <span class="buntu-cat-count">{formatBuntuCount(favCount())}</span>
+                <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(favCount())}</span></Show>
               </div>
 
               <For each={filteredCategories()}>
@@ -661,7 +629,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
                     <div class="buntu-cat-row-left">
                       <span class="buntu-cat-row-title">{cat}</span>
                     </div>
-                    <span class="buntu-cat-count">{formatBuntuCount(catCounts()[cat] || 0)}</span>
+                    <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(catCounts()[cat] || 0)}</span></Show>
                   </div>
                 )}
               </For>
@@ -724,12 +692,21 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
                     ? 'Favoris'
                     : selectedCat() || 'Toutes les séries'}
               </h2>
+              <Show when={loaded()}>
               <span class="buntu-section-meta">
                 {isSearchMode()
                   ? `${searchResults().length} résultats`
                   : `${formatBuntuCount(scroller.total())} séries`}
               </span>
+              </Show>
             </div>
+
+            <Show when={!loaded()}>
+              <div class="buntu-first-load" role="status" aria-live="polite">
+                <div class="tv-spinner" />
+                <span>Chargement des séries…</span>
+              </div>
+            </Show>
 
             <div
               ref={gridRef}

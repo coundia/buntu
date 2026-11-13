@@ -94,6 +94,10 @@ abstract class DataModule {
     @Singleton
     abstract fun bindHouseholdInviteCodec(impl: RustHouseholdInviteCodec): HouseholdInviteCodec
 
+    @Binds
+    @Singleton
+    abstract fun bindPlaybackHealthRepository(impl: com.pcoundia.buntu.core.data.repository.RustPlaybackHealthRepository): com.pcoundia.buntu.core.domain.repository.PlaybackHealthRepository
+
     companion object {
         @Provides
         @Singleton

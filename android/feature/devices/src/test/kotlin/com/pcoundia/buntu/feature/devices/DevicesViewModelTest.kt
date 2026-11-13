@@ -96,10 +96,26 @@ class DevicesViewModelTest {
         collector.cancel()
     }
 
+    @Test
+    fun `scanned TV receives data without joining the phone to another household`() = runTest {
+        val repo = FakeHousehold(currentKey = KEY)
+        val vm = viewModel(repo)
+        val collector = backgroundScope.launch { vm.uiState.collect {} }
+        vm.sendScannedTv("buntu://pair?test")
+        advanceUntilIdle()
+        assertEquals("Données envoyées à Salon TV.", vm.uiState.value.infoMessage)
+        assertNull(vm.uiState.value.errorMessage)
+        assertTrue(repo.joinedKeys.isEmpty())
+        collector.cancel()
+    }
+
     private fun viewModel(repo: FakeHousehold) = DevicesViewModel(
         householdRepo = repo,
         inviteCodec = FakeInviteCodec,
         qrScanner = PhoneQrScanner(),
+        tvDataSender = object : com.pcoundia.buntu.core.domain.repository.TvDataSender {
+            override suspend fun send(scannedLink: String) = com.pcoundia.buntu.core.domain.repository.TvDataSendResult.Sent("Salon TV")
+        },
         deviceCapabilities = DeviceCapabilities(isTelevision = false),
     )
 

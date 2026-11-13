@@ -4,7 +4,8 @@
  * One experience everywhere:
  *  - the right panel always shows the item under the cursor ("focused"): details, actions;
  *  - moving the cursor never touches the stream: the mini player keeps what it plays ("playing");
- *  - OK on an item plays it in the mini player, OK again on the one playing goes full screen;
+ *  - OK on an item plays it in the mini player, OK again on the one playing goes full screen (films: OK moves the
+ *    cursor to the panel instead, to read the text; full screen is chosen there);
  *  - the stream that plays in the mini player continues in full screen (not reopened).
  *
  * The controller holds the state and the stream lifecycle. The screen supplies how an item is shown
@@ -44,6 +45,12 @@ export interface MiniPlayerOptions<T extends MiniPlayerItem> {
   startTimeoutMs?: number;
   /** Message shown when the stream does not answer in time. */
   timeoutMessage?: string;
+  /**
+   * For catalogues where the panel has text to read (films): OK on a card plays it in the mini player and moves the
+   * cursor to the panel with this function, and never goes full screen by itself. Full screen then takes a deliberate
+   * choice in the panel. Without it (live TV) OK on the item that plays goes full screen.
+   */
+  focusPanelOnActivate?: () => void;
   /** Called when a stream fails to connect or errors out. */
   onItemFailed?: (item: T, error: string) => void;
 }
@@ -236,7 +243,17 @@ export function createMiniPlayer<T extends MiniPlayerItem>(opts: MiniPlayerOptio
   const fullscreenFromScreen = () => fullscreen(playing() ?? focused());
 
   const activate = (item: T) => {
-    if (!visible() || isPlaying(item.id)) {
+    if (!visible()) {
+      fullscreen(item);
+      return;
+    }
+    if (opts.focusPanelOnActivate) {
+      focus(item);
+      if (!isPlaying(item.id)) void start();
+      opts.focusPanelOnActivate();
+      return;
+    }
+    if (isPlaying(item.id)) {
       fullscreen(item);
       return;
     }

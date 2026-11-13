@@ -28,10 +28,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.os.SystemClock
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.nativeKeyCode
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -62,6 +69,9 @@ fun TvShell(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route.orEmpty()
     val isFullscreenRoute = currentRoute.startsWith("player/") || currentRoute == BuntuRoutes.ONBOARDING
+    // System sound effects of the remote's keys; not played over the full-screen player (it returns above).
+    val view = LocalView.current
+    val sounds = remember(view) { TvUiSounds(playEffect = { view.playSoundEffect(it) }, uptimeMillis = SystemClock::uptimeMillis) }
     val tvDestinations = remember { TopLevelDestination.entries.filter { it.showOnTvRail } }
 
     var confirmExitPending by remember { mutableStateOf(false) }
@@ -73,12 +83,17 @@ fun TvShell(
         }
     }
 
-    val isRootTab = tvDestinations.any { it.matches(currentRoute) }
+    val isHome = currentRoute == BuntuRoutes.HOME
+    val isRootTab = isHome || tvDestinations.any { it.matches(currentRoute) }
     BackHandler(enabled = isRootTab) {
-        if (confirmExitPending) {
-            onExitApp()
-        } else {
-            confirmExitPending = true
+        when {
+            // Back from a section returns to the home chooser; from the home, a second press quits.
+            !isHome -> navController.navigate(BuntuRoutes.HOME) {
+                popUpTo(BuntuRoutes.HOME)
+                launchSingleTop = true
+            }
+            confirmExitPending -> onExitApp()
+            else -> confirmExitPending = true
         }
     }
 
@@ -94,11 +109,15 @@ fun TvShell(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(BuntuPalette.Midnight),
+            .background(BuntuPalette.Midnight)
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown) sounds.onKeyDown(event.key.nativeKeyCode)
+                false // never consumes the key: only listens
+            },
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // 10-foot Top Navigation Bar
-            Row(
+            // 10-foot Top Navigation Bar (the home has its own header)
+            if (!isHome) Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -142,6 +161,7 @@ fun TvShell(
                     navController = navController,
                     startDestination = startDestination,
                     modifier = Modifier.fillMaxSize(),
+                    onExitApp = onExitApp,
                 )
             }
         }

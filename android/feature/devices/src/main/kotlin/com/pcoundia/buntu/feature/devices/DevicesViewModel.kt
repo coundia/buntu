@@ -1,6 +1,9 @@
 package com.pcoundia.buntu.feature.devices
 
 import android.content.Context
+import com.pcoundia.buntu.core.domain.repository.TvDataSender
+import com.pcoundia.buntu.core.domain.repository.TvDataSendResult
+import kotlinx.coroutines.CancellationException
 import com.pcoundia.buntu.core.domain.repository.HouseholdInviteCodec
 import com.pcoundia.buntu.core.platform.device.DeviceCapabilities
 import com.pcoundia.buntu.core.platform.phone.PhoneQrScanResult
@@ -47,6 +50,7 @@ class DevicesViewModel @Inject constructor(
     private val householdRepo: HouseholdRepository,
     private val inviteCodec: HouseholdInviteCodec,
     private val qrScanner: PhoneQrScanner,
+    private val tvDataSender: TvDataSender,
     deviceCapabilities: DeviceCapabilities,
 ) : ViewModel() {
 
@@ -139,6 +143,45 @@ class DevicesViewModel @Inject constructor(
                 }
             } finally {
                 _isScanning.value = false
+            }
+        }
+    }
+
+    /** Scans the TV's ephemeral QR, joins it to the phone household, then sends data. */
+    fun scanAndSend(activityContext: Context) {
+        if (_isScanning.value) return
+        _isScanning.value = true
+        _errorMessage.value = null
+        _infoMessage.value = null
+        viewModelScope.launch {
+            try {
+                when (val result = qrScanner.scanQrCode(activityContext)) {
+                    is PhoneQrScanResult.Scanned -> sendScannedTv(result.rawValue)
+                    PhoneQrScanResult.Cancelled -> Unit
+                    is PhoneQrScanResult.Unavailable -> _errorMessage.value = "Scanner indisponible. Vérifiez les services Google et réessayez."
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _errorMessage.value = "Impossible de scanner ou d’envoyer les données. Réessayez."
+            } finally {
+                _isScanning.value = false
+            }
+        }
+    }
+
+    internal suspend fun sendScannedTv(link: String) {
+        _infoMessage.value = "En attente de confirmation sur la TV…"
+        _errorMessage.value = null
+        when (val result = tvDataSender.send(link)) {
+            is TvDataSendResult.Sent -> _infoMessage.value = "Données envoyées à ${result.tvName}."
+            TvDataSendResult.Refused -> {
+                _infoMessage.value = null
+                _errorMessage.value = "Ajout refusé sur la TV. Aucune donnée envoyée."
+            }
+            is TvDataSendResult.Failed -> {
+                _infoMessage.value = null
+                _errorMessage.value = result.message
             }
         }
     }

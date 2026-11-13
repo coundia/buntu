@@ -10,6 +10,16 @@ import com.pcoundia.buntu.core.domain.repository.SettingsRepository
 import javax.inject.Inject
 
 /**
+ * Availability snapshot for the AI search toggle inside the Search popup.
+ */
+data class AiSearchStatus(
+    val isAvailable: Boolean,
+    val providerLabel: String,
+    val autoSearch: Boolean,
+    val blockerMessage: String? = null,
+)
+
+/**
  * Single responsibility (PRD-33 & PRD-37 § 6):
  * Instant local FTS/prompt search on every keystroke, plus optional AI prompt resolution
  * (strictly disabled on Kids profiles).
@@ -20,6 +30,35 @@ class SearchCatalogUseCase @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val secretStore: SecretStore,
 ) {
+    suspend fun getAiSearchStatus(): AiSearchStatus {
+        val activeProfile = profilesRepository.activeProfile()
+        if (activeProfile.isKids) {
+            return AiSearchStatus(
+                isAvailable = false,
+                providerLabel = "Désactivé (Enfants)",
+                autoSearch = false,
+                blockerMessage = "L'assistant IA est désactivé sur le profil Enfants.",
+            )
+        }
+        val aiConfig = settingsRepository.currentPreferences().aiConfig
+        if (aiConfig.provider == AiProviderType.NONE) {
+            return AiSearchStatus(
+                isAvailable = false,
+                providerLabel = aiConfig.provider.displayName,
+                autoSearch = false,
+                blockerMessage = "Aucun fournisseur IA configuré. Choisissez-en un dans Réglages > Assistant IA.",
+            )
+        }
+        val hasKey = !secretStore.getSecret(aiConfig.keyAlias).isNullOrBlank()
+        val blocker = aiConfig.blocker(hasKey)
+        return AiSearchStatus(
+            isAvailable = blocker == null,
+            providerLabel = aiConfig.provider.displayName,
+            autoSearch = aiConfig.autoSearch,
+            blockerMessage = blocker,
+        )
+    }
+
     suspend fun searchInstant(
         prompt: String,
         scope: SearchScopeKind = SearchScopeKind.ALL,
@@ -47,7 +86,7 @@ class SearchCatalogUseCase @Inject constructor(
             return searchInstant(prompt, scope, locale, utcOffsetMinutes)
         }
         val apiKey = secretStore.getSecret(aiConfig.keyAlias).orEmpty()
-        if (apiKey.isBlank() && aiConfig.provider != AiProviderType.OPENAI_COMPATIBLE) {
+        if (aiConfig.blocker(hasKey = apiKey.isNotBlank()) != null) {
             return searchInstant(prompt, scope, locale, utcOffsetMinutes)
         }
         return searchRepository.searchWithAi(

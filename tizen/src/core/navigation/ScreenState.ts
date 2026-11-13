@@ -54,6 +54,11 @@ class ScreenStateStore {
     this.armed.clear();
   }
 
+  /** `true` when a BACK targeted this screen and its restore has not been consumed yet (does not consume it). */
+  isArmed(screen: string): boolean {
+    return this.armed.has(screen);
+  }
+
   /** The state to restore on mount, only if a BACK targeted this screen. One-shot. */
   restore(screen: string): BrowseState | undefined {
     if (!this.armed.delete(screen)) return undefined;

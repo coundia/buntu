@@ -1,6 +1,7 @@
-import { Component, createSignal, onMount } from 'solid-js';
+import { Component, createSignal, onMount, onCleanup, Show, For } from 'solid-js';
 import { CndEngine, ProfileState } from '../../core/engine/CndEngine';
 import { spatialNav } from '../../ui/design/SpatialNav';
+import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
 
 export interface ProfilesViewProps {
   onProfileChanged: () => void;
@@ -9,140 +10,83 @@ export interface ProfilesViewProps {
 export const ProfilesView: Component<ProfilesViewProps> = (props) => {
   const engine = CndEngine.getInstance();
   const [activeProfile, setActiveProfile] = createSignal<ProfileState>(engine.getActiveProfile());
+  const [showPin, setShowPin] = createSignal(false);
   const [pinInput, setPinInput] = createSignal('');
   const [unlockedMsg, setUnlockedMsg] = createSignal('');
   const [focusId] = spatialNav.getFocusSignal();
-
   const profiles: ProfileState[] = [
-    { id: 1, name: 'Principal (Adultes)', isKids: false, avatar: '👤' },
-    { id: 2, name: 'Enfants (Sécurisé)', isKids: true, avatar: '👶' },
+    { id: 1, name: 'Principal', isKids: false, avatar: '👤' },
+    { id: 2, name: 'Enfants', isKids: true, avatar: '👶' },
   ];
-
-  const selectProfile = (p: ProfileState) => {
-    engine.setProfile(p);
-    setActiveProfile(p);
+  const selectProfile = (profile: ProfileState) => {
+    engine.setProfile(profile);
+    setActiveProfile(profile);
     props.onProfileChanged();
   };
-
   const verifyPin = () => {
-    if (engine.unlockAdult(pinInput())) {
-      setUnlockedMsg('Catégories adultes déverrouillées avec succès.');
-    } else {
-      setUnlockedMsg('Code PIN incorrect.');
-    }
+    setUnlockedMsg(engine.unlockAdult(pinInput()) ? 'Catégories adultes déverrouillées.' : 'Code PIN incorrect.');
     setPinInput('');
   };
-
-  onMount(() => {
+  const updateGrid = () => {
     spatialNav.setGrid([
-      profiles.map((p) => ({
-        id: `profile-${p.id}`,
-        onSelect: () => selectProfile(p),
-      })),
-      [
-        {
-          id: 'field-pin',
-          onSelect: () => {
-            const el = document.getElementById('field-pin') as HTMLInputElement | null;
-            el?.focus();
-            el?.click();
-          },
-        },
-        {
-          id: 'btn-unlock-pin',
-          onSelect: verifyPin,
-        },
-      ],
-    ]);
+      profiles.map((profile) => ({ id: `profile-${profile.id}`, onSelect: () => selectProfile(profile) })),
+      [{ id: 'profile-parental', onSelect: togglePin }],
+      ...(showPin() ? [[
+        { id: 'field-pin', onSelect: () => (document.getElementById('field-pin') as HTMLInputElement | null)?.focus() },
+        { id: 'btn-unlock-pin', onSelect: verifyPin },
+      ]] : []),
+    ], 0, Math.max(0, profiles.findIndex((profile) => profile.id === activeProfile().id)));
+  };
+  const togglePin = () => {
+    setShowPin((value) => !value);
+    setPinInput('');
+    setUnlockedMsg('');
+    updateGrid();
+    spatialNav.setFocusById(showPin() ? 'field-pin' : 'profile-parental');
+  };
+  onMount(() => {
+    spatialNav.setHeader([]);
+    updateGrid();
+    const unsubscribe = RemoteKeyHandler.getInstance().addListener((key) => {
+      if (key === 'BACK' && showPin()) { togglePin(); return true; }
+      return false;
+    });
+    onCleanup(unsubscribe);
   });
 
   return (
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        padding: "24px 40px",
-        "box-sizing": "border-box",
-        overflow: "hidden",
-        display: "flex",
-        "flex-direction": "column",
-        "justify-content": "center",
-        "align-items": "center"
-      }}
-    >
-      <div style={{ "text-align": "center", "max-width": "700px" }}>
-        <h1 style={{ "font-size": "44px", color: "var(--buntu-gold)", "margin-bottom": "36px" }}>
-          Qui regarde la télévision ?
-        </h1>
-
-        <div style={{ display: "flex", gap: "32px", "justify-content": "center", "margin-bottom": "48px" }} role="list" aria-label="Liste des profils">
-          {profiles.map((p) => (
-            <div
-              id={`profile-${p.id}`}
-              role="button"
-              tabindex="-1"
-              aria-label={`Profil ${p.name}`}
-              class={`tv-card ${focusId() === `profile-${p.id}` || activeProfile().id === p.id ? 'focused' : ''}`}
-              style={{
-                width: "240px",
-                padding: "32px 16px",
-                cursor: "pointer",
-                display: "flex",
-                "flex-direction": "column",
-                "align-items": "center",
-                gap: "16px",
-              }}
-              onClick={() => selectProfile(p)}
-            >
-              <div style={{ "font-size": "64px" }}>{p.avatar}</div>
-              <div style={{ "font-size": "22px", "font-weight": "700" }}>{p.name}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Parental PIN Control */}
-        <div style={{
-          background: "var(--buntu-slate)",
-          padding: "24px 32px",
-          "border-radius": "12px",
-          border: "1px solid var(--buntu-border)"
-        }}>
-          <h3 style={{ "font-size": "20px", "margin-bottom": "8px" }}>Contrôle parental (Code PIN)</h3>
-          <p style={{ "font-size": "14px", color: "var(--buntu-text-muted)", "margin-bottom": "16px" }}>
-            Saisissez le code PIN pour afficher les catégories adultes masquées.
-          </p>
-          <div style={{ display: "flex", gap: "16px", "justify-content": "center" }}>
-            <input
-              id="field-pin"
-              class={`tv-input ${focusId() === 'field-pin' ? 'focused' : ''}`}
-              type="password"
-              maxlength="4"
-              value={pinInput()}
-              onInput={(e) => setPinInput(e.currentTarget.value)}
-              placeholder="PIN (défaut 0000)"
-              aria-label="Code PIN parental à 4 chiffres"
-              style={{
-                width: "200px",
-                "text-align": "center"
-              }}
-            />
-            <button
-              id="btn-unlock-pin"
-              tabindex="-1"
-              aria-label="Déverrouiller avec le code PIN saisi"
-              class={`tv-btn ${focusId() === 'btn-unlock-pin' ? 'focused' : ''}`}
-              onClick={verifyPin}
-            >
-              Déverrouiller
-            </button>
-          </div>
-          {unlockedMsg() && (
-            <div style={{ "margin-top": "12px", color: "var(--buntu-cyan)", "font-weight": "600" }}>
-              {unlockedMsg()}
-            </div>
-          )}
-        </div>
+    <section class="buntu-profiles-page" aria-labelledby="profiles-title">
+      <h1 id="profiles-title">Qui regarde ?</h1>
+      <p class="buntu-return-hint">Choisissez un profil · Retour : réglages</p>
+      <div class="buntu-profile-choices" aria-label="Profils">
+        <For each={profiles}>{(profile) => (
+          <button id={`profile-${profile.id}`} type="button" tabindex="-1"
+            aria-label={`Profil ${profile.name}`} aria-pressed={activeProfile().id === profile.id}
+            class={`buntu-profile-card ${focusId() === `profile-${profile.id}` ? 'focused' : ''}`}
+            onClick={() => selectProfile(profile)}>
+            <span class="buntu-profile-avatar" aria-hidden="true">{profile.avatar}</span>
+            <strong>{profile.name}</strong>
+            <span>{activeProfile().id === profile.id ? 'Profil actuel' : profile.isKids ? 'Pour les plus jeunes' : 'Pour vous'}</span>
+          </button>
+        )}</For>
       </div>
-    </div>
+      <button id="profile-parental" type="button" tabindex="-1" aria-expanded={showPin()}
+        class={`tv-btn ${focusId() === 'profile-parental' ? 'focused' : ''}`} onClick={togglePin}>
+        {showPin() ? 'Fermer le contrôle parental' : 'Contrôle parental'}
+      </button>
+      <Show when={showPin()}>
+        <div class="buntu-profile-pin">
+          <label for="field-pin">Code PIN parental</label>
+          <div class="buntu-simple-actions">
+            <input id="field-pin" class={`tv-input ${focusId() === 'field-pin' ? 'focused' : ''}`}
+              type="password" inputmode="numeric" maxlength="4" value={pinInput()}
+              onInput={(event) => setPinInput(event.currentTarget.value)} placeholder="4 chiffres" />
+            <button id="btn-unlock-pin" type="button" tabindex="-1"
+              class={`tv-btn ${focusId() === 'btn-unlock-pin' ? 'focused' : ''}`} onClick={verifyPin}>Déverrouiller</button>
+          </div>
+          <Show when={unlockedMsg()}><p role="status">{unlockedMsg()}</p></Show>
+        </div>
+      </Show>
+    </section>
   );
 };

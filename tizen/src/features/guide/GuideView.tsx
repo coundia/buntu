@@ -117,9 +117,6 @@ export const GuideView: Component<GuideViewProps> = (props) => {
     const searchRow: FocusableItem[] = [
       { id: 'guide-search-input', onSelect: () => focusInput('guide-search-input') },
     ];
-    if (searchQuery().trim()) {
-      searchRow.push({ id: 'guide-search-input-clear', onSelect: handleClearSearch });
-    }
     grid.push(searchRow);
 
     // Results rows
@@ -142,9 +139,6 @@ export const GuideView: Component<GuideViewProps> = (props) => {
     const searchRow: FocusableItem[] = [
       { id: 'guide-search-input', onSelect: () => focusInput('guide-search-input') },
     ];
-    if (searchQuery().trim()) {
-      searchRow.push({ id: 'guide-search-input-clear', onSelect: handleClearSearch });
-    }
     grid.push(searchRow);
 
     // Channel rows

@@ -26,6 +26,7 @@ class SpatialNav {
   private currentCol = 0;
   private headerCol = 0;
   private isInitialized = false;
+  private focusFramePending = false;
   private modalState: {
     grid: FocusableItem[][];
     header: FocusableItem[];
@@ -201,13 +202,17 @@ class SpatialNav {
   private applyFocus(item: FocusableItem) {
     this.currentFocus[1](item.id);
     item.onFocus?.();
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    if (!this.focusFramePending && typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      // Keys and OK stay synchronous; only the final DOM focus/scroll is needed per frame.
+      this.focusFramePending = true;
       window.requestAnimationFrame(() => {
-        const el = document.querySelector('.focused') as HTMLElement | null;
-        if (el && typeof el.scrollIntoView === 'function') {
-          el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        this.focusFramePending = false;
+        const el = document.getElementById(this.getCurrentFocusId());
+        if (!el) return; // The screen may have been unmounted by OK or BACK.
+        if (typeof el.scrollIntoView === 'function') {
+          el.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
         }
-        syncDomFocus();
+        syncDomFocus(el);
       });
     }
   }

@@ -7,6 +7,8 @@
  * 3. Spatial focus event dispatching and Tizen IME (virtual keyboard) key handling.
  */
 
+import { UiSounds } from '../audio/UiSounds';
+
 export type RemoteKey =
   | 'UP'
   | 'DOWN'
@@ -149,6 +151,7 @@ export class RemoteKeyHandler {
     for (let i = this.handlers.length - 1; i >= 0; i--) {
       const consumed = this.handlers[i](key, event);
       if (consumed) {
+        UiSounds.getInstance().onHandledKey(key);
         event.preventDefault();
         event.stopPropagation();
         break;

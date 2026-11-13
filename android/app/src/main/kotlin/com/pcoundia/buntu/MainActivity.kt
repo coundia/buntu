@@ -29,6 +29,7 @@ import com.pcoundia.buntu.core.platform.sync.LocalSyncService
 import com.pcoundia.buntu.core.player.VideoEngine
 import com.pcoundia.buntu.navigation.BuntuRoutes
 import com.pcoundia.buntu.ui.MobileShell
+import com.pcoundia.buntu.ui.TvHomeModel
 import com.pcoundia.buntu.ui.TvShell
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.collections.immutable.persistentListOf
@@ -107,11 +108,10 @@ class MainActivity : ComponentActivity() {
 
             val navController = rememberNavController()
             val startDest = remember {
-                if (prefs.onboardingCompleted || sources.isNotEmpty()) {
-                    BuntuRoutes.LIVE
-                } else {
-                    BuntuRoutes.ONBOARDING
-                }
+                TvHomeModel.startDestination(
+                    isTelevision = deviceCapabilities.isTelevision,
+                    onboardingDone = prefs.onboardingCompleted || sources.isNotEmpty(),
+                )
             }
 
             LaunchedEffect(Unit) {

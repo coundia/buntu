@@ -2,11 +2,14 @@ package com.pcoundia.buntu.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.dialog
 import androidx.navigation.navArgument
+import com.pcoundia.buntu.core.domain.model.SearchScopeKind
 import com.pcoundia.buntu.feature.details.DetailsRoute
 import com.pcoundia.buntu.feature.devices.DevicesRoute
 import com.pcoundia.buntu.feature.downloads.DownloadsRoute
@@ -20,6 +23,7 @@ import com.pcoundia.buntu.feature.recommendations.RecommendationsRoute
 import com.pcoundia.buntu.feature.search.SearchRoute
 import com.pcoundia.buntu.feature.series.SeriesRoute
 import com.pcoundia.buntu.feature.settings.SettingsRoute
+import com.pcoundia.buntu.ui.TvHomeScreen
 import com.pcoundia.buntu.feature.sources.SourcesRoute
 
 /**
@@ -32,12 +36,24 @@ fun BuntuNavHost(
     navController: NavHostController,
     startDestination: String,
     modifier: Modifier = Modifier,
+    onExitApp: () -> Unit = {},
 ) {
     NavHost(
         navController = navController,
         startDestination = startDestination,
         modifier = modifier,
     ) {
+        composable(BuntuRoutes.HOME) {
+            TvHomeScreen(
+                onOpen = { route ->
+                    navController.navigate(route) {
+                        launchSingleTop = true
+                    }
+                },
+                onExit = onExitApp,
+            )
+        }
+
         composable(BuntuRoutes.ONBOARDING) {
             OnboardingRoute(
                 onFinished = {
@@ -55,6 +71,9 @@ fun BuntuNavHost(
                 },
                 onOpenSources = {
                     navController.navigate(BuntuRoutes.SOURCES)
+                },
+                onOpenSearch = {
+                    navController.navigate(BuntuRoutes.search(SearchScopeKind.LIVE))
                 },
             )
         }
@@ -84,6 +103,9 @@ fun BuntuNavHost(
                 onOpenSources = {
                     navController.navigate(BuntuRoutes.SOURCES)
                 },
+                onOpenSearch = {
+                    navController.navigate(BuntuRoutes.search(SearchScopeKind.MOVIES))
+                },
             )
         }
 
@@ -94,6 +116,9 @@ fun BuntuNavHost(
                 },
                 onOpenSources = {
                     navController.navigate(BuntuRoutes.SOURCES)
+                },
+                onOpenSearch = {
+                    navController.navigate(BuntuRoutes.search(SearchScopeKind.SERIES))
                 },
             )
         }
@@ -112,18 +137,36 @@ fun BuntuNavHost(
             )
         }
 
-        composable(BuntuRoutes.SEARCH) {
+        dialog(
+            route = BuntuRoutes.SEARCH_PATTERN,
+            arguments = listOf(
+                navArgument("scope") {
+                    type = NavType.StringType
+                    defaultValue = SearchScopeKind.ALL.name
+                },
+            ),
+            dialogProperties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
             SearchRoute(
+                onDismiss = { navController.popBackStack() },
+                onOpenSettings = {
+                    navController.popBackStack()
+                    navController.navigate(BuntuRoutes.SETTINGS)
+                },
                 onOpenLiveChannel = { channelId ->
+                    navController.popBackStack()
                     navController.navigate(BuntuRoutes.player(itemId = channelId))
                 },
                 onOpenMovieDetail = { movieId ->
+                    navController.popBackStack()
                     navController.navigate(BuntuRoutes.details(movieId, isSeries = false))
                 },
                 onOpenSeriesDetail = { seriesId ->
+                    navController.popBackStack()
                     navController.navigate(BuntuRoutes.details(seriesId, isSeries = true))
                 },
                 onOpenReplay = { channelId, startEpoch, endEpoch ->
+                    navController.popBackStack()
                     navController.navigate(
                         BuntuRoutes.player(
                             itemId = channelId,

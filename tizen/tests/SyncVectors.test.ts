@@ -17,6 +17,36 @@ describe.skipIf(!existsSync(WASM) || !existsSync(VECTORS_PATH))('Sync Vectors Pa
     vectors = JSON.parse(readFileSync(VECTORS_PATH, 'utf-8'));
   });
 
+  it('builds an invitation that the shared phone scanner rule can join', async () => {
+    const key = vectors.envelope.household_key_hex;
+    const link = await bridge.post<string>('SYNC_HOUSEHOLD_INVITE', { keyHex: key });
+    expect(link.startsWith('buntu://household?key=')).toBe(true);
+    const joined = await bridge.post('SYNC_HOUSEHOLD_JOIN', { invite: link });
+    expect(joined.household_key).toBe(key);
+    expect(joined.household_id).toBe(vectors.envelope.expected_household_id);
+    await expect(bridge.post('SYNC_HOUSEHOLD_JOIN', { invite: 'buntu://pair?wrong=1' })).rejects.toThrow();
+  });
+
+  it('carries AI credentials only in the encrypted household envelope and validates their provider', async () => {
+    const options = {
+      householdKeyHex: vectors.envelope.household_key_hex,
+      senderId: vectors.envelope.sender_device_id,
+      sequence: 1, nonceHex: vectors.envelope.nonce_hex,
+    };
+    const message = { type: 'household_data_delta', delta: {
+      sources: [], ai_configs: [{ provider: 'gemini', api_key: 'test-only-value' }],
+    } };
+    const envelope = await bridge.post('SYNC_SEAL_ENVELOPE', { ...options, message });
+    expect(JSON.stringify(envelope)).not.toContain('test-only-value');
+    const opened = await bridge.post('SYNC_OPEN_ENVELOPE', {
+      householdKeyHex: options.householdKeyHex, envelope, lastSeenSequence: 0,
+    });
+    expect(opened).toEqual(message);
+    expect(await bridge.post('SYNC_MISSING_AI_CREDENTIALS', { configs: message.delta.ai_configs, existingProviders: ['gemini'] })).toEqual([]);
+    message.delta.ai_configs[0].provider = 'unknown';
+    await expect(bridge.post('SYNC_SEAL_ENVELOPE', { ...options, message })).rejects.toThrow('configuration IA');
+  });
+
   it('computes deterministic source_key matching canonical vectors', async () => {
     const xtream = vectors.identity.xtream_source;
     const computedXtreamKey = await bridge.post('COMPUTE_SOURCE_KEY', {

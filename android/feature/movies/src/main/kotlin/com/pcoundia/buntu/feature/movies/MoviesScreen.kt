@@ -5,18 +5,26 @@ import androidx.compose.runtime.setValue
 import com.pcoundia.buntu.core.designsystem.BuntuDeviceChoice
 import com.pcoundia.buntu.core.designsystem.BuntuDevicePickerDialog
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,6 +50,7 @@ import kotlinx.collections.immutable.toImmutableList
 fun MoviesRoute(
     onOpenMovieDetail: (Long) -> Unit,
     onOpenSources: () -> Unit,
+    onOpenSearch: () -> Unit = {},
     viewModel: MoviesViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -84,7 +93,23 @@ fun MoviesRoute(
                         fontWeight = FontWeight.Bold,
                         color = BuntuPalette.PureWhite,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
+                    Spacer(modifier = Modifier.width(metrics.spacingS))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    ) {
+                        FilterChip(
+                            selected = false,
+                            onClick = onOpenSearch,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(FilterChipDefaults.IconSize),
+                                )
+                            },
+                            label = { Text("Rechercher") },
+                        )
                         FilterChip(
                             selected = state.favoritesOnly,
                             onClick = viewModel::toggleFavoritesOnly,

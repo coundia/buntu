@@ -1,11 +1,12 @@
-import { Component, Show } from 'solid-js';
+import { Component } from 'solid-js';
 
 export interface TvSearchBarProps {
   id: string;
   placeholder?: string;
   value: string;
   onInput: (val: string) => void;
-  onClear: () => void;
+  /** Kept for callers; there is no clear button any more (an icon the remote had to stop on). */
+  onClear?: () => void;
   focusId?: string;
 }
 
@@ -22,18 +23,6 @@ export const TvSearchBar: Component<TvSearchBarProps> = (props) => {
         onInput={(e) => props.onInput(e.currentTarget.value)}
         aria-label={props.placeholder || 'Rechercher'}
       />
-      <Show when={props.value.trim().length > 0}>
-        <button
-          id={`${props.id}-clear`}
-          type="button"
-          tabindex="-1"
-          class={`tv-search-clear-btn ${props.focusId === `${props.id}-clear` ? 'focused' : ''}`}
-          onClick={() => props.onClear()}
-          aria-label="Effacer la recherche"
-        >
-          ✕
-        </button>
-      </Show>
     </div>
   );
 };

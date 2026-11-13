@@ -44,6 +44,7 @@ import javax.inject.Inject
 data class PlayerScreenUiState(
     val isTv: Boolean = false,
     val controlsVisible: Boolean = true,
+    val isScreenLocked: Boolean = false,
     val showTrackSheet: Boolean = false,
     val showVersionsSheet: Boolean = false,
     val otherVersions: ImmutableList<MovieItem> = persistentListOf(),
@@ -440,11 +441,37 @@ class PlayerViewModel @Inject constructor(
         _screenState.update { it.copy(controlsVisible = true) }
     }
 
+    /**
+     * YouTube-style screen lock: hides playback controls and sheets and ignores accidental taps/seeks
+     * until [unlockScreen] is called.
+     */
+    fun lockScreen() {
+        _screenState.update {
+            it.copy(
+                isScreenLocked = true,
+                controlsVisible = true,
+                showTrackSheet = false,
+                showVersionsSheet = false,
+            )
+        }
+    }
+
+    fun unlockScreen() {
+        _screenState.update {
+            it.copy(
+                isScreenLocked = false,
+                controlsVisible = true,
+            )
+        }
+    }
+
     fun toggleTrackSheet(visible: Boolean) {
+        if (_screenState.value.isScreenLocked && visible) return
         _screenState.update { it.copy(showTrackSheet = visible) }
     }
 
     fun toggleVersionsSheet(visible: Boolean) {
+        if (_screenState.value.isScreenLocked && visible) return
         _screenState.update { it.copy(showVersionsSheet = visible) }
     }
 

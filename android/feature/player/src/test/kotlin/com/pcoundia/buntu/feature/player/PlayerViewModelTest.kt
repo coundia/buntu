@@ -240,6 +240,37 @@ class PlayerViewModelTest {
         vm.setPlaybackSpeed(1.5f)
         assertEquals(1.5f, h.engine.state.value.playbackSpeed)
     }
+
+    @Test
+    fun `locking the screen closes open sheets and blocks sheet opening until unlocked`() = playerTest {
+        val h = PlayerHarness(kind = StreamKind.VOD_EPISODE)
+        val vm = h.viewModel(itemId = 99L)
+
+        vm.toggleTrackSheet(true)
+        vm.toggleVersionsSheet(true)
+        assertTrue(vm.screenState.value.showTrackSheet)
+        assertTrue(vm.screenState.value.showVersionsSheet)
+        assertFalse(vm.screenState.value.isScreenLocked)
+
+        vm.lockScreen()
+        assertTrue(vm.screenState.value.isScreenLocked)
+        assertTrue(vm.screenState.value.controlsVisible)
+        assertFalse(vm.screenState.value.showTrackSheet)
+        assertFalse(vm.screenState.value.showVersionsSheet)
+
+        // While locked, sheets cannot be reopened
+        vm.toggleTrackSheet(true)
+        vm.toggleVersionsSheet(true)
+        assertFalse(vm.screenState.value.showTrackSheet)
+        assertFalse(vm.screenState.value.showVersionsSheet)
+
+        vm.unlockScreen()
+        assertFalse(vm.screenState.value.isScreenLocked)
+        assertTrue(vm.screenState.value.controlsVisible)
+
+        vm.toggleTrackSheet(true)
+        assertTrue(vm.screenState.value.showTrackSheet)
+    }
 }
 
 /** View models created by the current test, cancelled when it ends. */

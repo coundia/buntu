@@ -123,3 +123,16 @@ cargo clippy --workspace --all-targets -- -D warnings
 5. Cliquer sur **Tester la connexion** : la pastille verte indique le succès avec la latence mesurée (ex. `Connexion réussie (412 ms)`).
 6. Ouvrir la recherche universelle, taper une phrase naturelle (ex. *« films d'action spatiale »*) et valider l'affichage progressif des résultats.
 
+
+## 7. Recevoir les clés IA du foyer
+
+Depuis un iPhone, un Mac ou Android membre du même foyer, « Envoyer mes données » inclut les clés IA personnelles enregistrées. Sur Tizen, « Appareils → Recevoir les données » demande ce transfert aux appareils connectés.
+
+- Apple transmet les clés personnelles Gemini, Compatible OpenAI et Claude présentes dans le Trousseau. Les clés intégrées à la compilation ne sont jamais exportées.
+- Android transmet la clé personnelle du fournisseur actuellement configuré dans le Keystore.
+- Les clés voyagent dans le champ optionnel `ai_configs` d’une enveloppe de foyer chiffrée et authentifiée. Le domaine Rust vérifie les fournisseurs et les limites du message ; un appareil d’un autre foyer ne peut pas le déchiffrer.
+- La TV conserve une entrée chiffrée distincte pour chaque fournisseur. Une clé déjà présente n’est pas écrasée ; aucune clé ne passe dans le catalogue, les journaux ou les préférences en clair.
+- Recevoir une clé ne change ni le fournisseur sélectionné, ni le consentement, ni le quota local. Choisir ensuite le fournisseur dans Réglages → Assistant.
+- Les versions anciennes ignorent ce champ optionnel. Mettre à jour l’app émettrice et Tizen pour utiliser ce transfert.
+
+Validation sur appareils réels : non effectuée.

@@ -198,6 +198,37 @@ enum class AiProviderType {
     GEMINI,
     OPENAI_COMPATIBLE,
     CLAUDE,
+    ;
+
+    val displayName: String
+        get() = when (this) {
+            NONE -> "Local uniquement"
+            GEMINI -> "Google Gemini"
+            OPENAI_COMPATIBLE -> "Compatible OpenAI"
+            CLAUDE -> "Anthropic Claude"
+        }
+
+    val defaultModel: String
+        get() = when (this) {
+            NONE -> ""
+            GEMINI -> "gemini-2.5-flash"
+            OPENAI_COMPATIBLE -> "gpt-4o-mini"
+            CLAUDE -> "claude-3-5-haiku-latest"
+        }
+
+    val endpointPlaceholder: String
+        get() = when (this) {
+            NONE -> ""
+            GEMINI -> "Par défaut : API Google officielle"
+            OPENAI_COMPATIBLE -> "https://api.openai.com/v1 ou http://localhost:11434/v1"
+            CLAUDE -> "Par défaut : API Anthropic officielle"
+        }
+
+    val isRemote: Boolean
+        get() = this != NONE
+
+    val requiresApiKey: Boolean
+        get() = this == GEMINI || this == CLAUDE
 }
 
 data class AiSettingsConfig(
@@ -206,6 +237,70 @@ data class AiSettingsConfig(
     val endpointUrl: String = "",
     val keyAlias: String = "ai_provider_key",
     val sendRecentTitles: Boolean = false,
+    val consent: Boolean = true,
+    val autoSearch: Boolean = true,
+) {
+    /**
+     * `localhost`, `127.0.0.1`, `::1`, `.local` or private LAN hosts:
+     * mirrors Apple `AiProviderSettings.endpointIsLocal`.
+     */
+    val isEndpointLocal: Boolean
+        get() {
+            val trimmed = endpointUrl.trim()
+            if (trimmed.isEmpty()) return false
+            val host = runCatching { URI(trimmed).host?.lowercase() }.getOrNull() ?: return false
+            return host == "localhost" ||
+                host == "127.0.0.1" ||
+                host == "::1" ||
+                host == "[::1]" ||
+                host.endsWith(".local") ||
+                host.startsWith("192.168.") ||
+                host.startsWith("10.")
+        }
+
+    /**
+     * Why a remote provider would not be used right now, or `null` when ready
+     * (mirrors Apple `AiProviderSettings.blocker`).
+     */
+    fun blocker(hasKey: Boolean): String? {
+        if (!provider.isRemote) return null
+        if (provider.requiresApiKey && !hasKey) return "Saisissez une clé API."
+        if (provider == AiProviderType.OPENAI_COMPATIBLE && endpointUrl.trim().isEmpty() && !hasKey) {
+            return "Saisissez l'adresse du serveur (ou une clé pour l'API officielle)."
+        }
+        if (!consent && !isEndpointLocal) {
+            return "Cochez le consentement pour envoyer vos commandes à ce fournisseur."
+        }
+        return null
+    }
+}
+
+data class AiProviderTestResult(
+    val ok: Boolean,
+    val latencyMs: Long,
+    val model: String,
+    val message: String,
+)
+
+data class EngineDbStats(
+    val totalSources: Int = 0,
+    val totalLiveChannels: Int = 0,
+    val totalMovies: Int = 0,
+    val totalSeries: Int = 0,
+    val totalEpisodes: Int = 0,
+    val totalFavorites: Int = 0,
+    val totalBroken: Int = 0,
+    val totalDownloads: Int = 0,
+    val dbSizeBytes: Long = 0L,
+)
+
+data class EngineRuntimeConfig(
+    val segmentsPerFile: Int = 4,
+    val partSizeMb: Int = 8,
+    val maxActiveFiles: Int = 2,
+    val defaultUserAgent: String = "Buntu/1.0",
+    val defaultReferer: String = "",
+    val showNetworkConsole: Boolean = false,
 )
 
 data class AppPreferences(

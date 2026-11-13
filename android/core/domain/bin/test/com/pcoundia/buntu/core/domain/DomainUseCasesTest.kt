@@ -169,6 +169,9 @@ class DomainUseCasesTest {
 
             override suspend fun markLessLikeThis(kind: RecoDomainKind, stableHash: String) = Unit
             override suspend fun resetTaste(kind: RecoDomainKind) = Unit
+            override suspend fun upNextFor(itemId: Long, context: com.pcoundia.buntu.core.domain.model.UpNextContext, limit: Int) = kotlinx.collections.immutable.persistentListOf<com.pcoundia.buntu.core.domain.model.UpNextItem>()
+            override suspend fun nextUpAfter(itemId: Long): com.pcoundia.buntu.core.domain.model.UpNextItem? = null
+            override suspend fun dismissUpNext(stableHash: String) = Unit
         }
         val profilesRepo = FakeProfilesRepository(isKids = true)
         val settingsRepo = FakeSettingsRepository(
@@ -235,6 +238,7 @@ private class FakeSettingsRepository(initial: AppPreferences) : SettingsReposito
     override suspend fun setAdultCategoriesUnlocked(unlocked: Boolean) = Unit
     override suspend fun setLastChannelId(channelId: Long) { state.value = state.value.copy(lastChannelId = channelId) }
     override suspend fun updateAiConfig(config: AiSettingsConfig) { state.value = state.value.copy(aiConfig = config) }
+    override suspend fun setUpNextPreferences(preferences: com.pcoundia.buntu.core.domain.model.UpNextPreferences) = Unit
 }
 
 private class FakeCatalogRepository : CatalogRepository {
@@ -251,6 +255,8 @@ private class FakeCatalogRepository : CatalogRepository {
     override suspend fun getSeriesDetail(seriesId: Long, selectedSeason: Int?, xtreamPassword: String?, metadataApiKey: String?): MediaDetail? = null
     override suspend fun getEpisodeById(episodeId: Long): EpisodeItem? = null
     override suspend fun toggleFavorite(stableHash: String, kind: String): Boolean = true
+    override suspend fun isFavoriteForPlayback(itemId: Long): Boolean = false
+    override suspend fun toggleFavoriteForPlayback(itemId: Long): Boolean = true
     override suspend fun recordWatchProgress(stableHash: String, positionMs: Long, durationMs: Long) = Unit
     override suspend fun resolvePlayableStream(itemId: Long, startPositionMs: Long): PlayableStream = PlayableStream(
         itemId = itemId,

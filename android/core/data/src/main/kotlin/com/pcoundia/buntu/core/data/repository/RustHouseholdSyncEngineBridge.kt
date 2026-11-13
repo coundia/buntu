@@ -5,6 +5,9 @@ import com.pcoundia.buntu.core.domain.model.containerExtOf
 import com.pcoundia.buntu.core.domain.model.providerRefOf
 import com.pcoundia.buntu.core.domain.repository.HouseholdSyncEngineBridge
 import com.pcoundia.buntu.core.domain.repository.SecretStore
+import com.pcoundia.buntu.core.domain.repository.SettingsRepository
+import com.pcoundia.buntu.core.domain.model.AiProviderType
+import com.pcoundia.buntu.core.domain.model.AiSettingsConfig
 import com.pcoundia.buntu.core.domain.repository.SourcesRepository
 import com.pcoundia.buntu.core.domain.usecase.SyncSourceUseCase
 import com.pcoundia.buntu.core.engine.EngineProvider
@@ -15,6 +18,7 @@ import com.pcoundia.buntu.core.engine.ffi.SyncSource
 import com.pcoundia.buntu.core.engine.ffi.SyncTombstone
 import com.pcoundia.buntu.core.engine.ffi.SyncWatchProgress
 import com.pcoundia.buntu.core.engine.ffi.syncComputeSourceKey
+import com.pcoundia.buntu.core.engine.ffi.syncMissingAiCredentials
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,6 +37,7 @@ class RustHouseholdSyncEngineBridge @Inject constructor(
     private val secretStore: SecretStore,
     private val sourcesRepository: SourcesRepository,
     private val syncSourceUseCase: SyncSourceUseCase,
+    private val settingsRepository: SettingsRepository,
 ) : HouseholdSyncEngineBridge {
 
     /** Catalogs of accounts received from the household are downloaded here, one at a time (one connection). */
@@ -91,6 +96,8 @@ class RustHouseholdSyncEngineBridge @Inject constructor(
     override suspend fun importHouseholdDelta(deltaJson: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val root = JSONObject(deltaJson)
+            // The AI key of the household never blocks the accounts, favourites and resume points.
+            runCatching { importHouseholdAiKeys(root.optJSONArray("ai_configs")) }
             val sourcesJson = root.optJSONArray("sources") ?: JSONArray()
             val sources = mutableListOf<SyncSource>()
             val engine = engineProvider.awaitEngine()
@@ -207,6 +214,30 @@ class RustHouseholdSyncEngineBridge @Inject constructor(
     }
 
     /**
+     * Additive import of the household AI key: the rule (which providers are missing here) is the Rust one,
+     * `cnd_domain::sync::missing_household_ai_credentials`. A key already saved on this device is kept.
+     */
+    private suspend fun importHouseholdAiKeys(configs: JSONArray?) {
+        if (configs == null || configs.length() == 0) return
+        val current = settingsRepository.currentPreferences().aiConfig
+        val hasKey = current.provider != AiProviderType.NONE &&
+            !secretStore.getSecret(current.keyAlias).isNullOrBlank()
+        val existing = if (hasKey) listOfNotNull(householdProviderLabel(current.provider)) else emptyList()
+        val missing = JSONArray(syncMissingAiCredentials(configs.toString(), existing))
+        val accepted = List(missing.length()) { i ->
+            missing.getJSONObject(i).let { o ->
+                ReceivedAiKey(
+                    provider = o.getString("provider"),
+                    apiKey = o.getString("api_key"),
+                    model = o.optString("model").takeIf { it.isNotBlank() },
+                    baseUrl = o.optString("base_url").takeIf { it.isNotBlank() },
+                )
+            }
+        }
+        applyReceivedAiKey(accepted, current, secretStore)?.let { settingsRepository.updateAiConfig(it) }
+    }
+
+    /**
      * New accounts arrive empty: download their channels, films and series, one account after the other
      * (never two connections at once), as Apple does with `onSourcesInserted`.
      */
@@ -226,9 +257,16 @@ class RustHouseholdSyncEngineBridge @Inject constructor(
     override suspend fun exportHouseholdDelta(sinceTs: Long): String = withContext(Dispatchers.IO) {
         val engine = engineProvider.awaitEngine()
         val delta = engine.exportSyncDelta(sinceTs)
+        val aiConfigs = JSONArray()
+        // Full household transfers include the user's saved key, never a bundled default.
+        if (sinceTs == 0L) {
+            exportHouseholdAiKey(settingsRepository.currentPreferences().aiConfig, secretStore)?.let {
+                aiConfigs.put(JSONObject(it))
+            }
+        }
 
         if (delta.profiles.isEmpty() && delta.sources.isEmpty() && delta.favorites.isEmpty() &&
-            delta.watchHistory.isEmpty() && delta.tombstones.isEmpty()
+            delta.watchHistory.isEmpty() && delta.tombstones.isEmpty() && aiConfigs.length() == 0
         ) {
             return@withContext ""
         }
@@ -297,6 +335,7 @@ class RustHouseholdSyncEngineBridge @Inject constructor(
         }
 
         JSONObject().apply {
+            if (aiConfigs.length() > 0) put("ai_configs", aiConfigs)
             put("profiles", profilesJson)
             put("sources", sourcesJson)
             put("favorites", favoritesJson)
@@ -304,4 +343,47 @@ class RustHouseholdSyncEngineBridge @Inject constructor(
             put("tombstones", tombstonesJson)
         }.toString()
     }
+}
+
+/** The wire name of a provider in `ai_configs` (the one `AiProviderKind::label` gives in Rust). */
+internal fun householdProviderLabel(provider: AiProviderType): String? = when (provider) {
+    AiProviderType.GEMINI -> "gemini"
+    AiProviderType.OPENAI_COMPATIBLE -> "openai_compatible"
+    AiProviderType.CLAUDE -> "anthropic"
+    AiProviderType.NONE -> null
+}
+
+private fun householdProviderOf(label: String): AiProviderType? =
+    AiProviderType.values().firstOrNull { householdProviderLabel(it) == label }
+
+/** A transport DTO from the user's Keystore entry, never from bundled build defaults. */
+internal suspend fun exportHouseholdAiKey(config: AiSettingsConfig, secrets: SecretStore): Map<String, String>? {
+    val provider = householdProviderLabel(config.provider) ?: return null
+    val key = runCatching { secrets.getSecret(config.keyAlias) }.getOrNull()
+        ?.takeIf { it.isNotBlank() } ?: return null
+    return mapOf("provider" to provider, "api_key" to key)
+}
+
+/** A key received from the household that this device does not have yet (already filtered by Rust). */
+internal data class ReceivedAiKey(val provider: String, val apiKey: String, val model: String? = null, val baseUrl: String? = null)
+
+/**
+ * This device keeps ONE key (alias `AiSettingsConfig.keyAlias`): the first received key is stored in the
+ * Keystore and its provider is selected. Returns the config to save, or `null` when nothing is stored
+ * (no key received, or a key is already saved here: it is never replaced).
+ */
+internal suspend fun applyReceivedAiKey(
+    received: List<ReceivedAiKey>,
+    current: AiSettingsConfig,
+    secrets: SecretStore,
+): AiSettingsConfig? {
+    if (current.provider != AiProviderType.NONE && !secrets.getSecret(current.keyAlias).isNullOrBlank()) return null
+    val key = received.firstOrNull { householdProviderOf(it.provider) != null && it.apiKey.isNotBlank() } ?: return null
+    val provider = householdProviderOf(key.provider) ?: return null
+    secrets.putSecret(current.keyAlias, key.apiKey)
+    return current.copy(
+        provider = provider,
+        model = key.model ?: current.model,
+        endpointUrl = key.baseUrl ?: current.endpointUrl,
+    )
 }

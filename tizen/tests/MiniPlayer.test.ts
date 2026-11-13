@@ -1,14 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import { createMiniPlayer } from '../src/core/player/MiniPlayerController';
-import { panelFocusItems, panelItemForRow } from '../src/ui/design/miniPlayerFocus';
+import { panelFocusItems, panelItemForRow, panelItemsForRow } from '../src/ui/design/miniPlayerFocus';
 import { fitRect } from '../src/core/player/AVPlayerService';
 
 type Item = { id: number; name: string };
 const a: Item = { id: 1, name: 'A' };
 const b: Item = { id: 2, name: 'B' };
 
-function setup(playImpl?: (item: Item) => Promise<void>, startTimeoutMs = 50) {
+function setup(playImpl?: (item: Item) => Promise<void>, startTimeoutMs = 50, focusPanelOnActivate?: () => void) {
   const engine = {
     play: vi.fn(playImpl ?? (async () => {})),
     stopPlayback: vi.fn(),
@@ -19,7 +19,7 @@ function setup(playImpl?: (item: Item) => Promise<void>, startTimeoutMs = 50) {
   let dispose = () => {};
   const ctl = createRoot((d) => {
     dispose = d;
-    return createMiniPlayer<Item>({ engine, player, onFullscreen, startTimeoutMs });
+    return createMiniPlayer<Item>({ engine, player, onFullscreen, startTimeoutMs, focusPanelOnActivate });
   });
   return { ctl, engine, player, onFullscreen, dispose };
 }
@@ -203,5 +203,51 @@ describe('fitRect', () => {
     const r = fitRect({ x: 0, y: 0, width: 517, height: 291 }, 1.85);
     expect(r.width % 2).toBe(0);
     expect(r.height % 2).toBe(0);
+  });
+
+  describe('films: OK moves the cursor to the panel instead of going full screen', () => {
+    it('plays in the mini player, focuses the panel, and a second OK on the same film still does not go full screen', async () => {
+      const focusPanel = vi.fn();
+      const { ctl, engine, onFullscreen } = setup(undefined, 50, focusPanel);
+      ctl.activate(a);
+      expect(focusPanel).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(ctl.status()).toBe('playing'));
+      ctl.activate(a);
+      expect(focusPanel).toHaveBeenCalledTimes(2);
+      expect(onFullscreen).not.toHaveBeenCalled();
+      expect(engine.play).toHaveBeenCalledTimes(1);
+    });
+
+    it('full screen stays available from the panel buttons', async () => {
+      const { ctl, onFullscreen } = setup(undefined, 50, vi.fn());
+      ctl.activate(a);
+      await vi.waitFor(() => expect(ctl.status()).toBe('playing'));
+      ctl.fullscreen();
+      expect(onFullscreen).toHaveBeenCalledWith(a);
+    });
+
+    it('without a panel (hidden) OK still opens full screen', () => {
+      const { ctl, onFullscreen } = setup(undefined, 50, vi.fn());
+      ctl.toggleVisible();
+      ctl.activate(a);
+      expect(onFullscreen).toHaveBeenCalledWith(a);
+    });
+
+    it('live TV (no option) keeps « OK again goes full screen »', async () => {
+      const { ctl, onFullscreen } = setup();
+      ctl.activate(a);
+      await vi.waitFor(() => expect(ctl.status()).toBe('playing'));
+      ctl.activate(a);
+      expect(onFullscreen).toHaveBeenCalledWith(a);
+    });
+  });
+
+  it('panelItemsForRow: the screen on row 0, then the whole row of actions on every other row', () => {
+    const { ctl } = setup();
+    const items = panelFocusItems(ctl, 'mv-insp', () => {}, [{ id: 'mv-insp-details', label: 'Fiche', onSelect: () => {} }]);
+    expect(panelItemsForRow(items, 0).map((i) => i.id)).toEqual(['mv-insp-screen']);
+    expect(panelItemsForRow(items, 1).map((i) => i.id)).toEqual(['mv-insp-play', 'mv-insp-fav', 'mv-insp-full', 'mv-insp-details']);
+    expect(panelItemsForRow(items, 30).map((i) => i.id)).toEqual(['mv-insp-play', 'mv-insp-fav', 'mv-insp-full', 'mv-insp-details']);
+    expect(panelItemsForRow([], 1)).toEqual([]);
   });
 });

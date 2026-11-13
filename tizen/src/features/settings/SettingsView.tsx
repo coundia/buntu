@@ -16,13 +16,18 @@ import {
 import { AiKeyStore } from '../../core/ai/AiKeyStore';
 import { describeKeyShape, normalizeApiKey } from '../../core/ai/keyInput';
 import { AiClient } from '../../core/ai/AiClient';
+import { createTvKeyboard } from '../../ui/components/TvKeyboard';
+import { UiSounds } from '../../core/audio/UiSounds';
+import { getUpNextPrefs, nextCountdownChoice, setUpNextPrefs } from '../../core/player/upNext';
 import { PairingOffer, PairingService } from '../../core/pairing/PairingService';
 import { HouseholdStore, HouseholdInfo, PairedDevice } from '../../core/sync/HouseholdStore';
 import { LocalSyncService, SyncLogEntry } from '../../core/sync/LocalSyncService';
+import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
 
 export interface SettingsViewProps {
   onRequestExit?: () => void;
-  /** `household`: only « Appareils de la maison » (sidebar entry « Appareils »); default: every section. */
+  onProfiles?: () => void;
+  /** Household devices, or a compact settings chooser. */
   section?: 'all' | 'household';
 }
 
@@ -38,6 +43,19 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
   const [purgeMsg, setPurgeMsg] = createSignal('');
   const [focusId] = spatialNav.getFocusSignal();
   const householdOnly = () => props.section === 'household';
+  const [panel, setPanel] = createSignal<'connection' | 'ai' | 'system' | null>(null);
+  const [deviceDetails, setDeviceDetails] = createSignal(false);
+  const openPanel = (next: 'connection' | 'ai' | 'system' | null) => {
+    const previous = panel();
+    setPanel(next);
+    updateGrid();
+    if (next === null && previous) spatialNav.setFocusById(`settings-${previous}`);
+  };
+  const toggleDeviceDetails = () => {
+    setDeviceDetails((value) => !value);
+    updateGrid();
+    spatialNav.setFocusById('btn-hh-details');
+  };
 
   // AI Assistant state
   const initialSettings = getAiSettings();
@@ -54,18 +72,21 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
   const [showKey, setShowKey] = createSignal(false);
   const [modelDraft, setModelDraft] = createSignal(initialSettings.model);
   const [baseUrlDraft, setBaseUrlDraft] = createSignal(initialSettings.baseUrl);
+  const keyboard = createTvKeyboard();
 
   // Household & Multi-device sync (PRD 41)
   const [householdInfo, setHouseholdInfo] = createSignal<HouseholdInfo | null>(null);
   const [pairedDevices, setPairedDevices] = createSignal<PairedDevice[]>([]);
   const [syncConnected, setSyncConnected] = createSignal(false);
   const [syncStatusMsg, setSyncStatusMsg] = createSignal('');
+  const [transferBusy, setTransferBusy] = createSignal(false);
   const [syncLogs, setSyncLogs] = createSignal<SyncLogEntry[]>([]);
   const [householdQr, setHouseholdQr] = createSignal<{ size: number; modules: string; text: string } | null>(null);
 
   let pairingService: PairingService | null = null;
   let unsubSync: (() => void) | null = null;
   let unsubLogs: (() => void) | null = null;
+  let unsubKeys: (() => void) | null = null;
 
   const PROVIDER_CYCLE: AiProviderType[] = ['local_only', 'gemini', 'openai_compatible', 'anthropic'];
 
@@ -73,6 +94,10 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     const currentIdx = PROVIDER_CYCLE.indexOf(aiProvider());
     const next = PROVIDER_CYCLE[(currentIdx + 1) % PROVIDER_CYCLE.length];
     setAiProvider(next);
+    setAiMaskedKey(null);
+    void keyStore.getMaskedKey(next).then((key) => {
+      if (aiProvider() === next) { setAiMaskedKey(key); updateGrid(); }
+    });
     // The model and the server address belong to one provider: start from the new provider's defaults.
     saveAiSettings({ provider: next, model: '', baseUrl: '' });
     setModelDraft('');
@@ -117,8 +142,10 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     updateGrid();
   };
 
-  const focusField = (id: string) => (document.getElementById(id) as HTMLInputElement | null)?.focus();
-  const fieldHasFocus = (id: string) => document.activeElement === document.getElementById(id);
+  /** OK on a field: the on-screen keyboard (the Samsung system keyboard is not reliable with a remote). What is typed is saved at once. */
+  const editKey = () => keyboard.open('Clé API ' + (PROVIDER_DEFAULTS[aiProvider()]?.label ?? ''), '', (v) => { setKeyDraft(v); void saveTypedKey(); }, true);
+  const editModel = () => keyboard.open('Modèle', modelDraft(), (v) => { setModelDraft(v); saveModel(); });
+  const editBaseUrl = () => keyboard.open('Adresse du serveur', baseUrlDraft(), (v) => { setBaseUrlDraft(v); saveBaseUrl(); });
 
   /** Saves what was typed or pasted. The key is cleaned first (spaces, quotes, "Bearer"). */
   const saveTypedKey = async () => {
@@ -184,20 +211,6 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     setPairedDevices(store.getPairedDevices());
   };
 
-  const createHousehold = async () => {
-    try {
-      setSyncStatusMsg('Création du foyer en cours…');
-      const store = HouseholdStore.getInstance();
-      const info = await store.createHousehold('Maison');
-      await refreshHouseholdState();
-      setSyncStatusMsg(`Foyer « ${info.household_name} » créé.`);
-      void LocalSyncService.getInstance().start();
-      updateGrid();
-    } catch (e: any) {
-      setSyncStatusMsg(`Erreur : ${e?.message || e}`);
-    }
-  };
-
   const leaveHousehold = async () => {
     LocalSyncService.getInstance().stop();
     await HouseholdStore.getInstance().clearHousehold();
@@ -206,12 +219,27 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     updateGrid();
   };
 
-  const triggerSyncNow = async () => {
-    setSyncStatusMsg('Synchronisation demandée au foyer…');
-    await LocalSyncService.getInstance().requestFullSync();
-    await LocalSyncService.getInstance().triggerSync();
-    await refreshHouseholdState();
-    setSyncStatusMsg(`Synchronisation demandée à ${new Date().toLocaleTimeString()}.`);
+  const transferHouseholdData = async (direction: 'receive' | 'send') => {
+    if (transferBusy()) return;
+    if (!syncConnected()) {
+      setSyncStatusMsg('La TV n’est pas connectée au foyer. Ouvrez Buntu sur vos appareils et vérifiez le Wi-Fi.');
+      return;
+    }
+    setTransferBusy(true);
+    setSyncStatusMsg(direction === 'receive' ? 'Demande de réception en cours…' : 'Envoi des données en cours…');
+    try {
+      const sync = LocalSyncService.getInstance();
+      if (direction === 'receive') await sync.requestFullSync();
+      else await sync.sendHouseholdDataDelta();
+      await refreshHouseholdState();
+      setSyncStatusMsg(direction === 'receive'
+        ? 'Données demandées aux appareils du foyer.'
+        : 'Comptes et favoris envoyés aux appareils du foyer.');
+    } catch {
+      setSyncStatusMsg(direction === 'receive' ? 'La demande de réception a échoué. Réessayez.' : 'L’envoi a échoué. Réessayez.');
+    } finally {
+      setTransferBusy(false);
+    }
   };
 
   const showInviteDeviceQr = async () => {
@@ -290,6 +318,18 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     updateGrid();
   };
 
+  const [soundsOn, setSoundsOn] = createSignal(UiSounds.getInstance().isEnabled());
+  const toggleSounds = () => {
+    const sounds = UiSounds.getInstance();
+    sounds.setEnabled(!sounds.isEnabled());
+    setSoundsOn(sounds.isEnabled());
+    sounds.play('select');
+  };
+
+  const [upNext, setUpNext] = createSignal(getUpNextPrefs());
+  const toggleUpNextAuto = () => setUpNext(setUpNextPrefs({ auto: !upNext().auto }));
+  const cycleUpNextSeconds = () => setUpNext(setUpNextPrefs({ seconds: nextCountdownChoice(upNext().seconds) }));
+
   const toggleSingleConnection = () => {
     const next = !singleConn();
     net.setSingleConnectionMode(next);
@@ -324,35 +364,32 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
 
     const grid: FocusableItem[][] = [];
 
-    // AI Section buttons
-    if (!householdOnly()) grid.push([{ id: 'btn-ai-provider', onSelect: cycleProvider }]);
+    if (!householdOnly() && panel() === null) {
+      grid.push([{ id: 'settings-connection', onSelect: () => openPanel('connection') }]);
+      grid.push([{ id: 'settings-ai', onSelect: () => openPanel('ai') }]);
+      grid.push([{ id: 'settings-system', onSelect: () => openPanel('system') }]);
+      if (props.onProfiles) grid.push([{ id: 'settings-profiles', onSelect: props.onProfiles }]);
+      spatialNav.setGrid(grid);
+      return;
+    }
+    if (!householdOnly()) grid.push([{ id: 'settings-back', onSelect: () => openPanel(null) }]);
 
-    if (!householdOnly() && aiProvider() !== 'local_only') {
-      // Type or paste the key right here
-      grid.push([
-        {
-          id: 'ai-key-input',
-          // OK opens the TV keyboard; OK again, with the field open, saves what is in it.
-          onSelect: () => (fieldHasFocus('ai-key-input') && keyDraft() ? void saveTypedKey() : focusField('ai-key-input')),
-        },
-      ]);
-      grid.push([
-        { id: 'btn-ai-show-key', onSelect: () => setShowKey((v) => !v) },
+    // AI Section buttons
+    if (!householdOnly() && panel() === 'ai') grid.push([{ id: 'btn-ai-provider', onSelect: cycleProvider }]);
+
+    if (!householdOnly() && panel() === 'ai' && aiProvider() !== 'local_only') {
+      // OK opens the on-screen keyboard; what is typed is saved at once.
+      grid.push([{ id: 'ai-key-input', onSelect: editKey }]);
+      const keyRow: FocusableItem[] = [
         { id: 'btn-ai-paste-key', onSelect: () => void pasteKey() },
         { id: 'btn-ai-save-key', onSelect: () => void saveTypedKey() },
-      ]);
-
-      const keyRow: FocusableItem[] = [{ id: 'btn-ai-receive-key', onSelect: startKeyPairing }];
-      if (aiMaskedKey()) {
-        keyRow.push({ id: 'btn-ai-del-key', onSelect: deleteKey });
-      }
+      ];
+      if (aiMaskedKey()) keyRow.push({ id: 'btn-ai-del-key', onSelect: deleteKey });
       grid.push(keyRow);
 
-      grid.push([{ id: 'ai-model-input', onSelect: () => (fieldHasFocus('ai-model-input') ? saveModel() : focusField('ai-model-input')) }]);
+      grid.push([{ id: 'ai-model-input', onSelect: editModel }]);
       if (aiProvider() === 'openai_compatible') {
-        grid.push([
-          { id: 'ai-baseurl-input', onSelect: () => (fieldHasFocus('ai-baseurl-input') ? saveBaseUrl() : focusField('ai-baseurl-input')) },
-        ]);
+        grid.push([{ id: 'ai-baseurl-input', onSelect: editBaseUrl }]);
       }
 
       grid.push([
@@ -363,22 +400,30 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     }
 
     // Household & Multi-Device Sync (PRD-41)
-    if (householdInfo()) {
+    if (householdOnly() && householdInfo()) {
       grid.push([
-        { id: 'btn-hh-sync', onSelect: triggerSyncNow },
+        { id: 'btn-hh-receive', onSelect: () => void transferHouseholdData('receive') },
+        { id: 'btn-hh-send', onSelect: () => void transferHouseholdData('send') },
         { id: 'btn-hh-invite', onSelect: showInviteDeviceQr },
-        { id: 'btn-hh-leave', onSelect: leaveHousehold },
+        { id: 'btn-hh-details', onSelect: toggleDeviceDetails },
       ]);
-    } else {
+      if (deviceDetails()) grid.push([{ id: 'btn-hh-leave', onSelect: leaveHousehold }]);
+    } else if (householdOnly()) {
       grid.push([
-        { id: 'btn-hh-create', onSelect: createHousehold },
         { id: 'btn-hh-join-qr', onSelect: startKeyPairing },
       ]);
     }
 
     // Diagnostics & maintenance
-    if (!householdOnly()) {
+    if (!householdOnly() && panel() === 'connection') {
       grid.push([{ id: 'btn-single-conn', onSelect: toggleSingleConnection }]);
+    }
+    if (!householdOnly() && panel() === 'system') {
+      grid.push([{ id: 'btn-ui-sounds', onSelect: toggleSounds }]);
+      grid.push([
+        { id: 'btn-upnext-auto', onSelect: toggleUpNextAuto },
+        { id: 'btn-upnext-seconds', onSelect: cycleUpNextSeconds },
+      ]);
       grid.push([{ id: 'btn-purge-cache', onSelect: purgeCache }]);
       grid.push([{ id: 'btn-exit-app', onSelect: handleExit }]);
     }
@@ -387,6 +432,15 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
   };
 
   onMount(async () => {
+    unsubKeys = RemoteKeyHandler.getInstance().addListener((key) => {
+      if (key !== 'BACK') return false;
+      if (householdQr()) { closeHouseholdQr(); return true; }
+      if (pairingActive()) { stopKeyPairing(); return true; }
+      if (!householdOnly() && panel()) { openPanel(null); return true; }
+      if (householdOnly() && deviceDetails()) { toggleDeviceDetails(); return true; }
+      return false;
+    });
+    updateGrid();
     const masked = await keyStore.getMaskedKey();
     setAiMaskedKey(masked);
     await refreshHouseholdState();
@@ -415,6 +469,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
   });
 
   onCleanup(() => {
+    if (unsubKeys) unsubKeys();
     pairingService?.stop();
     if (unsubSync) unsubSync();
     if (unsubLogs) unsubLogs();
@@ -478,11 +533,11 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
   );
 
   return (
-    <div
+    <div class="buntu-simple-page"
       style={{
         width: '100%',
         height: '100%',
-        padding: '24px 40px',
+        padding: '40px 64px',
         'box-sizing': 'border-box',
         'overflow-y': 'auto',
         display: 'flex',
@@ -491,20 +546,42 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     >
       <div class="tv-header">
         <h2 style={{ 'font-size': '32px', color: 'var(--buntu-gold)' }}>
-          {householdOnly() ? 'Appareils' : 'Paramètres & Diagnostics'}
+          {householdOnly() ? 'Appareils' : 'Réglages'}
         </h2>
+        <p class="buntu-return-hint">Retour : {panel() ? 'réglages' : 'accueil'}</p>
       </div>
 
-      <div style={{ display: 'flex', 'flex-direction': 'column', gap: '24px', 'max-width': '900px', 'padding-bottom': '40px' }}>
+      <div class="buntu-settings-stack" style={{ display: 'flex', 'flex-direction': 'column', 'max-width': '1100px', 'padding-bottom': '40px' }}>
+        <Show when={!householdOnly() && panel() === null}>
+          <p class="buntu-simple-intro">Choisissez ce que vous souhaitez régler.</p>
+          <div class="buntu-settings-choices">
+            <button id="settings-connection" tabindex="-1" class={`buntu-settings-choice ${focusId() === 'settings-connection' ? 'focused' : ''}`} onClick={() => openPanel('connection')}>
+              <strong>Connexion</strong><span>Gérer la connexion au fournisseur</span>
+            </button>
+            <button id="settings-ai" tabindex="-1" class={`buntu-settings-choice ${focusId() === 'settings-ai' ? 'focused' : ''}`} onClick={() => openPanel('ai')}>
+              <strong>Assistant</strong><span>Configurer l’aide à la recherche</span>
+            </button>
+            <button id="settings-system" tabindex="-1" class={`buntu-settings-choice ${focusId() === 'settings-system' ? 'focused' : ''}`} onClick={() => openPanel('system')}>
+              <strong>Stockage et informations</strong><span>Cache, télévision et version de Buntu</span>
+            </button>
+            <Show when={props.onProfiles}>
+              <button id="settings-profiles" tabindex="-1" class={`buntu-settings-choice ${focusId() === 'settings-profiles' ? 'focused' : ''}`} onClick={() => props.onProfiles?.()}>
+                <strong>Profils</strong><span>Choisir qui regarde</span>
+              </button>
+            </Show>
+          </div>
+        </Show>
+        <Show when={!householdOnly() && panel() !== null}>
+          <button id="settings-back" tabindex="-1" class={`tv-btn ${focusId() === 'settings-back' ? 'focused' : ''}`} onClick={() => openPanel(null)}>← Réglages</button>
+        </Show>
         {/* Section Assistant IA (PRD 40) */}
-        <Show when={!householdOnly()}>
+        <Show when={!householdOnly() && panel() === 'ai'}>
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '1px solid rgba(212, 160, 23, 0.4)' }}>
           <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px', color: 'var(--buntu-gold)' }}>
-            ✨ Assistant IA (Recherche, Commandes & Recommandations)
+            Assistant
           </h3>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            Contrôlez l'application à la voix ou par phrase descriptive (« Mets le match du PSG », « Un film comme Inception »).
-            Vos données de flux IPTV, identifiants et serveurs ne sont <strong>jamais</strong> transmis au fournisseur.
+            Choisissez le service utilisé pour vous aider à trouver un programme.
           </p>
 
           <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
@@ -526,50 +603,29 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                 <span style={{ color: 'var(--buntu-text-muted)', 'font-size': '18px' }}>
                   Clé API : <strong style={{ color: '#FFFFFF' }}>{aiMaskedKey() || 'Aucune clé enregistrée'}</strong>
                 </span>
-                <button
-                  id="btn-ai-receive-key"
-                  tabindex="-1"
-                  class={`tv-btn ${focusId() === 'btn-ai-receive-key' ? 'focused' : ''}`}
-                  onClick={startKeyPairing}
-                >
-                  📱 Envoyer depuis le téléphone (QR code)
-                </button>
-                <Show when={aiMaskedKey()}>
-                  <button
-                    id="btn-ai-del-key"
-                    tabindex="-1"
-                    class={`tv-btn tv-btn-danger ${focusId() === 'btn-ai-del-key' ? 'focused' : ''}`}
-                    onClick={deleteKey}
-                  >
-                    Supprimer la clé
-                  </button>
-                </Show>
+                <span class="buntu-ai-sync-note">
+                  {householdInfo()
+                    ? 'La clé se synchronise automatiquement avec votre foyer : saisie ici, ou reçue d’un autre appareil (« Envoyer mes données »).'
+                    : 'Saisissez la clé avec le clavier. Une fois la TV associée à un foyer, elle se synchronise automatiquement.'}
+                </span>
               </div>
 
               {/* Type or paste the key on the TV */}
               <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
                 <label for="ai-key-input" style={{ color: 'var(--buntu-text-muted)', 'font-size': '18px' }}>
-                  Coller ou saisir votre clé {PROVIDER_DEFAULTS[aiProvider()]?.label} :
+                  Clé {PROVIDER_DEFAULTS[aiProvider()]?.label} :
                 </label>
                 <input
                   id="ai-key-input"
-                  type={showKey() ? 'text' : 'password'}
+                  type="password"
                   tabindex="-1"
+                  readOnly
+                  inputMode="none"
                   autocomplete="off"
-                  autocapitalize="off"
-                  spellcheck={false}
-                  placeholder="Collez la clé ici (OK pour ouvrir le clavier)"
+                  placeholder={aiMaskedKey() ? 'Clé enregistrée — OK pour la remplacer' : 'OK pour saisir la clé avec le clavier'}
                   class={`tv-input ${focusId() === 'ai-key-input' ? 'focused' : ''}`}
                   value={keyDraft()}
-                  onInput={(e) => setKeyDraft(e.currentTarget.value)}
-                  onPaste={(e) => {
-                    // Whatever is pasted is cleaned when saved; keep it as typed until then
-                    const text = e.clipboardData?.getData('text');
-                    if (text) {
-                      e.preventDefault();
-                      setKeyDraft(text);
-                    }
-                  }}
+                  onClick={editKey}
                 />
                 <Show when={keyDraft()}>
                   <div style={{ 'font-size': '16px', color: describeKeyShape(aiProvider(), normalizeApiKey(keyDraft())).plausible ? 'var(--buntu-cyan)' : 'var(--buntu-gold)' }}>
@@ -577,14 +633,6 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                   </div>
                 </Show>
                 <div style={{ display: 'flex', gap: '12px', 'flex-wrap': 'wrap' }}>
-                  <button
-                    id="btn-ai-show-key"
-                    tabindex="-1"
-                    class={`tv-btn ${focusId() === 'btn-ai-show-key' ? 'focused' : ''}`}
-                    onClick={() => setShowKey((v) => !v)}
-                  >
-                    {showKey() ? '🙈 Masquer' : '👁 Afficher'}
-                  </button>
                   <button
                     id="btn-ai-paste-key"
                     tabindex="-1"
@@ -601,6 +649,16 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                   >
                     💾 Enregistrer la clé
                   </button>
+                  <Show when={aiMaskedKey()}>
+                    <button
+                      id="btn-ai-del-key"
+                      tabindex="-1"
+                      class={`tv-btn tv-btn-danger ${focusId() === 'btn-ai-del-key' ? 'focused' : ''}`}
+                      onClick={deleteKey}
+                    >
+                      Supprimer la clé
+                    </button>
+                  </Show>
                 </div>
               </div>
 
@@ -616,9 +674,12 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                   autocomplete="off"
                   autocapitalize="off"
                   spellcheck={false}
+                  readOnly
+                  inputMode="none"
                   placeholder={PROVIDER_DEFAULTS[aiProvider()]?.model}
                   class={`tv-input ${focusId() === 'ai-model-input' ? 'focused' : ''}`}
                   value={modelDraft()}
+                  onClick={editModel}
                   onInput={(e) => setModelDraft(e.currentTarget.value)}
                   onChange={saveModel}
                 />
@@ -634,9 +695,12 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                     autocomplete="off"
                     autocapitalize="off"
                     spellcheck={false}
+                    readOnly
+                    inputMode="none"
                     placeholder={PROVIDER_DEFAULTS.openai_compatible.baseUrl}
                     class={`tv-input ${focusId() === 'ai-baseurl-input' ? 'focused' : ''}`}
                     value={baseUrlDraft()}
+                    onClick={editBaseUrl}
                     onInput={(e) => setBaseUrlDraft(e.currentTarget.value)}
                     onChange={saveBaseUrl}
                   />
@@ -699,13 +763,15 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
           </div>
         </div>
 
+        {keyboard.view()}
         </Show>
 
-        {/* Section Appareils de la maison & Continuité (PRD 41) */}
+        <Show when={householdOnly()}>
+        {/* Appareils */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '1px solid rgba(56, 189, 248, 0.4)' }}>
           <div style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', 'margin-bottom': '8px' }}>
             <h3 style={{ 'font-size': '22px', color: 'var(--buntu-cyan)', margin: 0 }}>
-              📡 Appareils de la maison & Continuité
+              Votre foyer
             </h3>
             <span
               style={{
@@ -718,12 +784,11 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                 border: `1px solid ${syncConnected() ? '#22C55E' : '#64748B'}`,
               }}
             >
-              {syncConnected() ? '🟢 Connecté au Wi-Fi local' : '⚪ En attente de connexion'}
+              {syncConnected() ? 'Connecté' : 'Hors connexion'}
             </span>
           </div>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            Synchronisation de vos favoris, reprises de lecture et historique en direct sur le Wi-Fi de la maison.
-            Zéro serveur distant, données chiffrées de bout en bout (AES-256-GCM).
+            Partagez vos sources, favoris et clés IA avec les appareils de la maison.
           </p>
 
           <Show
@@ -731,17 +796,10 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             fallback={
               <div style={{ display: 'flex', 'flex-direction': 'column', gap: '12px' }}>
                 <p style={{ color: 'var(--buntu-text-muted)', margin: 0 }}>
-                  Cette TV ne fait actuellement partie d'aucun foyer Buntu. Créez un foyer ou rejoignez celui de votre téléphone par QR Code.
+                  Cette TV ne fait actuellement partie d'aucun foyer Buntu. Ajoutez cette TV au foyer de votre téléphone par QR code.
                 </p>
                 <div style={{ display: 'flex', gap: '12px', 'flex-wrap': 'wrap' }}>
-                  <button
-                    id="btn-hh-create"
-                    tabindex="-1"
-                    class={`tv-btn ${focusId() === 'btn-hh-create' ? 'focused' : ''}`}
-                    onClick={() => void createHousehold()}
-                  >
-                    ✨ Créer un foyer Buntu
-                  </button>
+
                   <button
                     id="btn-hh-join-qr"
                     tabindex="-1"
@@ -758,11 +816,6 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               <div style={{ display: 'grid', 'grid-template-columns': '180px 1fr', gap: '8px', 'font-size': '17px' }}>
                 <span style={{ color: 'var(--buntu-text-muted)' }}>Nom du foyer :</span>
                 <span style={{ 'font-weight': '700', color: 'var(--buntu-gold)' }}>{householdInfo()!.household_name}</span>
-
-                <span style={{ color: 'var(--buntu-text-muted)' }}>Identifiant sécurisé :</span>
-                <span style={{ 'font-family': 'monospace', color: 'var(--buntu-text-muted)' }}>
-                  {householdInfo()!.household_id.slice(0, 16)}…
-                </span>
 
                 <span style={{ color: 'var(--buntu-text-muted)' }}>Appareils jumelés :</span>
                 <span>{pairedDevices().length} appareil(s)</span>
@@ -860,12 +913,22 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               {/* Household action buttons */}
               <div style={{ display: 'flex', gap: '12px', 'flex-wrap': 'wrap' }}>
                 <button
-                  id="btn-hh-sync"
+                  id="btn-hh-receive"
                   tabindex="-1"
-                  class={`tv-btn ${focusId() === 'btn-hh-sync' ? 'focused' : ''}`}
-                  onClick={() => void triggerSyncNow()}
+                  disabled={transferBusy()}
+                  class={`tv-btn ${focusId() === 'btn-hh-receive' ? 'focused' : ''}`}
+                  onClick={() => void transferHouseholdData('receive')}
                 >
-                  🔄 Synchroniser maintenant
+                  Recevoir les données
+                </button>
+                <button
+                  id="btn-hh-send"
+                  tabindex="-1"
+                  disabled={transferBusy()}
+                  class={`tv-btn ${focusId() === 'btn-hh-send' ? 'focused' : ''}`}
+                  onClick={() => void transferHouseholdData('send')}
+                >
+                  Envoyer mes données
                 </button>
                 <button
                   id="btn-hh-invite"
@@ -875,14 +938,19 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                 >
                   📱 Inviter un appareil (QR)
                 </button>
+                <button id="btn-hh-details" tabindex="-1" class={`tv-btn ${focusId() === 'btn-hh-details' ? 'focused' : ''}`} aria-expanded={deviceDetails()} onClick={toggleDeviceDetails}>
+                  {deviceDetails() ? 'Moins d’options' : 'Plus d’options'}
+                </button>
+                <Show when={deviceDetails()}>
                 <button
                   id="btn-hh-leave"
                   tabindex="-1"
                   class={`tv-btn tv-btn-danger ${focusId() === 'btn-hh-leave' ? 'focused' : ''}`}
                   onClick={() => void leaveHousehold()}
                 >
-                  🚪 Quitter le foyer
+                  Quitter le foyer
                 </button>
+                </Show>
               </div>
 
               <Show when={syncStatusMsg()}>
@@ -892,7 +960,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               </Show>
 
               {/* Journal d'activité / synchronisation du foyer */}
-              <Show when={syncLogs().length > 0}>
+              <Show when={deviceDetails() && syncLogs().length > 0}>
                 <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px', 'margin-top': '8px' }}>
                   <div style={{ 'font-weight': '600', color: 'var(--buntu-gold)', 'font-size': '15px' }}>
                     Journal d'activité du foyer :
@@ -929,13 +997,13 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
           </Show>
         </div>
 
-        <Show when={!householdOnly()}>
+        </Show>
+        <Show when={!householdOnly() && panel() === 'connection'}>
         {/* Connection Settings */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px' }}>
-          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Gestion de connexion fournisseur</h3>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Connexion au fournisseur</h3>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            Pour les abonnements limités à 1 seule connexion simultanée, l'application met en attente
-            automatiquement toute requête parallèle pour éviter le bannissement ou l'erreur 429.
+            Activez ce mode si votre abonnement autorise une seule connexion à la fois.
           </p>
           <button
             id="btn-single-conn"
@@ -943,10 +1011,12 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             class={`tv-btn ${focusId() === 'btn-single-conn' ? 'focused' : ''}`}
             onClick={toggleSingleConnection}
           >
-            Mode 1 Connexion Stricte : {singleConn() ? 'ACTIVÉ (Recommandé)' : 'DÉSACTIVÉ'}
+            Une seule connexion : {singleConn() ? 'activée' : 'désactivée'}
           </button>
         </div>
 
+        </Show>
+        <Show when={!householdOnly() && panel() === 'system'}>
         {/* Diagnostics Info */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px' }}>
           <h3 style={{ 'font-size': '22px', 'margin-bottom': '16px' }}>Informations système</h3>
@@ -963,6 +1033,51 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             <span style={{ color: 'var(--buntu-text-muted)' }}>Résolution :</span>
             <span>1920 × 1080 (Mise à l'échelle TV)</span>
           </div>
+        </div>
+
+        {/* Navigation sounds */}
+        <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px' }}>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Sons de navigation</h3>
+          <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
+            {UiSounds.getInstance().isAvailable()
+              ? 'Les sons de la télévision quand vous choisissez, validez ou revenez en arrière. Aucun son pendant la lecture plein écran.'
+              : 'Cette télévision ne propose pas ses sons système à l’application : rien ne sera joué.'}
+          </p>
+          <button
+            id="btn-ui-sounds"
+            tabindex="-1"
+            aria-pressed={soundsOn()}
+            class={`tv-btn ${focusId() === 'btn-ui-sounds' ? 'focused' : ''}`}
+            onClick={toggleSounds}
+          >
+            Sons : {soundsOn() ? '✓ Activés' : '✗ Désactivés'}
+          </button>
+        </div>
+
+        {/* Next film */}
+        <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px' }}>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Film suivant</h3>
+          <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
+            À la fin d’un film, le lecteur propose des films similaires. Avec la lecture automatique, le premier démarre après le
+            compte à rebours (Retour l’annule). Après 3 films de suite sans touche, il demande « Toujours là ? ».
+          </p>
+          <button
+            id="btn-upnext-auto"
+            tabindex="-1"
+            aria-pressed={upNext().auto}
+            class={`tv-btn ${focusId() === 'btn-upnext-auto' ? 'focused' : ''}`}
+            onClick={toggleUpNextAuto}
+          >
+            Lecture automatique : {upNext().auto ? '✓ Activée' : '✗ Désactivée'}
+          </button>
+          <button
+            id="btn-upnext-seconds"
+            tabindex="-1"
+            class={`tv-btn ${focusId() === 'btn-upnext-seconds' ? 'focused' : ''}`}
+            onClick={cycleUpNextSeconds}
+          >
+            Compte à rebours : {upNext().seconds} s ↻
+          </button>
         </div>
 
         {/* Maintenance */}
@@ -997,7 +1112,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             Fermer l'application
           </h3>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            Quitte complètement l'application Buntu et libère la mémoire et les décodeurs matériels de la télévision.
+            Revenir à la télévision.
           </p>
           <button
             id="btn-exit-app"

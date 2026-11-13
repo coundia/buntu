@@ -25,9 +25,9 @@ export function announce(message: string) {
  * Gives the DOM focus to the element the remote highlights (`.focused`), so assistive technologies follow
  * it. Text fields are skipped: focusing one opens the TV keyboard, which only OK must do.
  */
-export function syncDomFocus() {
+export function syncDomFocus(target?: HTMLElement) {
   if (typeof document === 'undefined') return;
-  const el = document.querySelector('.focused') as HTMLElement | null;
+  const el = target || (document.querySelector('.focused') as HTMLElement | null);
   if (!el) return;
   if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return;
   if (document.activeElement === el) return;

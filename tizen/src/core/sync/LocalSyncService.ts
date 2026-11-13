@@ -16,6 +16,12 @@ import { AVPlayerService } from '../player/AVPlayerService';
 import { CndEngine } from '../engine/CndEngine';
 import { hostOf } from '../pairing/ShareImport';
 import { findSameAccount } from './AccountIdentity';
+import {
+  exportHouseholdAiCredentials,
+  exportHouseholdMetadataKeys,
+  importHouseholdAiCredentials,
+  importHouseholdMetadataKeys,
+} from './HouseholdAiCredentials';
 
 export interface RemotePlayEvent {
   content_key: string;
@@ -163,14 +169,15 @@ export class LocalSyncService {
 
   public async start(): Promise<void> {
     if (this.isRunning) return;
-    this.isRunning = true;
-
     const info = this.store.getHouseholdInfo();
     const key = await this.store.getHouseholdKey();
     if (!info || !key) {
       return;
     }
 
+    // A first launch without a household must not prevent starting after pairing.
+    if (this.isRunning) return;
+    this.isRunning = true;
     this.connectWs(info.household_id);
 
     // Periodic sync every 60 seconds
@@ -222,15 +229,8 @@ export class LocalSyncService {
     try {
       this.ws = new WebSocket(url);
 
-      this.ws.onopen = () => {
-        this.isConnected = true;
-        this.seenPeersOnConnection.clear();
-        this.log('Canal de synchronisation ouvert : TV connectée au foyer.');
-        this.notifyStatus();
-        this.broadcastDeviceAnnounce();
-        void this.requestFullSync();
-        this.startHeartbeat();
-      };
+      // WebSocket OPEN only confirms TCP/WebSocket, not membership of the MSF channel.
+      // Presence and encrypted messages must wait for ms.channel.connect.
 
       this.ws.onmessage = (event) => {
         void this.handleIncomingMessage(event.data);
@@ -306,7 +306,7 @@ export class LocalSyncService {
       message,
     });
 
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({
           method: 'ms.channel.emit',
@@ -320,7 +320,14 @@ export class LocalSyncService {
     try {
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       if (parsed.event === 'ms.channel.connect') {
-        this.log('Relais Samsung MSF : canal actif.');
+        if (!this.isRunning || this.isConnected) return;
+        this.isConnected = true;
+        this.seenPeersOnConnection.clear();
+        this.log('Relais Samsung MSF : canal actif. TV connectée au foyer.');
+        this.notifyStatus();
+        this.broadcastDeviceAnnounce();
+        void this.requestFullSync();
+        this.startHeartbeat();
         return;
       }
       if (parsed.event === 'ms.channel.clientConnect') {
@@ -481,7 +488,7 @@ export class LocalSyncService {
     if (!key) return;
 
     const favorites = await this.db.getFavorites();
-    const sources = await this.db.getSources();
+    const sources = await this.db.getSharedSources();
     const profile = LocalSyncService.PROFILE_UUID;
     const now = Date.now();
 
@@ -505,9 +512,16 @@ export class LocalSyncService {
     }));
 
     this.log(`Envoi des données du foyer : ${sourceDtos.length} compte(s), ${favDtos.length} favori(s)…`);
+    const aiConfigs = await exportHouseholdAiCredentials().catch(() => {
+      this.log('Clés IA non envoyées : coffre sécurisé indisponible.', true);
+      return [];
+    });
+    const metadataKeys = await exportHouseholdMetadataKeys().catch(() => []);
     await this.sendMessage({
       type: 'household_data_delta',
       delta: {
+        ai_configs: aiConfigs,
+        ...(metadataKeys.length > 0 ? { metadata_keys: metadataKeys } : {}),
         sources: sourceDtos,
         profiles: [],
         favorites: favDtos,
@@ -624,6 +638,24 @@ export class LocalSyncService {
       return;
     }
 
+    if (delta.ai_configs) {
+      try {
+        const added = await importHouseholdAiCredentials(delta.ai_configs);
+        if (added) this.log(`${added} clé(s) IA enregistrée(s) dans le coffre de la TV.`);
+      } catch {
+        this.log('Clés IA non enregistrées : coffre sécurisé indisponible.', true);
+      }
+    }
+
+    if (Array.isArray(delta.metadata_keys) && delta.metadata_keys.length > 0) {
+      try {
+        const added = await importHouseholdMetadataKeys(delta.metadata_keys);
+        if (added) this.log(`Clé OMDb reçue du foyer et enregistrée dans le coffre de la TV.`);
+      } catch {
+        this.log('Clé OMDb non enregistrée : coffre indisponible ou module de règles à reconstruire.', true);
+      }
+    }
+
     const fromWho = senderId ? ` de ${this.peerName(senderId)}` : '';
     let appliedFavs = 0;
     let removedFavs = 0;
@@ -642,7 +674,7 @@ export class LocalSyncService {
 
     if (sources.length > 0) {
       try {
-      const existing = await this.db.getSources();
+      const existing = await this.db.getSharedSources();
       for (const src of sources) {
         if (!src) continue;
         const srcType = String(src.source_type || 'xtream').toLowerCase() as 'xtream' | 'm3u';
@@ -692,7 +724,11 @@ export class LocalSyncService {
           });
           appliedSources++;
           // A delta may carry the same account twice (a device that still has a duplicate).
-          existing.push(...(await this.db.getSources()).filter((s) => !existing.some((e) => e.id === s.id)));
+          // Keep await out of spread arguments: the legacy Chromium transform cannot compile it.
+          const refreshedSources = await this.db.getSharedSources();
+          for (const source of refreshedSources) {
+            if (!existing.some((e) => e.id === source.id)) existing.push(source);
+          }
           this.log(`Compte « ${srcName} » enregistré dans les sources de la TV.`);
           this.notifyStatus();
 

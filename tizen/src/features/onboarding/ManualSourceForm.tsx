@@ -1,7 +1,8 @@
-import { Component, Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js';
+import { Component, Show, createEffect, createSignal, onCleanup, onMount, untrack } from 'solid-js';
 import { spatialNav } from '../../ui/design/SpatialNav';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
+import { createTvKeyboard } from '../../ui/components/TvKeyboard';
 
 export interface ManualSourceFormProps {
   /** An account was added and synchronised. */
@@ -27,18 +28,24 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
   const [message, setMessage] = createSignal('');
   const [isError, setIsError] = createSignal(false);
   const [focusId] = spatialNav.getFocusSignal();
+  const keyboard = createTvKeyboard();
 
   const fieldIds = () =>
     kind() === 'xtream'
       ? ['field-name', 'field-server', 'field-username', 'field-password']
       : ['field-name', 'field-url'];
 
+  /** OK on a field: the on-screen keyboard (the Samsung system keyboard is not reliable with a remote). */
   const openFieldKeyboard = (id: string) => {
-    const el = document.getElementById(id) as HTMLInputElement | null;
-    if (el) {
-      el.focus();
-      el.click();
-    }
+    const spec: Record<string, [string, () => string, (v: string) => void, boolean]> = {
+      'field-name': ['Nom', name, setName, false],
+      'field-server': ['Serveur', server, setServer, false],
+      'field-username': ['Identifiant', username, setUsername, false],
+      'field-password': ['Mot de passe', password, setPassword, true],
+      'field-url': ['Adresse de la playlist', url, setUrl, false],
+    };
+    const entry = spec[id];
+    if (entry) keyboard.open(entry[0], entry[1](), entry[2], entry[3]);
   };
 
   const updateGrid = () => {
@@ -60,7 +67,7 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
   onMount(() => {
     updateGrid();
     backUnsub = RemoteKeyHandler.getInstance().addListener((key) => {
-      if (key === 'BACK') {
+      if (key === 'BACK' && !keyboard.isOpen()) {
         props.onCancel();
         return true;
       }
@@ -73,17 +80,11 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
   });
 
   // The kind changes the fields: rebuild the grid (keeps the focus on the kind buttons).
+  // `untrack`: `setGrid` reads the focus; without it every D-pad move re-ran this effect and sent the focus
+  // back to the first button, so the fields could never be reached.
   createEffect(() => {
     kind();
-    updateGrid();
-  });
-
-  // Blur any active input when moving focus away with D-Pad; pressing OK (ENTER) opens the TV keyboard.
-  createEffect(() => {
-    const id = focusId();
-    if (document.activeElement instanceof HTMLInputElement && document.activeElement.id !== id) {
-      document.activeElement.blur();
-    }
+    untrack(updateGrid);
   });
 
   const valid = () => {
@@ -142,6 +143,9 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
         placeholder={opts.placeholder}
         value={value()}
         autocomplete="off"
+        readOnly
+        inputMode="none"
+        onClick={() => openFieldKeyboard(id)}
         onInput={(e) => set((e.currentTarget as HTMLInputElement).value)}
       />
     </label>
@@ -231,6 +235,7 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
         </button>
       </div>
       </Show>
+      {keyboard.view()}
     </div>
   );
 };

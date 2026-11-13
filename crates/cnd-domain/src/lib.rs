@@ -9,6 +9,7 @@ pub mod remote;
 pub mod schema;
 pub mod search;
 pub mod sync;
+pub mod source_edit;
 pub mod xmltv;
 
 pub use ai::*;

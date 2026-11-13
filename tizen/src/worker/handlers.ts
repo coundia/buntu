@@ -17,6 +17,8 @@ import init, {
   wasm_score_recommendations,
   wasm_parse_saga_title,
   wasm_version,
+  wasm_validate_source_edit,
+  wasm_rewrite_source_locator,
   wasm_qr_matrix,
   wasm_pairing_create_offer,
   wasm_pairing_open,
@@ -30,11 +32,15 @@ import init, {
   wasm_content_key,
   wasm_remote_reconstruct_xtream_url,
   wasm_sync_create_household,
+  wasm_sync_household_invite,
+  wasm_sync_household_join,
   wasm_sync_seal_envelope,
   wasm_sync_open_envelope,
+  wasm_sync_missing_ai_credentials,
   wasm_sync_merge_delta,
   wasm_sync_export_delta,
 } from '../wasm/pkg/cnd_domain_wasm.js';
+import * as wasmModule from '../wasm/pkg/cnd_domain_wasm.js';
 
 
 // The file itself, as an URL next to the bundle (Vite copies it and rewrites this import).
@@ -237,8 +243,23 @@ export async function handleRequest(type: string, payload: any): Promise<any> {
         );
         break;
 
+      case 'SOURCE_EDIT_VALIDATE':
+        result = JSON.parse(wasm_validate_source_edit(JSON.stringify(payload.edit)));
+        break;
+      case 'SOURCE_EDIT_REWRITE':
+        result = wasm_rewrite_source_locator(payload.locator, JSON.stringify(payload.edit));
+        break;
+
       case 'SYNC_CREATE_HOUSEHOLD':
         result = JSON.parse(wasm_sync_create_household(payload.entropyHex));
+        break;
+
+      case 'SYNC_HOUSEHOLD_INVITE':
+        result = wasm_sync_household_invite(payload.keyHex);
+        break;
+
+      case 'SYNC_HOUSEHOLD_JOIN':
+        result = JSON.parse(wasm_sync_household_join(payload.invite));
         break;
 
       case 'SYNC_SEAL_ENVELOPE':
@@ -262,6 +283,18 @@ export async function handleRequest(type: string, payload: any): Promise<any> {
           )
         );
         break;
+
+      case 'SYNC_MISSING_AI_CREDENTIALS':
+        result = JSON.parse(wasm_sync_missing_ai_credentials(JSON.stringify(payload.configs), JSON.stringify(payload.existingProviders)));
+        break;
+
+      case 'SYNC_MISSING_METADATA_KEYS': {
+        // Added to cnd-domain-wasm after the TV package was built: looked up by name so an older .wasm fails clearly.
+        const missingKeys = (wasmModule as any).wasm_sync_missing_metadata_keys as ((keys: string, existing: string) => string) | undefined;
+        if (!missingKeys) throw new Error('Module de règles trop ancien : relancez ./scripts/build-tizen.sh');
+        result = JSON.parse(missingKeys(JSON.stringify(payload.keys), JSON.stringify(payload.existingServices)));
+        break;
+      }
 
       case 'SYNC_MERGE_DELTA': {
         const state = payload.localState || payload.baseState || {};

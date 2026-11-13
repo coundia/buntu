@@ -1,3 +1,4 @@
+import { LocalSourceVault, SourceConnectionEdit } from '../storage/LocalSourceVault';
 /**
  * CND IPTV Tizen - Unified Engine Facade (PRD 38 § 2.2 & § 7)
  *
@@ -16,6 +17,10 @@ import { AiClient, AiTaskResult } from '../ai/AiClient';
 import { gatherCommandCandidates, buildRecommendationCandidates } from '../ai/candidates';
 
 import { cleanMediaTitle } from '../utils/titleCleaner';
+import { AiKeyStore } from '../ai/AiKeyStore';
+import { isUhdTitle } from '../player/uhd';
+import { movieFeatures, pickSimilar, tasteOf, toCandidate } from './similarMovies';
+import { channelFamily, liveTaste, pickRecommendedChannels, toLiveCandidate } from './liveRecommendations';
 
 export interface ProfileState {
   id: number;
@@ -59,7 +64,29 @@ export interface SeriesDetails {
   seasons: SeasonInfo[];
 }
 
+/** What the provider says about a film (Xtream `get_vod_info`); every field is optional. */
+export interface MovieInfo {
+  plot?: string;
+  genre?: string;
+  cast?: string;
+  director?: string;
+  releaseDate?: string;
+  rating?: number;
+  durationMs?: number;
+  country?: string;
+  /** Age rating when the provider gives one. */
+  age?: string;
+}
+
 export type SyncProgressCallback = (msg: string, percent?: number) => void;
+
+const LAST_WATCHED_KEY = 'cnd_last_watched';
+/** A channel that played and then went silent is marked out of service only after this long without recovering. */
+const LIVE_SILENCE_BEFORE_BROKEN_MS = 90_000;
+/** A film's position is saved this often while it plays, and when it stops. */
+const PROGRESS_SAVE_MS = 10_000;
+/** Under this the film starts from the beginning. */
+const RESUME_MIN_MS = 15_000;
 
 export class CndEngine {
   private static instance: CndEngine;
@@ -78,8 +105,10 @@ export class CndEngine {
   private isAdultUnlocked = false;
   private currentPlayingItem: ItemRecord | null = null;
   private playToken = 0;
+  private healthUnsubscribe: (() => void) | null = null;
   private categoriesMemCache = new Map<string, string[]>();
   private seriesDetailsCache = new Map<string, SeriesDetails>();
+  private movieInfoCache = new Map<string, MovieInfo | null>();
 
   public static getInstance(): CndEngine {
     if (!CndEngine.instance) {
@@ -117,8 +146,32 @@ export class CndEngine {
     return this.db;
   }
 
+  public async updateLocalSource(sourceId: number, draft: SourceConnectionEdit): Promise<void> {
+    const source = (await this.db.getSharedSources()).find((s) => s.id === sourceId);
+    if (!source) throw new Error('Source introuvable');
+    const edit = await this.worker.post<SourceConnectionEdit>('SOURCE_EDIT_VALIDATE', { edit: { ...draft, source_type: source.source_type } });
+    if (this.currentPlayingItem?.source_id === sourceId) this.stopPlayback();
+    await LocalSourceVault.getInstance().set(source.uuid, edit);
+    await this.db.updateSource({ ...source, local_override: true });
+    this.categoriesMemCache.clear();
+    this.seriesDetailsCache.clear();
+    this.movieInfoCache.clear();
+    if (source.source_type === 'm3u') await this.syncM3uSource(source.name, edit.url);
+  }
+
+  private async localItem(item: ItemRecord): Promise<ItemRecord> {
+    const source = (await this.db.getSharedSources()).find((s) => s.id === item.source_id);
+    if (!source?.local_override) return item;
+    const edit = await LocalSourceVault.getInstance().get(source.uuid);
+    if (!edit) throw new Error('Coordonnées locales indisponibles');
+    const locator = await this.worker.post<string>('SOURCE_EDIT_REWRITE', { locator: item.stream_url, edit });
+    return { ...item, stream_url: locator };
+  }
+
   public async deleteSource(sourceId: number): Promise<void> {
+    const source = (await this.db.getSharedSources()).find((s) => s.id === sourceId);
     await this.db.deleteSource(sourceId);
+    if (source?.local_override) await LocalSourceVault.getInstance().delete(source.uuid);
     this.categoriesMemCache.clear();
   }
 
@@ -130,7 +183,14 @@ export class CndEngine {
    * added from another device, re-synchronised, typed again) is updated and keeps its uuid and its name.
    */
   private async saveSource(source: Omit<SourceRecord, 'id'>): Promise<number> {
-    const same = await findSameAccount(source, await this.db.getSources());
+    const same = await findSameAccount(source, await this.db.getSources())
+      || await findSameAccount(source, await this.db.getSharedSources());
+    if (same?.local_override) {
+      const original = (await this.db.getSharedSources()).find((s) => s.id === same.id);
+      if (!original) throw new Error('Source introuvable');
+      await this.db.updateSource({ ...original, item_count: source.item_count, last_sync_at: source.last_sync_at });
+      return original.id;
+    }
     if (!same) return this.db.upsertSource(source);
     return this.db.upsertSource({ ...source, id: same.id, uuid: same.uuid, name: same.name || source.name });
   }
@@ -439,6 +499,15 @@ export class CndEngine {
     offset = 0,
     limit = 30
   ): Promise<ItemRecord[]> {
+    return this.db.withProgress(await this.getCatalogRaw(kind, groupTitle, offset, limit));
+  }
+
+  private async getCatalogRaw(
+    kind: 'live' | 'movie' | 'series',
+    groupTitle?: string,
+    offset = 0,
+    limit = 30
+  ): Promise<ItemRecord[]> {
     if (groupTitle === RECENT_CATEGORY) {
       const recents = await this.visibleRecents(kind);
       return recents.slice(offset, offset + limit);
@@ -511,7 +580,7 @@ export class CndEngine {
   }
 
   public async getFavoritesByKind(kind: 'live' | 'movie' | 'series', limit = 16): Promise<ItemRecord[]> {
-    return this.db.getItemsByKindAndGroup(kind, FAVORITES_CATEGORY, 0, limit);
+    return this.db.withProgress(await this.db.getItemsByKindAndGroup(kind, FAVORITES_CATEGORY, 0, limit));
   }
 
   public async getCategoryCounts(kind: 'live' | 'movie' | 'series'): Promise<{ total: number; favCount: number; counts: Record<string, number> }> {
@@ -538,7 +607,93 @@ export class CndEngine {
       const ids: number[] = raw ? JSON.parse(raw) : [];
       const next = [item.id, ...ids.filter((id) => id !== item.id)].slice(0, RECENT_LIMIT);
       localStorage.setItem(storageKey, JSON.stringify(next));
+      // The home offers to resume the last thing watched, whatever its kind: remember which and when.
+      localStorage.setItem(LAST_WATCHED_KEY, JSON.stringify({ id: item.id, at: Date.now() }));
     } catch {}
+  }
+
+  /**
+   * Channels to suggest in Live TV: those of the categories (and of the kind) the viewer watches or has in favourites,
+   * scored by the shared rule of `cnd-domain` (WebAssembly). Empty while there is nothing to learn from (no recent
+   * channel, no favourite). Local data only: nothing is sent anywhere, no stream is opened.
+   */
+  public async getRecommendedChannels(limit = 6): Promise<ItemRecord[]> {
+    try {
+      const [recents, favorites] = await Promise.all([this.visibleRecents('live'), this.getFavoritesByKind('live', 20)]);
+      const taste = liveTaste(recents, favorites);
+      if (taste.samples === 0) return [];
+
+      const groups: string[] = [];
+      for (const channel of [...favorites, ...recents]) {
+        if (channel.group_title && !groups.includes(channel.group_title)) groups.push(channel.group_title);
+      }
+      const pool = new Map<number, ItemRecord>();
+      for (const group of groups.slice(0, 4)) {
+        (await this.getCatalog('live', group, 0, 80)).forEach((c) => c.kind === 'live' && pool.set(c.id, c));
+      }
+      if (pool.size < 30) (await this.getCatalog('live', undefined, 0, 60)).forEach((c) => c.kind === 'live' && pool.set(c.id, c));
+      if (pool.size === 0) return [];
+
+      const known = [...recents, ...favorites];
+      const scored = await this.worker.scoreRecommendations(taste, [...pool.values()].map(toLiveCandidate));
+      return pickRecommendedChannels(
+        scored as { item: { id: number }; score: number }[],
+        pool,
+        new Set(known.map((c) => c.id)),
+        new Set(known.map((c) => channelFamily(c.name_clean || c.name))),
+        limit
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Films that resemble this one, for the « À suivre » shelf of the player: those of its category first, closest
+   * decade next, the better rated before the others. The scoring is the shared rule of `cnd-domain` (WebAssembly).
+   * Empty when nothing is similar. Never opens a stream.
+   */
+  public async getSimilarMovies(item: ItemRecord, limit = 8): Promise<ItemRecord[]> {
+    if (item.kind !== 'movie') return [];
+    try {
+      const pool = new Map<number, ItemRecord>();
+      const add = (items: ItemRecord[]) => items.forEach((i) => i.kind === 'movie' && !pool.has(i.id) && pool.set(i.id, i));
+      if (item.group_title) add(await this.getCatalog('movie', item.group_title, 0, 150));
+      if (pool.size < 40) add(await this.getCatalog('movie', undefined, 0, 100));
+      pool.delete(item.id);
+      if (pool.size === 0) return [];
+
+      const info = await this.getMovieInfo(item).catch(() => null);
+      const taste = tasteOf(movieFeatures(item, info));
+      const scored = await this.worker.scoreRecommendations(taste, [...pool.values()].map(toCandidate));
+      return pickSimilar(scored as { item: { id: number }; score: number }[], pool, item.id, limit);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * The last film, episode, series or channel watched, ready to resume from the home. `null` when there is none, when
+   * the profile may not see it (adult category) or when it is practically finished (95 % or more). Local data only.
+   */
+  public async getLastWatched(): Promise<ItemRecord | null> {
+    try {
+      const raw = localStorage.getItem(LAST_WATCHED_KEY);
+      const id = raw ? Number(JSON.parse(raw)?.id) : NaN;
+      if (!Number.isFinite(id) || id <= 0) return null;
+      const [item] = await this.db.withProgress(await this.db.getItemsByIds([id]));
+      if (!item) return null;
+      if ((this.activeProfile.isKids || !this.isAdultUnlocked) && (await this.checkAdultCategory(item.group_title || ''))) {
+        return null;
+      }
+      if ((item.kind === 'movie' || item.kind === 'episode') && item.duration_ms > 0
+        && item.playback_position_ms / item.duration_ms >= 0.95) {
+        return null;
+      }
+      return item;
+    } catch {
+      return null;
+    }
   }
 
   /** The recently watched items of this kind, without the adult ones when the profile may not see them. */
@@ -598,7 +753,7 @@ export class CndEngine {
       if (!raw) return [];
       const ids: number[] = JSON.parse(raw);
       if (!Array.isArray(ids) || ids.length === 0) return [];
-      return this.db.getItemsByIds(ids.slice(0, limit));
+      return this.db.withProgress(await this.db.getItemsByIds(ids.slice(0, limit)));
     } catch {
       return [];
     }
@@ -626,8 +781,10 @@ export class CndEngine {
       this.player.isActive();
     this.currentPlayingItem = item;
     if (alreadyPlaying) return;
+    this.healthUnsubscribe?.();
+    this.healthUnsubscribe = null;
 
-    let streamUrl = item.stream_url;
+    let streamUrl = (await this.localItem(item)).stream_url;
     if (streamUrl.startsWith('xtream-series://')) {
       streamUrl = await this.resolveXtreamSeriesFirstEpisode(streamUrl);
     }
@@ -642,9 +799,107 @@ export class CndEngine {
     }
     if (token !== this.playToken) return; // the user already chose something else
 
-    await this.player.open(streamUrl, isLive);
+    if (isLive) {
+      if (this.livePlayedItemId !== item.id) this.livePlayedItemId = null;
+      let broken: boolean | undefined;
+      const mark = (next: boolean) => {
+        if (broken === next) return;
+        broken = next;
+        item.is_broken = next ? 1 : 0;
+        if (this.currentPlayingItem?.id === item.id) this.currentPlayingItem.is_broken = item.is_broken;
+        void this.db.setBroken(item.id, next).catch(() => {
+          console.warn('État de la chaîne non enregistré.');
+        });
+      };
+      this.healthUnsubscribe = this.player.onStreamHealth((state) => {
+        if (token !== this.playToken) return;
+        if (state === 'playing') {
+          this.livePlayedItemId = item.id;
+          this.clearBrokenTimer();
+          mark(false);
+          return;
+        }
+        // A channel that never connected is out of service at once. A channel that was playing and then stopped
+        // answering is most likely a server cut: it is only marked out of service when the silence lasts.
+        if (this.livePlayedItemId !== item.id) {
+          mark(true);
+        } else if (!this.brokenTimer) {
+          this.brokenTimer = setTimeout(() => {
+            this.brokenTimer = null;
+            if (token === this.playToken) mark(true);
+          }, LIVE_SILENCE_BEFORE_BROKEN_MS);
+        }
+      });
+    }
+    const resumeAt = await this.resumePosition(item);
+    // A 4K film is much heavier to stream: the player keeps more video ready (see bufferPolicy).
+    await this.player.open(streamUrl, isLive, { uhd: !isLive && isUhdTitle(item) });
     if (token !== this.playToken) return;
+    if (resumeAt > 0) {
+      this.player.seekTo(resumeAt);
+      this.resumedItemId = item.id;
+    }
     this.player.play();
+    this.startProgressSaver();
+  }
+
+  private livePlayedItemId: number | null = null;
+  private brokenTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private clearBrokenTimer() {
+    if (this.brokenTimer) clearTimeout(this.brokenTimer);
+    this.brokenTimer = null;
+  }
+
+  private progressTimer: ReturnType<typeof setInterval> | null = null;
+  private resumedItemId: number | null = null;
+
+  /** `true` once when `play` already moved this item to its saved position (the player must not seek again). */
+  public takeResumed(itemId: number): boolean {
+    const resumed = this.resumedItemId === itemId;
+    if (resumed) this.resumedItemId = null;
+    return resumed;
+  }
+
+  /** Saves where the film or episode that plays has got to (nothing for a channel or a stream that has not started). */
+  public async saveProgress(): Promise<void> {
+    const item = this.currentPlayingItem;
+    if (!item || item.kind === 'live' || !(item.id > 0) || !this.player.isActive()) return;
+    const position = this.player.getCurrentTime();
+    const duration = this.player.getDuration();
+    if (!(position > 0) || !(duration > 0)) return;
+    item.playback_position_ms = position;
+    if (!(item.duration_ms > 0)) item.duration_ms = duration;
+    try {
+      await this.db.updateWatchProgress(item.id, position, duration);
+    } catch {
+      /* a position not saved is not worth an error on screen */
+    }
+  }
+
+  private stopProgressSaver() {
+    if (this.progressTimer) clearInterval(this.progressTimer);
+    this.progressTimer = null;
+  }
+
+  private startProgressSaver() {
+    this.stopProgressSaver();
+    this.progressTimer = setInterval(() => void this.saveProgress(), PROGRESS_SAVE_MS);
+  }
+
+  /** Where to start a film or episode: the position given with the item, else the one saved here; never the last 5 %. */
+  private async resumePosition(item: ItemRecord): Promise<number> {
+    if (item.kind === 'live') return 0;
+    let position = item.playback_position_ms > 0 ? item.playback_position_ms : 0;
+    let duration = item.duration_ms > 0 ? item.duration_ms : 0;
+    if (!(position > 0) && item.id > 0) {
+      const saved = await this.db.getWatchProgress(item.id).catch(() => null);
+      position = saved?.position_ms ?? 0;
+      if (!(duration > 0)) duration = saved?.duration_ms ?? 0;
+    }
+    if (position < RESUME_MIN_MS) return 0;
+    if (duration > 0 && position / duration >= 0.95) return 0;
+    return position;
   }
 
   /** True when this very item is the one currently playing (not merely selected). */
@@ -654,15 +909,137 @@ export class CndEngine {
 
   /** Stops the video and frees the provider's connection. */
   public stopPlayback() {
+    this.clearBrokenTimer();
+    this.livePlayedItemId = null;
+    void this.saveProgress();
+    this.stopProgressSaver();
+    this.healthUnsubscribe?.();
+    this.healthUnsubscribe = null;
     this.playToken++;
     this.currentPlayingItem = null;
     this.player.stop();
   }
 
   /**
+   * The facts known about a film: what the provider says (Xtream `get_vod_info`), completed by OMDb when the
+   * household shared its OMDb key with this TV. `null` when nothing is known: callers show only what exists.
+   * Short API calls, cached; they never open a stream.
+   */
+  public async getMovieInfo(item: ItemRecord): Promise<MovieInfo | null> {
+    if (item.kind !== 'movie') return null;
+    item = await this.localItem(item);
+    const cacheKey = item.stream_url;
+    if (this.movieInfoCache.has(cacheKey)) return this.movieInfoCache.get(cacheKey) ?? null;
+
+    const provider = await this.providerMovieInfo(item);
+    const missing = !provider.info || !provider.info.plot || !provider.info.genre || !provider.info.cast
+      || !provider.info.director || !provider.info.rating || !provider.info.releaseDate || !provider.info.durationMs;
+    let omdb: MovieInfo | null = null;
+    let omdbFailed = false;
+    if (missing) {
+      const result = await this.omdbMovieInfo(item);
+      omdb = result.info;
+      omdbFailed = result.failed;
+    }
+    const merged = this.mergeMovieInfo(provider.info, omdb);
+    // A failed call is not remembered: the service may answer next time.
+    if (!provider.failed && !omdbFailed) this.movieInfoCache.set(cacheKey, merged);
+    return merged;
+  }
+
+  /** The provider's values win; OMDb only fills what is missing. */
+  private mergeMovieInfo(primary: MovieInfo | null, fallback: MovieInfo | null): MovieInfo | null {
+    if (!primary && !fallback) return null;
+    const out: MovieInfo = { ...(fallback ?? {}) };
+    for (const [key, value] of Object.entries(primary ?? {})) {
+      if (value !== undefined) (out as any)[key] = value;
+    }
+    return Object.values(out).some((v) => v !== undefined) ? out : null;
+  }
+
+  private async providerMovieInfo(item: ItemRecord): Promise<{ info: MovieInfo | null; failed: boolean }> {
+    const match = /^(https?:\/\/.+?)\/movie\/([^/]+)\/([^/]+)\/(\d+)\.[A-Za-z0-9]+(?:\?.*)?$/.exec(item.stream_url);
+    if (!match) return { info: null, failed: false };
+    const [, base, u, p, vodId] = match;
+    try {
+      const resp = await this.net.get<any>(
+        `${base}/player_api.php?username=${u}&password=${p}&action=get_vod_info&vod_id=${encodeURIComponent(vodId)}`,
+        {},
+        'json'
+      );
+      const info = resp?.data?.info ?? {};
+      const text = (v: unknown): string | undefined => {
+        const t = typeof v === 'string' ? v.trim() : '';
+        return t && t !== 'N/A' ? t : undefined;
+      };
+      const ratingRaw = Number(info.rating ?? info.rating_5based * 2);
+      const seconds = Number(info.duration_secs);
+      const result: MovieInfo = {
+        plot: text(info.plot) ?? text(info.description),
+        genre: text(info.genre),
+        cast: text(info.cast) ?? text(info.actors),
+        director: text(info.director),
+        releaseDate: text(info.releasedate) ?? text(info.release_date),
+        rating: Number.isFinite(ratingRaw) && ratingRaw > 0 ? ratingRaw : undefined,
+        durationMs: Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined,
+        country: text(info.country),
+        age: text(info.age) ?? text(info.mpaa_rating),
+      };
+      return { info: Object.values(result).some((v) => v !== undefined) ? result : null, failed: false };
+    } catch {
+      return { info: null, failed: true };
+    }
+  }
+
+  /** Film facts from OMDb, by title and year, with the key the household shared. Nothing without a key. */
+  private async omdbMovieInfo(item: ItemRecord): Promise<{ info: MovieInfo | null; failed: boolean }> {
+    let key: string | null = null;
+    try {
+      key = await AiKeyStore.getInstance().getApiKey('omdb');
+    } catch {
+      key = null;
+    }
+    if (!key) return { info: null, failed: false };
+    const parsed = cleanMediaTitle(item.name);
+    const title = (item.name_clean && item.name_clean !== item.name ? item.name_clean : parsed.clean).trim();
+    if (!title) return { info: null, failed: false };
+    const year = item.year || parsed.year;
+    try {
+      const resp = await this.net.get<any>(
+        `https://www.omdbapi.com/?apikey=${encodeURIComponent(key)}&t=${encodeURIComponent(title)}${year ? `&y=${year}` : ''}&type=movie&plot=short`,
+        {},
+        'json'
+      );
+      const d = resp?.data;
+      if (!d || d.Response !== 'True') return { info: null, failed: false };
+      const text = (v: unknown): string | undefined => {
+        const t = typeof v === 'string' ? v.trim() : '';
+        return t && t !== 'N/A' ? t : undefined;
+      };
+      const rating = Number(d.imdbRating);
+      const minutes = parseInt(String(d.Runtime ?? ''), 10);
+      const info: MovieInfo = {
+        plot: text(d.Plot),
+        genre: text(d.Genre),
+        cast: text(d.Actors),
+        director: text(d.Director),
+        releaseDate: text(d.Released),
+        rating: Number.isFinite(rating) && rating > 0 ? rating : undefined,
+        durationMs: Number.isFinite(minutes) && minutes > 0 ? minutes * 60000 : undefined,
+        country: text(d.Country),
+        age: text(d.Rated),
+      };
+      return { info: Object.values(info).some((v) => v !== undefined) ? info : null, failed: false };
+    } catch {
+      return { info: null, failed: true };
+    }
+  }
+
+  /**
    * Fetches full series details, seasons, and episodes from Xtream Codes API or DB.
    */
   public async getSeriesDetails(item: ItemRecord): Promise<SeriesDetails> {
+    item = await this.localItem(item);
     const cacheKey = item.stream_url;
     if (this.seriesDetailsCache.has(cacheKey)) {
       return this.seriesDetailsCache.get(cacheKey)!;
@@ -830,7 +1207,7 @@ export class CndEngine {
     limit = 60
   ): Promise<ItemRecord[]> {
     if (!query.trim()) return [];
-    return this.db.searchItems(query, kind, limit);
+    return this.db.withProgress(await this.db.searchItems(query, kind, limit));
   }
 
   /**

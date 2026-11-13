@@ -777,6 +777,30 @@ class LocalSyncService @Inject constructor(
         sealMessage(announceJson())?.let { samsung.sendEnvelope(it) }
     }
 
+    /** The scanned address avoids waiting for Bonjour after the TV accepted the phone's household. */
+    suspend fun sendDataToSamsung(host: String): Boolean = withContext(Dispatchers.IO) {
+        lifecycleMutex.withLock {
+            if (!running) { store.loadFromStore(); startLocked() }
+        }
+        val id = store.householdId.value ?: return@withContext false
+        samsung.start(id)
+        samsung.connectToTv(host)
+        val connected = withTimeoutOrNull(15_000) {
+            // Channel membership alone does not mean the TV app has joined yet. Wait for its
+            // authenticated presence before transmitting accounts and other household data.
+            while (!samsung.isConnected || samsung.currentHost != host ||
+                store.knownDevices.value.none { it.deviceType == "tv" && samsung.isTv(it.id) }
+            ) delay(100)
+            true
+        } ?: false
+        if (!connected) return@withContext false
+        val delta = engineBridge.exportHouseholdDelta(0L)
+        if (delta.isEmpty()) return@withContext false
+        val message = JSONObject().put("type", "household_data_delta").put("delta", JSONObject(delta)).toString()
+        val sealed = sealMessage(message) ?: return@withContext false
+        samsung.sendEnvelope(sealed)
+    }
+
     /** "Envoyer mes données": everything this device has, to every connected device; nothing is asked back. */
     override suspend fun sendNow() = sendDelta(full = true, askBack = false)
 
