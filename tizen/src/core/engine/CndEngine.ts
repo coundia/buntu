@@ -8,7 +8,7 @@ import { LocalSourceVault, SourceConnectionEdit } from '../storage/LocalSourceVa
  */
 
 import { neighbourInList, zapContext } from '../navigation/ZapContext';
-import { Database, ItemRecord, SourceRecord, FAVORITES_CATEGORY, RECENT_CATEGORY, RECENT_LIMIT } from '../storage/Database';
+import { Database, EpgProgramRecord, ItemRecord, SourceRecord, FAVORITES_CATEGORY, RECENT_CATEGORY, RECENT_LIMIT } from '../storage/Database';
 import { HttpClient } from '../net/HttpClient';
 import { AVPlayerService } from '../player/AVPlayerService';
 import { WorkerBridge } from '../../worker/worker-bridge';
@@ -21,6 +21,7 @@ import { AiKeyStore } from '../ai/AiKeyStore';
 import { isUhdTitle } from '../player/uhd';
 import { movieFeatures, pickSimilar, tasteOf, toCandidate } from './similarMovies';
 import { channelFamily, liveTaste, pickRecommendedChannels, toLiveCandidate } from './liveRecommendations';
+import { buildLiveCatchupUrl, findChannelByNumber, isSameLiveChannel, rankLiveMirrors } from './livePlayerHelpers';
 
 export interface ProfileState {
   id: number;
@@ -37,6 +38,7 @@ export interface EpisodeItem {
   container_ext: string;
   stream_url: string;
   duration?: string;
+  duration_ms?: number;
   plot?: string;
   cover?: string;
   rating?: number;
@@ -767,6 +769,80 @@ export class CndEngine {
     return this.db.setBroken(itemId, broken);
   }
 
+  /** Live channel recall state: previous distinct channel (not overwritten by mirror failover). */
+  public getPreviousLiveItem(): ItemRecord | null {
+    return this.previousLiveItem;
+  }
+
+  /** Resolves a Live channel by numeric `chno` (exact `chno` first, category then global, or positional fallback). */
+  public async getChannelByNumber(chno: number, category = ''): Promise<ItemRecord | null> {
+    if (!Number.isInteger(chno) || chno <= 0) return null;
+    if (category === RECENT_CATEGORY) {
+      const list = (zapContext.frozen as ItemRecord[] | null) ?? (await this.visibleRecents('live'));
+      return findChannelByNumber(list, chno);
+    }
+
+    const mustHideAdult = this.activeProfile.isKids || !this.isAdultUnlocked;
+    const isVisible = async (cand: ItemRecord) =>
+      cand.kind === 'live' && (!mustHideAdult || !(await this.checkAdultCategory(cand.group_title || '')));
+
+    // Bounded search on chno stringified avoids pulling huge catalogs into RAM for exact matches.
+    const hits = await this.db.searchItems(String(chno), 'live', 80);
+    const exactInCat: ItemRecord[] = [];
+    const exactGlobal: ItemRecord[] = [];
+    for (const h of hits) {
+      if (h.chno !== chno || !(await isVisible(h))) continue;
+      if (category && category !== FAVORITES_CATEGORY && h.group_title === category) exactInCat.push(h);
+      exactGlobal.push(h);
+    }
+    if (exactInCat.length > 0) return findChannelByNumber(exactInCat, chno);
+    if (!category || category === FAVORITES_CATEGORY) {
+      if (category === FAVORITES_CATEGORY) {
+        const favs = await this.getCatalog('live', FAVORITES_CATEGORY, 0, 500);
+        const favHit = findChannelByNumber(favs, chno);
+        if (favHit) return favHit;
+      }
+      if (exactGlobal.length > 0) return findChannelByNumber(exactGlobal, chno);
+    }
+    if (exactGlobal.length > 0) return findChannelByNumber(exactGlobal, chno);
+
+    // Positional fallback inside current category when explicit chno are missing.
+    if (chno <= 500) {
+      const scoped = await this.getCatalog('live', category || undefined, 0, Math.max(chno, 50));
+      return findChannelByNumber(scoped, chno);
+    }
+    return null;
+  }
+
+  /** Healthy alternative streams for the current channel (4K > FHD > HD > SD, same source first). */
+  public async findMirrors(item: ItemRecord): Promise<ItemRecord[]> {
+    if (item.kind !== 'live') return [];
+    const pool = new Map<number, ItemRecord>();
+    const familyToken = channelFamily(item.name_clean || item.name).split(' ').find((w) => w.length >= 2) ?? '';
+    if (familyToken) {
+      for (const hit of await this.db.searchItems(familyToken, 'live', 80)) {
+        pool.set(hit.id, hit);
+      }
+    }
+    if (item.group_title) {
+      for (const ch of await this.getCatalog('live', item.group_title, 0, 120)) {
+        pool.set(ch.id, ch);
+      }
+    }
+    const mustHideAdult = this.activeProfile.isKids || !this.isAdultUnlocked;
+    const visible: ItemRecord[] = [];
+    for (const cand of pool.values()) {
+      if (mustHideAdult && (await this.checkAdultCategory(cand.group_title || ''))) continue;
+      visible.push(cand);
+    }
+    return rankLiveMirrors(item, visible);
+  }
+
+  /** Builds a Start-Over / catchup URL for an active program when replay is supported. */
+  public buildCatchupUrl(item: ItemRecord, program: Pick<EpgProgramRecord, 'start_ts' | 'end_ts'>, nowTs = Math.floor(Date.now() / 1000)): string | null {
+    return buildLiveCatchupUrl(item, program, nowTs);
+  }
+
   /**
    * Playback. Several calls may overlap (zapping in the Live TV list): only the last one opens its stream.
    * The same item already playing (mini player → full screen) is not reopened unless `force`.
@@ -779,6 +855,16 @@ export class CndEngine {
       !options.force &&
       this.currentPlayingItem?.id === item.id &&
       this.player.isActive();
+    if (isLive && item.id > 0) {
+      if (
+        this.lastLiveItem &&
+        this.lastLiveItem.id !== item.id &&
+        !isSameLiveChannel(this.lastLiveItem, item)
+      ) {
+        this.previousLiveItem = this.lastLiveItem;
+      }
+      this.lastLiveItem = item;
+    }
     this.currentPlayingItem = item;
     if (alreadyPlaying) return;
     this.healthUnsubscribe?.();
@@ -845,6 +931,8 @@ export class CndEngine {
 
   private livePlayedItemId: number | null = null;
   private brokenTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastLiveItem: ItemRecord | null = null;
+  private previousLiveItem: ItemRecord | null = null;
 
   private clearBrokenTimer() {
     if (this.brokenTimer) clearTimeout(this.brokenTimer);
@@ -1094,6 +1182,7 @@ export class CndEngine {
             container_ext: ext,
             stream_url: `${base}/series/${u}/${p}/${epId}.${ext}`,
             duration: durationStr,
+            duration_ms: durationSec > 0 ? durationSec * 1000 : undefined,
             plot: epInfo.plot ? String(epInfo.plot) : undefined,
             cover: epInfo.movie_image ? String(epInfo.movie_image) : undefined,
             rating: epInfo.rating ? Number(epInfo.rating) : undefined,

@@ -5,10 +5,13 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pcoundia.buntu.core.domain.model.ChannelItem
+import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
+import com.pcoundia.buntu.core.domain.model.EpgSlot
 import com.pcoundia.buntu.core.domain.model.MovieItem
 import com.pcoundia.buntu.core.domain.model.PlayableStream
+import com.pcoundia.buntu.core.domain.model.StreamDiagnosis
 import com.pcoundia.buntu.core.domain.model.StreamKind
-import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
 import com.pcoundia.buntu.core.domain.model.UpNextContext
 import com.pcoundia.buntu.core.domain.model.UpNextItem
 import com.pcoundia.buntu.core.domain.model.UpNextPreferences
@@ -24,6 +27,7 @@ import com.pcoundia.buntu.core.domain.usecase.ZapToChannelUseCase
 import com.pcoundia.buntu.core.platform.device.DeviceCapabilities
 import com.pcoundia.buntu.core.platform.work.DownloadForegroundWorker
 import com.pcoundia.buntu.core.player.PlayerEngineState
+import com.pcoundia.buntu.core.player.VideoAspectMode
 import com.pcoundia.buntu.core.player.VideoEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -56,6 +60,21 @@ data class PlayerScreenUiState(
     val upNextShelf: ImmutableList<UpNextItem> = persistentListOf(),
     /** End-of-playback card; `null` when hidden. */
     val nextUpCard: NextUpCardState? = null,
+    // PRD-46: Live TV player improvements
+    val pendingZapTitle: String? = null,
+    val canRecallLive: Boolean = false,
+    val channelDigitBuffer: String = "",
+    val liveNowSlot: EpgSlot? = null,
+    val liveNextSlot: EpgSlot? = null,
+    val liveProgramProgress: Float = 0f,
+    val liveRemainingMinutes: Int? = null,
+    val canStartOverLive: Boolean = false,
+    val liveMirrors: ImmutableList<ChannelItem> = persistentListOf(),
+    val failoverBanner: String? = null,
+    val showChannelDrawer: Boolean = false,
+    val drawerChannels: ImmutableList<ChannelItem> = persistentListOf(),
+    val sleepTimerMinutes: Int? = null,
+    val sleepTimerRemainingSeconds: Int? = null,
 )
 
 /** The "Film suivant / Épisode suivant" card shown near or at the end of a title. */
@@ -151,6 +170,24 @@ class PlayerViewModel @Inject constructor(
     private var upNextLoadJob: Job? = null
     private var countdownJob: Job? = null
 
+    // PRD-46 Live comfort, mirrors, zapping & timer state
+    internal var zapDebounceMs: Long = 250L
+    internal var digitCommitMs: Long = 1_200L
+    internal var sleepTimerTickMs: Long = 1_000L
+    private var currentLiveChannel: ChannelItem? = null
+    private var previousLiveChannelId: Long? = null
+    private var pendingZapChannel: ChannelItem? = null
+    private var pendingFailoverChannelId: Long? = null
+    private var activeGroupTitle: String? = null
+    private val attemptedMirrorIds = mutableSetOf<Long>()
+    private var mirrorFailoverCount = 0
+    private var lastHandledFailureKey: String? = null
+    private var zapDebounceJob: Job? = null
+    private var digitInputJob: Job? = null
+    private var liveContextJob: Job? = null
+    private var failoverBannerJob: Job? = null
+    private var sleepTimerJob: Job? = null
+
     init {
         startRequestedStream()
         startPeriodicProgressSaver()
@@ -170,6 +207,9 @@ class PlayerViewModel @Inject constructor(
                     onMediaChanged(stream)
                 }
                 if (stream == null) return@collect
+                if (stream.kind == StreamKind.LIVE && snap.diagnosis != null) {
+                    maybeAutoFailover(stream, snap.diagnosis)
+                }
                 if (snap.isEnded) {
                     if (endHandledForItemId != stream.itemId) {
                         endHandledForItemId = stream.itemId
@@ -183,12 +223,31 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun onMediaChanged(stream: PlayableStream?) {
+        val prevId = currentMediaItemId
         currentMediaItemId = stream?.itemId
         countdownJob?.cancel()
         upNextLoadJob?.cancel()
+        liveContextJob?.cancel()
         nextUp = null
         dismissedForCredits = false
         endHandledForItemId = null
+        lastHandledFailureKey = null
+
+        val isLiveOrReplay = stream?.kind == StreamKind.LIVE || stream?.kind == StreamKind.CATCHUP
+        val isFailoverHop = stream != null && stream.itemId == pendingFailoverChannelId
+        if (isFailoverHop) {
+            pendingFailoverChannelId = null
+        } else if (stream?.kind == StreamKind.LIVE) {
+            attemptedMirrorIds.clear()
+            mirrorFailoverCount = 0
+            if (prevId != null && prevId != stream.itemId) {
+                previousLiveChannelId = prevId
+            }
+        } else if (stream?.kind != StreamKind.CATCHUP) {
+            attemptedMirrorIds.clear()
+            mirrorFailoverCount = 0
+        }
+
         val canFavorite = stream != null &&
             (stream.kind == StreamKind.LIVE || stream.kind == StreamKind.VOD_MOVIE || stream.kind == StreamKind.VOD_EPISODE)
         _screenState.update {
@@ -197,9 +256,21 @@ class PlayerViewModel @Inject constructor(
                 upNextShelf = persistentListOf(),
                 canToggleFavorite = canFavorite,
                 isFavorite = false,
+                canRecallLive = stream?.kind == StreamKind.LIVE && previousLiveChannelId != null && previousLiveChannelId != stream.itemId,
+                liveNowSlot = if (isLiveOrReplay) it.liveNowSlot else null,
+                liveNextSlot = if (isLiveOrReplay) it.liveNextSlot else null,
+                liveProgramProgress = if (isLiveOrReplay) it.liveProgramProgress else 0f,
+                liveRemainingMinutes = if (isLiveOrReplay) it.liveRemainingMinutes else null,
+                canStartOverLive = false,
+                liveMirrors = if (stream?.kind == StreamKind.LIVE && isFailoverHop) it.liveMirrors else persistentListOf(),
             )
         }
-        if (stream == null || !canFavorite) return
+        if (stream == null) return
+
+        if (isLiveOrReplay) {
+            loadLiveChannelContext(stream)
+        }
+        if (!canFavorite) return
 
         val itemId = stream.itemId
         val context = if (stream.kind == StreamKind.LIVE) UpNextContext.LIVE else UpNextContext.PLAYING
@@ -452,6 +523,7 @@ class PlayerViewModel @Inject constructor(
                 controlsVisible = true,
                 showTrackSheet = false,
                 showVersionsSheet = false,
+                showChannelDrawer = false,
             )
         }
     }
@@ -487,10 +559,260 @@ class PlayerViewModel @Inject constructor(
 
     fun zapAdjacentLive(delta: Int) {
         val current = videoEngine.state.value.activeStream ?: return
-        if (current.kind != StreamKind.LIVE) return
+        if (current.kind != StreamKind.LIVE || delta == 0) return
+        val anchorId = pendingZapChannel?.id ?: current.itemId
+        zapDebounceJob?.cancel()
+        zapDebounceJob = viewModelScope.launch {
+            val target = runCatching {
+                catalogRepository.getAdjacentChannel(anchorId, delta, activeGroupTitle)
+            }.getOrNull() ?: return@launch
+            pendingZapChannel = target
+            _screenState.update { it.copy(pendingZapTitle = target.name) }
+            delay(zapDebounceMs)
+            pendingZapChannel = null
+            _screenState.update { it.copy(pendingZapTitle = null) }
+            val nextStream = zapToChannelUseCase.byId(target.id) ?: return@launch
+            videoEngine.zap(nextStream)
+        }
+    }
+
+    fun recallPreviousChannel() {
+        val prevId = previousLiveChannelId ?: return
+        if (prevId == videoEngine.state.value.activeStream?.itemId) return
+        zapDebounceJob?.cancel()
+        pendingZapChannel = null
+        _screenState.update { it.copy(pendingZapTitle = null) }
         viewModelScope.launch {
-            val next = zapToChannelUseCase.adjacent(current.itemId, delta) ?: return@launch
-            videoEngine.zap(next)
+            val stream = zapToChannelUseCase.byId(prevId) ?: return@launch
+            videoEngine.zap(stream)
+        }
+    }
+
+    fun appendChannelDigit(digit: Int) {
+        if (digit !in 0..9) return
+        val current = videoEngine.state.value.activeStream
+        if (current?.kind != StreamKind.LIVE) return
+        val updated = (_screenState.value.channelDigitBuffer + digit.toString()).take(4)
+        _screenState.update { it.copy(channelDigitBuffer = updated, controlsVisible = true) }
+        digitInputJob?.cancel()
+        digitInputJob = viewModelScope.launch {
+            delay(digitCommitMs)
+            commitChannelNumber()
+        }
+    }
+
+    fun commitChannelNumber() {
+        digitInputJob?.cancel()
+        val raw = _screenState.value.channelDigitBuffer
+        _screenState.update { it.copy(channelDigitBuffer = "") }
+        val number = raw.toIntOrNull()?.takeIf { it > 0 } ?: return
+        viewModelScope.launch {
+            val next = zapToChannelUseCase.byNumber(number)
+            if (next != null) {
+                pendingZapChannel = null
+                _screenState.update { it.copy(pendingZapTitle = null) }
+                videoEngine.zap(next)
+            } else {
+                _screenState.update { it.copy(statusToast = "Chaîne $number introuvable") }
+            }
+        }
+    }
+
+    fun startOverCurrentProgram() {
+        val channelId = currentLiveChannel?.id ?: videoEngine.state.value.activeStream?.itemId ?: return
+        val slot = _screenState.value.liveNowSlot ?: return
+        viewModelScope.launch {
+            val stream = epgRepository.buildCatchupStream(channelId, slot.startEpochSecs, slot.endEpochSecs)
+            if (stream != null) {
+                videoEngine.play(stream)
+            } else {
+                _screenState.update { it.copy(statusToast = "Replay indisponible pour ce programme") }
+            }
+        }
+    }
+
+    fun returnToLive() {
+        val channelId = videoEngine.state.value.activeStream?.itemId ?: currentLiveChannel?.id ?: return
+        viewModelScope.launch {
+            val stream = zapToChannelUseCase.byId(channelId) ?: return@launch
+            videoEngine.zap(stream)
+        }
+    }
+
+    fun switchLiveMirror(mirror: ChannelItem) {
+        if (mirror.id == videoEngine.state.value.activeStream?.itemId) return
+        zapDebounceJob?.cancel()
+        pendingZapChannel = null
+        _screenState.update { it.copy(pendingZapTitle = null, showChannelDrawer = false) }
+        viewModelScope.launch {
+            val stream = zapToChannelUseCase.byId(mirror.id) ?: return@launch
+            videoEngine.zap(stream)
+        }
+    }
+
+    fun toggleChannelDrawer(visible: Boolean? = null) {
+        val nextVisible = visible ?: !_screenState.value.showChannelDrawer
+        if (_screenState.value.isScreenLocked && nextVisible) return
+        _screenState.update { it.copy(showChannelDrawer = nextVisible) }
+        if (nextVisible && _screenState.value.drawerChannels.isEmpty()) {
+            viewModelScope.launch {
+                val channels = runCatching {
+                    catalogRepository.listChannelsInGroup(activeGroupTitle, limit = 150)
+                }.getOrDefault(persistentListOf())
+                _screenState.update { it.copy(drawerChannels = channels) }
+            }
+        }
+    }
+
+    fun selectChannelFromDrawer(channel: ChannelItem) {
+        _screenState.update { it.copy(showChannelDrawer = false, pendingZapTitle = null) }
+        zapDebounceJob?.cancel()
+        pendingZapChannel = null
+        if (channel.id == videoEngine.state.value.activeStream?.itemId) return
+        viewModelScope.launch {
+            val stream = zapToChannelUseCase.byId(channel.id) ?: return@launch
+            videoEngine.zap(stream)
+        }
+    }
+
+    fun cycleAspectMode() {
+        val modes = VideoAspectMode.entries
+        val current = videoEngine.state.value.aspectMode
+        val next = modes[(modes.indexOf(current) + 1) % modes.size]
+        setAspectMode(next)
+    }
+
+    fun setAspectMode(mode: VideoAspectMode) {
+        videoEngine.setAspectMode(mode)
+    }
+
+    fun setSleepTimer(minutes: Int?) {
+        sleepTimerJob?.cancel()
+        if (minutes == null || minutes <= 0) {
+            _screenState.update { it.copy(sleepTimerMinutes = null, sleepTimerRemainingSeconds = null) }
+            return
+        }
+        _screenState.update { it.copy(sleepTimerMinutes = minutes) }
+        startSleepCountdownSeconds(minutes * 60)
+    }
+
+    internal fun startSleepCountdownSeconds(seconds: Int) {
+        sleepTimerJob?.cancel()
+        val initial = seconds.coerceAtLeast(1)
+        _screenState.update { it.copy(sleepTimerRemainingSeconds = initial) }
+        sleepTimerJob = viewModelScope.launch {
+            var remaining = initial
+            while (remaining > 0 && isActive) {
+                delay(sleepTimerTickMs)
+                remaining -= 1
+                if (remaining <= 0) {
+                    _screenState.update {
+                        it.copy(
+                            sleepTimerMinutes = null,
+                            sleepTimerRemainingSeconds = null,
+                            statusToast = "Minuteur de veille écoulé — lecture arrêtée",
+                        )
+                    }
+                    videoEngine.stop()
+                    return@launch
+                }
+                _screenState.update { it.copy(sleepTimerRemainingSeconds = remaining) }
+            }
+        }
+    }
+
+    fun dismissStatusToast() {
+        _screenState.update { it.copy(statusToast = null) }
+    }
+
+    private fun loadLiveChannelContext(stream: PlayableStream) {
+        liveContextJob?.cancel()
+        liveContextJob = viewModelScope.launch {
+            val channel = runCatching { catalogRepository.getChannelById(stream.itemId) }.getOrNull()
+            if (currentMediaItemId != stream.itemId) return@launch
+            if (channel != null) {
+                currentLiveChannel = channel
+                val groupChanged = channel.groupTitle != activeGroupTitle
+                activeGroupTitle = channel.groupTitle
+                if (groupChanged) {
+                    _screenState.update { it.copy(drawerChannels = persistentListOf()) }
+                }
+            }
+            if (stream.kind == StreamKind.LIVE) {
+                val mirrors = runCatching { catalogRepository.findChannelMirrors(stream.itemId) }
+                    .getOrDefault(persistentListOf())
+                if (currentMediaItemId == stream.itemId) {
+                    _screenState.update { it.copy(liveMirrors = mirrors) }
+                }
+            }
+            while (currentMediaItemId == stream.itemId && isActive) {
+                refreshLiveEpgSlots(channel, stream.kind == StreamKind.LIVE)
+                delay(30_000L)
+            }
+        }
+    }
+
+    private suspend fun refreshLiveEpgSlots(channel: ChannelItem?, isLiveKind: Boolean) {
+        val nowSecs = System.currentTimeMillis() / 1000L
+        val tvgId = channel?.tvgId?.takeIf(String::isNotBlank)
+        val slots = if (tvgId != null) {
+            runCatching {
+                epgRepository.getChannelPrograms(tvgId, nowSecs - 4 * 3600L, nowSecs + 6 * 3600L)
+            }.getOrDefault(persistentListOf())
+        } else {
+            persistentListOf()
+        }
+        val liveSlot = slots.firstOrNull { it.isLiveAt(nowSecs) }
+        val nextSlot = if (liveSlot != null) {
+            slots.firstOrNull { it.startEpochSecs >= liveSlot.endEpochSecs }
+        } else {
+            slots.firstOrNull { it.startEpochSecs > nowSecs }
+        }
+        val progress = when {
+            liveSlot != null && liveSlot.endEpochSecs > liveSlot.startEpochSecs -> {
+                ((nowSecs - liveSlot.startEpochSecs).toFloat() /
+                    (liveSlot.endEpochSecs - liveSlot.startEpochSecs).toFloat()).coerceIn(0f, 1f)
+            }
+            channel != null && channel.nowTitle != null -> channel.nowProgress
+            else -> 0f
+        }
+        val remainingMin = liveSlot?.let {
+            val secs = (it.endEpochSecs - nowSecs).coerceAtLeast(0L)
+            ((secs + 59L) / 60L).toInt()
+        }
+        val canStartOver = isLiveKind && liveSlot != null &&
+            (liveSlot.isCatchupAvailable || (channel?.catchupDays ?: 0) > 0)
+        _screenState.update {
+            it.copy(
+                liveNowSlot = liveSlot,
+                liveNextSlot = nextSlot,
+                liveProgramProgress = progress,
+                liveRemainingMinutes = remainingMin,
+                canStartOverLive = canStartOver,
+            )
+        }
+    }
+
+    private fun maybeAutoFailover(stream: PlayableStream, diagnosis: StreamDiagnosis?) {
+        if (diagnosis == null || stream.kind != StreamKind.LIVE) return
+        val failureKey = "${stream.itemId}:${diagnosis.userMessage}"
+        if (lastHandledFailureKey == failureKey || mirrorFailoverCount >= 2) return
+        val mirrors = _screenState.value.liveMirrors
+        val nextMirror = mirrors.firstOrNull { it.id != stream.itemId && it.id !in attemptedMirrorIds } ?: return
+        lastHandledFailureKey = failureKey
+        attemptedMirrorIds += stream.itemId
+        attemptedMirrorIds += nextMirror.id
+        mirrorFailoverCount += 1
+        pendingFailoverChannelId = nextMirror.id
+        failoverBannerJob?.cancel()
+        _screenState.update { it.copy(failoverBanner = "Bascule vers ${nextMirror.name}") }
+        failoverBannerJob = viewModelScope.launch {
+            delay(4_000L)
+            _screenState.update { it.copy(failoverBanner = null) }
+        }
+        viewModelScope.launch {
+            val nextStream = zapToChannelUseCase.byId(nextMirror.id) ?: return@launch
+            videoEngine.zap(nextStream)
         }
     }
 
@@ -524,6 +846,11 @@ class PlayerViewModel @Inject constructor(
     override fun onCleared() {
         progressSaverJob?.cancel()
         countdownJob?.cancel()
+        zapDebounceJob?.cancel()
+        digitInputJob?.cancel()
+        liveContextJob?.cancel()
+        failoverBannerJob?.cancel()
+        sleepTimerJob?.cancel()
         super.onCleared()
     }
 }

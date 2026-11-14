@@ -4,6 +4,8 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
@@ -22,13 +24,19 @@ fun BuntuVideoSurface(
     modifier: Modifier = Modifier,
 ) {
     val exoEngine = videoEngine as? ExoPlayerVideoEngine ?: return
+    val engineState by videoEngine.state.collectAsState()
+    val resizeMode = when (engineState.aspectMode) {
+        VideoAspectMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+        VideoAspectMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        VideoAspectMode.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+    }
 
     AndroidView(
         modifier = modifier,
         factory = { context ->
             PlayerView(context).apply {
                 useController = false
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                this.resizeMode = resizeMode
                 keepScreenOn = true
                 layoutParams = FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -40,6 +48,9 @@ fun BuntuVideoSurface(
         update = { view ->
             if (view.player !== exoEngine.exoPlayer) {
                 view.player = exoEngine.exoPlayer
+            }
+            if (view.resizeMode != resizeMode) {
+                view.resizeMode = resizeMode
             }
         },
     )

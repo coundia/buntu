@@ -29,8 +29,10 @@ import com.pcoundia.buntu.core.domain.repository.SettingsRepository
 import com.pcoundia.buntu.core.domain.repository.SourcesRepository
 import com.pcoundia.buntu.core.engine.EngineProvider
 import com.pcoundia.buntu.core.engine.ffi.CatalogFilter
+import com.pcoundia.buntu.core.engine.ffi.IptvItemRecord
 import com.pcoundia.buntu.core.engine.ffi.SortField
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -196,14 +198,52 @@ class RustCatalogRepository @Inject constructor(
         withContext(Dispatchers.IO) {
             val engine = engineProvider.awaitEngine()
             val rows = engine.listRecentItems("live", limit.coerceIn(1, 100).toUInt())
-            val tvgIds = rows.mapNotNull { it.tvgId?.takeIf(String::isNotBlank) }.distinct()
-            val nowNextMap = if (tvgIds.isNotEmpty()) {
-                engine.getEpgNowNext(tvgIds).associateBy { it.channelTvgId }
-            } else {
-                emptyMap()
-            }
-            rows.map { row -> row.toChannelDomain(row.tvgId?.let(nowNextMap::get)) }.toImmutableList()
+            rows.mapChannelsWithEpg(engine)
         }
+
+    override suspend fun findChannelMirrors(itemId: Long): ImmutableList<ChannelItem> =
+        withContext(Dispatchers.IO) {
+            val engine = engineProvider.awaitEngine()
+            val rows = runCatching { engine.findMirrors(itemId) }.getOrDefault(emptyList())
+            if (rows.isEmpty()) return@withContext persistentListOf()
+            rows.mapChannelsWithEpg(engine)
+        }
+
+    override suspend fun listChannelsInGroup(
+        groupName: String?,
+        limit: Int,
+    ): ImmutableList<ChannelItem> = withContext(Dispatchers.IO) {
+        val engine = engineProvider.awaitEngine()
+        val rows = engine.queryCatalog(
+            CatalogFilter(
+                kind = "live",
+                sourceId = null,
+                query = "",
+                groupTitle = groupName,
+                host = null,
+                favoritesOnly = false,
+                includeBroken = false,
+                includeHidden = false,
+                sortBy = SortField.CHANNEL_NUMBER,
+                sortAsc = true,
+                limit = limit.coerceIn(1, 500).toUInt(),
+                offset = 0u,
+            )
+        )
+        rows.mapChannelsWithEpg(engine)
+    }
+
+    private fun List<IptvItemRecord>.mapChannelsWithEpg(
+        engine: com.pcoundia.buntu.core.engine.ffi.CndEngine,
+    ): ImmutableList<ChannelItem> {
+        val tvgIds = mapNotNull { it.tvgId?.takeIf(String::isNotBlank) }.distinct()
+        val nowNextMap = if (tvgIds.isNotEmpty()) {
+            engine.getEpgNowNext(tvgIds).associateBy { it.channelTvgId }
+        } else {
+            emptyMap()
+        }
+        return map { row -> row.toChannelDomain(row.tvgId?.let(nowNextMap::get)) }.toImmutableList()
+    }
 
     override suspend fun getMovieDetail(itemId: Long, metadataApiKey: String?): MediaDetail? =
         withContext(Dispatchers.IO) {

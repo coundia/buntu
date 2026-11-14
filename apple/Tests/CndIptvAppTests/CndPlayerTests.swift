@@ -1,5 +1,6 @@
 import XCTest
 import QuartzCore
+import CndCoreBridge
 @testable import CndIptvKit
 
 // MARK: - Test doubles
@@ -15,6 +16,7 @@ final class MockBackend: VideoBackend {
     var onTracksChange: (() -> Void)?
 
     var loads: [(media: PlayableMedia, start: Int64)] = []
+    var aspectModes: [VideoAspectRatioMode] = []
     var torndown = false
     /// What happens after `load`: succeed (play and advance), fail, or freeze at the start position.
     enum Behavior { case play, fail(String), freeze }
@@ -53,6 +55,7 @@ final class MockBackend: VideoBackend {
     func setRate(_ rate: Float) {}
     func setVolume(_ volume: Float) {}
     func setMuted(_ muted: Bool) {}
+    func setAspectRatio(_ mode: VideoAspectRatioMode) { aspectModes.append(mode) }
     func audioTracks() -> [MediaTrack] { [] }
     func subtitleTracks() -> [MediaTrack] { [] }
     func selectAudioTrack(id: String) {}
@@ -536,6 +539,80 @@ final class CndPlayerTests: XCTestCase {
 
         queue.next()
         XCTAssertFalse(queue.current?.isFavorite ?? true)
+    }
+
+    @MainActor
+    func testAspectRatioCyclesAndForwardsToBackend() {
+        var backend: MockBackend?
+        let controller = makeController(created: { backend = $0 })
+        controller.open(media("live.ts", kind: .live, hash: "aspect-live"))
+
+        XCTAssertEqual(controller.aspectRatioMode, .fit)
+        XCTAssertEqual(backend?.aspectModes.last, .fit)
+
+        controller.cycleAspectRatio()
+        XCTAssertEqual(controller.aspectRatioMode, .fill)
+        XCTAssertEqual(backend?.aspectModes.last, .fill)
+
+        controller.cycleAspectRatio()
+        XCTAssertEqual(controller.aspectRatioMode, .stretch)
+        XCTAssertEqual(backend?.aspectModes.last, .stretch)
+
+        controller.cycleAspectRatio()
+        XCTAssertEqual(controller.aspectRatioMode, .fit)
+        XCTAssertEqual(backend?.aspectModes.last, .fit)
+    }
+
+    @MainActor
+    func testSleepTimerClosesPlaybackAndReleasesBackend() async {
+        var backend: MockBackend?
+        var timings = PlayerTimings()
+        timings.sleepTimerTick = 0.01
+        let controller = makeController(timings: timings, created: { backend = $0 })
+        controller.open(media("sleep.ts", kind: .live, hash: "sleep-live"))
+
+        controller.startSleepCountdown(seconds: 2)
+        XCTAssertEqual(controller.sleepTimerRemainingSeconds, 2)
+
+        for _ in 0..<30 {
+            if controller.state == .idle { break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(controller.state, .idle)
+        XCTAssertNil(controller.sleepTimerRemainingSeconds)
+        XCTAssertNil(controller.sleepTimerMinutes)
+        XCTAssertTrue(backend?.torndown ?? false)
+    }
+
+    @MainActor
+    func testLiveZapperRecallAndChannelByNumber() {
+        func makeChannel(_ id: Int64, name: String, chno: UInt32?) -> IptvItemRecord {
+            IptvItemRecord(
+                id: id, sourceId: 1, seriesId: nil, stableHash: "h_\(id)", kind: "live",
+                seasonNum: nil, episodeNum: nil, name: name, nameClean: name.lowercased(),
+                year: nil, groupTitle: "General", tvgId: nil, logoUrl: nil, chno: chno,
+                host: "test.live", containerExt: "ts", streamUrl: "http://test.live/\(id).ts",
+                userAgent: nil, referer: nil, headersJson: nil, catchupType: nil,
+                catchupSource: nil, catchupDays: nil, plot: nil, imdbId: nil, imdbRating: nil,
+                isFavorite: false, isBroken: false, resumePositionMs: 0, durationMs: 0, isCompleted: false
+            )
+        }
+        let ch1 = makeChannel(1, name: "TF1", chno: 1)
+        let ch2 = makeChannel(2, name: "France 2", chno: 2)
+        let ch10 = makeChannel(10, name: "Arte", chno: 10)
+        let zapper = LiveZapper()
+        zapper.update(channels: [ch1, ch2, ch10]) { _ in nil }
+
+        XCTAssertFalse(zapper.canRecall)
+        zapper.recordChannelOpened(ch1)
+        XCTAssertFalse(zapper.canRecall)
+        zapper.recordChannelOpened(ch10)
+        XCTAssertTrue(zapper.canRecall)
+        XCTAssertEqual(zapper.recallChannel()?.id, ch1.id)
+
+        XCTAssertEqual(zapper.channel(byNumber: 2)?.id, ch2.id)
+        XCTAssertEqual(zapper.channel(byNumber: 10)?.id, ch10.id)
+        XCTAssertNil(zapper.channel(byNumber: 99))
     }
 
     // MARK: libmpv smoke test (macOS dev machines with libmpv + ffmpeg only)

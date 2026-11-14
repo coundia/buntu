@@ -277,6 +277,8 @@ class ExoPlayerVideoEngine @Inject constructor(
                 playbackSpeed = speed,
                 diagnosis = null,
                 bandwidthWarning = null,
+                isLiveSeekable = false,
+                liveOffsetMs = 0L,
             )
         }
 
@@ -327,6 +329,10 @@ class ExoPlayerVideoEngine @Inject constructor(
                 liveHealth.progress(pos, exoPlayer.isPlaying)
                 val dur = exoPlayer.duration.takeIf { it > 0L } ?: 0L
                 val buf = exoPlayer.bufferedPosition.coerceAtLeast(0L)
+                val liveSeekable = stream.kind == StreamKind.LIVE &&
+                    exoPlayer.isCurrentMediaItemLive &&
+                    exoPlayer.isCurrentMediaItemSeekable
+                val liveOffset = if (liveSeekable && dur > 0L) (dur - pos).coerceAtLeast(0L) else 0L
 
                 // PRD-37 § 4.3: Check insufficient bandwidth on heavy VOD files
                 val bwAssessment = if (
@@ -350,6 +356,8 @@ class ExoPlayerVideoEngine @Inject constructor(
                         bufferedPositionMs = buf,
                         measuredBitrateBps = measuredBps,
                         bandwidthWarning = bwAssessment ?: it.bandwidthWarning,
+                        isLiveSeekable = liveSeekable,
+                        liveOffsetMs = liveOffset,
                     )
                 }
 
@@ -466,6 +474,17 @@ class ExoPlayerVideoEngine @Inject constructor(
         }
     }
 
+    override fun setAspectMode(mode: VideoAspectMode) {
+        _state.update { it.copy(aspectMode = mode) }
+    }
+
+    override fun seekToLiveEdge() {
+        mainScope.launch {
+            exoPlayer.seekToDefaultPosition()
+            if (!exoPlayer.isPlaying) exoPlayer.play()
+        }
+    }
+
     override fun dismissBandwidthWarning() {
         bandwidthWarningDismissedForItemId = _state.value.activeStream?.itemId
         _state.update { it.copy(bandwidthWarning = null) }
@@ -478,7 +497,7 @@ class ExoPlayerVideoEngine @Inject constructor(
             tickerJob?.cancel()
             exoPlayer.stop()
             exoPlayer.clearMediaItems()
-            _state.value = PlayerEngineState()
+            _state.value = PlayerEngineState(aspectMode = _state.value.aspectMode)
             ioScope.launch { downloadsRepository.resumeAfterPlayback() }
         }
     }

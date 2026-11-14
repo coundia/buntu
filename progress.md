@@ -21,6 +21,19 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-13 — Antigravity, PRD-46 amélioration du lecteur Live TV
+
+| Tâche | État | Détail |
+| :--- | :--- | :--- |
+| PRD-46 + index roadmap | ✅ | `PRD/46_AMELIORATION_LECTEUR_LIVE_TV.md` finalisé et passé à `[x]` dans `PRD/00_INDEX_ROADMAP.md` (lots 46.1–46.5). |
+| Apple (`CndIptvKit`) | ✅ | Anti-429 zapping (250 ms), Recall, saisie `0–9`, EPG temps réel + Start-Over, ratios vidéo, minuteur de veille, Mini-Guide overlay (`CndPlayerTests`: 24/24 verts). Non essayé sur appareil. |
+| Android (`domain`/`data`/`player`/`feature:player`) | ✅ | Miroirs & failover auto (max 2), anti-429 zapping (250 ms), Recall, saisie `0–9`, EPG temps réel + Start-Over, Mini-Guide, ratios vidéo, minuteur de veille (`core:domain`, `core:data`, `core:player`, `feature:player` : `BUILD SUCCESSFUL`). Non essayé sur appareil. |
+| Tizen (`AVPlayerService`/`CndEngine`/`PlayerView`) | ✅ | Miroirs & failover auto (max 2), anti-429 zapping (250 ms), Recall, saisie `0–9`, Start-Over catchup, Mini-Guide transparent AVPlay, ratios, minuteur de veille, correction `untrack` / `preserveFocus` dans `updateGrid`, correction Pause Live TV, et barre de progression interactive (`#osd-progress-bar` + `-10s`/`+10s`) sur film, direct TV et série (`AVPlayerService.ts`, `CndEngine.ts`, `SeriesDetailsView.tsx`, `PlayerView.tsx`, `theme.css`). Non essayé sur TV Samsung. |
+| Tests unitaires ciblés | ✅ | Apple `swift test --filter CndPlayerTests` : 24/24 ✅ ; Android `:core:domain:test :core:data:testDebugUnitTest :core:player:testDebugUnitTest :feature:player:testDebugUnitTest` : `BUILD SUCCESSFUL` ✅ ; Tizen `npx tsc --noEmit` ✅, 8 fichiers (`AVPlayerService`, `Zapping`, `PlayerNextShelf`, `UpNextCountdown`, `LiveReconnect`, `MovieBuffering`, `SeriesDetails`, `ResumePlayback`) 48/48 ✅. |
+| Builds d'application (à faire par l'utilisateur) | ⏸️ | Aucune modification UniFFI/WASM ni ajout de fichier Swift : lancer si souhaité `xcodebuild -project apple/CndIPTV.xcodeproj -scheme <schéma> CODE_SIGNING_ALLOWED=NO build`, `cd android && ./gradlew :app:assembleDebug` et `./scripts/build-tizen.sh` / `./scripts/run-tizen.sh <IP>`. |
+
+---
+
 ## 2026-11-13 — Codex, profils simples et clés IA du foyer
 
 | Tâche | État | Détail |

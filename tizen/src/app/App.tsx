@@ -26,6 +26,7 @@ import { AssistantModal } from '../features/assistant/AssistantModal';
 import { NavigationHistory, NavEntry } from '../core/navigation/NavigationHistory';
 import { screenState } from '../core/navigation/ScreenState';
 import { zapContext } from '../core/navigation/ZapContext';
+import { createZapDebouncer } from '../core/engine/livePlayerHelpers';
 import { LocalSyncService } from '../core/sync/LocalSyncService';
 import { RemotePlaybackCoordinator } from '../core/remote/RemotePlayback';
 
@@ -60,6 +61,8 @@ export const App: Component = () => {
   const [showAssistantModal, setShowAssistantModal] = createSignal(false);
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
   const [homeSection, setHomeSection] = createSignal<HomeSection>('live');
+  const [canRecall, setCanRecall] = createSignal(false);
+  const [isZapPending, setIsZapPending] = createSignal(false);
   const [focusId] = spatialNav.getFocusSignal();
   const showSidebar = () => !['home', 'player', 'live', 'movies', 'series', 'details', 'sources', 'devices', 'settings', 'profiles'].includes(currentRoute());
 
@@ -214,6 +217,7 @@ export const App: Component = () => {
   });
 
   onCleanup(() => {
+    zapDebouncer.cancel();
     if (keyUnsub) keyUnsub();
     if (unsubRemotePlay) unsubRemotePlay();
     if (unsubRemoteKey) unsubRemoteKey();
@@ -237,6 +241,8 @@ export const App: Component = () => {
   /** Opens a screen and remembers the current one so BACK can return to it. */
   const navigateTo = (route: ScreenRoute, opts: { reset?: boolean } = {}) => {
     if (currentRoute() === 'player' && route !== 'player') {
+      zapDebouncer.cancel();
+      setIsZapPending(false);
       engine.stopPlayback();
     }
     if (route === 'live' || route === 'movies' || route === 'series') setHomeSection(route);
@@ -257,6 +263,8 @@ export const App: Component = () => {
     const previous = history.back();
     if (!previous) return false;
     if (currentRoute() === 'player') {
+      zapDebouncer.cancel();
+      setIsZapPending(false);
       engine.stopPlayback();
     }
     if (previous.item) setSelectedItem(previous.item);
@@ -320,7 +328,25 @@ export const App: Component = () => {
     return false;
   };
 
-  const handlePlayItem = async (item: ItemRecord) => {
+  const openStream = async (item: ItemRecord, force?: boolean) => {
+    RemotePlaybackCoordinator.getInstance().setLocalPlaying(item);
+    // What already plays in a mini player (live channel or film) keeps running, not reopened.
+    try {
+      await engine.play(item, { force: force ?? (item.kind !== 'live' && !engine.isPlayingItem(item)) });
+      setCanRecall(Boolean(engine.getPreviousLiveItem()));
+    } catch (err) {
+      console.warn('[App] Play error:', err);
+    }
+  };
+
+  const zapDebouncer = createZapDebouncer<ItemRecord>(250, (target) => {
+    setIsZapPending(false);
+    void openStream(target, false);
+  });
+
+  const handlePlayItem = async (item: ItemRecord, force?: boolean) => {
+    zapDebouncer.cancel();
+    setIsZapPending(false);
     // Zapping from one channel to the next keeps the screen that opened the player.
     if (currentRoute() !== 'player') {
       screenState.disarm();
@@ -328,25 +354,34 @@ export const App: Component = () => {
     }
     setSelectedItem(item);
     setCurrentRoute('player');
-    RemotePlaybackCoordinator.getInstance().setLocalPlaying(item);
-    // What already plays in a mini player (live channel or film) keeps running, not reopened.
-    try {
-      await engine.play(item, { force: item.kind !== 'live' && !engine.isPlayingItem(item) });
-    } catch (err) {
-      console.warn('[App] Play error:', err);
-    }
+    await openStream(item, force);
   };
 
-  /** Ch+ / Ch- in the player: the neighbour of the current channel in the list it was opened from. */
+  /** Ch+ / Ch- in the player: instant HUD update, stream opens only after 250 ms calm (anti-429). */
   const zapChannel = async (direction: 'next' | 'prev') => {
-    const current = selectedItem();
+    const current = zapDebouncer.currentTarget() ?? selectedItem();
     if (!current || current.kind !== 'live') return;
     const target = await engine.getAdjacentItem(current, zapContext.category, direction);
-    if (target) await handlePlayItem(target);
+    if (!target || currentRoute() !== 'player') return;
+    setSelectedItem(target);
+    setIsZapPending(true);
+    zapDebouncer.schedule(target);
   };
 
   const handleNextChannel = () => zapChannel('next');
   const handlePrevChannel = () => zapChannel('prev');
+  const handleRecall = () => {
+    const prev = engine.getPreviousLiveItem();
+    if (prev) void handlePlayItem(prev, true);
+  };
+  const handleSelectChannelNumber = async (chno: number): Promise<ItemRecord | null> => {
+    const ch = await engine.getChannelByNumber(chno, zapContext.category);
+    if (ch) await handlePlayItem(ch, true);
+    return ch;
+  };
+  const handleSwitchStream = (item: ItemRecord) => {
+    void handlePlayItem(item, true);
+  };
 
   const handleSelectDetails = (item: ItemRecord) => {
     setSelectedItem(item);
@@ -516,10 +551,20 @@ export const App: Component = () => {
           <Match when={currentRoute() === 'player' && selectedItem()}>
             <PlayerView
               item={selectedItem()!}
-              onExit={() => { if (!goBack()) navigateTo('home', { reset: true }); }}
+              onExit={() => {
+                zapDebouncer.cancel();
+                setIsZapPending(false);
+                if (!goBack()) navigateTo('home', { reset: true });
+              }}
               onNextChannel={handleNextChannel}
               onPrevChannel={handlePrevChannel}
               onPlayNext={handlePlayItem}
+              canRecall={canRecall()}
+              onRecall={handleRecall}
+              onSelectChannelNumber={handleSelectChannelNumber}
+              onSwitchStream={handleSwitchStream}
+              liveCategory={zapContext.category}
+              isZapPending={isZapPending()}
             />
           </Match>
 

@@ -188,6 +188,14 @@ public final class AVPlayerBackend: VideoBackend {
     public func setVolume(_ volume: Float) { player.volume = min(max(volume, 0), 1) }
     public func setMuted(_ muted: Bool) { player.isMuted = muted }
 
+    public func setAspectRatio(_ mode: VideoAspectRatioMode) {
+        switch mode {
+        case .fit: playerLayer.videoGravity = .resizeAspect
+        case .fill: playerLayer.videoGravity = .resizeAspectFill
+        case .stretch: playerLayer.videoGravity = .resize
+        }
+    }
+
     public func audioTracks() -> [MediaTrack] { tracks(in: audioGroup, allowsNone: false) }
     public func subtitleTracks() -> [MediaTrack] { tracks(in: legibleGroup, allowsNone: true) }
 

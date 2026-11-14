@@ -119,12 +119,14 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
     const epItem: ItemRecord = {
       ...props.item,
       id: Number(ep.id) || props.item.id,
+      kind: 'episode',
       name: `${title()} - S${sNum}E${ep.episode_num} ${ep.title}`,
       name_clean: `${title()} - S${sNum}E${ep.episode_num} ${ep.title}`,
       stream_url: ep.stream_url,
       container_ext: ep.container_ext,
       season_num: sNum,
       episode_num: ep.episode_num,
+      duration_ms: ep.duration_ms || props.item.duration_ms || 0,
       plot: ep.plot || props.item.plot,
       logo_url: ep.cover || props.item.logo_url,
     };

@@ -1,5 +1,6 @@
 import SwiftUI
 import QuartzCore
+import CndCoreBridge
 #if os(macOS)
 import AppKit
 #else
@@ -112,15 +113,28 @@ public struct CndVideoPlayerView: View {
     /// macOS "Mode Cinéma": toggles full screen on a black stage with the cursor hidden along with the controls.
     var onToggleCinema: (() -> Void)?
     var isCinema: Bool
+    /// PRD-46: Live TV player enhancements (zapping anti-429, recall, 0-9 entry, Start-Over, Mini-Guide).
+    var livePendingChannelTitle: String? = nil
+    var canRecallChannel: Bool = false
+    var onRecallChannel: (() -> Void)? = nil
+    var onStartOverCurrent: (() -> Void)? = nil
+    var onSelectChannelNumber: ((Int) -> Void)? = nil
+    var liveChannelsForOverlay: [IptvItemRecord] = []
+    var liveProgramTitle: ((IptvItemRecord) -> String?)? = nil
+    var onSelectOverlayChannel: ((IptvItemRecord) -> Void)? = nil
     @State private var subtitleSearchModel: SubtitleSearchModel?
 
     @State private var hudVisible = true
     @State private var showShelf = false
+    @State private var showChannelDrawer = false
+    @State private var channelNumberBuffer = ""
+    @State private var channelNumberTask: Task<Void, Never>?
     @State private var hideTask: Task<Void, Never>?
     @State private var scrubValue: Double = 0
     @State private var isScrubbing = false
 
     private static let speeds: [Float] = [0.5, 1.0, 1.25, 1.5, 2.0]
+    private static let sleepTimerOptions: [Int] = [15, 30, 60, 90]
 
     init(
         controller: CndPlayerController,
@@ -138,7 +152,15 @@ public struct CndVideoPlayerView: View {
         remoteTargets: (() -> [DiscoveredPeer])? = nil,
         onPlayOnDevice: ((DiscoveredPeer) -> Void)? = nil,
         onToggleCinema: (() -> Void)? = nil,
-        isCinema: Bool = false
+        isCinema: Bool = false,
+        livePendingChannelTitle: String? = nil,
+        canRecallChannel: Bool = false,
+        onRecallChannel: (() -> Void)? = nil,
+        onStartOverCurrent: (() -> Void)? = nil,
+        onSelectChannelNumber: ((Int) -> Void)? = nil,
+        liveChannelsForOverlay: [IptvItemRecord] = [],
+        liveProgramTitle: ((IptvItemRecord) -> String?)? = nil,
+        onSelectOverlayChannel: ((IptvItemRecord) -> Void)? = nil
     ) {
         self.remoteTargets = remoteTargets
         self.onPlayOnDevice = onPlayOnDevice
@@ -146,6 +168,14 @@ public struct CndVideoPlayerView: View {
         self.onToggleCinema = onToggleCinema
         self.onDownload = onDownload
         self.isCinema = isCinema
+        self.livePendingChannelTitle = livePendingChannelTitle
+        self.canRecallChannel = canRecallChannel
+        self.onRecallChannel = onRecallChannel
+        self.onStartOverCurrent = onStartOverCurrent
+        self.onSelectChannelNumber = onSelectChannelNumber
+        self.liveChannelsForOverlay = liveChannelsForOverlay
+        self.liveProgramTitle = liveProgramTitle
+        self.onSelectOverlayChannel = onSelectOverlayChannel
         self.controller = controller
         self.isFullscreen = isFullscreen
         self.closesOnDisappear = closesOnDisappear
@@ -247,6 +277,33 @@ public struct CndVideoPlayerView: View {
             }
             .opacity(hudVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.2), value: hudVisible)
+
+            if !channelNumberBuffer.isEmpty {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Text("CH \(channelNumberBuffer)")
+                            .font(.title2.monospacedDigit().bold())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Color.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .strokeBorder(.white.opacity(0.25), lineWidth: 1)
+                            )
+                            .padding(20)
+                    }
+                    Spacer()
+                }
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
+
+            if showChannelDrawer, controller.isLive, !liveChannelsForOverlay.isEmpty {
+                channelDrawerOverlay
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
         }
         .contentShape(Rectangle())
         #if os(macOS)
@@ -269,6 +326,7 @@ public struct CndVideoPlayerView: View {
         .onAppear { showHUD() }
         .onDisappear {
             hideTask?.cancel()
+            channelNumberTask?.cancel()
             if closesOnDisappear { controller.close() }
         }
         #if os(macOS)
@@ -277,6 +335,41 @@ public struct CndVideoPlayerView: View {
         .onKeyPress("m") { controller.isMuted.toggle(); showHUD(); return .handled }
         .onKeyPress("f") { onToggleFullscreen?(); return .handled }
         .onKeyPress("s") { controller.toggleFavorite(); showHUD(); return .handled }
+        .onKeyPress("r") {
+            guard controller.isLive, canRecallChannel, let onRecallChannel else { return .ignored }
+            onRecallChannel()
+            showHUD()
+            return .handled
+        }
+        .onKeyPress("g") {
+            guard controller.isLive, !liveChannelsForOverlay.isEmpty else { return .ignored }
+            withAnimation(.easeInOut(duration: 0.2)) { showChannelDrawer.toggle() }
+            showHUD()
+            return .handled
+        }
+        .onKeyPress("a") {
+            controller.cycleAspectRatio()
+            showHUD()
+            return .handled
+        }
+        .onKeyPress(characters: .decimalDigits) { press in
+            guard controller.isLive, onSelectChannelNumber != nil,
+                  let ch = press.characters.first, ch.isNumber else { return .ignored }
+            appendChannelDigit(String(ch))
+            return .handled
+        }
+        .onKeyPress(.return) {
+            guard !channelNumberBuffer.isEmpty else { return .ignored }
+            commitChannelNumber()
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            if showChannelDrawer {
+                withAnimation(.easeInOut(duration: 0.2)) { showChannelDrawer = false }
+                return .handled
+            }
+            return .ignored
+        }
         .onKeyPress(.leftArrow) {
             guard !controller.isLive || controller.timeshiftDuration.isEnabled else { return .ignored }
             controller.skip(bySeconds: -10); showHUD(); return .handled
@@ -423,6 +516,13 @@ public struct CndVideoPlayerView: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(.white.opacity(0.15), in: Capsule())
                 }
+                if let sleepSeconds = controller.sleepTimerRemainingSeconds {
+                    Label(Self.formatSeconds(Int64(sleepSeconds)), systemImage: "moon.zzz.fill")
+                        .font(.caption2.monospacedDigit())
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.indigo.opacity(0.75), in: Capsule())
+                        .accessibilityLabel("Minuteur de veille \(Self.formatSeconds(Int64(sleepSeconds)))")
+                }
                 #if os(macOS)
                 pinButton
                 #endif
@@ -436,7 +536,12 @@ public struct CndVideoPlayerView: View {
                 }
             }
             }
-            if let banner = controller.reconnectBanner {
+            if let pending = livePendingChannelTitle {
+                Label("Zap → \(pending)…", systemImage: "tv")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(.blue.opacity(0.85), in: Capsule())
+            } else if let banner = controller.reconnectBanner {
                 Label(banner, systemImage: "wifi.exclamationmark")
                     .font(.caption)
                     .padding(.horizontal, 10).padding(.vertical, 4)
@@ -452,7 +557,7 @@ public struct CndVideoPlayerView: View {
         .foregroundStyle(.white)
         .padding(12)
         .background(LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom))
-        .opacity(hudVisible || controller.reconnectBanner != nil || controller.failoverBanner != nil ? 1 : 0)
+        .opacity(hudVisible || controller.reconnectBanner != nil || controller.failoverBanner != nil || livePendingChannelTitle != nil ? 1 : 0)
     }
 
     private var favoriteButton: some View {
@@ -540,6 +645,14 @@ public struct CndVideoPlayerView: View {
 
     private var transportControls: some View {
         HStack(spacing: 18) {
+            if controller.isLive, let onZap {
+                hudButton("chevron.backward.to.line", "Chaîne précédente") { onZap(-1) }
+                    .help("Chaîne précédente")
+            }
+            if controller.isLive, canRecallChannel, let onRecallChannel {
+                hudButton("arrow.uturn.backward.circle", "Dernière chaîne") { onRecallChannel() }
+                    .help("Dernière chaîne (R)")
+            }
             if controller.queue != nil {
                 hudButton("backward.end.fill", "Épisode précédent", enabled: controller.hasPrevious) { controller.previous() }
             }
@@ -557,12 +670,22 @@ public struct CndVideoPlayerView: View {
             if controller.queue != nil {
                 hudButton("forward.end.fill", "Épisode suivant", enabled: controller.hasNext) { controller.next() }
             }
+            if controller.isLive, let onZap {
+                hudButton("chevron.forward.to.line", "Chaîne suivante") { onZap(1) }
+                    .help("Chaîne suivante")
+            }
         }
         .fixedSize()
     }
 
     private var secondaryControls: some View {
         HStack(spacing: 14) {
+            if controller.isLive, !liveChannelsForOverlay.isEmpty {
+                hudButton("list.bullet.rectangle", "Mini-Guide chaînes") {
+                    withAnimation(.easeInOut(duration: 0.2)) { showChannelDrawer.toggle() }
+                }
+                .help("Mini-Guide des chaînes (G)")
+            }
             if let upNext, upNext.isUpNextShelfEnabled, !upNext.recommendations.isEmpty {
                 hudButton("rectangle.stack", "À suivre") {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -575,8 +698,12 @@ public struct CndVideoPlayerView: View {
                     .help("Télécharger ce film ou cet épisode")
             }
             playOnDeviceMenu
+            mirrorsMenu
+            liveComfortMenu
             volumeControls
-            speedMenu
+            if !controller.isLive {
+                speedMenu
+            }
             audioMenu
             subtitlesMenu
             AirPlayRoutePicker()
@@ -587,6 +714,66 @@ public struct CndVideoPlayerView: View {
             }
         }
         .fixedSize()
+    }
+
+    @ViewBuilder
+    private var mirrorsMenu: some View {
+        if controller.isLive, !controller.availableMirrors.isEmpty {
+            Menu {
+                Section("Qualité / Miroirs") {
+                    ForEach(controller.availableMirrors, id: \.id) { mirror in
+                        Button {
+                            controller.failoverToMirror(mirror)
+                        } label: {
+                            let quality = ChannelQuality.detect(in: mirror.name)?.rawValue ?? "Flux"
+                            let isCurrent = mirror.streamUrl == controller.media?.url.absoluteString
+                            Text(isCurrent ? "✓ \(mirror.name) [\(quality)]" : "\(mirror.name) [\(quality)]")
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "rectangle.2.swap")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .accessibilityLabel("Qualité et miroirs")
+        }
+    }
+
+    private var liveComfortMenu: some View {
+        Menu {
+            Section("Format vidéo") {
+                ForEach(VideoAspectRatioMode.allCases, id: \.self) { mode in
+                    Button {
+                        controller.aspectRatioMode = mode
+                    } label: {
+                        Label(
+                            controller.aspectRatioMode == mode ? "✓ \(mode.displayName)" : mode.displayName,
+                            systemImage: mode.systemImage
+                        )
+                    }
+                }
+            }
+            Section("Minuteur de veille") {
+                Button {
+                    controller.setSleepTimer(minutes: nil)
+                } label: {
+                    Text(controller.sleepTimerMinutes == nil ? "✓ Désactivé" : "Désactivé")
+                }
+                ForEach(Self.sleepTimerOptions, id: \.self) { minutes in
+                    Button {
+                        controller.setSleepTimer(minutes: minutes)
+                    } label: {
+                        Text(controller.sleepTimerMinutes == minutes ? "✓ \(minutes) min" : "\(minutes) min")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Format vidéo et minuteur de veille")
     }
 
     /// "Lire sur…": the other device opens the content in its own Buntu and this one stops (no Cast).
@@ -712,34 +899,75 @@ public struct CndVideoPlayerView: View {
     @ViewBuilder
     private var progressRow: some View {
         if controller.isLive {
-            HStack(spacing: 8) {
-                if controller.currentLiveDelaySeconds > 0 {
-                    Button {
-                        controller.catchUpToLive()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text("Direct")
-                            Image(systemName: "forward.end.fill")
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    if controller.currentLiveDelaySeconds > 0 {
+                        Button {
+                            controller.catchUpToLive()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("Direct")
+                                Image(systemName: "forward.end.fill")
+                            }
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(.red, in: RoundedRectangle(cornerRadius: 4))
                         }
-                        .font(.caption.bold())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(.red, in: RoundedRectangle(cornerRadius: 4))
-                    }
-                    .buttonStyle(.plain)
+                        .buttonStyle(.plain)
 
-                    Text("−" + Self.formatSeconds(Int64(controller.currentLiveDelaySeconds)))
-                        .font(.caption.monospacedDigit().bold())
-                        .foregroundStyle(.orange)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
-                } else {
-                    Text("LIVE")
-                        .font(.caption.bold())
-                        .padding(.horizontal, 8).padding(.vertical, 2)
-                        .background(.red, in: RoundedRectangle(cornerRadius: 4))
+                        Text("−" + Self.formatSeconds(Int64(controller.currentLiveDelaySeconds)))
+                            .font(.caption.monospacedDigit().bold())
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
+                    } else {
+                        Text("LIVE")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(.red, in: RoundedRectangle(cornerRadius: 4))
+                    }
+
+                    if let nowProg = controller.liveNowProgram {
+                        Text(nowProg.title)
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                        let remaining = max(0, nowProg.endTs - Int64(Date().timeIntervalSince1970))
+                        if remaining > 0 {
+                            Text("(\(remaining / 60 + (remaining % 60 > 0 ? 1 : 0)) min rest.)")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.white.opacity(0.75))
+                        }
+                    }
+
+                    Spacer()
+
+                    if controller.canStartOverLive, let onStartOverCurrent {
+                        Button {
+                            onStartOverCurrent()
+                            scheduleHide()
+                        } label: {
+                            Label("Revoir depuis le début", systemImage: "arrow.counterclockwise")
+                                .font(.caption.bold())
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
                 }
-                Spacer()
+
+                if let nowProg = controller.liveNowProgram {
+                    HStack(spacing: 10) {
+                        ProgressView(value: EpgProgress.ratio(start: nowProg.startTs, end: nowProg.endTs))
+                            .progressViewStyle(.linear)
+                            .tint(.red)
+                        if let nextProg = controller.liveNextProgram {
+                            Text("À suivre : \(nextProg.title)")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.75))
+                                .lineLimit(1)
+                        }
+                    }
+                }
             }
         } else {
             HStack(spacing: 10) {
@@ -872,6 +1100,112 @@ public struct CndVideoPlayerView: View {
         .padding()
     }
 
+    private var channelDrawerOverlay: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Chaînes en direct")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { showChannelDrawer = false }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Fermer le Mini-Guide")
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+
+                Divider().overlay(Color.white.opacity(0.15))
+
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(liveChannelsForOverlay, id: \.id) { channel in
+                            let isCurrent = channel.streamUrl == controller.media?.url.absoluteString
+                            Button {
+                                showChannelDrawer = false
+                                onSelectOverlayChannel?(channel)
+                                scheduleHide()
+                            } label: {
+                                HStack(spacing: 10) {
+                                    if let num = channel.chno {
+                                        Text("\(num)")
+                                            .font(.caption.monospacedDigit().bold())
+                                            .foregroundStyle(.white.opacity(0.7))
+                                            .frame(width: 30, alignment: .trailing)
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(channel.name)
+                                            .font(.subheadline.weight(isCurrent ? .bold : .regular))
+                                            .foregroundStyle(.white)
+                                            .lineLimit(1)
+                                        if let prog = liveProgramTitle?(channel), !prog.isEmpty {
+                                            Text(prog)
+                                                .font(.caption2)
+                                                .foregroundStyle(.white.opacity(0.7))
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    Spacer()
+                                    if isCurrent {
+                                        Circle()
+                                            .fill(Color.red)
+                                            .frame(width: 8, height: 8)
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(
+                                    isCurrent ? Color.white.opacity(0.16) : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: 8)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 12)
+                }
+            }
+            .frame(width: 320)
+            .background(Color.black.opacity(0.86))
+
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) { showChannelDrawer = false }
+                }
+        }
+    }
+
+    private func appendChannelDigit(_ digit: String) {
+        channelNumberTask?.cancel()
+        if channelNumberBuffer.count < 4 {
+            channelNumberBuffer += digit
+        }
+        showHUD()
+        channelNumberTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !Task.isCancelled else { return }
+            commitChannelNumber()
+        }
+    }
+
+    private func commitChannelNumber() {
+        channelNumberTask?.cancel()
+        channelNumberTask = nil
+        let text = channelNumberBuffer
+        channelNumberBuffer = ""
+        if let number = Int(text), number > 0 {
+            onSelectChannelNumber?(number)
+        }
+    }
+
     // MARK: Auto-hide (3 s)
 
     private func showHUD() {
@@ -882,7 +1216,7 @@ public struct CndVideoPlayerView: View {
     private func scheduleHide() {
         hideTask?.cancel()
         // With a screen reader the controls stay: they must not vanish under the user's focus (PRD 31).
-        guard !isScrubbing, !ScreenReader.isRunning else { return }
+        guard !isScrubbing, !showChannelDrawer, !ScreenReader.isRunning else { return }
         hideTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             if !Task.isCancelled, controller.state == .playing { hudVisible = false }

@@ -17,6 +17,15 @@ import { BufferHint, bufferPolicy } from './bufferPolicy';
 import { StreamSummary, summarizeStream } from './streamInfo';
 
 export type PlayerState = 'NONE' | 'IDLE' | 'READY' | 'PLAYING' | 'PAUSED' | 'BUFFERING';
+export type VideoAspectMode = 'fit' | 'stretch';
+
+export function nextAspectMode(mode: VideoAspectMode): VideoAspectMode {
+  return mode === 'fit' ? 'stretch' : 'fit';
+}
+
+export function aspectModeLabel(mode: VideoAspectMode): string {
+  return mode === 'stretch' ? 'Étirer 16:9' : 'Ajuster';
+}
 
 export interface TrackInfo {
   index: number;
@@ -125,8 +134,10 @@ export class AVPlayerService {
   private isSuspended = false;
   private resumeTimeMs = 0;
   private displayArea: DisplayArea = { ...FULL_SCREEN };
+  private aspectMode: VideoAspectMode = 'fit';
   /** Increases on every open/stop: callbacks of an older stream are ignored (fast zapping). */
   private openToken = 0;
+  private pausedByStop = false;
   private mockTimer: any = null;
 
   public static getInstance(): AVPlayerService {
@@ -251,9 +262,26 @@ export class AVPlayerService {
     this.setDisplayArea({ x, y, width, height });
   }
 
+  /** Aspect ratio mode for the current session ('fit' preserves aspect, 'stretch' fills 16:9). */
+  public getAspectMode(): VideoAspectMode {
+    return this.aspectMode;
+  }
+
+  public setAspectMode(mode: VideoAspectMode) {
+    this.aspectMode = mode;
+    this.applyDisplayArea();
+  }
+
+  public cycleAspectMode(): VideoAspectMode {
+    const next = nextAspectMode(this.aspectMode);
+    this.setAspectMode(next);
+    return next;
+  }
+
   private applyDisplayArea() {
     const { x, y, width, height } = this.displayArea;
     const isFullScreen = x === 0 && y === 0 && width === 1920 && height === 1080;
+    const stretch = this.aspectMode === 'stretch';
     const plane = this.videoPlane();
     if (plane) {
       plane.style.position = 'absolute';
@@ -277,7 +305,7 @@ export class AVPlayerService {
       // the TV (sound only); the "full screen" mode fills the given window. Verified on a Tizen 6.0 TV.
       try {
         this.avplay.setDisplayMethod(
-          isFullScreen ? 'PLAYER_DISPLAY_MODE_LETTER_BOX' : 'PLAYER_DISPLAY_MODE_FULL_SCREEN'
+          !isFullScreen || stretch ? 'PLAYER_DISPLAY_MODE_FULL_SCREEN' : 'PLAYER_DISPLAY_MODE_LETTER_BOX'
         );
       } catch {
         /* older firmware: default display mode */
@@ -287,8 +315,8 @@ export class AVPlayerService {
       } else {
         if (this.videoAspect === 0 && st !== 'IDLE') this.videoAspect = this.readVideoAspect();
         // The "full screen" mode fills the window it is given, so the picture is fitted by hand
-        // (a 2.39:1 film or a 4:3 channel is not stretched into a 16:9 window).
-        const fit = fitRect({ x, y, width, height }, this.videoAspect);
+        // unless the viewer explicitly asked to stretch.
+        const fit = stretch ? { x, y, width, height } : fitRect({ x, y, width, height }, this.videoAspect);
         const vw = typeof window !== 'undefined' && window.innerWidth > 0 ? window.innerWidth : 1920;
         const vh = typeof window !== 'undefined' && window.innerHeight > 0 ? window.innerHeight : 1080;
         const sx = 1920 / vw;
@@ -374,7 +402,24 @@ export class AVPlayerService {
     }
   }
 
+  private async reopenAndPlay() {
+    const expectedToken = this.openToken + 1;
+    try {
+      await this.open(this.currentUrl, this.isLive, this.bufferHint);
+      if (this.openToken === expectedToken) {
+        this.play();
+      }
+    } catch {
+      /* error already reported via listener.onError inside open() */
+    }
+  }
+
   public play() {
+    if (this.pausedByStop && this.currentUrl) {
+      this.pausedByStop = false;
+      void this.reopenAndPlay();
+      return;
+    }
     if (!this.avplay) {
       this.setState('PLAYING');
       return;
@@ -386,29 +431,47 @@ export class AVPlayerService {
       this.applyDisplayArea();
       this.startStallWatchdog();
     } catch (err: any) {
+      if (this.isLive && this.currentUrl && this.state === 'PAUSED') {
+        void this.reopenAndPlay();
+        return;
+      }
       this.reportFailure();
       this.listener.onError?.(describePlayerError(err));
     }
   }
 
   public pause() {
-    if (this.isLive) return; // Live TV is not paused
+    this.stopStallWatchdog();
     if (!this.avplay) {
       this.setState('PAUSED');
       return;
     }
+    let stoppedForLivePause = false;
     try {
       this.avplay.pause();
-      this.setState('PAUSED');
-      this.stopStallWatchdog();
+      if (this.isLive && this.avplay.getState?.() === 'PLAYING') {
+        this.avplay.stop();
+        stoppedForLivePause = true;
+      }
     } catch (err: any) {
-      console.warn('AVPlay pause failed:', err);
+      if (this.isLive) {
+        try {
+          this.avplay.stop();
+          stoppedForLivePause = true;
+        } catch {
+          /* already stopped or none */
+        }
+      } else {
+        console.warn('AVPlay pause failed:', err);
+      }
     }
+    this.pausedByStop = stoppedForLivePause;
+    this.setState('PAUSED');
   }
 
   public seekTo(ms: number) {
-    if (this.isLive) return;
-    const target = this.durationMs > 0 ? Math.min(ms, Math.max(0, this.durationMs - 1000)) : ms;
+    const clamped = Math.max(0, ms);
+    const target = this.durationMs > 0 ? Math.min(clamped, Math.max(0, this.durationMs - 1000)) : clamped;
     this.currentTimeMs = target;
     if (!this.avplay) {
       this.listener.onCurrentPlayTime?.(target);
@@ -436,6 +499,7 @@ export class AVPlayerService {
   }
 
   private closeCurrent() {
+    this.pausedByStop = false;
     this.stopStallWatchdog();
     if (this.mockTimer) {
       clearInterval(this.mockTimer);
@@ -553,22 +617,22 @@ export class AVPlayerService {
     const current = () => token === this.openToken;
     const listenerObj = {
       onbufferingstart: () => {
-        if (!current()) return;
+        if (!current() || this.state === 'PAUSED') return;
         this.setState('BUFFERING');
         this.listener.onBufferingStart?.();
       },
       onbufferingprogress: (percent: number) => {
-        if (!current()) return;
+        if (!current() || this.state === 'PAUSED') return;
         this.listener.onBufferingProgress?.(percent);
       },
       onbufferingcomplete: () => {
-        if (!current()) return;
+        if (!current() || this.state === 'PAUSED') return;
         this.setState('PLAYING');
         this.lastTickTimestamp = Date.now();
         this.listener.onBufferingComplete?.();
       },
       oncurrentplaytime: (timeMs: number) => {
-        if (!current()) return;
+        if (!current() || this.state === 'PAUSED') return;
         this.currentTimeMs = timeMs;
         this.lastPlayTimeTick = timeMs;
         this.lastTickTimestamp = Date.now();

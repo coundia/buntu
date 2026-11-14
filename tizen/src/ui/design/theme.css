@@ -238,17 +238,45 @@ html, body, #root {
 }
 
 .tv-osd-progress-bg {
+  position: relative;
   width: 100%;
-  height: 8px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  overflow: hidden;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 5px;
+  overflow: visible;
+  cursor: pointer;
+  border: 2px solid transparent;
+  box-sizing: border-box;
+}
+
+.tv-osd-progress-bg.focused {
+  border-color: var(--buntu-gold);
+  box-shadow: 0 0 12px rgba(255, 214, 10, 0.55);
 }
 
 .tv-osd-progress-fill {
   height: 100%;
   background: var(--buntu-gold);
   border-radius: 4px;
+  pointer-events: none;
+}
+
+.tv-osd-progress-thumb {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid var(--buntu-gold);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.tv-osd-progress-bg.focused .tv-osd-progress-thumb {
+  width: 22px;
+  height: 22px;
+  box-shadow: 0 0 10px rgba(255, 214, 10, 0.9);
 }
 
 
@@ -3778,3 +3806,135 @@ html, body, #root {
 .tv-osd-next-title { font-size: 20px; font-weight: 700; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tv-osd-next-meta { font-size: 14px; opacity: 0.8; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tv-osd-countdown { margin-bottom: 8px; padding: 8px 14px; font-size: 18px; color: #FFFFFF; background: rgba(255, 159, 10, 0.22); border: 2px solid var(--buntu-gold); border-radius: 10px; }
+
+/* PRD-46 Live TV improvements (Chromium 76 safe: no inset, no flex gap). */
+.tv-digit-hud {
+  position: absolute;
+  top: 48px;
+  right: var(--tv-safe-pad-h);
+  padding: 12px 26px;
+  border-radius: 12px;
+  background: rgba(8, 12, 20, 0.9);
+  border: 2px solid var(--buntu-gold);
+  color: var(--buntu-gold);
+  font-size: 40px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 2px;
+  z-index: 98;
+}
+.tv-sleep-pill {
+  display: inline-block;
+  margin-right: 20px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(255, 159, 10, 0.2);
+  border: 1px solid rgba(255, 159, 10, 0.55);
+  color: var(--buntu-gold);
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tv-miniguide-drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 540px;
+  padding: 40px 28px;
+  box-sizing: border-box;
+  background: rgba(8, 12, 20, 0.92);
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  display: flex;
+  flex-direction: column;
+  z-index: 88;
+}
+.tv-miniguide-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.tv-miniguide-title {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--buntu-gold);
+}
+.tv-miniguide-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+.tv-miniguide-row {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #FFFFFF;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.tv-miniguide-row.active {
+  border-color: var(--buntu-cyan);
+  background: rgba(56, 189, 248, 0.16);
+}
+.tv-miniguide-row.focused {
+  background: var(--buntu-gold);
+  border-color: #FFFFFF;
+  color: #000000;
+}
+.tv-miniguide-chno {
+  min-width: 56px;
+  margin-right: 12px;
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+.tv-miniguide-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tv-miniguide-name {
+  font-size: 22px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tv-miniguide-epg {
+  font-size: 16px;
+  opacity: 0.78;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.tv-mirrors-bar {
+  position: absolute;
+  left: var(--tv-safe-pad-h);
+  right: var(--tv-safe-pad-h);
+  bottom: 48px;
+  padding: 20px 24px;
+  border-radius: 16px;
+  background: rgba(8, 12, 20, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  z-index: 89;
+}
+.tv-mirrors-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 12px;
+}
+.tv-mirrors-row .tv-btn {
+  margin: 0 12px 10px 0;
+  padding: 10px 20px;
+  font-size: 20px;
+}

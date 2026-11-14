@@ -36,16 +36,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
@@ -54,6 +58,7 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -108,6 +113,7 @@ import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.BuntuPosterCard
 import com.pcoundia.buntu.core.designsystem.BuntuPrimaryActionButton
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
+import com.pcoundia.buntu.core.domain.model.ChannelItem
 import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
 import com.pcoundia.buntu.core.domain.model.MovieItem
 import com.pcoundia.buntu.core.domain.model.StreamKind
@@ -116,6 +122,7 @@ import com.pcoundia.buntu.core.domain.usecase.NextUpTiming
 import com.pcoundia.buntu.core.platform.pip.PipHelper
 import com.pcoundia.buntu.core.player.BuntuVideoSurface
 import com.pcoundia.buntu.core.player.PlayerEngineState
+import com.pcoundia.buntu.core.player.VideoAspectMode
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.delay
 
@@ -127,7 +134,7 @@ private const val AUTO_HIDE_MS = 4_000L
 private const val AUTO_HIDE_TV_MS = 6_000L
 
 /** Which sheet is open over the video; one at a time. */
-private enum class PlayerSheet { NONE, TRACKS, SETTINGS, VERSIONS }
+private enum class PlayerSheet { NONE, TRACKS, SETTINGS, VERSIONS, MIRRORS, CHANNELS }
 
 /**
  * PRD-37 § 5.2: a player laid out like YouTube.
@@ -151,6 +158,7 @@ fun PlayerRoute(
     var showRemoteDialog by remember { mutableStateOf(false) }
     var dismissCandidate by remember { mutableStateOf<UpNextItem?>(null) }
     var settingsOpen by remember { mutableStateOf(false) }
+    var mirrorsOpen by remember { mutableStateOf(false) }
     // Focus inside the controls, a sheet or the end card: the remote then moves the focus instead of seeking.
     var overlayHasFocus by remember { mutableStateOf(false) }
     // Bumped on every touch or key, so the auto-hide timer restarts.
@@ -158,20 +166,32 @@ fun PlayerRoute(
 
     val stream = engineState.activeStream
     val isLive = stream?.kind == StreamKind.LIVE
+    val isCatchupReplay = stream?.kind == StreamKind.CATCHUP
     val onlinePeers = peers.filter { it.state != "offline" }
     // Not for local files and downloads (PRD-42 § 1.3): the other device cannot open them.
     val canPlayElsewhere = onlinePeers.isNotEmpty() && stream?.kind != StreamKind.LOCAL_FILE
     val canPip = activity != null && PipHelper.isSupported(activity, screenState.isTv)
 
+    LaunchedEffect(screenState.statusToast) {
+        if (screenState.statusToast != null) {
+            delay(3_000L)
+            viewModel.dismissStatusToast()
+        }
+    }
+
     val openSheet = when {
+        screenState.showChannelDrawer -> PlayerSheet.CHANNELS
         screenState.showTrackSheet -> PlayerSheet.TRACKS
         screenState.showVersionsSheet -> PlayerSheet.VERSIONS
+        mirrorsOpen -> PlayerSheet.MIRRORS
         settingsOpen -> PlayerSheet.SETTINGS
         else -> PlayerSheet.NONE
     }
     val closeSheet = {
+        viewModel.toggleChannelDrawer(false)
         viewModel.toggleTrackSheet(false)
         viewModel.toggleVersionsSheet(false)
+        mirrorsOpen = false
         settingsOpen = false
     }
 
@@ -254,8 +274,26 @@ fun PlayerRoute(
         onDownload = { viewModel.downloadInsteadAndExit(onNavigateToDownloads) },
         onPlayUpNext = viewModel::playUpNextItem,
         onUpNextMenu = { dismissCandidate = it },
+        onRecall = viewModel::recallPreviousChannel,
+        onStartOver = viewModel::startOverCurrentProgram,
+        onReturnToLive = viewModel::returnToLive,
+        onSeekToLiveEdge = { viewModel.videoEngine.seekToLiveEdge() },
+        onOpenMirrors = {
+            closeSheet()
+            mirrorsOpen = true
+        },
+        onOpenChannelsDrawer = {
+            closeSheet()
+            viewModel.toggleChannelDrawer(true)
+        },
+        onCycleAspect = viewModel::cycleAspectMode,
     )
     val capabilities = PlayerCapabilities(
+        isLive = isLive,
+        isCatchupReplay = isCatchupReplay,
+        canRecall = isLive && screenState.canRecallLive,
+        hasMirrors = isLive && screenState.liveMirrors.size > 1,
+        sleepTimerRemainingSeconds = screenState.sleepTimerRemainingSeconds,
         canFavorite = screenState.canToggleFavorite,
         isFavorite = screenState.isFavorite,
         hasTracks = engineState.audioTracks.isNotEmpty() || engineState.subtitleTracks.isNotEmpty(),
@@ -325,6 +363,24 @@ fun PlayerRoute(
                     } else false
                     Key.DirectionDown -> if (zapAllowed) {
                         viewModel.zapAdjacentLive(+1)
+                        true
+                    } else false
+                    Key.Zero, Key.NumPad0 -> if (isLive) { viewModel.appendChannelDigit(0); true } else false
+                    Key.One, Key.NumPad1 -> if (isLive) { viewModel.appendChannelDigit(1); true } else false
+                    Key.Two, Key.NumPad2 -> if (isLive) { viewModel.appendChannelDigit(2); true } else false
+                    Key.Three, Key.NumPad3 -> if (isLive) { viewModel.appendChannelDigit(3); true } else false
+                    Key.Four, Key.NumPad4 -> if (isLive) { viewModel.appendChannelDigit(4); true } else false
+                    Key.Five, Key.NumPad5 -> if (isLive) { viewModel.appendChannelDigit(5); true } else false
+                    Key.Six, Key.NumPad6 -> if (isLive) { viewModel.appendChannelDigit(6); true } else false
+                    Key.Seven, Key.NumPad7 -> if (isLive) { viewModel.appendChannelDigit(7); true } else false
+                    Key.Eight, Key.NumPad8 -> if (isLive) { viewModel.appendChannelDigit(8); true } else false
+                    Key.Nine, Key.NumPad9 -> if (isLive) { viewModel.appendChannelDigit(9); true } else false
+                    Key.Enter, Key.NumPadEnter -> if (isLive && screenState.channelDigitBuffer.isNotEmpty()) {
+                        viewModel.commitChannelNumber()
+                        true
+                    } else false
+                    Key.Guide -> if (isLive) {
+                        viewModel.toggleChannelDrawer()
                         true
                     } else false
                     else -> false
@@ -427,6 +483,47 @@ fun PlayerRoute(
                 )
             }
 
+            if (screenState.channelDigitBuffer.isNotEmpty()) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.84f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .statusBarsPadding()
+                        .padding(20.dp),
+                ) {
+                    Text(
+                        text = "CH ${screenState.channelDigitBuffer}",
+                        color = BuntuPalette.PureWhite,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+            }
+
+            val topBanner = screenState.pendingZapTitle?.let { "Zap → $it…" }
+                ?: screenState.failoverBanner
+                ?: screenState.statusToast
+            topBanner?.let { text ->
+                Surface(
+                    color = Color.Black.copy(alpha = 0.85f),
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = 56.dp),
+                ) {
+                    Text(
+                        text = text,
+                        color = BuntuPalette.PureWhite,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    )
+                }
+            }
+
             engineState.diagnosis?.let { diagnosis ->
                 Box(
                     modifier = Modifier
@@ -461,6 +558,7 @@ fun PlayerRoute(
                 PlayerSheetHost(
                     sheet = openSheet,
                     engineState = engineState,
+                    screenState = screenState,
                     otherVersions = screenState.otherVersions,
                     capabilities = capabilities,
                     actions = actions,
@@ -472,13 +570,26 @@ fun PlayerRoute(
                         viewModel.switchVersion(it)
                         closeSheet()
                     },
+                    onSelectAspect = viewModel::setAspectMode,
+                    onSleepTimer = viewModel::setSleepTimer,
+                    onSwitchMirror = {
+                        viewModel.switchLiveMirror(it)
+                        closeSheet()
+                    },
+                    onSelectChannel = viewModel::selectChannelFromDrawer,
                     onClose = closeSheet,
                     modifier = Modifier
-                        .align(if (portrait) Alignment.BottomCenter else Alignment.CenterEnd)
+                        .align(
+                            when {
+                                openSheet == PlayerSheet.CHANNELS && !portrait -> Alignment.CenterStart
+                                portrait -> Alignment.BottomCenter
+                                else -> Alignment.CenterEnd
+                            }
+                        )
                         .padding(12.dp)
                         .widthIn(max = 420.dp)
                         .fillMaxWidth()
-                        .heightIn(max = maxHeight * 0.8f)
+                        .heightIn(max = maxHeight * 0.85f)
                         .onFocusChanged { overlayHasFocus = it.hasFocus },
                 )
             }
@@ -534,9 +645,21 @@ private class PlayerActions(
     val onDownload: () -> Unit,
     val onPlayUpNext: (UpNextItem) -> Unit,
     val onUpNextMenu: (UpNextItem) -> Unit,
+    val onRecall: () -> Unit,
+    val onStartOver: () -> Unit,
+    val onReturnToLive: () -> Unit,
+    val onSeekToLiveEdge: () -> Unit,
+    val onOpenMirrors: () -> Unit,
+    val onOpenChannelsDrawer: () -> Unit,
+    val onCycleAspect: () -> Unit,
 )
 
 private data class PlayerCapabilities(
+    val isLive: Boolean,
+    val isCatchupReplay: Boolean,
+    val canRecall: Boolean,
+    val hasMirrors: Boolean,
+    val sleepTimerRemainingSeconds: Int?,
     val canFavorite: Boolean,
     val isFavorite: Boolean,
     val hasTracks: Boolean,
@@ -718,7 +841,12 @@ private fun VideoStage(
                                     onLongPress = actions.onUpNextMenu,
                                 )
                             }
-                            SeekBar(engineState = engineState, isLive = isLive, onSeekTo = actions.onSeekTo)
+                            SeekBar(
+                                engineState = engineState,
+                                screenState = screenState,
+                                isLive = isLive,
+                                actions = actions,
+                            )
                         }
                     }
                 }
@@ -762,6 +890,49 @@ private fun TopBar(
                     )
                 }
             }
+            if (capabilities.isCatchupReplay) {
+                Surface(
+                    color = BuntuPalette.TerangaGold,
+                    shape = RoundedCornerShape(50),
+                ) {
+                    Text(
+                        text = "REPLAY",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                OutlinedButton(onClick = actions.onReturnToLive) {
+                    Text("Direct", color = Color.White)
+                }
+            }
+            capabilities.sleepTimerRemainingSeconds?.let { remaining ->
+                val min = remaining / 60
+                val sec = remaining % 60
+                Surface(
+                    color = Color(0xFF312E81),
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier.padding(end = 4.dp),
+                ) {
+                    Text(
+                        text = "Veille %d:%02d".format(min, sec),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+            }
+            if (capabilities.canRecall) {
+                OverlayIcon(Icons.Filled.Replay, "Dernière chaîne", onClick = actions.onRecall)
+            }
+            if (capabilities.isLive) {
+                OverlayIcon(Icons.Filled.List, "Mini-Guide chaînes", onClick = actions.onOpenChannelsDrawer)
+            }
+            if (capabilities.hasMirrors) {
+                OverlayIcon(Icons.Filled.Tune, "Qualité et miroirs", onClick = actions.onOpenMirrors)
+            }
             if (capabilities.canFavorite) {
                 OverlayIcon(
                     icon = if (capabilities.isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
@@ -779,6 +950,7 @@ private fun TopBar(
         } else {
             Spacer(modifier = Modifier.weight(1f))
         }
+        OverlayIcon(Icons.Filled.AspectRatio, "Format vidéo", onClick = actions.onCycleAspect)
         if (capabilities.hasTracks) {
             OverlayIcon(Icons.Filled.ClosedCaption, "Audio et sous-titres", onClick = actions.onOpenTracks)
         }
@@ -880,26 +1052,84 @@ private fun CenterControls(
 @Composable
 private fun SeekBar(
     engineState: PlayerEngineState,
+    screenState: PlayerScreenUiState,
     isLive: Boolean,
-    onSeekTo: (Long) -> Unit,
+    actions: PlayerActions,
 ) {
     if (isLive) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 6.dp)) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .background(BuntuPalette.DangerRed, CircleShape),
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "EN DIRECT",
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.labelMedium,
-            )
+        Column(modifier = Modifier.padding(bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                val behindLive = engineState.isLiveSeekable && engineState.liveOffsetMs > 10_000L
+                if (behindLive) {
+                    OutlinedButton(onClick = actions.onSeekToLiveEdge) {
+                        Text("REVENIR AU DIRECT", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(BuntuPalette.DangerRed, CircleShape),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "EN DIRECT",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                screenState.liveNowSlot?.let { slot ->
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = slot.title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                } ?: Spacer(modifier = Modifier.weight(1f))
+                screenState.liveRemainingMinutes?.let { min ->
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "($min min rest.)",
+                        color = Color.White.copy(alpha = 0.75f),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+                if (screenState.liveNowSlot != null) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+                if (screenState.canStartOverLive) {
+                    OutlinedButton(onClick = actions.onStartOver) {
+                        Icon(Icons.Filled.Replay, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Revoir depuis le début", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+            if (screenState.liveNowSlot != null || screenState.liveProgramProgress > 0f) {
+                LinearProgressIndicator(
+                    progress = { screenState.liveProgramProgress.coerceIn(0f, 1f) },
+                    color = BuntuPalette.DangerRed,
+                    trackColor = Color.White.copy(alpha = 0.25f),
+                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                )
+            }
+            screenState.liveNextSlot?.let { next ->
+                Text(
+                    text = "À suivre : ${next.title}",
+                    color = Color.White.copy(alpha = 0.78f),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         return
     }
+    val onSeekTo = actions.onSeekTo
     val duration = engineState.durationMs
     var dragFraction by remember { mutableStateOf<Float?>(null) }
     val fraction = dragFraction ?: if (duration > 0L) {
@@ -1134,6 +1364,7 @@ private fun UpNextShelfRow(
 private fun PlayerSheetHost(
     sheet: PlayerSheet,
     engineState: PlayerEngineState,
+    screenState: PlayerScreenUiState,
     otherVersions: ImmutableList<MovieItem>,
     capabilities: PlayerCapabilities,
     actions: PlayerActions,
@@ -1142,10 +1373,15 @@ private fun PlayerSheetHost(
     onSelectSubtitle: (Int?, Int?) -> Unit,
     onSubtitleOffset: (Long) -> Unit,
     onSwitchVersion: (MovieItem) -> Unit,
+    onSelectAspect: (VideoAspectMode) -> Unit,
+    onSleepTimer: (Int?) -> Unit,
+    onSwitchMirror: (ChannelItem) -> Unit,
+    onSelectChannel: (ChannelItem) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isLive = engineState.activeStream?.kind == StreamKind.LIVE
+    val currentStreamId = engineState.activeStream?.itemId
     Surface(
         color = BuntuPalette.Slate.copy(alpha = 0.98f),
         shape = RoundedCornerShape(16.dp),
@@ -1161,6 +1397,8 @@ private fun PlayerSheetHost(
                         text = when (sheet) {
                             PlayerSheet.TRACKS -> "Audio et sous-titres"
                             PlayerSheet.VERSIONS -> "Choisir une autre version"
+                            PlayerSheet.MIRRORS -> "Qualité et miroirs"
+                            PlayerSheet.CHANNELS -> "Chaînes en direct"
                             else -> "Réglages de lecture"
                         },
                         style = MaterialTheme.typography.titleMedium,
@@ -1179,6 +1417,51 @@ private fun PlayerSheetHost(
                             label = "Verrouiller l'écran",
                             onClick = actions.onLockScreen,
                         )
+                    }
+                    item(key = "aspect_hdr") { SheetHeader("Format vidéo") }
+                    item(key = "aspect_chips") {
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            VideoAspectMode.entries.forEach { mode ->
+                                FilterChip(
+                                    selected = mode == engineState.aspectMode,
+                                    onClick = { onSelectAspect(mode) },
+                                    label = { Text(mode.label) },
+                                )
+                            }
+                        }
+                    }
+                    item(key = "sleep_hdr") { SheetHeader("Minuteur de veille") }
+                    item(key = "sleep_chips") {
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            FilterChip(
+                                selected = screenState.sleepTimerMinutes == null,
+                                onClick = { onSleepTimer(null) },
+                                label = { Text("Désactivé") },
+                            )
+                            listOf(15, 30, 60, 90).forEach { minutes ->
+                                FilterChip(
+                                    selected = screenState.sleepTimerMinutes == minutes,
+                                    onClick = { onSleepTimer(minutes) },
+                                    label = { Text("$minutes min") },
+                                )
+                            }
+                        }
+                    }
+                    if (isLive) {
+                        item(key = "to_drawer") {
+                            SheetRow(Icons.Filled.List, "Mini-Guide chaînes", onClick = actions.onOpenChannelsDrawer)
+                        }
+                        if (capabilities.hasMirrors) {
+                            item(key = "to_mirrors") {
+                                SheetRow(Icons.Filled.Tune, "Qualité / Miroirs", onClick = actions.onOpenMirrors)
+                            }
+                        }
                     }
                     if (!isLive) {
                         item(key = "speed_hdr") { SheetHeader("Vitesse de lecture") }
@@ -1279,6 +1562,51 @@ private fun PlayerSheetHost(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                        }
+                    }
+                }
+                PlayerSheet.MIRRORS -> {
+                    items(items = screenState.liveMirrors, key = { it.id }) { mirror ->
+                        val active = mirror.id == currentStreamId
+                        OutlinedButton(
+                            onClick = { onSwitchMirror(mirror) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = if (active) "✓ ${mirror.name}" else mirror.name,
+                                color = if (active) BuntuPalette.TerangaGold else BuntuPalette.PureWhite,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+                PlayerSheet.CHANNELS -> {
+                    items(items = screenState.drawerChannels, key = { it.id }) { channel ->
+                        val active = channel.id == currentStreamId
+                        OutlinedButton(
+                            onClick = { onSelectChannel(channel) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                val prefix = channel.channelNumber?.let { "$it · " } ?: ""
+                                Text(
+                                    text = if (active) "▶ $prefix${channel.name}" else "$prefix${channel.name}",
+                                    color = if (active) BuntuPalette.TerangaGold else BuntuPalette.PureWhite,
+                                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                channel.nowTitle?.takeIf(String::isNotBlank)?.let { now ->
+                                    Text(
+                                        text = now,
+                                        color = BuntuPalette.MutedSilver,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                         }
                     }
                 }

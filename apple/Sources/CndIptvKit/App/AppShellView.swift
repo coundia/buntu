@@ -135,6 +135,9 @@ private struct LoadedShellView: View {
     @State private var isDropTargeted = false
     @State private var multiViewController = MultiViewController()
     @State private var currentlyPlayingItem: IptvItemRecord?
+    @State private var pendingZapItem: IptvItemRecord?
+    @State private var zapDebounceTask: Task<Void, Never>?
+    @State private var liveEpgTask: Task<Void, Never>?
     @State private var presentPlayerTask: Task<Void, Never>?
     #if !os(tvOS)
     @State private var libraryModel: LibraryModel
@@ -688,10 +691,18 @@ private struct LoadedShellView: View {
             Haptics.light()
             return
         }
+        let anchorUrl = pendingZapItem?.streamUrl ?? player.media?.url.absoluteString
         guard player.media == nil || player.media?.kind == .live,
-              let item = zapper.neighbor(of: player.media?.url.absoluteString, offset: offset) else { return }
-        play(item)
+              let item = zapper.neighbor(of: anchorUrl, offset: offset) else { return }
+        pendingZapItem = item
+        zapDebounceTask?.cancel()
         Haptics.light()
+        zapDebounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            pendingZapItem = nil
+            play(item)
+        }
     }
 
     // MARK: Logs
@@ -1054,16 +1065,107 @@ private struct LoadedShellView: View {
         #if !os(tvOS)
         libraryModel.stopAudio()
         #endif
+        zapDebounceTask?.cancel()
+        zapDebounceTask = nil
+        pendingZapItem = nil
         currentlyPlayingItem = item
+        if item.kind == "live" {
+            zapper.recordChannelOpened(item)
+            if zapper.channels.isEmpty {
+                let engine = self.engine
+                Task { @MainActor in
+                    let filter = CatalogFilter(
+                        kind: "live", sourceId: nil, query: "", groupTitle: nil, host: nil,
+                        favoritesOnly: false, includeBroken: false, includeHidden: false,
+                        sortBy: .channelNumber, sortAsc: true, limit: 200, offset: 0
+                    )
+                    if let items = try? await Task.detached(priority: .userInitiated, operation: {
+                        try engine.queryCatalog(filter: filter)
+                    }).value, zapper.channels.isEmpty {
+                        zapper.update(channels: items) { _ in nil }
+                    }
+                }
+            }
+        }
         guard let media = PlayableMedia(item: item) else {
             state.errorMessage = "L'URL du flux de « \(item.name) » est invalide."
             return
         }
         player.open(media)
         if item.kind == "live" {
+            loadLiveEpg(for: item)
             let rev = state.catalogRevision
             Task { await state.forYou.live.reload(revision: rev) }
+        } else {
+            liveEpgTask?.cancel()
+            liveEpgTask = nil
         }
+    }
+
+    private func loadLiveEpg(for channel: IptvItemRecord) {
+        liveEpgTask?.cancel()
+        liveEpgTask = Task { @MainActor in
+            guard let tvgId = channel.tvgId?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !tvgId.isEmpty else {
+                player.liveNowProgram = nil
+                player.liveNextProgram = nil
+                player.canStartOverLive = false
+                return
+            }
+            let engine = self.engine
+            let loaded: (ChannelNowNext?, Bool) = (try? await Task.detached(priority: .userInitiated) {
+                let row = try engine.getEpgNowNext(tvgIds: [tvgId]).first
+                let catchup = if let now = row?.now {
+                    (try? engine.isCatchupAvailable(itemId: channel.id, startTs: now.startTs)) ?? false
+                } else {
+                    false
+                }
+                return (row, catchup)
+            }.value) ?? (nil, false)
+            guard !Task.isCancelled, currentlyPlayingItem?.id == channel.id, player.isLive else { return }
+            player.liveNowProgram = loaded.0?.now
+            player.liveNextProgram = loaded.0?.next
+            player.canStartOverLive = loaded.1
+        }
+    }
+
+    private func recallLastChannel() {
+        zapDebounceTask?.cancel()
+        zapDebounceTask = nil
+        pendingZapItem = nil
+        guard let previous = zapper.recallChannel() else { return }
+        play(previous)
+        Haptics.light()
+    }
+
+    private func selectChannelByNumber(_ number: Int) {
+        if let local = zapper.channel(byNumber: number) {
+            play(local)
+            Haptics.light()
+            return
+        }
+        let engine = self.engine
+        Task { @MainActor in
+            let filter = CatalogFilter(
+                kind: "live", sourceId: nil, query: "", groupTitle: nil, host: nil,
+                favoritesOnly: false, includeBroken: false, includeHidden: false,
+                sortBy: .channelNumber, sortAsc: true, limit: 1500, offset: 0
+            )
+            let found = (try? await Task.detached(priority: .userInitiated) {
+                try engine.queryCatalog(filter: filter).first(where: { $0.chno == UInt32(number) })
+            }.value) ?? nil
+            if let found {
+                play(found)
+                Haptics.light()
+            } else {
+                toasts.show("Chaîne \(number) introuvable.")
+            }
+        }
+    }
+
+    private func startOverCurrentChannel() {
+        guard let channel = currentlyPlayingItem, let program = player.liveNowProgram else { return }
+        startOver(channel: channel, program: program)
     }
 
     /// "Revoir depuis le début": the programme on air, played from its start through the provider's archive.
@@ -1190,6 +1292,11 @@ private struct LoadedShellView: View {
     }
 
     private func closePlayer() {
+        zapDebounceTask?.cancel()
+        zapDebounceTask = nil
+        pendingZapItem = nil
+        liveEpgTask?.cancel()
+        liveEpgTask = nil
         currentlyPlayingItem = nil
         player.close()
         state.cloudSync?.scheduleSync()
@@ -1317,7 +1424,15 @@ private struct LoadedShellView: View {
             onDownload: { downloadCurrentMedia() },
             remoteTargets: { state.remotePlaybackTargets },
             onPlayOnDevice: { state.playCurrentMedia(on: $0) },
-            onToggleCinema: { setExpanded(true) }
+            onToggleCinema: { setExpanded(true) },
+            livePendingChannelTitle: pendingZapItem?.name,
+            canRecallChannel: zapper.canRecall,
+            onRecallChannel: { recallLastChannel() },
+            onStartOverCurrent: { startOverCurrentChannel() },
+            onSelectChannelNumber: { selectChannelByNumber($0) },
+            liveChannelsForOverlay: zapper.channels,
+            liveProgramTitle: { zapper.currentProgramTitle(for: $0) },
+            onSelectOverlayChannel: { play($0) }
         )
         .aspectRatio(16 / 9, contentMode: .fit)
     }
@@ -1370,7 +1485,15 @@ private struct LoadedShellView: View {
             remoteTargets: { state.remotePlaybackTargets },
             onPlayOnDevice: { state.playCurrentMedia(on: $0) },
             onToggleCinema: cinemaAction,
-            isCinema: expandedShowsFullscreen
+            isCinema: expandedShowsFullscreen,
+            livePendingChannelTitle: pendingZapItem?.name,
+            canRecallChannel: zapper.canRecall,
+            onRecallChannel: { recallLastChannel() },
+            onStartOverCurrent: { startOverCurrentChannel() },
+            onSelectChannelNumber: { selectChannelByNumber($0) },
+            liveChannelsForOverlay: zapper.channels,
+            liveProgramTitle: { zapper.currentProgramTitle(for: $0) },
+            onSelectOverlayChannel: { play($0) }
         )
         .background(Color.black)
     }

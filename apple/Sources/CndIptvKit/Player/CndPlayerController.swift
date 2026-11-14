@@ -69,6 +69,7 @@ public struct PlayerTimings: Sendable {
     /// How long a reload may take to show progress before the attempt counts as failed.
     public var recoveryProbe: TimeInterval = 6
     public var progressInterval: TimeInterval = 5
+    public var sleepTimerTick: TimeInterval = 1
 
     public init(
         tick: TimeInterval = 0.25,
@@ -78,7 +79,8 @@ public struct PlayerTimings: Sendable {
         reconnectBackoff: [TimeInterval] = [1, 2, 4],
         recoveryProbe: TimeInterval = 6,
         progressInterval: TimeInterval = 5,
-        vodLoadTimeout: TimeInterval = 60
+        vodLoadTimeout: TimeInterval = 60,
+        sleepTimerTick: TimeInterval = 1
     ) {
         self.vodLoadTimeout = vodLoadTimeout
         self.tick = tick
@@ -88,6 +90,7 @@ public struct PlayerTimings: Sendable {
         self.reconnectBackoff = reconnectBackoff
         self.recoveryProbe = recoveryProbe
         self.progressInterval = progressInterval
+        self.sleepTimerTick = sleepTimerTick
     }
 }
 
@@ -176,6 +179,17 @@ public final class CndPlayerController {
     public var rate: Float = 1 { didSet { backend?.setRate(rate) } }
     public var volume: Float = 1 { didSet { backend?.setVolume(volume) } }
     public var isMuted = false { didSet { backend?.setMuted(isMuted) } }
+    public var aspectRatioMode: VideoAspectRatioMode = .fit {
+        didSet { backend?.setAspectRatio(aspectRatioMode) }
+    }
+
+    // MARK: - Live TV EPG & Comfort (PRD-46)
+    public var liveNowProgram: EpgProgramRecord?
+    public var liveNextProgram: EpgProgramRecord?
+    public var canStartOverLive: Bool = false
+    public private(set) var sleepTimerMinutes: Int?
+    public private(set) var sleepTimerRemainingSeconds: Int?
+    @ObservationIgnored private var sleepTimerTask: Task<Void, Never>?
 
     public var isLive: Bool { media?.kind == .live }
 
@@ -322,6 +336,9 @@ public final class CndPlayerController {
         durationMs = 0
         liveDelaySeconds = 0
         livePauseStartTime = nil
+        liveNowProgram = nil
+        liveNextProgram = nil
+        canStartOverLive = false
         TimeshiftCacheManager.cleanCacheDirectory()
         onMediaChanged?(media)
         loadBackend(media, resumeAt: resumeAt, engine: PlayerRouting.engine(for: media.url, preference: enginePreference))
@@ -406,6 +423,7 @@ public final class CndPlayerController {
         newBackend.setMuted(isMuted)
         newBackend.setAudioEnhancement(audioEnhancement)
         newBackend.setSubtitleDelay(seconds: subtitleDelaySeconds)
+        newBackend.setAspectRatio(aspectRatioMode)
         newBackend.load(playable, startPositionMs: resumeAt)
 
         if chosen == .avPlayer, media.isHls, audioEnhancement.isActive {
@@ -870,6 +888,52 @@ public final class CndPlayerController {
         showHlsAudioEnhancementNotice = false
     }
 
+    // MARK: - Aspect Ratio & Sleep Timer (PRD-46)
+
+    public func cycleAspectRatio() {
+        let modes = VideoAspectRatioMode.allCases
+        guard let index = modes.firstIndex(of: aspectRatioMode) else {
+            aspectRatioMode = .fit
+            return
+        }
+        aspectRatioMode = modes[(index + 1) % modes.count]
+    }
+
+    /// Sets or clears the sleep timer (`nil` or `<= 0` cancels). Reaching zero closes playback
+    /// cleanly so the single provider connection is always released.
+    public func setSleepTimer(minutes: Int?) {
+        sleepTimerTask?.cancel()
+        sleepTimerTask = nil
+        guard let minutes, minutes > 0 else {
+            sleepTimerMinutes = nil
+            sleepTimerRemainingSeconds = nil
+            return
+        }
+        sleepTimerMinutes = minutes
+        startSleepCountdown(seconds: minutes * 60)
+    }
+
+    func startSleepCountdown(seconds: Int) {
+        sleepTimerTask?.cancel()
+        sleepTimerRemainingSeconds = max(1, seconds)
+        let tickNs = UInt64(max(0.005, timings.sleepTimerTick) * 1_000_000_000)
+        sleepTimerTask = Task { @MainActor [weak self] in
+            while let self, !Task.isCancelled, let remaining = self.sleepTimerRemainingSeconds, remaining > 0 {
+                try? await Task.sleep(nanoseconds: tickNs)
+                guard !Task.isCancelled else { return }
+                let next = (self.sleepTimerRemainingSeconds ?? 0) - 1
+                if next <= 0 {
+                    self.sleepTimerMinutes = nil
+                    self.sleepTimerRemainingSeconds = nil
+                    self.sleepTimerTask = nil
+                    self.close()
+                    return
+                }
+                self.sleepTimerRemainingSeconds = next
+            }
+        }
+    }
+
     // MARK: - Subtitle Actions & External Subtitles
 
     public func setSubtitleDelay(_ delay: Double) {
@@ -916,10 +980,17 @@ public final class CndPlayerController {
         saveProgress()
         monitorTask?.cancel()
         monitorTask = nil
+        sleepTimerTask?.cancel()
+        sleepTimerTask = nil
+        sleepTimerMinutes = nil
+        sleepTimerRemainingSeconds = nil
         cancelRecovery()
         releaseBackend()
         media = nil
         queue = nil
+        liveNowProgram = nil
+        liveNextProgram = nil
+        canStartOverLive = false
         state = .idle
         onMediaChanged?(nil)
         sleepManager.remove(id: id)
