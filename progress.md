@@ -21,6 +21,43 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-14 — Antigravity (Swarm), Localisation Live / Films / Séries FR/EN (Tizen, Apple, Android)
+
+- ✅ **Tizen (`tizen/`)** (`tizen-catalog-i18n`) : ajout des clés `live.*` (43), `movies.*` (37) et `series.*` (59) avec parité 100 % dans [`fr.ts`](tizen/src/core/i18n/fr.ts) et [`en.ts`](tizen/src/core/i18n/en.ts) ; remplacement des chaînes codées en dur par `t(...)` dans [`LiveView.tsx`](tizen/src/features/live/LiveView.tsx), [`MoviesView.tsx`](tizen/src/features/movies/MoviesView.tsx), [`SeriesView.tsx`](tizen/src/features/series/SeriesView.tsx) et [`SeriesDetailsView.tsx`](tizen/src/features/series/SeriesDetailsView.tsx).
+- ✅ **Apple (`apple/`)** (`apple-catalog-i18n`) : ajout des clés `live.*`, `movies.*`, `series.*` avec parité 100 % dans [`AppStringsFR.swift`](apple/Sources/CndIptvKit/Shared/Localization/AppStringsFR.swift) et [`AppStringsEN.swift`](apple/Sources/CndIptvKit/Shared/Localization/AppStringsEN.swift) ; remplacement des chaînes codées en dur par `AppLanguageStore.shared.t(...)` dans `Features/LiveTV/` (`ChannelCardView.swift`, `LiveTvView.swift`), `Features/Movies/` (`MoviesCatalogView.swift`, `MoviePosterCard.swift`, `MovieDetailsView.swift`) et `Features/Series/` (`SeriesCatalogView.swift`, `SeriesDetailsView.swift`). Aucun nouveau `.swift` créé.
+- ✅ **Android (`android/`)** (`android-catalog-i18n`) : ajout de 33 clés (`live.*`, `movies.*`, `series.*`) avec parité 100 % dans [`AppStringsFr.kt`](android/core/designsystem/src/main/kotlin/com/pcoundia/buntu/core/designsystem/i18n/AppStringsFr.kt) et [`AppStringsEn.kt`](android/core/designsystem/src/main/kotlin/com/pcoundia/buntu/core/designsystem/i18n/AppStringsEn.kt) ; test ajouté dans [`AppLocalizationTest.kt`](android/core/designsystem/src/test/kotlin/com/pcoundia/buntu/core/designsystem/i18n/AppLocalizationTest.kt) ; câblage `rememberAppLanguage()` / `AppLanguageState.translate(...)` dans [`LiveScreen.kt`](android/feature/live/src/main/kotlin/com/pcoundia/buntu/feature/live/LiveScreen.kt), [`LiveViewModel.kt`](android/feature/live/src/main/kotlin/com/pcoundia/buntu/feature/live/LiveViewModel.kt), [`MoviesScreen.kt`](android/feature/movies/src/main/kotlin/com/pcoundia/buntu/feature/movies/MoviesScreen.kt) et [`SeriesScreen.kt`](android/feature/series/src/main/kotlin/com/pcoundia/buntu/feature/series/SeriesScreen.kt).
+- ✅ **Vérifications (`verifier-5`)** :
+  - `./scripts/check-secrets.sh` → `secrets check: clean` (exit 0)
+  - Tizen (`cd tizen && npx tsc --noEmit && npx vitest run tests/I18n.test.ts tests/HomeNavigation.test.ts tests/MovieInfo.test.ts tests/SeriesDetails.test.ts tests/LiveRecommendations.test.ts`) → `tsc --noEmit` OK, **5/5 fichiers, 32/32 tests passés** en 2.15s (`I18n.test.ts` 6, `HomeNavigation.test.ts` 10, `MovieInfo.test.ts` 6, `SeriesDetails.test.ts` 2, `LiveRecommendations.test.ts` 8)
+  - Apple (`cd apple && swift test --filter "AppLocalizationTests|AppBrandTests|SamsungChannelTransportTests|PromptSearchTests"`) → **32/32 tests passés, 0 échec** (`AppBrandTests` 7, `AppLocalizationTests` 6, `PromptSearchTests` 10, `SamsungChannelTransportTests` 9)
+  - Android (`cd android && ./gradlew --offline :core:designsystem:testDebugUnitTest :feature:live:testDebugUnitTest :feature:movies:testDebugUnitTest :feature:series:testDebugUnitTest :app:testDebugUnitTest --console=plain`) → **BUILD SUCCESSFUL in 1s** (`378 actionable tasks: 378 up-to-date`, `:feature:movies:testDebugUnitTest` et `:feature:series:testDebugUnitTest` `NO-SOURCE`, exit 0)
+- ⏸️ **À faire par l’utilisateur** : lancer les builds/installations sur les plateformes concernées (`xcodebuild` / Apple, `assembleDebug` / Android, `./scripts/build-tizen.sh` / TV Samsung) — non testé à l’écran sur les appareils physiques.
+
+---
+
+## 2026-11-14 — Antigravity (Swarm), Localisation bilingue FR/EN (Tizen, Apple, Android)
+
+- ✅ **Tizen (`tizen/`)** : dictionnaires [`fr.ts`](tizen/src/core/i18n/fr.ts) (défaut, 169 clés) et [`en.ts`](tizen/src/core/i18n/en.ts), store réactif [`index.ts`](tizen/src/core/i18n/index.ts) (`localStorage` `'buntu_app_language'`), sélecteur `Français` / `English` dans [`SettingsView.tsx`](tizen/src/features/settings/SettingsView.tsx), câblage `t(...)` dans `HomeView`, `SourcesView`, `AssistantModal`, `PairingView`, `PlayerView` et tests [`I18n.test.ts`](tizen/tests/I18n.test.ts).
+- ✅ **Apple (`apple/`)** : fichiers [`AppStringsFR.swift`](apple/Sources/CndIptvKit/Shared/Localization/AppStringsFR.swift), [`AppStringsEN.swift`](apple/Sources/CndIptvKit/Shared/Localization/AppStringsEN.swift), [`AppLanguage.swift`](apple/Sources/CndIptvKit/Shared/Localization/AppLanguage.swift) (`UserDefaults` `"buntu.appLanguage"`), sélecteur dans [`SettingsView.swift`](apple/Sources/CndIptvKit/Features/Settings/SettingsView.swift), câblage `t(...)` dans `AppShellView`, `SettingsView`, `HouseholdView` et tests [`AppLocalizationTests.swift`](apple/Tests/CndIptvAppTests/AppLocalizationTests.swift).
+- ✅ **Android (`android/`)** : fichiers [`AppStringsFr.kt`](android/core/designsystem/src/main/kotlin/com/pcoundia/buntu/core/designsystem/i18n/AppStringsFr.kt) (107 clés), [`AppStringsEn.kt`](android/core/designsystem/src/main/kotlin/com/pcoundia/buntu/core/designsystem/i18n/AppStringsEn.kt) (107 clés), [`AppLocalization.kt`](android/core/designsystem/src/main/kotlin/com/pcoundia/buntu/core/designsystem/i18n/AppLocalization.kt) (`SharedPreferences` `"buntu_app_language"`), init dans [`BuntuApplication.kt`](android/app/src/main/kotlin/com/pcoundia/buntu/BuntuApplication.kt), sélecteur dans [`SettingsScreen.kt`](android/feature/settings/src/main/kotlin/com/pcoundia/buntu/feature/settings/SettingsScreen.kt), câblage `t(...)` dans `MobileShell`, `TvShell`, `BuntuRoutes`, `DevicesScreen` et tests [`AppLocalizationTest.kt`](android/core/designsystem/src/test/kotlin/com/pcoundia/buntu/core/designsystem/i18n/AppLocalizationTest.kt).
+- ✅ **Vérifications (`verifier-4`)** :
+  - `./scripts/check-secrets.sh` → `secrets check: clean` (exit 0)
+  - Tizen (`cd tizen && npx tsc --noEmit && npx vitest run tests/I18n.test.ts tests/HomeNavigation.test.ts tests/TizenNiceToHave.test.ts`) → `tsc --noEmit` OK, **3/3 fichiers, 25/25 tests passés** (`HomeNavigation.test.ts` 10, `I18n.test.ts` 6, `TizenNiceToHave.test.ts` 9)
+  - Apple (`cd apple && swift test --filter "AppLocalizationTests|AppBrandTests|SamsungChannelTransportTests|PromptSearchTests"`) → **32/32 tests passés, 0 échec** (`AppBrandTests` 7, `AppLocalizationTests` 6, `PromptSearchTests` 10, `SamsungChannelTransportTests` 9)
+  - Android (`cd android && ./gradlew --offline :core:designsystem:testDebugUnitTest :feature:settings:testDebugUnitTest :feature:devices:testDebugUnitTest :app:testDebugUnitTest --console=plain`) → **BUILD SUCCESSFUL in 1s** (378 actionable tasks: 378 up-to-date, exit 0)
+- ⏸️ **À faire par l’utilisateur** : exécuter `cd apple && xcodegen generate` (nouveaux fichiers `.swift` ajoutés), puis lancer les builds/installations sur les plateformes concernées (`xcodebuild` / Apple, `assembleDebug` / Android, `./scripts/build-tizen.sh` / TV Samsung) — non testé à l’écran sur les appareils physiques.
+
+---
+
+## 2026-11-14 — Antigravity, Préparation prod Tizen
+
+- ✅ **Test [`AiKeyStore.test.ts`](tizen/tests/AiKeyStore.test.ts)** : ajout d'un mock `localStorage` dans `beforeEach` pour que `saveAiSettings({ provider: 'gemini' })` persiste réellement durant le test de migration.
+- ✅ **Script [`build-tizen.sh`](scripts/build-tizen.sh)** : ajout du mode production (`--prod` ou `TIZEN_PROD=1`), qui retire `<tizen:metadata ... devel.mode .../>` du `config.xml` empaqueté et exige la CLI `tizen` pour signer le `.wgt`.
+- ✅ **Tests** : `tsc --noEmit` + `npm test` (Tizen complet) → **64/64 fichiers, 369/369 tests passés** (0 échec) ; `bash -n scripts/build-tizen.sh` OK.
+- ⏸️ **À faire par l’utilisateur** : exécuter `./scripts/build-tizen.sh --prod` (avec profil de certificat distributeur Samsung configuré dans `TIZEN_PROFILE`) pour générer le `.wgt` de production, puis tester sur la TV.
+
+---
+
 ## 2026-11-14 — Antigravity, Constantes version & build sur toutes les apps
 
 - ✅ **Apple** : constantes `AppBrand.appVersion` (`"1.0.0"`) et `AppBrand.appBuild` (`"1"`) dans [`AppBrand.swift`](apple/Sources/CndIptvKit/Shared/Design/AppBrand.swift) ; `SettingsModel.appVersion` dans [`SettingsModel.swift`](apple/Sources/CndIptvKit/Features/Settings/SettingsModel.swift) utilise ces constantes en repli et formate `version (build X)` ; assertions ajoutées dans [`AppBrandTests.swift`](apple/Tests/CndIptvAppTests/AppBrandTests.swift).
@@ -508,3 +545,31 @@ Rien n'est commité. Rien n'est essayé sur un téléphone ni sur une Android TV
 | :--- | :--- | :--- |
 | Tampon vidéo plus grand pour les films | ✅ code + tests / ⏳ TV | `bufferPolicy` : direct 2 s / 3 s (inchangé), film 8 s avant lecture / 10 s à la reprise (c'était 4 / 6), film 4K (titre ou catégorie « 4K », « UHD », « 2160p ») 12 s / 18 s ; jamais plus de 20 s (mémoire de la TV). Le choix est transmis à AVPlay par `open(url, isLive, hint)` et conservé à la réouverture après veille. Coût : démarrage plus lent de quelques secondes. |
 | Message clair à la première pause d'un film | ✅ | Une fois le film lancé, une pause de chargement (hors saut dans le film) affiche « Débit trop faible pour ce film 4K » + « Un câble Ethernet ou une version HD aident. » (autre film : « pour ce flux »). Jamais en direct. `MovieBuffering` 8/8, `tsc` propre, suite verte hors `AiKeyStore`. **Non essayé sur la TV** : l'effet réel sur les pauses est à mesurer. Pas fait : réglage Court/Normal/Long, mesure du débit. |
+
+## 2026-11-14 — Codex, documentation du déploiement Tizen
+
+- ✅ Guide d’installation TV mis à jour et relié au guide de publication Samsung. Commandes vérifiées dans le Taskfile et les scripts. Build et installation à lancer par l’utilisateur.
+
+- ✅ Procédure Seller Office mise à jour avec le pré-test, les pièces de soumission et la demande de publication.
+- ⏳ À faire par l’utilisateur : générer et signer le WGT avec `./scripts/build-tizen.sh --prod`, puis le soumettre dans Seller Office.
+
+- ✅ Lien Seller Office TV corrigé dans le guide de publication.
+
+- ✅ Checklist Samsung 3.048 lu et comparé au WGT local. Autocontrôles sur TV et signature de production à vérifier.
+
+- ✅ Classeur Samsung 3.048 converti en Markdown dans `help/`, six onglets inclus.
+
+- ✅ Checklist Tizen : Retour depuis l’accueil et l’écran initial, arrêt du flux avant de quitter, gestion de l’économiseur via AppCommon, icône Seller Office et scénarios QA. TypeScript et 18 tests ciblés réussis.
+- ⏳ À faire par l’utilisateur : reconstruire le WGT signé avec `./scripts/build-tizen.sh --prod` pour intégrer les changements, vérifier sur TV puis soumettre au pré-test Seller Office. Le descriptif Samsung, les visuels 1920 × 1080, les captures et la source autorisée de test restent à préparer.
+
+- ✅ Visuels Seller Office exportés et vérifiés dans `help/` (logo RGBA, fond d’icône et fond de fiche en 1920 × 1080). Captures Tizen à fournir.
+
+- ✅ Captures du bundle Tizen dans Chromium exportées en JPG 1920 × 1080 dans help/. Essai sur téléviseur restant à faire.
+
+- ✅ Quatre captures originales de `help/raw/` converties en JPG 1920 × 1080 sous 500 Ko dans `help/samsung-screenshots/`.
+
+- ✅ PPTX de certification Samsung en anglais créé dans help/ avec les captures et scénarios QA. Source de test à renseigner dans Seller Office.
+
+- ✅ Nom du manifeste Tizen aligné sur Buntu IPTV. À faire par l’utilisateur : vérifier le WGT envoyé, puis reconstruire et signer un paquet de production si son nom diffère.
+
+- ✅ Version Tizen 1.0.1 (build 2) synchronisée après le refus de la version déjà enregistrée. WGT de production signé à reconstruire par l’utilisateur, puis pré-test à relancer.
