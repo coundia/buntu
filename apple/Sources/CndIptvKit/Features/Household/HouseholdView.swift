@@ -21,6 +21,8 @@ public struct HouseholdView: View {
     @State private var showingQR = false
     /// The key behind the QR code: read when the sheet opens, dropped when it closes.
     @State private var qrKey: String?
+    @State private var remoteCommandText = ""
+    @State private var remoteCommandSent = false
     #endif
     #if os(iOS)
     @State private var showingScanner = false
@@ -37,6 +39,11 @@ public struct HouseholdView: View {
         List {
             if store.isJoined {
                 thisDeviceSection
+                #if !os(tvOS)
+                if let localSync {
+                    remoteCommandSection(localSync)
+                }
+                #endif
                 devicesSection
                 syncLogSection
                 actionsSection
@@ -201,6 +208,46 @@ public struct HouseholdView: View {
         }
     }
 
+    #if !os(tvOS)
+    private func remoteCommandSection(_ sync: LocalSyncService) -> some View {
+        let isEmpty = remoteCommandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return Section {
+            TextField("Dictez (🎙️) ou écrivez une commande pour la TV…", text: $remoteCommandText)
+                .submitLabel(.send)
+                .onSubmit {
+                    sendRemoteCommand(sync)
+                }
+            Button {
+                sendRemoteCommand(sync)
+            } label: {
+                Label("Envoyer à la TV", systemImage: "paperplane.fill")
+            }
+            .disabled(isEmpty)
+            if remoteCommandSent {
+                Label("Commande envoyée à la TV.", systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
+        } header: {
+            Text("Commande vocale / texte vers la TV")
+        } footer: {
+            Text("Utilisez la dictée vocale (🎙️) du clavier ou écrivez une commande pour la TV.")
+        }
+    }
+
+    private func sendRemoteCommand(_ sync: LocalSyncService) {
+        let trimmed = remoteCommandText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        sync.sendRemoteText(remoteCommandText)
+        remoteCommandText = ""
+        remoteCommandSent = true
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            remoteCommandSent = false
+        }
+    }
+    #endif
+
     /// Devices heard on the network right now, then the household devices that are known but not
     /// currently reachable (shown offline), so the host sees every device of the household.
     private var householdPeers: [(peer: DiscoveredPeer, reachable: Bool)] {
@@ -234,7 +281,20 @@ public struct HouseholdView: View {
                 }
             }
         } header: {
-            Text("Appareils du foyer")
+            HStack {
+                Text("Appareils du foyer")
+                Spacer()
+                if let localSync, store.isJoined {
+                    Button {
+                        localSync.refreshPeers()
+                    } label: {
+                        Label("Actualiser", systemImage: "arrow.clockwise")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Actualiser les appareils du foyer")
+                }
+            }
         }
     }
 
@@ -439,3 +499,202 @@ public struct HouseholdView: View {
         return peer.state == "playing" ? "En lecture" : "Disponible"
     }
 }
+
+public enum RemoteCommandTargetResolver {
+    public static let allTargetId = "__all__"
+
+    public static func connectedPeers(from peers: [DiscoveredPeer], now: Date = Date()) -> [DiscoveredPeer] {
+        peers.filter { now.timeIntervalSince($0.lastSeen) < 120 }
+    }
+
+    public static func defaultSelection(connectedPeers: [DiscoveredPeer], current: String?) -> String? {
+        if connectedPeers.isEmpty { return nil }
+        if connectedPeers.count == 1 { return connectedPeers[0].id }
+        if let current, current == allTargetId || connectedPeers.contains(where: { $0.id == current }) {
+            return current
+        }
+        return allTargetId
+    }
+}
+
+#if !os(tvOS)
+/// Dedicated accessible screen "Commande TV" for sending voice-dictated or typed commands
+/// to one connected household device (auto-selected when unique) or all connected devices.
+public struct RemoteCommandView: View {
+    var localSync: LocalSyncService?
+    @State private var store = HouseholdStore.shared
+    @State private var commandText = ""
+    @State private var commandSent = false
+    @State private var selectedTargetId: String?
+
+    private static let quickCommands = ["France 2", "Chaîne suivante", "Un film d’action"]
+
+    public init(localSync: LocalSyncService?) {
+        self.localSync = localSync
+    }
+
+    private var connectedPeers: [DiscoveredPeer] {
+        RemoteCommandTargetResolver.connectedPeers(from: localSync?.activePeers ?? [])
+    }
+
+    public var body: some View {
+        List {
+            if !store.isJoined || localSync == nil {
+                notJoinedSection
+            } else if let localSync {
+                targetDevicesSection
+                commandInputSection(localSync)
+            }
+        }
+        .navigationTitle("Commande TV")
+        .onAppear { syncSelection() }
+        .onChange(of: connectedPeers.map(\.id)) { _, _ in syncSelection() }
+    }
+
+    private var notJoinedSection: some View {
+        Section("Foyer") {
+            Label("Aucun foyer connecté", systemImage: "house.slash")
+                .accessibilityLabel("Aucun foyer connecté")
+            Text("Rejoignez ou créez un foyer dans l’onglet « Appareils » pour envoyer des commandes vocales ou texte vers vos appareils.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityHint("Ouvrez l’onglet Appareils pour configurer votre foyer")
+        }
+    }
+
+    private var targetDevicesSection: some View {
+        Section {
+            if connectedPeers.isEmpty {
+                Label("Aucun appareil connecté", systemImage: "tv.slash")
+                    .accessibilityLabel("Aucun appareil connecté")
+                Text("Ouvrez Buntu sur votre TV ou un autre appareil sur le même Wi‑Fi.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if connectedPeers.count == 1, let peer = connectedPeers.first {
+                HStack(spacing: 12) {
+                    Image(systemName: HouseholdView.icon(for: peer.deviceType))
+                        .font(.title3)
+                        .foregroundStyle(.tint)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(peer.name)
+                            .font(.body)
+                        Text("Sélectionné automatiquement")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .accessibilityHidden(true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Appareil cible : \(peer.name)")
+                .accessibilityValue("Sélectionné automatiquement")
+            } else {
+                Picker("Appareil cible", selection: $selectedTargetId) {
+                    Text("Tous les appareils connectés")
+                        .tag(Optional(RemoteCommandTargetResolver.allTargetId))
+                    ForEach(connectedPeers) { peer in
+                        Label(peer.name, systemImage: HouseholdView.icon(for: peer.deviceType))
+                            .tag(Optional(peer.id))
+                    }
+                }
+                .accessibilityLabel("Appareil cible")
+                .accessibilityHint("Choisissez un appareil connecté ou tous les appareils du foyer")
+                .accessibilityValue(selectedTargetLabel)
+            }
+        } header: {
+            HStack {
+                Text("Appareils connectés")
+                Spacer()
+                if let localSync {
+                    Button {
+                        localSync.refreshPeers()
+                    } label: {
+                        Label("Actualiser", systemImage: "arrow.clockwise")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Actualiser les appareils connectés")
+                }
+            }
+        }
+    }
+
+    private func commandInputSection(_ sync: LocalSyncService) -> some View {
+        let isEmpty = commandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return Section {
+            TextField("Dictez (🎙️) ou écrivez une commande pour la TV…", text: $commandText)
+                .submitLabel(.send)
+                .onSubmit { sendCommand(sync) }
+                .accessibilityLabel("Commande pour la TV")
+                .accessibilityHint("Dictez au clavier ou saisissez une chaîne, un film ou une action")
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Self.quickCommands, id: \.self) { chip in
+                        Button(chip) {
+                            commandText = chip
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Suggestion : \(chip)")
+                        .accessibilityHint("Remplit le champ avec \(chip)")
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+
+            Button {
+                sendCommand(sync)
+            } label: {
+                Label("Envoyer", systemImage: "paperplane.fill")
+            }
+            .disabled(isEmpty || connectedPeers.isEmpty)
+            .accessibilityLabel("Envoyer la commande")
+            .accessibilityHint("Envoie la commande à l’appareil sélectionné")
+
+            if commandSent {
+                Label("Commande envoyée.", systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                    .accessibilityLabel("Commande envoyée")
+            }
+        } header: {
+            Text("Commande vocale / texte")
+        } footer: {
+            Text("Utilisez la dictée vocale (🎙️) du clavier ou sélectionnez une suggestion rapide.")
+        }
+    }
+
+    private var selectedTargetLabel: String {
+        guard let selectedTargetId, selectedTargetId != RemoteCommandTargetResolver.allTargetId else {
+            return "Tous les appareils connectés"
+        }
+        return connectedPeers.first(where: { $0.id == selectedTargetId })?.name ?? "Tous les appareils connectés"
+    }
+
+    private func syncSelection() {
+        selectedTargetId = RemoteCommandTargetResolver.defaultSelection(
+            connectedPeers: connectedPeers,
+            current: selectedTargetId
+        )
+    }
+
+    private func sendCommand(_ sync: LocalSyncService) {
+        let trimmed = commandText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let targetId = selectedTargetId ?? RemoteCommandTargetResolver.defaultSelection(
+            connectedPeers: connectedPeers,
+            current: nil
+        )
+        let targetPeerId = (targetId == nil || targetId == RemoteCommandTargetResolver.allTargetId) ? nil : targetId
+        sync.sendRemoteText(trimmed, targetPeerId: targetPeerId)
+        commandText = ""
+        commandSent = true
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            commandSent = false
+        }
+    }
+}
+#endif

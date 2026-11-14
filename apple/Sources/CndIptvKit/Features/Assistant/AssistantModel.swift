@@ -281,7 +281,7 @@ final class AssistantModel {
 
     // MARK: Submitting
 
-    func submit() async {
+    func submit(autoPlayFirstHit: Bool = false) async {
         let command = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !command.isEmpty, !isResolving else { return }
         suggestionTask?.cancel()
@@ -294,7 +294,7 @@ final class AssistantModel {
         if backend.supportsPromptSearch {
             refineTask?.cancel()
             isRefining = false
-            await submitSearch(command, generation: gen)
+            await submitSearch(command, generation: gen, autoPlayFirstHit: autoPlayFirstHit)
             return
         }
         let config = settings.providerConfig()
@@ -305,6 +305,9 @@ final class AssistantModel {
             guard gen == generation else { return }
             remember(command)
             perform(resolved)
+            if autoPlayFirstHit, case .none = resolved.action, let first = resolved.alternatives.first {
+                choose(first)
+            }
         } catch {
             guard gen == generation else { return }
             errorMessage = settings.explaining(userMessage(for: error))
@@ -313,7 +316,7 @@ final class AssistantModel {
     }
 
     /// Prompt search with the user's provider: a direct command is performed, anything else shows results.
-    private func submitSearch(_ command: String, generation gen: Int) async {
+    private func submitSearch(_ command: String, generation gen: Int, autoPlayFirstHit: Bool) async {
         let backend = self.backend
         let config = settings.providerConfig()
         let ctx = searchContext
@@ -323,6 +326,9 @@ final class AssistantModel {
                 remember(command)
                 searchResponse = cached.response
                 liveHits = cached.response.hits
+                if autoPlayFirstHit, let first = cached.response.hits.first {
+                    choose(first)
+                }
                 isResolving = false
                 return
             }
@@ -341,6 +347,9 @@ final class AssistantModel {
             } else {
                 searchResponse = response
                 liveHits = response.hits
+                if autoPlayFirstHit, let first = response.hits.first {
+                    choose(first)
+                }
             }
         } catch {
             guard gen == generation else { return }

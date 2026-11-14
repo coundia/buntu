@@ -28,6 +28,10 @@ final class AppBrandTests: XCTestCase {
         XCTAssertEqual(AppBrand.authorEmail, "papacoundia@gmail.com")
         XCTAssertEqual(AppBrand.authorCountry, "Sénégal")
         XCTAssertEqual(AppBrand.license, "MIT / Apache-2.0")
+        XCTAssertEqual(AppBrand.appVersion, "1.0.0")
+        XCTAssertEqual(AppBrand.appBuild, "1")
+        XCTAssertTrue(SettingsModel.appVersion.contains("1.0.0"))
+        XCTAssertTrue(SettingsModel.appVersion.contains("build"))
         XCTAssertEqual(
             AppBrand.neutralPlayerNotice,
             "Buntu ne fournit aucun contenu : il lit uniquement les sources que vous ajoutez. Vos données restent sur votre appareil."

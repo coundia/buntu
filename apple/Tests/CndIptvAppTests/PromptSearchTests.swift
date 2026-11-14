@@ -149,6 +149,25 @@ final class PromptSearchTests: XCTestCase {
         XCTAssertNil(model.searchResponse)
     }
 
+    func testRemoteSubmitAutoPlaysFirstHitWhenProviderFallsBackToLocalHits() async {
+        backend.aiResult = .success(SearchResponse(
+            command: nil,
+            hits: [
+                makeHit(.live, name: "FR - FRANCE 2 4K", id: 10),
+                makeHit(.live, name: "FR - FRANCE 2 HD", id: 11)
+            ],
+            missingTitles: [],
+            reply: "",
+            resolvedBy: "local",
+            latencyMs: 12,
+            fallbackReason: "HTTP 503"
+        ))
+        model.input = "Mets France 2"
+        await model.submit(autoPlayFirstHit: true)
+        XCTAssertEqual(played, ["FR - FRANCE 2 4K"])
+        XCTAssertEqual(dismissals, 1)
+    }
+
     func testNothingFoundHandsTheWordsToTheCatalogSearch() async {
         backend.aiResult = .success(response(hits: [], by: "local"))
         model.input = "zzzzz"

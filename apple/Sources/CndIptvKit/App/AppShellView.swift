@@ -19,6 +19,9 @@ enum AppTab: String, CaseIterable, Identifiable {
     #endif
     case sources
     case household
+    #if !os(tvOS)
+    case remoteCommand
+    #endif
     case settings
 
     var id: String { rawValue }
@@ -39,6 +42,9 @@ enum AppTab: String, CaseIterable, Identifiable {
         #endif
         case .sources: return "Sources"
         case .household: return "Appareils"
+        #if !os(tvOS)
+        case .remoteCommand: return "Commande TV"
+        #endif
         case .settings: return "Réglages"
         }
     }
@@ -59,6 +65,9 @@ enum AppTab: String, CaseIterable, Identifiable {
         #endif
         case .sources: return "antenna.radiowaves.left.and.right"
         case .household: return "house"
+        #if !os(tvOS)
+        case .remoteCommand: return "mic.fill"
+        #endif
         case .settings: return "gearshape"
         }
     }
@@ -588,6 +597,14 @@ private struct LoadedShellView: View {
         )
         commands.openAssistant = { openAssistant() }
         commands.showKeyboardShortcuts = { showingShortcuts = true }
+        state.localSync?.onRemoteText = { text in
+            Task { @MainActor in
+                openAssistant(startingWith: text, scope: .all)
+                if showingAssistant {
+                    await assistant.submit(autoPlayFirstHit: true)
+                }
+            }
+        }
 
         commands.addSource = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.addSource) }
         commands.importPlaylist = { selectedTabRaw = AppTab.sources.rawValue; sourcesModel.request(.importPlaylist) }
@@ -803,7 +820,12 @@ private struct LoadedShellView: View {
                 }
                 #endif
                 Section {
-                    ForEach([AppTab.sources, .household, .settings].filter { visibleTabs.contains($0) }) { tab in
+                    #if !os(tvOS)
+                    let utilityTabs: [AppTab] = [.sources, .household, .remoteCommand, .settings]
+                    #else
+                    let utilityTabs: [AppTab] = [.sources, .household, .settings]
+                    #endif
+                    ForEach(utilityTabs.filter { visibleTabs.contains($0) }) { tab in
                         Label(tab.title, systemImage: tab.systemImage)
                             .font(ui.font(.body))
                             .badge(badge(for: tab))
@@ -910,6 +932,9 @@ private struct LoadedShellView: View {
         case .libraryFolders: return libraryModel.folders.count
         #endif
         case .household: return Int(state.localSync?.activePeers.count ?? 0)
+        #if !os(tvOS)
+        case .remoteCommand: return 0
+        #endif
         case .guide, .settings, .recordings: return 0
         }
     }
@@ -979,6 +1004,10 @@ private struct LoadedShellView: View {
             #endif
             case .household:
                 HouseholdView(localSync: state.localSync)
+            #if !os(tvOS)
+            case .remoteCommand:
+                RemoteCommandView(localSync: state.localSync)
+            #endif
             case .settings:
                 #if !os(tvOS)
                 SettingsView(
