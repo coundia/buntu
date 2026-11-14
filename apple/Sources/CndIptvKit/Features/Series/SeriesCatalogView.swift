@@ -2,11 +2,15 @@ import SwiftUI
 import CndCoreBridge
 
 enum SeriesLabels {
+    @MainActor
     static func counts(_ series: SeriesRecord) -> String {
+        let lang = AppLanguageStore.shared
         let seasons = series.seasonCount
         let episodes = series.episodeCount
-        guard episodes > 0 else { return "Épisodes à charger" }
-        return "\(seasons) saison\(seasons > 1 ? "s" : "") · \(episodes) épisode\(episodes > 1 ? "s" : "")"
+        guard episodes > 0 else { return lang.t("series.counts.pending") }
+        let seasonText = lang.t(seasons > 1 ? "series.counts.season.other" : "series.counts.season.one", Int(seasons))
+        let episodeText = lang.t(episodes > 1 ? "series.counts.episode.other" : "series.counts.episode.one", Int(episodes))
+        return "\(seasonText) · \(episodeText)"
     }
 }
 
@@ -28,17 +32,18 @@ struct SeriesCatalogView: View {
     }
 
     var body: some View {
+        let lang = AppLanguageStore.shared
         VodCatalogView(
-            title: "Séries",
+            title: lang.t("series.title"),
             model: model,
             totalCount: totalSeries,
             revision: revision,
             viewModeKey: "series.viewMode",
-            titles: VodSectionTitles(resume: "Récemment consultées", resumeIcon: "clock", all: "Toutes les séries"),
+            titles: VodSectionTitles(resume: lang.t("series.section.recents"), resumeIcon: "clock", all: lang.t("series.section.all")),
             sortOptions: [.name, .rating, .recentlyAdded, .group],
-            searchPrompt: "Rechercher une série",
-            emptyDescription: "Ajoutez une source dans l'onglet Sources pour importer des séries.",
-            assistantStarter: "une série ",
+            searchPrompt: lang.t("series.searchPrompt"),
+            emptyDescription: lang.t("series.empty.description"),
+            assistantStarter: lang.t("series.assistantStarter"),
             onOpenAssistant: onOpenAssistant,
             forYou: forYou
         ) { series, style in
@@ -83,10 +88,11 @@ struct SeriesCard: View {
             }
         }
         .contextMenu {
-            Button(series.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
+            let lang = AppLanguageStore.shared
+            Button(lang.t(series.isFavorite ? "series.favorite.remove" : "series.favorite.add"),
                    systemImage: series.isFavorite ? "star.slash" : "star", action: onToggleFavorite)
             if let onToggleBroken {
-                Button(series.isBroken ? "Rétablir le flux" : "Signaler en panne",
+                Button(lang.t(series.isBroken ? "series.broken.restore" : "series.broken.report"),
                        systemImage: series.isBroken ? "checkmark.circle" : "exclamationmark.triangle",
                        action: onToggleBroken)
             }
@@ -127,7 +133,7 @@ struct SeriesCard: View {
                     .foregroundStyle(series.isFavorite ? Color.yellow : Color.secondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(series.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+            .accessibilityLabel(AppLanguageStore.shared.t(series.isFavorite ? "series.favorite.remove" : "series.favorite.add"))
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())

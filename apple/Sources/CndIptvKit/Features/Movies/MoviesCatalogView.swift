@@ -18,17 +18,18 @@ struct MoviesCatalogView: View {
     }
 
     var body: some View {
+        let lang = AppLanguageStore.shared
         VodCatalogView(
-            title: "Films",
+            title: lang.t("movies.title"),
             model: model,
             totalCount: totalMovies,
             revision: revision,
             viewModeKey: "movies.viewMode",
-            titles: VodSectionTitles(resume: "Reprendre", resumeIcon: "play.circle", all: "Tous les films"),
+            titles: VodSectionTitles(resume: lang.t("movies.section.resume"), resumeIcon: "play.circle", all: lang.t("movies.section.all")),
             sortOptions: [.name, .rating, .recentlyAdded, .group, .host],
-            searchPrompt: "Rechercher un film",
-            emptyDescription: "Ajoutez une source dans l'onglet Sources pour importer des films.",
-            assistantStarter: "un film ",
+            searchPrompt: lang.t("movies.searchPrompt"),
+            emptyDescription: lang.t("movies.empty.description"),
+            assistantStarter: lang.t("movies.assistantStarter"),
             onOpenAssistant: onOpenAssistant,
             forYou: forYou
         ) { item, style in

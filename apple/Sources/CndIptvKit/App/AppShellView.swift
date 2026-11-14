@@ -26,26 +26,28 @@ enum AppTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    @MainActor
     var title: String {
+        let lang = AppLanguageStore.shared
         switch self {
-        case .live: return "Live TV"
-        case .guide: return "Guide TV"
-        case .movies: return "Films"
-        case .series: return "Séries"
-        case .downloads: return "Téléchargements"
-        case .recordings: return "Enregistrements"
+        case .live: return lang.t("tab.live")
+        case .guide: return lang.t("tab.guide")
+        case .movies: return lang.t("tab.movies")
+        case .series: return lang.t("tab.series")
+        case .downloads: return lang.t("tab.downloads")
+        case .recordings: return lang.t("tab.recordings")
         #if !os(tvOS)
-        case .libraryVideo: return "Vidéos"
-        case .libraryAudio: return "Audio"
-        case .libraryImages: return "Photos"
-        case .libraryFolders: return "Dossiers"
+        case .libraryVideo: return lang.t("tab.libraryVideo")
+        case .libraryAudio: return lang.t("tab.libraryAudio")
+        case .libraryImages: return lang.t("tab.libraryImages")
+        case .libraryFolders: return lang.t("tab.libraryFolders")
         #endif
-        case .sources: return "Sources"
-        case .household: return "Appareils"
+        case .sources: return lang.t("tab.sources")
+        case .household: return lang.t("tab.household")
         #if !os(tvOS)
-        case .remoteCommand: return "Commande TV"
+        case .remoteCommand: return lang.t("tab.remoteCommand")
         #endif
-        case .settings: return "Réglages"
+        case .settings: return lang.t("tab.settings")
         }
     }
 
@@ -88,9 +90,9 @@ public struct AppShellView: View {
             if let engine = state.engine {
                 LoadedShellView(state: state, engine: engine, commands: commands)
             } else if let error = state.errorMessage {
-                ContentUnavailableView("Démarrage impossible", systemImage: "exclamationmark.triangle", description: Text(error))
+                ContentUnavailableView(AppLanguageStore.shared.t("shell.startupFailed"), systemImage: "exclamationmark.triangle", description: Text(error))
             } else {
-                ProgressView("Initialisation du moteur…")
+                ProgressView(AppLanguageStore.shared.t("shell.initializing"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -233,10 +235,10 @@ private struct LoadedShellView: View {
                 }
             }
             .alert(
-                "Erreur",
+                AppLanguageStore.shared.t("common.error"),
                 isPresented: Binding(get: { state.errorMessage != nil }, set: { if !$0 { state.errorMessage = nil } })
             ) {
-                Button("OK") { state.errorMessage = nil }
+                Button(AppLanguageStore.shared.t("common.ok")) { state.errorMessage = nil }
             } message: {
                 Text(state.errorMessage ?? "")
             }
@@ -745,7 +747,7 @@ private struct LoadedShellView: View {
 
     private var logsButton: some View {
         Button { toggleLogs() } label: {
-            Label("Journaux", systemImage: "terminal")
+            Label(AppLanguageStore.shared.t("shell.logs"), systemImage: "terminal")
                 .font(ui.font(.body))
                 .frame(maxWidth: .infinity, minHeight: ui.minHitTarget - 12, alignment: .leading)
         }
@@ -759,27 +761,27 @@ private struct LoadedShellView: View {
         .background(.bar)
         #endif
         .overlay(alignment: .top) { Divider() }
-        .help("Afficher ou masquer les journaux de l'application (⇧⌘C)")
-        .accessibilityLabel(state.showNetworkConsole ? "Masquer les journaux" : "Afficher les journaux")
+        .help(AppLanguageStore.shared.t("shell.logs.help"))
+        .accessibilityLabel(state.showNetworkConsole ? AppLanguageStore.shared.t("shell.logs.hide") : AppLanguageStore.shared.t("shell.logs.show"))
     }
 
     /// Only shown while the Kids profile is active: asks for the PIN, then returns to a regular profile.
     private var kidsExitButton: some View {
         Button { showingKidsExit = true } label: {
-            Label("Quitter le profil Enfants", systemImage: "lock.fill")
+            Label(AppLanguageStore.shared.t("shell.kids.exit"), systemImage: "lock.fill")
                 .labelStyle(.iconOnly)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.orange)
-        .help("Quitter le profil Enfants")
-        .accessibilityLabel("Quitter le profil Enfants")
+        .help(AppLanguageStore.shared.t("shell.kids.exit"))
+        .accessibilityLabel(AppLanguageStore.shared.t("shell.kids.exit"))
     }
 
     private var logsToolbarButton: some View {
         Button { toggleLogs() } label: {
-            Label("Journaux", systemImage: state.showNetworkConsole ? "terminal.fill" : "terminal")
+            Label(AppLanguageStore.shared.t("shell.logs"), systemImage: state.showNetworkConsole ? "terminal.fill" : "terminal")
         }
-        .accessibilityLabel(state.showNetworkConsole ? "Masquer les journaux" : "Afficher les journaux")
+        .accessibilityLabel(state.showNetworkConsole ? AppLanguageStore.shared.t("shell.logs.hide") : AppLanguageStore.shared.t("shell.logs.show"))
     }
 
     // MARK: Platform shells
@@ -792,7 +794,7 @@ private struct LoadedShellView: View {
                 get: { selectedTab },
                 set: { if let tab = $0 { selectedTabRaw = tab.rawValue } }
             )) {
-                Section("IPTV") {
+                Section(AppLanguageStore.shared.t("shell.section.iptv")) {
                     ForEach([AppTab.live, .guide, .movies, .series, .downloads, .recordings].filter { visibleTabs.contains($0) }) { tab in
                         Label(tab.title, systemImage: tab.systemImage)
                             .font(ui.font(.body))
@@ -810,7 +812,7 @@ private struct LoadedShellView: View {
                     }
                 } header: {
                     HStack {
-                        Text("Mes fichiers")
+                        Text(AppLanguageStore.shared.t("shell.section.myFiles"))
                         Spacer()
                         if libraryModel.isScanning {
                             ProgressView()

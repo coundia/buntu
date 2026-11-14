@@ -66,7 +66,7 @@ final class MovieDetailsModel {
 
     func refreshMetadata(force: Bool) async {
         guard let key = vod.omdbKey() else {
-            metadataMessage = "Ajoutez une clé OMDb dans les Réglages pour enrichir la fiche."
+            metadataMessage = AppLanguageStore.shared.t("movies.omdb.missingKey")
             return
         }
         guard !isLoadingMetadata else { return }
@@ -76,7 +76,7 @@ final class MovieDetailsModel {
         do {
             let result = try await vod.engine.fetchItemMetadata(itemId: item.id, apiKey: key, forceRefresh: force)
             metadata = result
-            if result == nil { metadataMessage = "Aucune fiche OMDb trouvée pour ce titre." }
+            if result == nil { metadataMessage = AppLanguageStore.shared.t("movies.omdb.notFound") }
             await reloadItem()
         } catch {
             metadataMessage = userMessage(for: error)
@@ -122,7 +122,7 @@ struct MovieDetailsView: View {
                 VStack(alignment: .leading, spacing: compact ? 12 : 16) {
                     actions
                     if model.isLoadingMetadata {
-                        HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Enrichissement OMDb…").foregroundStyle(.secondary) }
+                        HStack(spacing: 8) { ProgressView().controlSize(.small); Text(AppLanguageStore.shared.t("movies.omdb.loading")).foregroundStyle(.secondary) }
                             .font(.callout)
                     } else if let message = model.metadataMessage {
                         Label(message, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary)
@@ -173,7 +173,7 @@ struct MovieDetailsView: View {
             if let onClose {
                 Button(action: onClose) { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Fermer la fiche")
+                    .accessibilityLabel(AppLanguageStore.shared.t("movies.a11y.closeDetails"))
             }
         }
         .padding([.horizontal, .top], 14)
@@ -224,11 +224,11 @@ struct MovieDetailsView: View {
             if let rating, rating > 0 {
                 Label(String(format: "%.1f", rating), systemImage: "star.fill").foregroundStyle(.yellow)
                 if let votes = model.metadata?.imdbVotes, votes != "N/A" {
-                    Text("\(votes) votes").font(.caption).opacity(0.8)
+                    Text(AppLanguageStore.shared.t("movies.rating.votes", votes)).font(.caption).opacity(0.8)
                 }
             }
             if let meta = model.metadata?.metascore, meta != "N/A" {
-                Text("Metascore \(meta)").font(.caption.weight(.semibold))
+                Text(AppLanguageStore.shared.t("movies.rating.metascore", meta)).font(.caption.weight(.semibold))
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(.green.opacity(0.8), in: RoundedRectangle(cornerRadius: 4))
             }
@@ -252,38 +252,39 @@ struct MovieDetailsView: View {
 
     @ViewBuilder
     private var primaryButtons: some View {
+        let lang = AppLanguageStore.shared
         if let position = model.resumePosition {
             Button { model.vod.play(item, resume: true) } label: {
-                Label("Reprendre (\(TimeFormat.hms(milliseconds: position)))", systemImage: "play.fill")
+                Label(lang.t("movies.action.resumeAt", TimeFormat.hms(milliseconds: position)), systemImage: "play.fill")
             }
             .buttonStyle(.borderedProminent)
             Button { model.vod.play(item, resume: false) } label: {
-                Label("Recommencer depuis le début", systemImage: "arrow.counterclockwise")
+                Label(lang.t("movies.action.restart"), systemImage: "arrow.counterclockwise")
             }
             .buttonStyle(.bordered)
         } else {
-            Button { model.vod.play(item, resume: false) } label: { Label("Lire", systemImage: "play.fill") }
+            Button { model.vod.play(item, resume: false) } label: { Label(lang.t("movies.action.play"), systemImage: "play.fill") }
                 .buttonStyle(.borderedProminent)
         }
-        Button { model.vod.downloadMovie(item) } label: { Label("Télécharger", systemImage: "arrow.down.circle") }
+        Button { model.vod.downloadMovie(item) } label: { Label(lang.t("movies.action.download"), systemImage: "arrow.down.circle") }
             .buttonStyle(.bordered)
         Button { Task { await model.toggleFavorite() } } label: {
-            Label("Favori", systemImage: item.isFavorite ? "star.fill" : "star")
+            Label(lang.t("movies.action.favorite"), systemImage: item.isFavorite ? "star.fill" : "star")
         }
         .buttonStyle(.bordered)
-        .help(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
-        .accessibilityLabel(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+        .help(lang.t(item.isFavorite ? "movies.favorite.remove" : "movies.favorite.add"))
+        .accessibilityLabel(lang.t(item.isFavorite ? "movies.favorite.remove" : "movies.favorite.add"))
         Button { Task { await model.toggleBroken() } } label: {
             if item.isBroken {
-                Label("HS", systemImage: "exclamationmark.triangle.fill")
+                Label(lang.t("movies.broken.badge"), systemImage: "exclamationmark.triangle.fill")
             } else {
                 Image(systemName: "exclamationmark.triangle")
             }
         }
         .buttonStyle(.bordered)
         .tint(item.isBroken ? .red : .secondary)
-        .help(item.isBroken ? "Signalé en panne — cliquer pour rétablir" : "Signaler ce flux en panne")
-        .accessibilityLabel(item.isBroken ? "Rétablir le flux" : "Signaler en panne")
+        .help(lang.t(item.isBroken ? "movies.broken.restoreHelp" : "movies.broken.reportHelp"))
+        .accessibilityLabel(lang.t(item.isBroken ? "movies.broken.restore" : "movies.broken.report"))
         Menu {
             MovieActionsMenu(
                 item: item, vod: model.vod,
@@ -292,7 +293,7 @@ struct MovieDetailsView: View {
                 onRefreshMetadata: { Task { await model.refreshMetadata(force: true) } }
             )
         } label: {
-            Label("Plus", systemImage: "ellipsis.circle")
+            Label(lang.t("movies.action.more"), systemImage: "ellipsis.circle")
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -305,16 +306,17 @@ struct MovieDetailsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Divider().padding(.vertical, 4)
             HStack {
+                let lang = AppLanguageStore.shared
                 let title = if let saga = model.sagaInfo {
-                    "Dans la saga \(saga.name)"
+                    lang.t("movies.recommendations.inSaga", saga.name)
                 } else {
-                    "Titres recommandés"
+                    lang.t("movies.recommendations.title")
                 }
                 Text(title)
                     .font(.headline)
                 Spacer()
                 if let saga = model.sagaInfo, !saga.missingTitles.isEmpty {
-                    Text("\(saga.missingTitles.count) absent(s)")
+                    Text(lang.t("movies.recommendations.missingCount", saga.missingTitles.count))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -360,9 +362,10 @@ struct MovieDetailsView: View {
 
     @ViewBuilder
     private var credits: some View {
+        let lang = AppLanguageStore.shared
         VStack(alignment: .leading, spacing: 8) {
-            creditRow("Réalisateur", model.metadata?.director)
-            creditRow("Acteurs", model.metadata?.actors)
+            creditRow(lang.t("movies.credits.director"), model.metadata?.director)
+            creditRow(lang.t("movies.credits.actors"), model.metadata?.actors)
         }
     }
 
@@ -377,25 +380,26 @@ struct MovieDetailsView: View {
     }
 
     private var debugPanel: some View {
+        let lang = AppLanguageStore.shared
         #if os(tvOS)
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Informations techniques").font(.headline)
-            debugRow("IMDb", model.metadata?.imdbId ?? item.imdbId)
-            debugRow("Source", model.metadata.map { $0.fromCache ? "cache SQLite" : "réseau" })
-            debugRow("Hôte du flux", item.host)
-            debugRow("Conteneur", item.containerExt)
-            debugRow("Hash", item.stableHash)
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(lang.t("movies.debug.title")).font(.headline)
+            debugRow(lang.t("movies.debug.imdb"), model.metadata?.imdbId ?? item.imdbId)
+            debugRow(lang.t("movies.debug.source"), model.metadata.map { lang.t($0.fromCache ? "movies.debug.cacheSqlite" : "movies.debug.network") })
+            debugRow(lang.t("movies.debug.streamHost"), item.host)
+            debugRow(lang.t("movies.debug.container"), item.containerExt)
+            debugRow(lang.t("movies.debug.hash"), item.stableHash)
         }
         .font(.caption)
         .padding(.top, 6)
         #else
-        DisclosureGroup("Informations techniques OMDb", isExpanded: $showsDebug) {
+        return DisclosureGroup(lang.t("movies.debug.omdbTitle"), isExpanded: $showsDebug) {
             VStack(alignment: .leading, spacing: 4) {
-                debugRow("IMDb", model.metadata?.imdbId ?? item.imdbId)
-                debugRow("Source", model.metadata.map { $0.fromCache ? "cache SQLite" : "réseau" })
-                debugRow("Hôte du flux", item.host)
-                debugRow("Conteneur", item.containerExt)
-                debugRow("Hash", item.stableHash)
+                debugRow(lang.t("movies.debug.imdb"), model.metadata?.imdbId ?? item.imdbId)
+                debugRow(lang.t("movies.debug.source"), model.metadata.map { lang.t($0.fromCache ? "movies.debug.cacheSqlite" : "movies.debug.network") })
+                debugRow(lang.t("movies.debug.streamHost"), item.host)
+                debugRow(lang.t("movies.debug.container"), item.containerExt)
+                debugRow(lang.t("movies.debug.hash"), item.stableHash)
             }
             .font(.caption.monospaced())
             .padding(.top, 6)

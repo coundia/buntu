@@ -104,41 +104,42 @@ struct LiveTvView: View {
 
     var body: some View {
         @Bindable var filter = model.filter
+        let lang = AppLanguageStore.shared
         return CategoryNavigation(
             groups: model.groups,
             totalCount: totalChannels,
-            allTitle: "Toutes les chaînes",
+            allTitle: lang.t("live.allChannels"),
             selection: $filter.group
         ) {
             channelContent
         }
-        .navigationTitle("Live TV")
+        .navigationTitle(lang.t("live.title"))
         .searchFilterToolbar(
             state: model.filter,
             groups: model.groups,
             hosts: model.hosts,
             sortOptions: [.channelNumber, .name, .group, .host],
-            prompt: "Rechercher une chaîne"
+            prompt: lang.t("live.searchPrompt")
         )
         .onAppear { applySearchRequest() }
         .onChange(of: searchRequest) { _, _ in applySearchRequest() }
         .toolbar {
             if let onOpenAssistant {
                 ToolbarItem(placement: .automatic) {
-                    Button(action: onOpenAssistant) { Label("Assistant", systemImage: "sparkles") }
-                        .help("Changer de chaîne en langage naturel (⌘K)")
+                    Button(action: onOpenAssistant) { Label(lang.t("live.toolbar.assistant"), systemImage: "sparkles") }
+                        .help(lang.t("live.toolbar.assistantHelp"))
                 }
             }
             if let onOpenMultiView {
                 ToolbarItem(placement: .automatic) {
-                    Button(action: onOpenMultiView) { Label("Mosaïque", systemImage: "square.grid.2x2") }
-                        .help("Ouvrir la mosaïque de flux (Multi-View)")
+                    Button(action: onOpenMultiView) { Label(lang.t("live.toolbar.multiView"), systemImage: "square.grid.2x2") }
+                        .help(lang.t("live.toolbar.multiViewHelp"))
                 }
             }
             ToolbarItem(placement: .automatic) {
-                Picker("Affichage", selection: $viewModeRaw) {
-                    Label("Grille", systemImage: "square.grid.2x2").tag(LiveViewMode.grid.rawValue)
-                    Label("Liste", systemImage: "list.bullet").tag(LiveViewMode.list.rawValue)
+                Picker(lang.t("live.toolbar.viewMode"), selection: $viewModeRaw) {
+                    Label(lang.t("live.toolbar.viewMode.grid"), systemImage: "square.grid.2x2").tag(LiveViewMode.grid.rawValue)
+                    Label(lang.t("live.toolbar.viewMode.list"), systemImage: "list.bullet").tag(LiveViewMode.list.rawValue)
                 }
                 .pickerStyle(.segmented)
             }
@@ -182,12 +183,12 @@ struct LiveTvView: View {
                         Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
                     }
                     if model.searchIgnoresCategory {
-                        Label("Recherche dans toutes les catégories", systemImage: "magnifyingglass")
+                        Label(AppLanguageStore.shared.t("live.searchAllCategories"), systemImage: "magnifyingglass")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     if model.showsSections {
-                        horizontalSection("Récemment consultés", icon: "clock", items: model.recents)
-                        horizontalSection("Favoris", icon: "star.fill", items: model.favorites)
+                        horizontalSection(AppLanguageStore.shared.t("live.section.recents"), icon: "clock", items: model.recents)
+                        horizontalSection(AppLanguageStore.shared.t("live.section.favorites"), icon: "star.fill", items: model.favorites)
                         #if !os(macOS)
                         if playingURL == nil, let forYou {
                             ForYouShelves(model: forYou, onRefreshGuide: onRefreshGuide) { recoCard in
@@ -196,7 +197,7 @@ struct LiveTvView: View {
                         }
                         #endif
                         if !model.recents.isEmpty || !model.favorites.isEmpty {
-                            Text("Toutes les chaînes").font(.title3.bold())
+                            Text(AppLanguageStore.shared.t("live.allChannels")).font(.title3.bold())
                         }
                     }
                     switch viewMode {
@@ -224,9 +225,9 @@ struct LiveTvView: View {
         Group {
             if model.filter.query.isEmpty && !model.filter.hasActiveFilter {
                 ContentUnavailableView(
-                    "Aucune chaîne",
+                    AppLanguageStore.shared.t("live.empty.title"),
                     systemImage: "tv.slash",
-                    description: Text("Ajoutez une source dans l'onglet Sources pour importer des chaînes.")
+                    description: Text(AppLanguageStore.shared.t("live.empty.description"))
                 )
             } else {
                 ContentUnavailableView.search(text: model.filter.query)
@@ -311,6 +312,7 @@ private struct MirrorSheetView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        let lang = AppLanguageStore.shared
         NavigationStack {
             List {
                 Section {
@@ -322,19 +324,19 @@ private struct MirrorSheetView: View {
                             }
                         }
                         Spacer()
-                        Text("Actuel")
+                        Text(lang.t("live.mirrors.current"))
                             .font(.caption.bold())
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(Color.secondary.opacity(0.2), in: Capsule())
                     }
                 } header: {
-                    Text("Chaîne sélectionnée")
+                    Text(lang.t("live.mirrors.selectedChannel"))
                 }
 
                 Section {
                     if mirrors.isEmpty {
-                        Text("Aucun flux miroir trouvé pour cette chaîne.")
+                        Text(lang.t("live.mirrors.none"))
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(mirrors, id: \.id) { mirror in
@@ -352,7 +354,7 @@ private struct MirrorSheetView: View {
                                     Text(mirror.host).font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Button("Lire") {
+                                Button(lang.t("live.action.play")) {
                                     dismiss()
                                     onPlay(mirror)
                                 }
@@ -362,13 +364,13 @@ private struct MirrorSheetView: View {
                         }
                     }
                 } header: {
-                    Text("Flux alternatifs (\(mirrors.count))")
+                    Text(lang.t("live.mirrors.alternatives", mirrors.count))
                 }
             }
-            .navigationTitle("Flux Miroirs")
+            .navigationTitle(lang.t("live.mirrors.title"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Fermer") { dismiss() }
+                    Button(lang.t("common.close")) { dismiss() }
                 }
             }
         }
