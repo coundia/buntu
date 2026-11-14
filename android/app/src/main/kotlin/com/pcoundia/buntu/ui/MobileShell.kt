@@ -99,6 +99,7 @@ fun MobileShell(
                             TopLevelDestination.DOWNLOADS,
                             TopLevelDestination.SOURCES,
                             TopLevelDestination.DEVICES,
+                            TopLevelDestination.REMOTE_COMMAND,
                         ).forEach { secondary ->
                             FilterChip(
                                 selected = secondary.matches(currentRoute),

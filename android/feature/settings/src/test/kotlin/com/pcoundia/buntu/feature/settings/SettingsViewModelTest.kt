@@ -249,6 +249,8 @@ class SettingsViewModelTest {
     @Test
     fun `about info exposes Buntu identity, author metadata, license and neutral player notice`() {
         assertEquals("Buntu", BuntuAboutInfo.APP_NAME)
+        assertEquals("1.0.0", BuntuAboutInfo.APP_VERSION)
+        assertEquals("1", BuntuAboutInfo.APP_BUILD)
         assertEquals("Sa bunt ci lépp — La porte d'entrée de tous vos médias.", BuntuAboutInfo.SLOGAN)
         assertEquals("Papa COUNDIA", BuntuAboutInfo.AUTHOR_NAME)
         assertEquals("papacoundia@gmail.com", BuntuAboutInfo.AUTHOR_EMAIL)

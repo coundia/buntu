@@ -823,6 +823,23 @@ class LocalSyncService @Inject constructor(
         _syncStatus.value = "Données demandées à $totalTargets connexion(s)…"
     }
 
+    /** Restarts NSD discovery and sends a heartbeat to check which household devices are online. */
+    override suspend fun refreshPeers() {
+        lifecycleMutex.withLock {
+            if (!store.isJoined.value) return
+            if (!running) {
+                store.loadFromStore()
+                startLocked()
+                return@withLock
+            }
+            log("Actualisation des appareils du foyer…")
+            stopDiscovery()
+            startDiscovery()
+            store.householdId.value?.takeIf { it.isNotEmpty() }?.let { samsung.start(it) }
+        }
+        if (running) heartbeat()
+    }
+
     /**
      * `full` sends everything ("Envoyer mes données"); `askBack` also asks the others for theirs.
      * The 60 s round only sends what changed (a `sync_request` every minute would make every device
@@ -1166,4 +1183,26 @@ class LocalSyncService @Inject constructor(
     }
 
     override suspend fun currentHouseholdKeyHex(): String? = store.currentHouseholdKeyHex()
+
+    override suspend fun sendRemoteText(text: String, targetPeerId: String?) {
+        withContext(Dispatchers.IO) {
+            val trimmed = text.trim()
+            if (trimmed.isEmpty()) return@withContext
+            val target = targetPeerId?.takeIf { it.isNotBlank() }
+            val payload = JSONObject()
+                .put("type", "remote_text")
+                .put("text", trimmed)
+                .apply {
+                    if (target != null) {
+                        put("target_device_id", target)
+                    }
+                }
+                .toString()
+            if (target != null) {
+                sendToPeer(target, payload)
+            } else {
+                broadcastMessage(payload)
+            }
+        }
+    }
 }

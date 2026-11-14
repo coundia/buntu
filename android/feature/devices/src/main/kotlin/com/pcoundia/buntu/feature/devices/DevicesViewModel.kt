@@ -35,6 +35,8 @@ data class DevicesUiState(
     val deviceType: String = "mobile",
     val syncStatus: String = "Prêt",
     val peers: List<DiscoveredPeer> = emptyList(),
+    val connectedPeers: List<DiscoveredPeer> = emptyList(),
+    val selectedTargetId: String? = null,
     val syncLog: List<SyncLogEntry> = emptyList(),
     val errorMessage: String? = null,
     val infoMessage: String? = null,
@@ -59,6 +61,7 @@ class DevicesViewModel @Inject constructor(
     private val _infoMessage = MutableStateFlow<String?>(null)
     private val _inviteQr = MutableStateFlow<QrMatrix?>(null)
     private val _isScanning = MutableStateFlow(false)
+    private val _selectedTargetId = MutableStateFlow<String?>(null)
 
     private data class HouseholdSnapshot(
         val isJoined: Boolean,
@@ -83,8 +86,14 @@ class DevicesViewModel @Inject constructor(
         _errorMessage,
         _infoMessage,
         _inviteQr,
-        _isScanning,
-    ) { snap, error, info, inviteQr, scanning ->
+        combine(_isScanning, _selectedTargetId, ::Pair),
+    ) { snap, error, info, inviteQr, (scanning, selectedTarget) ->
+        val connectedPeers = snap.peers.filter { it.state != "offline" }
+        val resolvedTargetId = when {
+            connectedPeers.isEmpty() -> null
+            connectedPeers.size == 1 -> connectedPeers[0].id
+            else -> selectedTarget?.takeIf { id -> connectedPeers.any { it.id == id } }
+        }
         DevicesUiState(
             isJoined = snap.isJoined,
             householdId = snap.householdId,
@@ -93,6 +102,8 @@ class DevicesViewModel @Inject constructor(
             deviceType = householdRepo.deviceType,
             syncStatus = snap.status,
             peers = snap.peers,
+            connectedPeers = connectedPeers,
+            selectedTargetId = resolvedTargetId,
             syncLog = snap.log,
             errorMessage = error,
             infoMessage = info,
@@ -255,6 +266,43 @@ class DevicesViewModel @Inject constructor(
                 householdRepo.receiveNow()
             } catch (e: Exception) {
                 _errorMessage.value = "Erreur de réception: ${e.message}"
+            }
+        }
+    }
+
+    fun selectTargetDevice(peerId: String?) {
+        _selectedTargetId.value = peerId
+    }
+
+    /** Refreshes local network discovery and pings household peers. */
+    fun refreshPeers() {
+        viewModelScope.launch {
+            try {
+                _errorMessage.value = null
+                householdRepo.refreshPeers()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                _errorMessage.value = "Erreur d'actualisation: ${e.message}"
+            }
+        }
+    }
+
+    /** Sends a dictated or typed command to the selected household device(s). */
+    fun sendRemoteText(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        val targetPeerId = uiState.value.selectedTargetId
+        viewModelScope.launch {
+            try {
+                _errorMessage.value = null
+                householdRepo.sendRemoteText(trimmed, targetPeerId)
+                _infoMessage.value = "Commande envoyée à la TV."
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                _infoMessage.value = null
+                _errorMessage.value = "Erreur d'envoi: ${e.message}"
             }
         }
     }

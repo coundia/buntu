@@ -1,12 +1,20 @@
 package com.pcoundia.buntu.feature.devices
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,16 +26,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Tv
@@ -36,11 +49,14 @@ import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -58,10 +74,15 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -89,6 +110,21 @@ fun DevicesRoute(
     var showJoinDialog by remember { mutableStateOf(false) }
     var joinKeyInput by remember { mutableStateOf("") }
     var showLeaveConfirmDialog by remember { mutableStateOf(false) }
+    var remoteCommandText by remember { mutableStateOf("") }
+    var speechUnavailable by remember { mutableStateOf(false) }
+
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val results = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spoken = results?.firstOrNull { it.isNotBlank() }?.trim()
+            if (!spoken.isNullOrEmpty()) {
+                remoteCommandText = spoken
+                viewModel.sendRemoteText(spoken)
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -256,14 +292,105 @@ fun DevicesRoute(
                 }
             }
 
+            if (!state.isTv) {
+                item(key = "remote_text") {
+                    DeviceSectionCard(title = "Commande vocale / texte vers la TV") {
+                        OutlinedTextField(
+                            value = remoteCommandText,
+                            onValueChange = { remoteCommandText = it },
+                            label = { Text("Dicter ou écrire une commande pour la TV") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(
+                                onSend = {
+                                    if (remoteCommandText.isNotBlank()) {
+                                        viewModel.sendRemoteText(remoteCommandText)
+                                        remoteCommandText = ""
+                                    }
+                                },
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                        putExtra(
+                                            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                                        )
+                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fr-FR")
+                                    }
+                                    try {
+                                        speechUnavailable = false
+                                        speechLauncher.launch(intent)
+                                    } catch (_: ActivityNotFoundException) {
+                                        speechUnavailable = true
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Mic,
+                                    contentDescription = null,
+                                    tint = BuntuPalette.PureWhite,
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Dicter", color = BuntuPalette.PureWhite, maxLines = 1)
+                            }
+                            BuntuPrimaryActionButton(
+                                label = "Envoyer à la TV",
+                                enabled = remoteCommandText.isNotBlank(),
+                                onClick = {
+                                    viewModel.sendRemoteText(remoteCommandText)
+                                    remoteCommandText = ""
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        if (speechUnavailable) {
+                            Text(
+                                text = "Dictée vocale indisponible sur cet appareil.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFFFB74D),
+                            )
+                        }
+                    }
+                }
+            }
+
             // Appareils du foyer
             item(key = "peers_header") {
-                Text(
-                    text = "Appareils découverts",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = BuntuPalette.TerangaGold,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = "Appareils découverts",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = BuntuPalette.TerangaGold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = viewModel::refreshPeers,
+                        modifier = Modifier.semantics {
+                            contentDescription = "Actualiser les appareils du foyer"
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            tint = BuntuPalette.TerangaGold,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Actualiser", color = BuntuPalette.TerangaGold)
+                    }
+                }
             }
 
             if (state.peers.isEmpty()) {
@@ -453,6 +580,323 @@ fun DevicesRoute(
                 }
             },
         )
+    }
+}
+
+private val QUICK_REMOTE_COMMANDS = listOf(
+    "Mets France 2",
+    "Ouvre Arte",
+    "Monte le son",
+    "Pause",
+)
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun RemoteCommandRoute(
+    onBack: () -> Unit,
+    viewModel: DevicesViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val metrics = LocalBuntuMetrics.current
+    var remoteCommandText by remember { mutableStateOf("") }
+    var speechUnavailable by remember { mutableStateOf(false) }
+
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val results = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spoken = results?.firstOrNull { it.isNotBlank() }?.trim()
+            if (!spoken.isNullOrEmpty()) {
+                remoteCommandText = spoken
+                if (state.connectedPeers.isNotEmpty()) {
+                    viewModel.sendRemoteText(spoken)
+                }
+            }
+        }
+    }
+
+    val hasConnectedPeers = state.connectedPeers.isNotEmpty()
+    val canSend = remoteCommandText.isNotBlank() && hasConnectedPeers
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BuntuPalette.Midnight),
+        contentPadding = PaddingValues(
+            horizontal = metrics.horizontalScreenPadding,
+            vertical = metrics.verticalScreenPadding,
+        ),
+        verticalArrangement = Arrangement.spacedBy(metrics.spacingL),
+    ) {
+        item(key = "remote_header") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Retour",
+                        tint = BuntuPalette.PureWhite,
+                    )
+                }
+                Spacer(modifier = Modifier.width(metrics.spacingM))
+                Text(
+                    text = "Commande TV",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = BuntuPalette.PureWhite,
+                    modifier = Modifier.semantics { heading() },
+                )
+            }
+        }
+
+        state.errorMessage?.let { err ->
+            item(key = "remote_error") {
+                Surface(
+                    color = Color(0xFFB71C1C),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = err,
+                        color = Color.White,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
+        }
+
+        state.infoMessage?.let { info ->
+            item(key = "remote_info") {
+                Surface(
+                    color = Color(0xFF1B5E20),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = info,
+                        color = Color.White,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
+        }
+
+        item(key = "remote_target_selector") {
+            DeviceSectionCard(title = "Appareil cible") {
+                Row(
+                    horizontalArrangement = Arrangement.End,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    TextButton(
+                        onClick = viewModel::refreshPeers,
+                        modifier = Modifier.semantics {
+                            contentDescription = "Actualiser les appareils connectés"
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            tint = BuntuPalette.TerangaGold,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Actualiser", color = BuntuPalette.TerangaGold)
+                    }
+                }
+                when {
+                    state.connectedPeers.isEmpty() -> {
+                        Text(
+                            text = "Aucun appareil connecté détecté dans le foyer. Ouvrez Buntu sur votre TV sur le même réseau Wi-Fi.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = BuntuPalette.MutedSilver,
+                            modifier = Modifier.semantics {
+                                contentDescription = "Aucun appareil connecté détecté dans le foyer"
+                            },
+                        )
+                    }
+                    state.connectedPeers.size == 1 -> {
+                        val uniquePeer = state.connectedPeers[0]
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
+                            verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
+                            modifier = Modifier.selectableGroup(),
+                        ) {
+                            FilterChip(
+                                selected = true,
+                                onClick = { viewModel.selectTargetDevice(uniquePeer.id) },
+                                label = { Text(uniquePeer.name) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = deviceTypeIcon(uniquePeer.deviceType),
+                                        contentDescription = null,
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = BuntuPalette.TerangaGold,
+                                    selectedLabelColor = BuntuPalette.Midnight,
+                                    selectedLeadingIconColor = BuntuPalette.Midnight,
+                                ),
+                                modifier = Modifier.semantics {
+                                    role = Role.RadioButton
+                                    selected = true
+                                    contentDescription = "Appareil cible : ${uniquePeer.name}, sélectionné automatiquement"
+                                },
+                            )
+                        }
+                    }
+                    else -> {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
+                            verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
+                            modifier = Modifier.selectableGroup(),
+                        ) {
+                            val allSelected = state.selectedTargetId == null
+                            FilterChip(
+                                selected = allSelected,
+                                onClick = { viewModel.selectTargetDevice(null) },
+                                label = { Text("Tous les appareils connectés") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = BuntuPalette.TerangaGold,
+                                    selectedLabelColor = BuntuPalette.Midnight,
+                                ),
+                                modifier = Modifier.semantics {
+                                    role = Role.RadioButton
+                                    selected = allSelected
+                                    contentDescription = "Tous les appareils connectés"
+                                },
+                            )
+                            state.connectedPeers.forEach { peer ->
+                                val isSelected = state.selectedTargetId == peer.id
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { viewModel.selectTargetDevice(peer.id) },
+                                    label = { Text(peer.name) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = deviceTypeIcon(peer.deviceType),
+                                            contentDescription = null,
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = BuntuPalette.TerangaGold,
+                                        selectedLabelColor = BuntuPalette.Midnight,
+                                        selectedLeadingIconColor = BuntuPalette.Midnight,
+                                    ),
+                                    modifier = Modifier.semantics {
+                                        role = Role.RadioButton
+                                        selected = isSelected
+                                        contentDescription = "Appareil cible : ${peer.name}"
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "remote_command_input") {
+            DeviceSectionCard(title = "Commande vocale ou texte") {
+                OutlinedTextField(
+                    value = remoteCommandText,
+                    onValueChange = { remoteCommandText = it },
+                    label = { Text("Dicter ou écrire une commande pour la TV") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            if (canSend) {
+                                viewModel.sendRemoteText(remoteCommandText)
+                                remoteCommandText = ""
+                            }
+                        },
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics { contentDescription = "Champ de commande pour la TV" },
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(
+                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                                )
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fr-FR")
+                            }
+                            try {
+                                speechUnavailable = false
+                                speechLauncher.launch(intent)
+                            } catch (_: ActivityNotFoundException) {
+                                speechUnavailable = true
+                            }
+                        },
+                        modifier = Modifier.semantics {
+                            contentDescription = "Dicter une commande vocale"
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = null,
+                            tint = BuntuPalette.PureWhite,
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Dicter", color = BuntuPalette.PureWhite, maxLines = 1)
+                    }
+
+                    BuntuPrimaryActionButton(
+                        label = "Envoyer à la TV",
+                        enabled = canSend,
+                        onClick = {
+                            viewModel.sendRemoteText(remoteCommandText)
+                            remoteCommandText = ""
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { contentDescription = "Envoyer la commande à la TV" },
+                    )
+                }
+
+                if (speechUnavailable) {
+                    Text(
+                        text = "Dictée vocale indisponible sur cet appareil.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFFFB74D),
+                    )
+                }
+
+                Text(
+                    text = "Commandes rapides",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = BuntuPalette.MutedSilver,
+                    modifier = Modifier.semantics { heading() },
+                )
+
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
+                    verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
+                ) {
+                    QUICK_REMOTE_COMMANDS.forEach { command ->
+                        SuggestionChip(
+                            onClick = { remoteCommandText = command },
+                            label = { Text(command) },
+                            modifier = Modifier.semantics {
+                                contentDescription = "Commande rapide : $command"
+                            },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

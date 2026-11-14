@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
@@ -79,6 +80,13 @@ enum class TopLevelDestination(
         showOnPhoneBottomBar = false,
         showOnTvRail = true,
     ),
+    REMOTE_COMMAND(
+        route = BuntuRoutes.REMOTE_COMMAND,
+        label = "Commande TV",
+        icon = Icons.Default.Mic,
+        showOnPhoneBottomBar = false,
+        showOnTvRail = false,
+    ),
     PROFILES(
         route = BuntuRoutes.PROFILES,
         label = "Profils",
@@ -116,6 +124,7 @@ object BuntuRoutes {
     const val PROFILES = "profiles"
     const val SETTINGS = "settings"
     const val DEVICES = "devices"
+    const val REMOTE_COMMAND = "remote_command"
 
     const val DETAILS_PATTERN = "details/{mediaId}?isSeries={isSeries}"
     const val PLAYER_PATTERN =
