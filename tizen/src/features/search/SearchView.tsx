@@ -34,6 +34,7 @@ export const SearchView: Component<SearchViewProps> = (props) => {
 
   let pairingService: PairingService | null = null;
   let typingTimer: any = null;
+  let searchInputRef: HTMLInputElement | undefined;
 
   const FILTER_TABS: { key: 'all' | 'live' | 'movie' | 'series'; label: string }[] = [
     { key: 'all', label: 'Tout' },
@@ -73,6 +74,11 @@ export const SearchView: Component<SearchViewProps> = (props) => {
       tabRow.push({ id: `search-mode-${m.key}`, onSelect: () => setMode(m.key) });
     }
 
+    // Direct IME / voice input row
+    const inputRow: FocusableItem[] = [
+      { id: 'search-ime-input', onSelect: () => searchInputRef?.focus() },
+    ];
+
     // Keyboard Rows
     const kbRows: FocusableItem[][] = KEYBOARD_ROWS.map((row) =>
       row.map((k) => ({
@@ -89,8 +95,13 @@ export const SearchView: Component<SearchViewProps> = (props) => {
       },
     ]);
 
-    spatialNav.setGrid([tabRow, ...kbRows, ...resRows]);
-    if (prevFocus.startsWith('key-') || prevFocus.startsWith('search-tab-') || prevFocus.startsWith('search-mode-')) {
+    spatialNav.setGrid([tabRow, inputRow, ...kbRows, ...resRows]);
+    if (
+      prevFocus === 'search-ime-input' ||
+      prevFocus.startsWith('key-') ||
+      prevFocus.startsWith('search-tab-') ||
+      prevFocus.startsWith('search-mode-')
+    ) {
       spatialNav.setFocusById(prevFocus);
     }
   };
@@ -381,21 +392,42 @@ export const SearchView: Component<SearchViewProps> = (props) => {
       <div style={{ display: 'flex', flex: 1, 'overflow-y': 'hidden' }}>
         {/* On-Screen Keyboard */}
         <div style={{ width: '640px', 'margin-right': '32px', 'flex-shrink': 0 }} role="group" aria-label="Clavier virtuel">
-          {/* Query input display */}
-          <div
+          {/* Query input (Samsung IME / voice dictation + remote keyboard) */}
+          <input
+            ref={searchInputRef}
+            id="search-ime-input"
+            type="text"
+            tabindex="-1"
+            value={query()}
+            placeholder={mode() === 'ai' ? 'Décrivez ce que vous cherchez…' : 'Saisissez un titre ou une chaîne…'}
+            aria-label={mode() === 'ai' ? 'Décrivez ce que vous cherchez' : 'Saisissez un titre ou une chaîne'}
+            class={`tv-input ${focusId() === 'search-ime-input' ? 'focused' : ''}`}
             style={{
+              width: '100%',
+              'box-sizing': 'border-box',
               background: 'var(--buntu-slate)',
               padding: '14px 24px',
               'border-radius': '12px',
               'font-size': '24px',
               'font-weight': '700',
-              border: '2px solid var(--buntu-border)',
+              border: `2px solid ${focusId() === 'search-ime-input' ? 'var(--buntu-gold)' : 'var(--buntu-border)'}`,
               'margin-bottom': '20px',
-              color: query() ? '#FFFFFF' : 'var(--buntu-text-muted)',
+              color: '#FFFFFF',
+              outline: 'none',
             }}
-          >
-            {query() || (mode() === 'ai' ? 'Décrivez ce que vous cherchez…' : 'Saisissez un titre ou une chaîne…')}
-          </div>
+            onInput={(e) => {
+              setQuery(e.currentTarget.value);
+              clearTimeout(typingTimer);
+              void performLocalSearch();
+            }}
+            onKeyDown={(e) => {
+              if (e.keyCode === 13 || e.keyCode === 65376) {
+                e.preventDefault();
+                searchInputRef?.blur();
+                void performLocalSearch();
+              }
+            }}
+          />
 
           <For each={KEYBOARD_ROWS}>
             {(row) => (

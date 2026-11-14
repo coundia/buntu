@@ -12,11 +12,13 @@ import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { PairingOffer, PairingService } from '../../core/pairing/PairingService';
 import { getAiSettings, PROVIDER_DEFAULTS } from '../../core/ai/AiSettings';
+import { LocalSyncService } from '../../core/sync/LocalSyncService';
 
 export interface AssistantModalProps {
   onClose: () => void;
   onPlayItem?: (item: ItemRecord) => void;
   onSearchQuery?: (query: string) => void;
+  initialPhrase?: string;
 }
 
 const HISTORY_KEY = 'cnd_ai_history';
@@ -34,6 +36,9 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
   const [pairingActive, setPairingActive] = createSignal(false);
 
   let pairingService: PairingService | null = null;
+  let inputRef: HTMLInputElement | undefined;
+  let unsubRemoteText: (() => void) | null = null;
+  let actionTimer: ReturnType<typeof setTimeout> | null = null;
 
   const QUICK_COMMANDS = [
     'France 2',
@@ -73,6 +78,12 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
       spatialNav.setFocusById('btn-assistant-close-qr');
       return;
     }
+
+    // Input + Submit row (first row above phone/close buttons)
+    grid.push([
+      { id: 'assistant-ime-input', onSelect: () => inputRef?.focus() },
+      { id: 'btn-assistant-submit', onSelect: () => void executeCommand(inputPhrase()) },
+    ]);
 
     // Top action row
     grid.push([
@@ -150,7 +161,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
 
       if (res.resolvedItem) {
         setStatusMessage(`Lancement de ${res.resolvedItem.name}…`);
-        setTimeout(() => {
+        actionTimer = setTimeout(() => {
           props.onPlayItem?.(res.resolvedItem!);
           props.onClose();
         }, 600);
@@ -159,7 +170,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
 
       if (res.action?.search?.query) {
         setStatusMessage(`Recherche de : ${res.action.search.query}`);
-        setTimeout(() => {
+        actionTimer = setTimeout(() => {
           props.onSearchQuery?.(res.action.search.query);
           props.onClose();
         }, 600);
@@ -183,10 +194,21 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
     loadHistory();
     updateGrid();
     spatialNav.setFocusById('btn-quick-cmd-0');
+
+    if (props.initialPhrase?.trim()) {
+      void executeCommand(props.initialPhrase);
+    }
+    unsubRemoteText = LocalSyncService.getInstance().onRemoteText((text) => {
+      if (text.trim()) {
+        void executeCommand(text);
+      }
+    });
   });
 
   onCleanup(() => {
+    if (actionTimer) clearTimeout(actionTimer);
     pairingService?.stop();
+    if (unsubRemoteText) unsubRemoteText();
   });
 
   const settings = getAiSettings();
@@ -314,6 +336,51 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
         </Show>
 
         <Show when={!pairingActive()}>
+          {/* Direct TV IME / Voice Dictation Input */}
+          <div style={{ display: 'flex', 'align-items': 'center' }}>
+            <input
+              ref={inputRef}
+              id="assistant-ime-input"
+              type="text"
+              tabindex="-1"
+              value={inputPhrase()}
+              placeholder="Dicter ou saisir une commande (ex : Mets France 2)…"
+              aria-label="Dicter ou saisir une commande pour l’assistant"
+              class={`tv-input ${focusId() === 'assistant-ime-input' ? 'focused' : ''}`}
+              style={{
+                flex: 1,
+                'min-width': 0,
+                width: 'auto',
+                'margin-right': '12px',
+                background: 'var(--buntu-midnight)',
+                color: 'var(--buntu-text)',
+                border: `2px solid ${focusId() === 'assistant-ime-input' ? 'var(--buntu-gold)' : 'var(--buntu-border)'}`,
+                'border-radius': '12px',
+                padding: '14px 18px',
+                'font-size': '20px',
+                outline: 'none',
+              }}
+              onInput={(e) => setInputPhrase(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.keyCode === 13 || e.keyCode === 65376) {
+                  e.preventDefault();
+                  void executeCommand(inputPhrase());
+                  inputRef?.blur();
+                }
+              }}
+            />
+            <button
+              id="btn-assistant-submit"
+              type="button"
+              tabindex="-1"
+              class={`tv-btn ${focusId() === 'btn-assistant-submit' ? 'focused' : ''}`}
+              style={{ padding: '14px 22px', 'font-size': '18px', 'flex-shrink': 0 }}
+              onClick={() => void executeCommand(inputPhrase())}
+            >
+              Exécuter
+            </button>
+          </div>
+
           {/* Status / Output Display */}
           <div
             style={{

@@ -17,6 +17,7 @@
   
   --tv-safe-pad-v: 48px;
   --tv-safe-pad-h: 80px;
+  --buntu-font-scale: 1;
 }
 
 /* Universal Smart TV Scrollbar suppression */
@@ -3980,4 +3981,166 @@ html, body, #root {
   margin: 0 12px 10px 0;
   padding: 10px 20px;
   font-size: 20px;
+}
+
+/* ============================================================================
+ * TV Accessibility: High Contrast & Text Size (10-foot UI)
+ * ============================================================================ */
+
+html[data-high-contrast="true"] {
+  --buntu-midnight: #000000;
+  --buntu-slate: #0D1117;
+  --buntu-slate-light: #171D26;
+  --buntu-btn-bg: #1A2230;
+  --buntu-btn-border: #A8B5C7;
+  --buntu-border: #8C9BAE;
+  --buntu-gold: #FFB000;
+  --buntu-gold-hover: #FFCC4D;
+  --buntu-cyan: #4DE8FF;
+  --buntu-text: #FFFFFF;
+  --buntu-text-secondary: #F3F6FA;
+  --buntu-text-muted: #DCE3ED;
+  --buntu-danger: #FF4D42;
+  --buntu-danger-bg: #4A1216;
+  --buntu-danger-border: #FF8A80;
+}
+
+html[data-high-contrast="true"] .tv-btn,
+html[data-high-contrast="true"] .buntu-action-secondary,
+html[data-high-contrast="true"] .buntu-tool-btn,
+html[data-high-contrast="true"] .buntu-seg-btn,
+html[data-high-contrast="true"] .tv-category-pill,
+html[data-high-contrast="true"] .tv-season-pill {
+  border-width: 2px;
+  border-color: var(--buntu-btn-border);
+}
+
+html[data-high-contrast="true"] .tv-btn.focused,
+html[data-high-contrast="true"] .buntu-nav-btn.focused,
+html[data-high-contrast="true"] .buntu-tool-btn.focused,
+html[data-high-contrast="true"] .buntu-seg-btn.focused,
+html[data-high-contrast="true"] .buntu-action-primary.focused,
+html[data-high-contrast="true"] .buntu-action-secondary.focused,
+html[data-high-contrast="true"] .buntu-toolbar-brand.focused,
+html[data-high-contrast="true"] .tv-card.focused,
+html[data-high-contrast="true"] .tv-channel-row.focused,
+html[data-high-contrast="true"] .tv-category-item.focused,
+html[data-high-contrast="true"] .tv-category-pill.focused,
+html[data-high-contrast="true"] .tv-episode-row.focused,
+html[data-high-contrast="true"] .tv-guide-row.focused,
+html[data-high-contrast="true"] .tv-input.focused,
+html[data-high-contrast="true"] .tv-search-input.focused,
+html[data-high-contrast="true"] .tv-miniguide-row.focused {
+  outline: 4px solid #FFFFFF;
+  outline-offset: 2px;
+  border-color: #FFFFFF;
+}
+
+html[data-text-size="large"] {
+  --buntu-font-scale: 1.15;
+}
+
+html[data-text-size="xlarge"] {
+  --buntu-font-scale: 1.3;
+}
+
+html[data-text-size="large"] .app-root,
+html[data-text-size="xlarge"] .app-root {
+  font-size: calc(18px * var(--buntu-font-scale));
+}
+
+html[data-text-size="large"] .tv-btn,
+html[data-text-size="xlarge"] .tv-btn,
+html[data-text-size="large"] .buntu-action-primary,
+html[data-text-size="xlarge"] .buntu-action-primary,
+html[data-text-size="large"] .buntu-action-secondary,
+html[data-text-size="xlarge"] .buntu-action-secondary,
+html[data-text-size="large"] .buntu-tool-btn,
+html[data-text-size="xlarge"] .buntu-tool-btn,
+html[data-text-size="large"] .buntu-seg-btn,
+html[data-text-size="xlarge"] .buntu-seg-btn,
+html[data-text-size="large"] .buntu-nav-btn,
+html[data-text-size="xlarge"] .buntu-nav-btn {
+  font-size: calc(18px * var(--buntu-font-scale));
+}
+
+html[data-text-size="large"] .tv-card-title,
+html[data-text-size="xlarge"] .tv-card-title,
+html[data-text-size="large"] .tv-channel-name,
+html[data-text-size="xlarge"] .tv-channel-name,
+html[data-text-size="large"] .buntu-cat-row-title,
+html[data-text-size="xlarge"] .buntu-cat-row-title,
+html[data-text-size="large"] .tv-episode-title,
+html[data-text-size="xlarge"] .tv-episode-title,
+html[data-text-size="large"] .tv-guide-title,
+html[data-text-size="xlarge"] .tv-guide-title {
+  font-size: calc(18px * var(--buntu-font-scale));
+}
+
+html[data-text-size="large"] .tv-card-sub,
+html[data-text-size="xlarge"] .tv-card-sub,
+html[data-text-size="large"] .buntu-insp-meta,
+html[data-text-size="xlarge"] .buntu-insp-meta,
+html[data-text-size="large"] .buntu-insp-desc,
+html[data-text-size="xlarge"] .buntu-insp-desc,
+html[data-text-size="large"] .tv-channel-epg,
+html[data-text-size="xlarge"] .tv-channel-epg {
+  font-size: calc(15px * var(--buntu-font-scale));
+}
+
+html[data-text-size="large"] .buntu-insp-title,
+html[data-text-size="xlarge"] .buntu-insp-title {
+  font-size: calc(24px * var(--buntu-font-scale));
+}
+
+html[data-text-size="large"] .tv-input,
+html[data-text-size="xlarge"] .tv-input,
+html[data-text-size="large"] .tv-search-input,
+html[data-text-size="xlarge"] .tv-search-input {
+  font-size: calc(19px * var(--buntu-font-scale));
+}
+
+.tv-audio-only-curtain {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: #000000;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px;
+}
+
+.buntu-home-expirations {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0 0 18px 0;
+}
+
+.buntu-home-expiry-pill {
+  display: inline-block;
+  margin: 0 10px 8px 0;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--buntu-slate);
+  border: 1px solid var(--buntu-border);
+  color: var(--buntu-text-secondary);
+  font-size: 15px;
+}
+
+.buntu-home-expiry-pill.is-soon {
+  border-color: var(--buntu-gold);
+  color: var(--buntu-gold);
+}
+
+.buntu-home-expiry-pill.is-expired {
+  background: var(--buntu-danger-bg);
+  border-color: var(--buntu-danger-border);
+  color: #FF8A80;
 }

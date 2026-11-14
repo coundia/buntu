@@ -59,6 +59,7 @@ export const App: Component = () => {
   const [hasSources, setHasSources] = createSignal(true);
   const [showExitDialog, setShowExitDialog] = createSignal(false);
   const [showAssistantModal, setShowAssistantModal] = createSignal(false);
+  const [assistantInitialPhrase, setAssistantInitialPhrase] = createSignal<string | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
   const [homeSection, setHomeSection] = createSignal<HomeSection>('live');
   const [canRecall, setCanRecall] = createSignal(false);
@@ -207,11 +208,18 @@ export const App: Component = () => {
     });
 
     unsubRemoteText = LocalSyncService.getInstance().onRemoteText((text) => {
+      if (showAssistantModal()) return;
       const active = document.activeElement;
       if (active && (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)) {
         active.value = text;
         active.dispatchEvent(new Event('input', { bubbles: true }));
         active.dispatchEvent(new Event('change', { bubbles: true }));
+        return;
+      }
+      const trimmed = text.trim();
+      if (trimmed) {
+        setAssistantInitialPhrase(trimmed);
+        setShowAssistantModal(true);
       }
     });
   });
@@ -298,6 +306,7 @@ export const App: Component = () => {
     if (key === 'BACK') {
       if (showAssistantModal()) {
         setShowAssistantModal(false);
+        setAssistantInitialPhrase(undefined);
         return true;
       }
       if (showExitDialog()) {
@@ -641,13 +650,19 @@ export const App: Component = () => {
       {/* Assistant Modal */}
       <Show when={showAssistantModal()}>
         <AssistantModal
-          onClose={() => setShowAssistantModal(false)}
+          initialPhrase={assistantInitialPhrase()}
+          onClose={() => {
+            setShowAssistantModal(false);
+            setAssistantInitialPhrase(undefined);
+          }}
           onPlayItem={(item) => {
             setShowAssistantModal(false);
+            setAssistantInitialPhrase(undefined);
             handlePlayItem(item);
           }}
           onSearchQuery={() => {
             setShowAssistantModal(false);
+            setAssistantInitialPhrase(undefined);
             navigateTo('search');
           }}
         />

@@ -3,6 +3,7 @@ import { HttpClient } from '../../core/net/HttpClient';
 import { WorkerBridge } from '../../worker/worker-bridge';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { PlatformService } from '../../core/platform/PlatformService';
+import { APP_VERSION_LABEL } from '../../core/appInfo';
 import {
   AiProviderType,
   getAiSettings,
@@ -19,6 +20,20 @@ import { AiClient } from '../../core/ai/AiClient';
 import { createTvKeyboard } from '../../ui/components/TvKeyboard';
 import { UiSounds } from '../../core/audio/UiSounds';
 import { getUpNextPrefs, nextCountdownChoice, setUpNextPrefs } from '../../core/player/upNext';
+import {
+  getSubtitlePrefs,
+  nextSubtitleColor,
+  nextSubtitleSize,
+  setSubtitlePrefs,
+  subtitleColorLabel,
+  subtitleSizeLabel,
+} from '../../core/player/subtitlePrefs';
+import {
+  getAccessibilityPrefs,
+  nextTextSizePreset,
+  setAccessibilityPrefs,
+  textSizeLabel,
+} from '../../ui/design/accessibilityPrefs';
 import { PairingOffer, PairingService } from '../../core/pairing/PairingService';
 import { HouseholdStore, HouseholdInfo, PairedDevice } from '../../core/sync/HouseholdStore';
 import { LocalSyncService, SyncLogEntry } from '../../core/sync/LocalSyncService';
@@ -330,6 +345,15 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
   const toggleUpNextAuto = () => setUpNext(setUpNextPrefs({ auto: !upNext().auto }));
   const cycleUpNextSeconds = () => setUpNext(setUpNextPrefs({ seconds: nextCountdownChoice(upNext().seconds) }));
 
+  const [a11yPrefs, setA11yPrefs] = createSignal(getAccessibilityPrefs());
+  const toggleHighContrast = () => setA11yPrefs(setAccessibilityPrefs({ highContrast: !a11yPrefs().highContrast }));
+  const cycleTextSize = () => setA11yPrefs(setAccessibilityPrefs({ textSize: nextTextSizePreset(a11yPrefs().textSize) }));
+
+  const [subPrefs, setSubPrefs] = createSignal(getSubtitlePrefs());
+  const cycleSubSize = () => setSubPrefs(setSubtitlePrefs({ size: nextSubtitleSize(subPrefs().size) }));
+  const cycleSubColor = () => setSubPrefs(setSubtitlePrefs({ color: nextSubtitleColor(subPrefs().color) }));
+  const toggleSubOpaque = () => setSubPrefs(setSubtitlePrefs({ opaqueBox: !subPrefs().opaqueBox }));
+
   const toggleSingleConnection = () => {
     const next = !singleConn();
     net.setSingleConnectionMode(next);
@@ -420,6 +444,15 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
       grid.push([{ id: 'btn-single-conn', onSelect: toggleSingleConnection }]);
     }
     if (!householdOnly() && panel() === 'system') {
+      grid.push([
+        { id: 'btn-high-contrast', onSelect: toggleHighContrast },
+        { id: 'btn-text-size', onSelect: cycleTextSize },
+      ]);
+      grid.push([
+        { id: 'btn-sub-size', onSelect: cycleSubSize },
+        { id: 'btn-sub-color', onSelect: cycleSubColor },
+        { id: 'btn-sub-bg', onSelect: toggleSubOpaque },
+      ]);
       grid.push([{ id: 'btn-ui-sounds', onSelect: toggleSounds }]);
       grid.push([
         { id: 'btn-upnext-auto', onSelect: toggleUpNextAuto },
@@ -1042,6 +1075,68 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
           </div>
         </div>
 
+        {/* Accessibilité visuelle */}
+        <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '1px solid var(--buntu-border)' }}>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Accessibilité visuelle</h3>
+          <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
+            Renforce les contrastes et la bordure de sélection, ou agrandit les textes à l’écran pour une meilleure lisibilité à distance.
+          </p>
+          <div style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '12px' }}>
+            <button
+              id="btn-high-contrast"
+              tabindex="-1"
+              aria-pressed={a11yPrefs().highContrast}
+              class={`tv-btn ${focusId() === 'btn-high-contrast' ? 'focused' : ''}`}
+              onClick={toggleHighContrast}
+            >
+              Contraste élevé : {a11yPrefs().highContrast ? '✓ Activé' : '✗ Désactivé'}
+            </button>
+            <button
+              id="btn-text-size"
+              tabindex="-1"
+              class={`tv-btn ${focusId() === 'btn-text-size' ? 'focused' : ''}`}
+              onClick={cycleTextSize}
+            >
+              Taille du texte : {textSizeLabel(a11yPrefs().textSize)} ↻
+            </button>
+          </div>
+        </div>
+
+        {/* Sous-titres */}
+        <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '1px solid var(--buntu-border)' }}>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Sous-titres</h3>
+          <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
+            Personnalisez la taille, la couleur et le fond des sous-titres affichés dans le lecteur.
+          </p>
+          <div style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '12px' }}>
+            <button
+              id="btn-sub-size"
+              tabindex="-1"
+              class={`tv-btn ${focusId() === 'btn-sub-size' ? 'focused' : ''}`}
+              onClick={cycleSubSize}
+            >
+              Taille : {subtitleSizeLabel(subPrefs().size)} ↻
+            </button>
+            <button
+              id="btn-sub-color"
+              tabindex="-1"
+              class={`tv-btn ${focusId() === 'btn-sub-color' ? 'focused' : ''}`}
+              onClick={cycleSubColor}
+            >
+              Couleur : {subtitleColorLabel(subPrefs().color)} ↻
+            </button>
+            <button
+              id="btn-sub-bg"
+              tabindex="-1"
+              aria-pressed={subPrefs().opaqueBox}
+              class={`tv-btn ${focusId() === 'btn-sub-bg' ? 'focused' : ''}`}
+              onClick={toggleSubOpaque}
+            >
+              Fond opaque : {subPrefs().opaqueBox ? '✓ Activé' : '✗ Désactivé'}
+            </button>
+          </div>
+        </div>
+
         {/* Navigation sounds */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px' }}>
           <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Sons de navigation</h3>
@@ -1175,7 +1270,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             <span>Sénégal</span>
 
             <span style={{ color: 'var(--buntu-text-muted)' }}>Version :</span>
-            <span>1.0.0</span>
+            <span>{APP_VERSION_LABEL}</span>
 
             <span style={{ color: 'var(--buntu-text-muted)' }}>Cœur Métier :</span>
             <span style={{ color: 'var(--buntu-cyan)', 'font-weight': '700' }}>{wasmVer()}</span>

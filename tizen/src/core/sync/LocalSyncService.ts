@@ -433,6 +433,13 @@ export class LocalSyncService {
         break;
 
       case 'remote_text':
+        if (
+          typeof message.target_device_id === 'string' &&
+          message.target_device_id.trim().length > 0 &&
+          message.target_device_id !== this.store.getLocalDeviceId()
+        ) {
+          break;
+        }
         for (const fn of this.remoteTextListeners) {
           fn(message.text);
         }
