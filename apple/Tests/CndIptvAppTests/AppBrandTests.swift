@@ -16,9 +16,22 @@ final class AppBrandTests: XCTestCase {
     func testNoVisibleStringKeepsTheOldWorkingName() throws {
         // The old name only survives in identifiers that must not change (bundle id, folders), not in text.
         for text in [AppBrand.name, AppBrand.descriptor, AppBrand.sloganFrench, AppBrand.sloganWolof,
-                     AppBrand.notAShareFile, AppBrand.notAShareLink, AppBrand.notAShareContent] {
+                     AppBrand.notAShareFile, AppBrand.notAShareLink, AppBrand.notAShareContent,
+                     AppBrand.authorName, AppBrand.authorEmail, AppBrand.authorCountry,
+                     AppBrand.license, AppBrand.neutralPlayerNotice] {
             XCTAssertFalse(text.contains("CND"), text)
         }
+    }
+
+    func testAuthorInformation() {
+        XCTAssertEqual(AppBrand.authorName, "Papa COUNDIA")
+        XCTAssertEqual(AppBrand.authorEmail, "papacoundia@gmail.com")
+        XCTAssertEqual(AppBrand.authorCountry, "Sénégal")
+        XCTAssertEqual(AppBrand.license, "MIT / Apache-2.0")
+        XCTAssertEqual(
+            AppBrand.neutralPlayerNotice,
+            "Buntu ne fournit aucun contenu : il lit uniquement les sources que vous ajoutez. Vos données restent sur votre appareil."
+        )
     }
 
     func testBodyTextMeetsAAOnTheDarkSurfaces() {

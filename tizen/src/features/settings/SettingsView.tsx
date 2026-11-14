@@ -43,9 +43,9 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
   const [purgeMsg, setPurgeMsg] = createSignal('');
   const [focusId] = spatialNav.getFocusSignal();
   const householdOnly = () => props.section === 'household';
-  const [panel, setPanel] = createSignal<'connection' | 'ai' | 'system' | null>(null);
+  const [panel, setPanel] = createSignal<'connection' | 'ai' | 'system' | 'about' | null>(null);
   const [deviceDetails, setDeviceDetails] = createSignal(false);
-  const openPanel = (next: 'connection' | 'ai' | 'system' | null) => {
+  const openPanel = (next: 'connection' | 'ai' | 'system' | 'about' | null) => {
     const previous = panel();
     setPanel(next);
     updateGrid();
@@ -368,6 +368,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
       grid.push([{ id: 'settings-connection', onSelect: () => openPanel('connection') }]);
       grid.push([{ id: 'settings-ai', onSelect: () => openPanel('ai') }]);
       grid.push([{ id: 'settings-system', onSelect: () => openPanel('system') }]);
+      grid.push([{ id: 'settings-about', onSelect: () => openPanel('about') }]);
       if (props.onProfiles) grid.push([{ id: 'settings-profiles', onSelect: props.onProfiles }]);
       spatialNav.setGrid(grid);
       return;
@@ -564,6 +565,9 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             <button id="settings-system" tabindex="-1" class={`buntu-settings-choice ${focusId() === 'settings-system' ? 'focused' : ''}`} onClick={() => openPanel('system')}>
               <strong>Stockage et informations</strong><span>Cache, télévision et version de Buntu</span>
             </button>
+            <button id="settings-about" tabindex="-1" class={`buntu-settings-choice ${focusId() === 'settings-about' ? 'focused' : ''}`} onClick={() => openPanel('about')}>
+              <strong>À propos</strong><span>Créateur, contact et informations sur Buntu</span>
+            </button>
             <Show when={props.onProfiles}>
               <button id="settings-profiles" tabindex="-1" class={`buntu-settings-choice ${focusId() === 'settings-profiles' ? 'focused' : ''}`} onClick={() => props.onProfiles?.()}>
                 <strong>Profils</strong><span>Choisir qui regarde</span>
@@ -576,7 +580,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
         </Show>
         {/* Section Assistant IA (PRD 40) */}
         <Show when={!householdOnly() && panel() === 'ai'}>
-        <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '1px solid rgba(212, 160, 23, 0.4)' }}>
+        <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '2px solid var(--buntu-border)' }}>
           <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px', color: 'var(--buntu-gold)' }}>
             Assistant
           </h3>
@@ -768,7 +772,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
 
         <Show when={householdOnly()}>
         {/* Appareils */}
-        <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '1px solid rgba(56, 189, 248, 0.4)' }}>
+        <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '2px solid var(--buntu-border)' }}>
           <div style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', 'margin-bottom': '8px' }}>
             <h3 style={{ 'font-size': '22px', color: 'var(--buntu-cyan)', margin: 0 }}>
               Votre foyer
@@ -779,9 +783,9 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                 'border-radius': '999px',
                 'font-size': '14px',
                 'font-weight': '600',
-                background: syncConnected() ? 'rgba(34, 197, 94, 0.2)' : 'rgba(148, 163, 184, 0.2)',
+                background: syncConnected() ? '#163826' : '#242D3E',
                 color: syncConnected() ? '#4ADE80' : 'var(--buntu-text-muted)',
-                border: `1px solid ${syncConnected() ? '#22C55E' : '#64748B'}`,
+                border: `1px solid ${syncConnected() ? '#22C55E' : '#344058'}`,
               }}
             >
               {syncConnected() ? 'Connecté' : 'Hors connexion'}
@@ -1032,6 +1036,9 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
 
             <span style={{ color: 'var(--buntu-text-muted)' }}>Résolution :</span>
             <span>1920 × 1080 (Mise à l'échelle TV)</span>
+
+            <span style={{ color: 'var(--buntu-text-muted)' }}>Créateur :</span>
+            <span>Papa COUNDIA (papacoundia@gmail.com · Sénégal)</span>
           </div>
         </div>
 
@@ -1105,7 +1112,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             background: 'var(--buntu-slate)',
             padding: '24px',
             'border-radius': '12px',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
+            border: '2px solid var(--buntu-danger-border)',
           }}
         >
           <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px', color: '#F87171' }}>
@@ -1122,6 +1129,74 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
           >
             ⏻ Fermer Buntu
           </button>
+        </div>
+        </Show>
+
+        <Show when={!householdOnly() && panel() === 'about'}>
+        {/* À propos de Buntu */}
+        <div
+          id="about-page"
+          style={{
+            background: 'var(--buntu-slate)',
+            padding: '28px',
+            'border-radius': '12px',
+            border: '2px solid var(--buntu-border)',
+          }}
+        >
+          <div style={{ 'margin-bottom': '20px' }}>
+            <div style={{ 'font-size': '15px', 'text-transform': 'uppercase', 'letter-spacing': '0.06em', color: 'var(--buntu-text-muted)', 'margin-bottom': '6px' }}>
+              À propos de Buntu
+            </div>
+            <h3 style={{ 'font-size': '28px', margin: '0 0 8px 0', color: 'var(--buntu-gold)' }}>
+              Buntu
+            </h3>
+            <p style={{ margin: 0, 'font-size': '18px', color: 'var(--buntu-text-muted)' }}>
+              « Sa bunt ci lépp » — La porte d'entrée de tous vos médias.
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              'grid-template-columns': '200px 1fr',
+              'grid-gap': '12px',
+              gap: '12px',
+              'font-size': '18px',
+              'margin-bottom': '20px',
+            }}
+          >
+            <span style={{ color: 'var(--buntu-text-muted)' }}>Créateur :</span>
+            <span style={{ 'font-weight': '700' }}>Papa COUNDIA</span>
+
+            <span style={{ color: 'var(--buntu-text-muted)' }}>E-mail :</span>
+            <span style={{ color: 'var(--buntu-cyan)' }}>papacoundia@gmail.com</span>
+
+            <span style={{ color: 'var(--buntu-text-muted)' }}>Pays :</span>
+            <span>Sénégal</span>
+
+            <span style={{ color: 'var(--buntu-text-muted)' }}>Version :</span>
+            <span>1.0.0</span>
+
+            <span style={{ color: 'var(--buntu-text-muted)' }}>Cœur Métier :</span>
+            <span style={{ color: 'var(--buntu-cyan)', 'font-weight': '700' }}>{wasmVer()}</span>
+
+            <span style={{ color: 'var(--buntu-text-muted)' }}>Licence :</span>
+            <span>MIT / Apache-2.0</span>
+          </div>
+
+          <div
+            style={{
+              background: '#0F172A',
+              padding: '16px',
+              'border-radius': '8px',
+              border: '1px solid var(--buntu-border)',
+              color: 'var(--buntu-text-muted)',
+              'font-size': '16px',
+              'line-height': '1.5',
+            }}
+          >
+            Buntu est un lecteur neutre : il ne fournit aucun contenu et lit uniquement les sources que vous ajoutez. Vos données restent sur votre appareil.
+          </div>
         </div>
         </Show>
       </div>

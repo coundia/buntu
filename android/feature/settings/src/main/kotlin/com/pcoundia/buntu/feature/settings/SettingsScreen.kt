@@ -2,6 +2,7 @@ package com.pcoundia.buntu.feature.settings
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -34,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -52,6 +54,17 @@ import com.pcoundia.buntu.core.domain.model.AiProviderType
 import com.pcoundia.buntu.core.domain.model.ConnectionBudget
 import com.pcoundia.buntu.core.domain.model.RecoDomainKind
 import com.pcoundia.buntu.core.domain.model.UpNextPreferences
+
+internal object BuntuAboutInfo {
+    const val APP_NAME = "Buntu"
+    const val SLOGAN = "Sa bunt ci lépp — La porte d'entrée de tous vos médias."
+    const val AUTHOR_NAME = "Papa COUNDIA"
+    const val AUTHOR_EMAIL = "papacoundia@gmail.com"
+    const val AUTHOR_COUNTRY = "Sénégal"
+    const val LICENSE = "MIT / Apache-2.0"
+    const val LEGAL_NOTICE =
+        "Buntu est un lecteur neutre : il ne fournit aucun contenu et lit uniquement les sources que vous ajoutez. Vos données restent sur votre appareil."
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -597,7 +610,55 @@ fun SettingsRoute(
             }
         }
 
-        // 7. Diagnostics moteur, À propos & Statistiques (`DbStats`)
+        // 7. À propos de Buntu
+        item(key = "about_section", contentType = "settings_card") {
+            SettingsCard(
+                title = "À propos de ${BuntuAboutInfo.APP_NAME}",
+                subtitle = BuntuAboutInfo.SLOGAN,
+                focusable = state.isTv,
+            ) {
+                BuntuBrandMark(logoSize = 40.dp)
+                Surface(
+                    color = BuntuPalette.Midnight,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(metrics.spacingM),
+                        verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
+                    ) {
+                        Text(
+                            text = "Créateur : ${BuntuAboutInfo.AUTHOR_NAME}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = BuntuPalette.PureWhite,
+                        )
+                        Text(
+                            text = "E-mail : ${BuntuAboutInfo.AUTHOR_EMAIL}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = BuntuPalette.LeerCyan,
+                        )
+                        Text(
+                            text = "Pays : ${BuntuAboutInfo.AUTHOR_COUNTRY}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = BuntuPalette.PureWhite,
+                        )
+                        Text(
+                            text = "Licence : ${BuntuAboutInfo.LICENSE}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = BuntuPalette.PureWhite,
+                        )
+                    }
+                }
+                Text(
+                    text = BuntuAboutInfo.LEGAL_NOTICE,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = BuntuPalette.MutedSilver,
+                )
+            }
+        }
+
+        // 8. Diagnostics moteur, À propos & Statistiques (`DbStats`)
         item(key = "diag_section", contentType = "settings_card") {
             val dbSizeFormatted = remember(stats.dbSizeBytes) {
                 when {
@@ -678,13 +739,24 @@ fun SettingsRoute(
 private fun SettingsCard(
     title: String,
     subtitle: String? = null,
+    focusable: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val metrics = LocalBuntuMetrics.current
+    var isFocused by remember { mutableStateOf(false) }
+    val cardModifier = if (focusable) {
+        Modifier
+            .fillMaxWidth()
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+    } else {
+        Modifier.fillMaxWidth()
+    }
     Surface(
         color = BuntuPalette.Slate,
+        border = if (focusable && isFocused) BorderStroke(2.dp, BuntuPalette.TerangaGold) else null,
         shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = cardModifier,
     ) {
         Column(
             modifier = Modifier.padding(metrics.spacingL),

@@ -11,6 +11,11 @@ enum AppBrand {
     static let sloganFrench = "La porte d'entrée de tous vos médias."
     /// What the app is, for the About screen. It plays the user's own sources; it supplies no content.
     static let descriptor = "Lecteur de médias pour Mac, iPhone, iPad, Apple TV et Vision Pro"
+    static let authorName = "Papa COUNDIA"
+    static let authorEmail = "papacoundia@gmail.com"
+    static let authorCountry = "Sénégal"
+    static let license = "MIT / Apache-2.0"
+    static let neutralPlayerNotice = "Buntu ne fournit aucun contenu : il lit uniquement les sources que vous ajoutez. Vos données restent sur votre appareil."
 
     /// `Partage Buntu.cndshare`: the visible name of an exported share; the extension is the format's.
     static func shareFileName(extension ext: String) -> String { "Partage \(name).\(ext)" }

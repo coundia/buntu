@@ -678,16 +678,90 @@ struct SettingsView: View {
             }
             LabeledContent("Application", value: SettingsModel.appVersion)
             LabeledContent("Moteur Rust", value: model.engineVersion)
+            LabeledContent("Créateur", value: AppBrand.authorName)
+            LabeledContent("E-mail", value: AppBrand.authorEmail)
+            LabeledContent("Pays", value: AppBrand.authorCountry)
+            LabeledContent("Licence", value: AppBrand.license)
             LabeledContent("Clés intégrées à ce build") {
                 let services = ApiService.allCases.filter { ApiKeyResolver.shared.hasBundledKey($0) }
                 Text(services.isEmpty ? "aucune" : services.map(\.displayName).joined(separator: ", "))
                     .multilineTextAlignment(.trailing)
             }
             if let stats {
-                LabeledContent("Base de données", value: ByteCountFormatter.string(fromByteCount: Int64(stats.dbSizeBytes), countStyle: .file))
-                LabeledContent("Chaînes / Films / Séries", value: "\(stats.totalLiveChannels) / \(stats.totalMovies) / \(stats.totalSeries)")
-                LabeledContent("Favoris / En panne", value: "\(stats.totalFavorites) / \(stats.totalBroken)")
+                AboutDetailView.statsRows(for: stats)
+            }
+            NavigationLink("À propos de Buntu") {
+                AboutDetailView(engineVersion: model.engineVersion, stats: stats)
             }
         }
+    }
+}
+
+/// Full About page showing Buntu identity, creator information, application versions, stats, and legal notice.
+struct AboutDetailView: View {
+    let engineVersion: String
+    let stats: DbStats?
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(spacing: 10) {
+                    AppLogoView(size: 72)
+                    Text(AppBrand.name)
+                        .font(.title2.weight(.bold))
+                    Text(AppBrand.sloganWolof)
+                        .font(.subheadline.weight(.semibold))
+                        .multilineTextAlignment(.center)
+                    Text(AppBrand.sloganFrench)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Text(AppBrand.descriptor)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+
+            Section("Créateur") {
+                LabeledContent("Créateur", value: AppBrand.authorName)
+                #if os(tvOS)
+                LabeledContent("E-mail", value: AppBrand.authorEmail)
+                #else
+                LabeledContent("E-mail", value: AppBrand.authorEmail)
+                    .textSelection(.enabled)
+                #endif
+                LabeledContent("Pays", value: AppBrand.authorCountry)
+            }
+
+            Section("Application") {
+                LabeledContent("Application", value: SettingsModel.appVersion)
+                LabeledContent("Moteur Rust", value: engineVersion)
+                LabeledContent("Licence", value: AppBrand.license)
+                if let stats {
+                    Self.statsRows(for: stats)
+                }
+            }
+
+            Section {
+                Text(AppBrand.neutralPlayerNotice)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("À propos de Buntu")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+
+    @ViewBuilder
+    static func statsRows(for stats: DbStats) -> some View {
+        LabeledContent("Base de données", value: ByteCountFormatter.string(fromByteCount: Int64(stats.dbSizeBytes), countStyle: .file))
+        LabeledContent("Chaînes / Films / Séries", value: "\(stats.totalLiveChannels) / \(stats.totalMovies) / \(stats.totalSeries)")
+        LabeledContent("Favoris / En panne", value: "\(stats.totalFavorites) / \(stats.totalBroken)")
     }
 }
