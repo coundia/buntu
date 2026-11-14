@@ -109,6 +109,123 @@ class DevicesViewModelTest {
         collector.cancel()
     }
 
+    @Test
+    fun `sendRemoteText forwards trimmed text and ignores blank input`() = runTest {
+        val repo = FakeHousehold(currentKey = KEY)
+        val vm = viewModel(repo)
+        val collector = backgroundScope.launch { vm.uiState.collect {} }
+
+        vm.sendRemoteText("   ")
+        vm.sendRemoteText("")
+        advanceUntilIdle()
+        assertTrue(repo.sentRemoteTexts.isEmpty())
+        assertNull(vm.uiState.value.infoMessage)
+
+        vm.sendRemoteText("Mets France 2")
+        vm.sendRemoteText("  Ouvre Arte  ")
+        advanceUntilIdle()
+        assertEquals(listOf("Mets France 2", "Ouvre Arte"), repo.sentRemoteTexts)
+        assertEquals("Commande envoyée à la TV.", vm.uiState.value.infoMessage)
+        assertNull(vm.uiState.value.errorMessage)
+        collector.cancel()
+    }
+
+    @Test
+    fun `sendRemoteText failure sets errorMessage and clears infoMessage`() = runTest {
+        val repo = FakeHousehold(currentKey = KEY, sendRemoteTextError = IllegalStateException("réseau coupé"))
+        val vm = viewModel(repo)
+        val collector = backgroundScope.launch { vm.uiState.collect {} }
+
+        vm.sendRemoteText("Mets France 2")
+        advanceUntilIdle()
+
+        assertTrue(repo.sentRemoteTexts.isEmpty())
+        assertNull(vm.uiState.value.infoMessage)
+        assertEquals("Erreur d'envoi: réseau coupé", vm.uiState.value.errorMessage)
+        collector.cancel()
+    }
+
+    @Test
+    fun `unique connected peer is auto-selected and passed as targetPeerId`() = runTest {
+        val repo = FakeHousehold(currentKey = KEY)
+        repo.activePeers.value = listOf(
+            DiscoveredPeer(id = "tv-1", name = "Samsung TV", deviceType = "tv", state = "idle"),
+            DiscoveredPeer(id = "tv-offline", name = "Ancienne TV", deviceType = "tv", state = "offline"),
+        )
+        val vm = viewModel(repo)
+        val collector = backgroundScope.launch { vm.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(1, vm.uiState.value.connectedPeers.size)
+        assertEquals("tv-1", vm.uiState.value.selectedTargetId)
+
+        vm.sendRemoteText("Mets France 2")
+        advanceUntilIdle()
+
+        assertEquals(listOf("Mets France 2" to "tv-1"), repo.sentRemoteCommands)
+        collector.cancel()
+    }
+
+    @Test
+    fun `multiple connected peers default to all (null) and support explicit selection`() = runTest {
+        val repo = FakeHousehold(currentKey = KEY)
+        repo.activePeers.value = listOf(
+            DiscoveredPeer(id = "tv-1", name = "TV Salon", deviceType = "tv", state = "idle"),
+            DiscoveredPeer(id = "tv-2", name = "TV Chambre", deviceType = "tv", state = "playing"),
+        )
+        val vm = viewModel(repo)
+        val collector = backgroundScope.launch { vm.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(2, vm.uiState.value.connectedPeers.size)
+        assertNull(vm.uiState.value.selectedTargetId)
+
+        vm.sendRemoteText("Pause")
+        advanceUntilIdle()
+        assertEquals(listOf("Pause" to null), repo.sentRemoteCommands)
+
+        vm.selectTargetDevice("tv-2")
+        advanceUntilIdle()
+        assertEquals("tv-2", vm.uiState.value.selectedTargetId)
+
+        vm.sendRemoteText("Ouvre Arte")
+        advanceUntilIdle()
+        assertEquals(
+            listOf("Pause" to null, "Ouvre Arte" to "tv-2"),
+            repo.sentRemoteCommands,
+        )
+
+        vm.selectTargetDevice(null)
+        advanceUntilIdle()
+        assertNull(vm.uiState.value.selectedTargetId)
+        collector.cancel()
+    }
+
+    @Test
+    fun `no connected peers leaves selectedTargetId null`() = runTest {
+        val repo = FakeHousehold(currentKey = KEY)
+        repo.activePeers.value = listOf(
+            DiscoveredPeer(id = "tv-1", name = "TV Salon", deviceType = "tv", state = "offline"),
+        )
+        val vm = viewModel(repo)
+        val collector = backgroundScope.launch { vm.uiState.collect {} }
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.connectedPeers.isEmpty())
+        assertNull(vm.uiState.value.selectedTargetId)
+        collector.cancel()
+    }
+
+    @Test
+    fun refreshPeersCallsRepository() = runTest {
+        val fakeRepo = FakeHousehold()
+        val vm = viewModel(fakeRepo)
+
+        vm.refreshPeers()
+
+        assertEquals(1, fakeRepo.refreshCount)
+    }
+
     private fun viewModel(repo: FakeHousehold) = DevicesViewModel(
         householdRepo = repo,
         inviteCodec = FakeInviteCodec,
@@ -138,8 +255,14 @@ private object FakeInviteCodec : HouseholdInviteCodec {
     }
 }
 
-private class FakeHousehold(private val currentKey: String? = null) : HouseholdRepository {
+private class FakeHousehold(
+    private val currentKey: String? = null,
+    private val sendRemoteTextError: Throwable? = null,
+) : HouseholdRepository {
     val joinedKeys = mutableListOf<String>()
+    val sentRemoteCommands = mutableListOf<Pair<String, String?>>()
+    val sentRemoteTexts: List<String> get() = sentRemoteCommands.map { it.first }
+    var refreshCount = 0
 
     override val isJoined: StateFlow<Boolean> = MutableStateFlow(currentKey != null)
     override val householdId: StateFlow<String?> = MutableStateFlow(null)
@@ -147,7 +270,7 @@ private class FakeHousehold(private val currentKey: String? = null) : HouseholdR
     override val deviceName: String = "Téléphone"
     override val deviceType: String = "mobile"
     override val syncStatus: StateFlow<String> = MutableStateFlow("Prêt")
-    override val activePeers: StateFlow<List<DiscoveredPeer>> = MutableStateFlow(emptyList())
+    override val activePeers = MutableStateFlow<List<DiscoveredPeer>>(emptyList())
     override val syncLog: StateFlow<List<SyncLogEntry>> = MutableStateFlow(emptyList())
 
     override suspend fun createHousehold(): DomainHouseholdCredentials = DomainHouseholdCredentials("h", "k")
@@ -158,6 +281,13 @@ private class FakeHousehold(private val currentKey: String? = null) : HouseholdR
     override suspend fun leaveHousehold() = Unit
     override suspend fun sendNow() = Unit
     override suspend fun receiveNow() = Unit
+    override suspend fun sendRemoteText(text: String, targetPeerId: String?) {
+        sendRemoteTextError?.let { throw it }
+        sentRemoteCommands += text to targetPeerId
+    }
+    override suspend fun refreshPeers() {
+        refreshCount += 1
+    }
     override suspend fun currentHouseholdKeyHex(): String? = currentKey
     override fun startSyncService() = Unit
     override fun stopSyncService() = Unit

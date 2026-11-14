@@ -57,6 +57,8 @@ import com.pcoundia.buntu.core.domain.model.UpNextPreferences
 
 internal object BuntuAboutInfo {
     const val APP_NAME = "Buntu"
+    const val APP_VERSION = "1.0.0"
+    const val APP_BUILD = "1"
     const val SLOGAN = "Sa bunt ci lépp — La porte d'entrée de tous vos médias."
     const val AUTHOR_NAME = "Papa COUNDIA"
     const val AUTHOR_EMAIL = "papacoundia@gmail.com"
@@ -72,6 +74,7 @@ fun SettingsRoute(
     onOpenSources: () -> Unit,
     onOpenProfiles: () -> Unit,
     onOpenDevices: () -> Unit = {},
+    onOpenRemoteCommand: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -107,6 +110,9 @@ fun SettingsRoute(
                 ) {
                     OutlinedButton(onClick = onOpenDevices) {
                         Text("Appareils & Foyer", color = BuntuPalette.PureWhite)
+                    }
+                    OutlinedButton(onClick = onOpenRemoteCommand) {
+                        Text("Commande TV", color = BuntuPalette.PureWhite)
                     }
                     OutlinedButton(onClick = onOpenSources) {
                         Text("Sources IPTV", color = BuntuPalette.PureWhite)
@@ -640,6 +646,11 @@ fun SettingsRoute(
                         )
                         Text(
                             text = "Pays : ${BuntuAboutInfo.AUTHOR_COUNTRY}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = BuntuPalette.PureWhite,
+                        )
+                        Text(
+                            text = "Version : ${BuntuAboutInfo.APP_VERSION} (build ${BuntuAboutInfo.APP_BUILD})",
                             style = MaterialTheme.typography.bodyMedium,
                             color = BuntuPalette.PureWhite,
                         )

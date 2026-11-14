@@ -12,6 +12,7 @@ import androidx.navigation.navArgument
 import com.pcoundia.buntu.core.domain.model.SearchScopeKind
 import com.pcoundia.buntu.feature.details.DetailsRoute
 import com.pcoundia.buntu.feature.devices.DevicesRoute
+import com.pcoundia.buntu.feature.devices.RemoteCommandRoute
 import com.pcoundia.buntu.feature.downloads.DownloadsRoute
 import com.pcoundia.buntu.feature.guide.GuideRoute
 import com.pcoundia.buntu.feature.live.LiveRoute
@@ -208,11 +209,18 @@ fun BuntuNavHost(
                 onOpenSources = { navController.navigate(BuntuRoutes.SOURCES) },
                 onOpenProfiles = { navController.navigate(BuntuRoutes.PROFILES) },
                 onOpenDevices = { navController.navigate(BuntuRoutes.DEVICES) },
+                onOpenRemoteCommand = { navController.navigate(BuntuRoutes.REMOTE_COMMAND) },
             )
         }
 
         composable(BuntuRoutes.DEVICES) {
             DevicesRoute(
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(BuntuRoutes.REMOTE_COMMAND) {
+            RemoteCommandRoute(
                 onBack = { navController.popBackStack() },
             )
         }

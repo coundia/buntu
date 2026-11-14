@@ -28,6 +28,13 @@ interface HouseholdRepository {
 
     /** "Recevoir les données": asks every connected device for its data; nothing is sent from here. */
     suspend fun receiveNow()
+
+    /** Sends a dictated or typed remote text command to connected household devices (or a specific peer). */
+    suspend fun sendRemoteText(text: String, targetPeerId: String? = null) {}
+
+    /** Refreshes local network discovery and pings household peers to check which devices are online. */
+    suspend fun refreshPeers() {}
+
     suspend fun currentHouseholdKeyHex(): String?
     fun startSyncService()
     fun stopSyncService()
