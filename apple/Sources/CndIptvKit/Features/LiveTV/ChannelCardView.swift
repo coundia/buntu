@@ -63,7 +63,7 @@ struct ChannelCardView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel(accessibilityText)
-        .accessibilityHint("Lance la chaîne")
+        .accessibilityHint(AppLanguageStore.shared.t("live.channel.playHint"))
         .channelAccessibilityActions(item: item, nowNext: nowNext, actions: actions)
     }
 
@@ -170,7 +170,7 @@ struct ChannelCardView: View {
                 }
             }
         } else {
-            Text(item.tvgId?.isEmpty == false ? "Guide indisponible" : "Pas de guide")
+            Text(AppLanguageStore.shared.t(item.tvgId?.isEmpty == false ? "live.epg.unavailable" : "live.epg.none"))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
@@ -190,7 +190,7 @@ struct ChannelCardView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+        .accessibilityLabel(AppLanguageStore.shared.t(item.isFavorite ? "live.favorite.remove" : "live.favorite.add"))
         #endif
     }
 
@@ -202,53 +202,54 @@ struct ChannelCardView: View {
             if health.status == "ok" {
                 let isRecent = Date().timeIntervalSince1970 - Double(health.checkedAt) < 3600
                 if isRecent && (health.latencyMs ?? 0) < 500 {
-                    StatusDot(kind: .ok, description: "Opérationnelle (\(health.latencyMs ?? 0) ms)")
+                    StatusDot(kind: .ok, description: AppLanguageStore.shared.t("live.health.ok", Int(health.latencyMs ?? 0)))
                 } else {
-                    StatusDot(kind: .slow, description: "Flux lent (\(health.latencyMs ?? 0) ms)")
+                    StatusDot(kind: .slow, description: AppLanguageStore.shared.t("live.health.slow", Int(health.latencyMs ?? 0)))
                 }
             } else if health.consecutiveFailures > 0 {
-                StatusDot(kind: .failing, description: "\(health.consecutiveFailures) échec(s)")
+                StatusDot(kind: .failing, description: AppLanguageStore.shared.t("live.health.failures", Int(health.consecutiveFailures)))
             }
         }
     }
 
     @ViewBuilder
     private var menu: some View {
-        Button("Lire", systemImage: "play.fill") { actions.play(item) }
-        Button(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
+        let lang = AppLanguageStore.shared
+        Button(lang.t("live.action.play"), systemImage: "play.fill") { actions.play(item) }
+        Button(lang.t(item.isFavorite ? "live.favorite.remove" : "live.favorite.add"),
                systemImage: item.isFavorite ? "star.slash" : "star") { actions.toggleFavorite(item) }
         if let toggleBroken = actions.toggleBroken {
-            Button(item.isBroken ? "Rétablir le flux" : "Signaler en panne",
+            Button(lang.t(item.isBroken ? "live.broken.restore" : "live.broken.report"),
                    systemImage: item.isBroken ? "checkmark.circle" : "exclamationmark.triangle") {
                 toggleBroken(item)
             }
         }
         if let startOver = actions.startOver, let now = nowNext?.now, Self.hasArchive(item) {
-            Button("Revoir depuis le début", systemImage: "backward.end.fill") { startOver(item, now) }
+            Button(lang.t("live.action.startOver"), systemImage: "backward.end.fill") { startOver(item, now) }
         }
         if let addToMultiView = actions.addToMultiView {
-            Button("Ajouter à la mosaïque Multi-View", systemImage: "square.grid.2x2") {
+            Button(lang.t("live.action.addToMultiView"), systemImage: "square.grid.2x2") {
                 addToMultiView(item)
             }
         }
         if let showMirrors = actions.showMirrors {
-            Button("Alternatives (Miroirs)", systemImage: "arrow.triangle.swap") {
+            Button(lang.t("live.action.mirrors"), systemImage: "arrow.triangle.swap") {
                 showMirrors(item)
             }
         }
         PlayOnAnotherDeviceMenu(item: item)
         if let media = PlayableMedia(item: item) {
-            Menu("Ouvrir dans…", systemImage: "arrow.up.forward.app") {
+            Menu(lang.t("live.action.openIn"), systemImage: "arrow.up.forward.app") {
                 ForEach(ExternalPlayer.availableOnThisPlatform) { player in
                     Button(player.displayName) { Task { _ = await ExternalPlayerLauncher.launch(player, media: media) } }
                 }
             }
         }
-        Button("Voir le programme TV complet", systemImage: "calendar") { actions.showGuide(item) }
+        Button(lang.t("live.action.showGuide"), systemImage: "calendar") { actions.showGuide(item) }
             .disabled(item.tvgId?.isEmpty != false)
         Divider()
         if let media = PlayableMedia(item: item) {
-            Button("Copier l'URL du flux", systemImage: "link") { ExternalPlayerLauncher.copyStreamUrl(media) }
+            Button(lang.t("live.action.copyStreamUrl"), systemImage: "link") { ExternalPlayerLauncher.copyStreamUrl(media) }
         }
     }
 
@@ -267,10 +268,12 @@ struct ChannelCardView: View {
 
 private extension View {
     /// The context menu's entries as VoiceOver actions (swipe up or down): a long press is hard to do blind.
+    @MainActor
     func channelAccessibilityActions(item: IptvItemRecord, nowNext: ChannelNowNext?, actions: ChannelActions) -> some View {
-        self
-            .accessibilityAction(named: item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris") { actions.toggleFavorite(item) }
-            .accessibilityAction(named: "Voir le programme TV complet") { actions.showGuide(item) }
+        let lang = AppLanguageStore.shared
+        return self
+            .accessibilityAction(named: lang.t(item.isFavorite ? "live.favorite.remove" : "live.favorite.add")) { actions.toggleFavorite(item) }
+            .accessibilityAction(named: lang.t("live.action.showGuide")) { actions.showGuide(item) }
             .modifier(OptionalChannelActions(item: item, nowNext: nowNext, actions: actions))
     }
 }
@@ -281,19 +284,20 @@ private struct OptionalChannelActions: ViewModifier {
     let actions: ChannelActions
 
     func body(content: Content) -> some View {
+        let lang = AppLanguageStore.shared
         content
             .accessibilityActions {
                 if let toggleBroken = actions.toggleBroken {
-                    Button(item.isBroken ? "Rétablir le flux" : "Signaler en panne") { toggleBroken(item) }
+                    Button(lang.t(item.isBroken ? "live.broken.restore" : "live.broken.report")) { toggleBroken(item) }
                 }
                 if let startOver = actions.startOver, let now = nowNext?.now, ChannelCardView.hasArchive(item) {
-                    Button("Revoir depuis le début") { startOver(item, now) }
+                    Button(lang.t("live.action.startOver")) { startOver(item, now) }
                 }
                 if let addToMultiView = actions.addToMultiView {
-                    Button("Ajouter à la mosaïque") { addToMultiView(item) }
+                    Button(lang.t("live.a11y.addToMultiView")) { addToMultiView(item) }
                 }
                 if let showMirrors = actions.showMirrors {
-                    Button("Alternatives, miroirs") { showMirrors(item) }
+                    Button(lang.t("live.a11y.mirrors")) { showMirrors(item) }
                 }
             }
     }

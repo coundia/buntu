@@ -30,6 +30,12 @@ public struct HouseholdView: View {
     @State private var showingNearbyInvite = false
     @State private var showingNearbyJoin = false
     @State private var showingAddTV = false
+    @State private var languageStore = AppLanguageStore.shared
+
+    private func t(_ key: String) -> String { languageStore.t(key) }
+    private func t(_ key: String, _ args: CVarArg...) -> String {
+        String(format: languageStore.t(key), arguments: args)
+    }
 
     public init(localSync: LocalSyncService?) {
         self.localSync = localSync
@@ -56,7 +62,7 @@ public struct HouseholdView: View {
                 }
             }
         }
-        .navigationTitle("Appareils")
+        .navigationTitle(t("household.title"))
         #if !os(tvOS)
         .sheet(isPresented: $showingQR, onDismiss: { qrKey = nil }) {
             HouseholdQRSheet(keyHex: qrKey ?? "") { showingQR = false }
@@ -90,36 +96,36 @@ public struct HouseholdView: View {
                 showingNearbyJoin = false
             }
         }
-        .alert("Rejoindre un foyer", isPresented: $showingJoin) {
-            TextField("Clé du foyer (64 caractères)", text: $joinKey)
-            Button("Rejoindre") { join() }
-            Button("Annuler", role: .cancel) { joinKey = "" }
+        .alert(t("household.joinAlertTitle"), isPresented: $showingJoin) {
+            TextField(t("household.joinKeyPlaceholder"), text: $joinKey)
+            Button(t("household.joinButton")) { join() }
+            Button(t("common.cancel"), role: .cancel) { joinKey = "" }
         } message: {
-            Text("Collez la clé affichée sur un autre appareil du foyer (écran Appareils, « Copier la clé »).")
+            Text(t("household.joinAlertMessage"))
         }
-        .confirmationDialog("Quitter le foyer ?", isPresented: $showingLeaveConfirm, titleVisibility: .visible) {
-            Button("Quitter le foyer", role: .destructive) {
+        .confirmationDialog(t("household.leaveConfirmTitle"), isPresented: $showingLeaveConfirm, titleVisibility: .visible) {
+            Button(t("household.leaveConfirmButton"), role: .destructive) {
                 store.leaveHousehold()
                 localSync?.stop()
             }
-            Button("Annuler", role: .cancel) {}
+            Button(t("common.cancel"), role: .cancel) {}
         } message: {
-            Text("Cet appareil ne partagera plus ses favoris, reprises et comptes avec le foyer. Les autres appareils ne sont pas modifiés.")
+            Text(t("household.leaveConfirmMessage"))
         }
         .confirmationDialog(
-            "Retirer \(deviceToRemove?.name ?? "cet appareil") du foyer ?",
+            t("household.removeConfirmTitle", deviceToRemove?.name ?? t("household.removeThisDevice")),
             isPresented: Binding(get: { deviceToRemove != nil }, set: { if !$0 { deviceToRemove = nil } }),
             titleVisibility: .visible
         ) {
-            Button("Retirer du foyer", role: .destructive) {
+            Button(t("household.removeConfirmButton"), role: .destructive) {
                 if let target = deviceToRemove {
                     do { try localSync?.removeDevice(target.id) } catch { errorMessage = error.localizedDescription }
                 }
                 deviceToRemove = nil
             }
-            Button("Annuler", role: .cancel) { deviceToRemove = nil }
+            Button(t("common.cancel"), role: .cancel) { deviceToRemove = nil }
         } message: {
-            Text("La clé du foyer est changée : cet appareil ne pourra plus lire vos favoris ni vos comptes. Les autres appareils reçoivent la nouvelle clé automatiquement ; ceux qui sont éteints la reçoivent à leur prochain passage sur le Wi‑Fi (sous 30 jours).")
+            Text(t("household.removeConfirmMessage"))
         }
     }
 
@@ -127,7 +133,7 @@ public struct HouseholdView: View {
 
     private var welcomeSection: some View {
         Section {
-            Text("Reliez vos appareils Buntu (iPhone, Mac, TV, Android) sur le Wi-Fi de la maison, sans serveur : favoris, reprises de lecture, comptes et « Lire sur… ».")
+            Text(t("household.welcome.description"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Button {
@@ -136,39 +142,39 @@ public struct HouseholdView: View {
                     errorMessage = nil
                     localSync?.start()
                 } catch {
-                    errorMessage = "Création du foyer impossible : \(error.localizedDescription)"
+                    errorMessage = t("household.welcome.createError", error.localizedDescription)
                 }
             } label: {
-                Label("Créer un foyer", systemImage: "house.fill")
+                Label(t("household.welcome.create"), systemImage: "house.fill")
             }
             Button {
                 showingNearbyJoin = true
             } label: {
-                Label("Rejoindre un foyer à proximité…", systemImage: "wave.3.forward.circle.fill")
+                Label(t("household.welcome.joinNearby"), systemImage: "wave.3.forward.circle.fill")
             }
             #if os(iOS)
             Button {
                 showingScanner = true
             } label: {
-                Label("Scanner un QR code", systemImage: "qrcode.viewfinder")
+                Label(t("household.welcome.scanQR"), systemImage: "qrcode.viewfinder")
             }
             #endif
             Button {
                 showingJoin = true
             } label: {
-                Label("Rejoindre avec la clé…", systemImage: "person.badge.key")
+                Label(t("household.welcome.joinWithKey"), systemImage: "person.badge.key")
             }
         } header: {
-            Text("Aucun foyer")
+            Text(t("household.welcome.header"))
         }
     }
 
     private var thisDeviceSection: some View {
-        Section("Cet appareil") {
+        Section(t("household.thisDevice.header")) {
             Label {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(store.deviceName).font(.headline)
-                    Text("Foyer \(store.householdId ?? "")")
+                    Text(t("household.thisDevice.householdPrefix", store.householdId ?? ""))
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                         #if !os(tvOS)
@@ -189,7 +195,7 @@ public struct HouseholdView: View {
         let healthy = sync.isListening && sync.isBrowsing
         Label {
             VStack(alignment: .leading, spacing: 2) {
-                Text(healthy ? "Réseau local actif" : "Réseau local inactif")
+                Text(healthy ? t("household.network.active") : t("household.network.inactive"))
                 Text(sync.syncStatusMessage).font(.caption).foregroundStyle(.secondary)
             }
         } icon: {
@@ -197,13 +203,13 @@ public struct HouseholdView: View {
                 .foregroundStyle(healthy ? Color.green : Color.orange)
         }
         if let last = sync.lastSyncDate {
-            LabeledContent("Dernière synchronisation", value: last.formatted(date: .omitted, time: .standard))
+            LabeledContent(t("household.network.lastSync"), value: last.formatted(date: .omitted, time: .standard))
         }
         if !healthy {
             Button {
                 sync.ensureRunning()
             } label: {
-                Label("Relancer la recherche", systemImage: "arrow.clockwise")
+                Label(t("household.network.restart"), systemImage: "arrow.clockwise")
             }
         }
     }
@@ -212,7 +218,7 @@ public struct HouseholdView: View {
     private func remoteCommandSection(_ sync: LocalSyncService) -> some View {
         let isEmpty = remoteCommandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return Section {
-            TextField("Dictez (🎙️) ou écrivez une commande pour la TV…", text: $remoteCommandText)
+            TextField(t("household.remote.placeholder"), text: $remoteCommandText)
                 .submitLabel(.send)
                 .onSubmit {
                     sendRemoteCommand(sync)
@@ -220,18 +226,18 @@ public struct HouseholdView: View {
             Button {
                 sendRemoteCommand(sync)
             } label: {
-                Label("Envoyer à la TV", systemImage: "paperplane.fill")
+                Label(t("household.remote.sendToTV"), systemImage: "paperplane.fill")
             }
             .disabled(isEmpty)
             if remoteCommandSent {
-                Label("Commande envoyée à la TV.", systemImage: "checkmark.circle.fill")
+                Label(t("household.remote.sent"), systemImage: "checkmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(.green)
             }
         } header: {
-            Text("Commande vocale / texte vers la TV")
+            Text(t("household.remote.header"))
         } footer: {
-            Text("Utilisez la dictée vocale (🎙️) du clavier ou écrivez une commande pour la TV.")
+            Text(t("household.remote.footer"))
         }
     }
 
@@ -274,25 +280,25 @@ public struct HouseholdView: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Aucun autre appareil détecté.").font(.subheadline)
-                    Text("Ouvrez Buntu sur l'autre appareil, sur le même Wi-Fi, puis rejoignez ce foyer avec la clé. Un Wi-Fi invité, ou une box qui isole les appareils entre eux, empêche la détection. Sur iPhone, l'autorisation « Réseau local » doit être activée pour Buntu.")
+                    Text(t("household.devices.none")).font(.subheadline)
+                    Text(t("household.devices.noneHint"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
         } header: {
             HStack {
-                Text("Appareils du foyer")
+                Text(t("household.devices.header"))
                 Spacer()
                 if let localSync, store.isJoined {
                     Button {
                         localSync.refreshPeers()
                     } label: {
-                        Label("Actualiser", systemImage: "arrow.clockwise")
+                        Label(t("common.refresh"), systemImage: "arrow.clockwise")
                             .font(.caption)
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel("Actualiser les appareils du foyer")
+                    .accessibilityLabel(t("household.devices.refreshA11y"))
                 }
             }
         }
@@ -305,7 +311,7 @@ public struct HouseholdView: View {
         if let localSync {
             Section {
                 if localSync.syncLog.isEmpty {
-                    Text("Rien pour l'instant. Appuyez sur « Recevoir les données ».")
+                    Text(t("household.syncLog.empty"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
@@ -322,15 +328,15 @@ public struct HouseholdView: View {
                     }
                     #if !os(tvOS)
                     HStack {
-                        Button("Copier le journal") { copySyncLog(localSync.syncLog) }
+                        Button(t("household.syncLog.copy")) { copySyncLog(localSync.syncLog) }
                         Spacer()
-                        Button("Effacer", role: .destructive) { localSync.clearLog() }
+                        Button(t("common.clear"), role: .destructive) { localSync.clearLog() }
                     }
                     .font(.caption)
                     #endif
                 }
             } header: {
-                Text("Journal de synchronisation")
+                Text(t("household.syncLog.header"))
             }
         }
     }
@@ -372,7 +378,7 @@ public struct HouseholdView: View {
                 Button(role: .destructive) {
                     deviceToRemove = (peer.id, peer.name)
                 } label: {
-                    Label("Retirer du foyer…", systemImage: "person.badge.minus")
+                    Label(t("household.devices.removeMenu"), systemImage: "person.badge.minus")
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -393,43 +399,43 @@ public struct HouseholdView: View {
                 Button {
                     localSync.sendNow()
                 } label: {
-                    Label("Envoyer mes données", systemImage: "square.and.arrow.up")
+                    Label(t("household.actions.send"), systemImage: "square.and.arrow.up")
                 }
                 Button {
                     localSync.receiveNow()
                 } label: {
-                    Label("Recevoir les données", systemImage: "square.and.arrow.down")
+                    Label(t("household.actions.receive"), systemImage: "square.and.arrow.down")
                 }
             }
             #if !os(tvOS)
             Button {
                 showingAddTV = true
             } label: {
-                Label("Ajouter une TV Samsung (scanner son QR code)…", systemImage: "tv.badge.wifi")
+                Label(t("household.actions.addSamsungTV"), systemImage: "tv.badge.wifi")
             }
             Button {
                 showingNearbyInvite = true
             } label: {
-                Label("Ajouter un appareil à proximité…", systemImage: "person.badge.plus")
+                Label(t("household.actions.addNearby"), systemImage: "person.badge.plus")
             }
             Button {
                 showQRCode()
             } label: {
-                Label("Afficher le QR code (pour ajouter un appareil)", systemImage: "qrcode")
+                Label(t("household.actions.showQR"), systemImage: "qrcode")
             }
             Button {
                 copyKey()
             } label: {
-                Label(keyCopied ? "Clé copiée" : "Copier la clé du foyer (pour ajouter un appareil)", systemImage: keyCopied ? "checkmark" : "key")
+                Label(keyCopied ? t("household.actions.keyCopied") : t("household.actions.copyKey"), systemImage: keyCopied ? "checkmark" : "key")
             }
             #endif
             Button(role: .destructive) {
                 showingLeaveConfirm = true
             } label: {
-                Label("Quitter le foyer", systemImage: "rectangle.portrait.and.arrow.right")
+                Label(t("household.actions.leave"), systemImage: "rectangle.portrait.and.arrow.right")
             }
         } footer: {
-            Text("Envoyer et Recevoir ajoutent comptes, favoris et reprises sans jamais rien supprimer ; supprimer un compte ne le retire que de cet appareil. La clé du foyer donne accès à vos favoris et à vos comptes IPTV : ne la partagez qu'avec vos propres appareils. Retirer un appareil (menu « … » de sa ligne) change la clé du foyer.")
+            Text(t("household.actions.footer"))
         }
     }
 
@@ -447,14 +453,14 @@ public struct HouseholdView: View {
             errorMessage = nil
             localSync?.start()
         } catch {
-            errorMessage = "Clé de foyer invalide : \(error.localizedDescription)"
+            errorMessage = t("household.error.invalidKey", error.localizedDescription)
         }
     }
 
     #if !os(tvOS)
     private func showQRCode() {
         guard let key = store.currentHouseholdKeyHex() else {
-            errorMessage = "La clé du foyer est introuvable sur cet appareil."
+            errorMessage = t("household.error.keyNotFound")
             return
         }
         errorMessage = nil
@@ -489,14 +495,16 @@ public struct HouseholdView: View {
         }
     }
 
+    @MainActor
     static func statusText(for peer: DiscoveredPeer, online: Bool, lastSeen: Date) -> String {
+        let lang = AppLanguageStore.shared
         guard online else {
             let formatter = RelativeDateTimeFormatter()
             formatter.unitsStyle = .short
-            return "Hors ligne · vu \(formatter.localizedString(for: lastSeen, relativeTo: Date()))"
+            return lang.t("household.status.offlineSeen", formatter.localizedString(for: lastSeen, relativeTo: Date()))
         }
-        if !peer.canPlay { return "Disponible · ne peut pas lire" }
-        return peer.state == "playing" ? "En lecture" : "Disponible"
+        if !peer.canPlay { return lang.t("household.status.availableNoPlay") }
+        return peer.state == "playing" ? lang.t("household.status.playing") : lang.t("household.status.available")
     }
 }
 
@@ -526,8 +534,16 @@ public struct RemoteCommandView: View {
     @State private var commandText = ""
     @State private var commandSent = false
     @State private var selectedTargetId: String?
+    @State private var languageStore = AppLanguageStore.shared
 
-    private static let quickCommands = ["France 2", "Chaîne suivante", "Un film d’action"]
+    private func t(_ key: String) -> String { languageStore.t(key) }
+    private func t(_ key: String, _ args: CVarArg...) -> String {
+        String(format: languageStore.t(key), arguments: args)
+    }
+
+    private var quickCommands: [String] {
+        [t("remoteCommand.quick.1"), t("remoteCommand.quick.2"), t("remoteCommand.quick.3")]
+    }
 
     public init(localSync: LocalSyncService?) {
         self.localSync = localSync
@@ -546,28 +562,28 @@ public struct RemoteCommandView: View {
                 commandInputSection(localSync)
             }
         }
-        .navigationTitle("Commande TV")
+        .navigationTitle(t("remoteCommand.title"))
         .onAppear { syncSelection() }
         .onChange(of: connectedPeers.map(\.id)) { _, _ in syncSelection() }
     }
 
     private var notJoinedSection: some View {
-        Section("Foyer") {
-            Label("Aucun foyer connecté", systemImage: "house.slash")
-                .accessibilityLabel("Aucun foyer connecté")
-            Text("Rejoignez ou créez un foyer dans l’onglet « Appareils » pour envoyer des commandes vocales ou texte vers vos appareils.")
+        Section(t("remoteCommand.notJoined.header")) {
+            Label(t("remoteCommand.notJoined.title"), systemImage: "house.slash")
+                .accessibilityLabel(t("remoteCommand.notJoined.title"))
+            Text(t("remoteCommand.notJoined.body"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .accessibilityHint("Ouvrez l’onglet Appareils pour configurer votre foyer")
+                .accessibilityHint(t("remoteCommand.notJoined.hint"))
         }
     }
 
     private var targetDevicesSection: some View {
         Section {
             if connectedPeers.isEmpty {
-                Label("Aucun appareil connecté", systemImage: "tv.slash")
-                    .accessibilityLabel("Aucun appareil connecté")
-                Text("Ouvrez Buntu sur votre TV ou un autre appareil sur le même Wi‑Fi.")
+                Label(t("remoteCommand.devices.noneTitle"), systemImage: "tv.slash")
+                    .accessibilityLabel(t("remoteCommand.devices.noneTitle"))
+                Text(t("remoteCommand.devices.noneBody"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if connectedPeers.count == 1, let peer = connectedPeers.first {
@@ -578,7 +594,7 @@ public struct RemoteCommandView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(peer.name)
                             .font(.body)
-                        Text("Sélectionné automatiquement")
+                        Text(t("remoteCommand.devices.autoSelected"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -588,34 +604,34 @@ public struct RemoteCommandView: View {
                         .accessibilityHidden(true)
                 }
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Appareil cible : \(peer.name)")
-                .accessibilityValue("Sélectionné automatiquement")
+                .accessibilityLabel(t("remoteCommand.devices.targetA11y", peer.name))
+                .accessibilityValue(t("remoteCommand.devices.autoSelected"))
             } else {
-                Picker("Appareil cible", selection: $selectedTargetId) {
-                    Text("Tous les appareils connectés")
+                Picker(t("remoteCommand.devices.targetPicker"), selection: $selectedTargetId) {
+                    Text(t("remoteCommand.devices.allConnected"))
                         .tag(Optional(RemoteCommandTargetResolver.allTargetId))
                     ForEach(connectedPeers) { peer in
                         Label(peer.name, systemImage: HouseholdView.icon(for: peer.deviceType))
                             .tag(Optional(peer.id))
                     }
                 }
-                .accessibilityLabel("Appareil cible")
-                .accessibilityHint("Choisissez un appareil connecté ou tous les appareils du foyer")
+                .accessibilityLabel(t("remoteCommand.devices.targetPicker"))
+                .accessibilityHint(t("remoteCommand.devices.targetHint"))
                 .accessibilityValue(selectedTargetLabel)
             }
         } header: {
             HStack {
-                Text("Appareils connectés")
+                Text(t("remoteCommand.devices.header"))
                 Spacer()
                 if let localSync {
                     Button {
                         localSync.refreshPeers()
                     } label: {
-                        Label("Actualiser", systemImage: "arrow.clockwise")
+                        Label(t("common.refresh"), systemImage: "arrow.clockwise")
                             .font(.caption)
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel("Actualiser les appareils connectés")
+                    .accessibilityLabel(t("remoteCommand.devices.refreshA11y"))
                 }
             }
         }
@@ -624,21 +640,21 @@ public struct RemoteCommandView: View {
     private func commandInputSection(_ sync: LocalSyncService) -> some View {
         let isEmpty = commandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return Section {
-            TextField("Dictez (🎙️) ou écrivez une commande pour la TV…", text: $commandText)
+            TextField(t("remoteCommand.input.placeholder"), text: $commandText)
                 .submitLabel(.send)
                 .onSubmit { sendCommand(sync) }
-                .accessibilityLabel("Commande pour la TV")
-                .accessibilityHint("Dictez au clavier ou saisissez une chaîne, un film ou une action")
+                .accessibilityLabel(t("remoteCommand.input.a11yLabel"))
+                .accessibilityHint(t("remoteCommand.input.a11yHint"))
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(Self.quickCommands, id: \.self) { chip in
+                    ForEach(quickCommands, id: \.self) { chip in
                         Button(chip) {
                             commandText = chip
                         }
                         .buttonStyle(.bordered)
-                        .accessibilityLabel("Suggestion : \(chip)")
-                        .accessibilityHint("Remplit le champ avec \(chip)")
+                        .accessibilityLabel(t("remoteCommand.input.suggestionA11y", chip))
+                        .accessibilityHint(t("remoteCommand.input.suggestionHint", chip))
                     }
                 }
                 .padding(.vertical, 2)
@@ -647,30 +663,30 @@ public struct RemoteCommandView: View {
             Button {
                 sendCommand(sync)
             } label: {
-                Label("Envoyer", systemImage: "paperplane.fill")
+                Label(t("common.send"), systemImage: "paperplane.fill")
             }
             .disabled(isEmpty || connectedPeers.isEmpty)
-            .accessibilityLabel("Envoyer la commande")
-            .accessibilityHint("Envoie la commande à l’appareil sélectionné")
+            .accessibilityLabel(t("remoteCommand.input.sendA11y"))
+            .accessibilityHint(t("remoteCommand.input.sendHint"))
 
             if commandSent {
-                Label("Commande envoyée.", systemImage: "checkmark.circle.fill")
+                Label(t("remoteCommand.input.sent"), systemImage: "checkmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(.green)
-                    .accessibilityLabel("Commande envoyée")
+                    .accessibilityLabel(t("remoteCommand.input.sent"))
             }
         } header: {
-            Text("Commande vocale / texte")
+            Text(t("remoteCommand.input.header"))
         } footer: {
-            Text("Utilisez la dictée vocale (🎙️) du clavier ou sélectionnez une suggestion rapide.")
+            Text(t("remoteCommand.input.footer"))
         }
     }
 
     private var selectedTargetLabel: String {
         guard let selectedTargetId, selectedTargetId != RemoteCommandTargetResolver.allTargetId else {
-            return "Tous les appareils connectés"
+            return t("remoteCommand.devices.allConnected")
         }
-        return connectedPeers.first(where: { $0.id == selectedTargetId })?.name ?? "Tous les appareils connectés"
+        return connectedPeers.first(where: { $0.id == selectedTargetId })?.name ?? t("remoteCommand.devices.allConnected")
     }
 
     private func syncSelection() {

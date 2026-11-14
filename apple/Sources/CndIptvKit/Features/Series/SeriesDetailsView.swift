@@ -114,7 +114,7 @@ final class SeriesDetailsModel {
 
     func refreshMetadata(force: Bool) async {
         guard let key = vod.omdbKey() else {
-            metadataMessage = "Ajoutez une clé OMDb dans les Réglages pour enrichir la fiche."
+            metadataMessage = AppLanguageStore.shared.t("series.omdb.missingKey")
             return
         }
         guard !isLoadingMetadata else { return }
@@ -123,7 +123,7 @@ final class SeriesDetailsModel {
         defer { isLoadingMetadata = false }
         do {
             metadata = try await vod.engine.fetchSeriesMetadata(seriesId: series.id, apiKey: key, forceRefresh: force)
-            if metadata == nil { metadataMessage = "Aucune fiche OMDb trouvée pour cette série." }
+            if metadata == nil { metadataMessage = AppLanguageStore.shared.t("series.omdb.notFound") }
             await reloadStructure()
         } catch {
             metadataMessage = userMessage(for: error)
@@ -222,7 +222,7 @@ struct SeriesDetailsView: View {
             if let onClose {
                 Button(action: onClose) { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Fermer la fiche")
+                    .accessibilityLabel(AppLanguageStore.shared.t("series.a11y.closeDetails"))
             }
         }
         .padding([.horizontal, .top], 14)
@@ -276,40 +276,41 @@ struct SeriesDetailsView: View {
 
     @ViewBuilder
     private var actionButtons: some View {
+        let lang = AppLanguageStore.shared
         Button { model.playSeason() } label: {
-            Label(model.selectedSeason.map { "Lire toute la saison \($0)" } ?? "Lire", systemImage: "play.fill")
+            Label(model.selectedSeason.map { lang.t("series.action.playSeason", Int($0)) } ?? lang.t("series.action.play"), systemImage: "play.fill")
         }
         .buttonStyle(.borderedProminent)
         .disabled(model.episodes.isEmpty)
         Button { model.downloadSeason() } label: {
-            Label(model.selectedSeason.map { "Télécharger la saison \($0)" } ?? "Télécharger", systemImage: "arrow.down.circle")
+            Label(model.selectedSeason.map { lang.t("series.action.downloadSeason", Int($0)) } ?? lang.t("series.action.download"), systemImage: "arrow.down.circle")
         }
         .buttonStyle(.bordered)
         .disabled(model.episodes.isEmpty)
         Button { Task { await model.toggleFavorite() } } label: {
-            Label("Favori", systemImage: series.isFavorite ? "star.fill" : "star")
+            Label(lang.t("series.action.favorite"), systemImage: series.isFavorite ? "star.fill" : "star")
         }
         .buttonStyle(.bordered)
-        .help(series.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
-        .accessibilityLabel(series.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+        .help(lang.t(series.isFavorite ? "series.favorite.remove" : "series.favorite.add"))
+        .accessibilityLabel(lang.t(series.isFavorite ? "series.favorite.remove" : "series.favorite.add"))
         Button { Task { await model.toggleBroken() } } label: {
             if series.isBroken {
-                Label("HS", systemImage: "exclamationmark.triangle.fill")
+                Label(lang.t("series.broken.badge"), systemImage: "exclamationmark.triangle.fill")
             } else {
                 Image(systemName: "exclamationmark.triangle")
             }
         }
         .buttonStyle(.bordered)
         .tint(series.isBroken ? .red : .secondary)
-        .help(series.isBroken ? "Signalée en panne — cliquer pour rétablir" : "Signaler cette série en panne")
-        .accessibilityLabel(series.isBroken ? "Rétablir le flux" : "Signaler en panne")
+        .help(lang.t(series.isBroken ? "series.broken.restoreHelp" : "series.broken.reportHelp"))
+        .accessibilityLabel(lang.t(series.isBroken ? "series.broken.restore" : "series.broken.report"))
         Menu {
-            Button("Lire toute la série", systemImage: "play.rectangle.on.rectangle") { Task { await model.playWholeSeries() } }
-            Button("Rafraîchir les métadonnées OMDb", systemImage: "arrow.clockwise") {
+            Button(lang.t("series.action.playWholeSeries"), systemImage: "play.rectangle.on.rectangle") { Task { await model.playWholeSeries() } }
+            Button(lang.t("series.action.refreshOmdb"), systemImage: "arrow.clockwise") {
                 Task { await model.refreshMetadata(force: true) }
             }
         } label: {
-            Label("Plus", systemImage: "ellipsis.circle")
+            Label(lang.t("series.action.more"), systemImage: "ellipsis.circle")
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -317,17 +318,18 @@ struct SeriesDetailsView: View {
 
     @ViewBuilder
     private var status: some View {
+        let lang = AppLanguageStore.shared
         if model.isHydrating {
-            HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Chargement des épisodes…") }
+            HStack(spacing: 8) { ProgressView().controlSize(.small); Text(lang.t("series.status.hydrating")) }
                 .font(.callout).foregroundStyle(.secondary)
         } else if let error = model.hydrationError {
             HStack {
                 Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
-                Button("Réessayer") { Task { await model.retryHydration() } }
+                Button(lang.t("series.action.retry")) { Task { await model.retryHydration() } }
             }
             .font(.callout)
         } else if model.isLoadingMetadata {
-            HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Enrichissement OMDb…") }
+            HStack(spacing: 8) { ProgressView().controlSize(.small); Text(lang.t("series.omdb.loading")) }
                 .font(.callout).foregroundStyle(.secondary)
         } else if let message = model.metadataMessage {
             Label(message, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary)
@@ -344,7 +346,7 @@ struct SeriesDetailsView: View {
                     ForEach(model.seasons, id: \.seasonNum) { season in
                         let selected = model.selectedSeason == season.seasonNum
                         Button { Task { await model.select(season: season.seasonNum) } } label: {
-                            Text("Saison \(season.seasonNum)")
+                            Text(AppLanguageStore.shared.t("series.seasonNumber", Int(season.seasonNum)))
                                 .font(.subheadline.weight(selected ? .semibold : .regular))
                                 .padding(.horizontal, 14).padding(.vertical, 6)
                                 .background(selected ? Color.accentColor : Color.secondary.opacity(0.18), in: Capsule())
@@ -380,9 +382,10 @@ struct EpisodeRow: View {
     var onDownload: () -> Void
     var onToggleBroken: (() -> Void)? = nil
 
+    @MainActor
     private var title: String {
         let text = DownloadPlanner.episodeTitle(episode.nameClean.isEmpty ? episode.name : episode.nameClean, seriesTitle: seriesTitle)
-        return text.isEmpty ? "Épisode \(episode.episodeNum ?? 0)" : text
+        return text.isEmpty ? AppLanguageStore.shared.t("series.episode.fallbackTitle", Int(episode.episodeNum ?? 0)) : text
     }
 
     private var progress: Double? {
@@ -405,31 +408,32 @@ struct EpisodeRow: View {
                     }
                 }
                 if let position = VodContext.resumePosition(for: episode) {
-                    Text("Reprendre à \(TimeFormat.hms(milliseconds: position))").font(.caption).foregroundStyle(.secondary)
+                    Text(AppLanguageStore.shared.t("series.episode.resumeAt", TimeFormat.hms(milliseconds: position))).font(.caption).foregroundStyle(.secondary)
                 }
                 if let progress {
                     ProgressView(value: min(progress, 1)).progressViewStyle(.linear).tint(.red).frame(maxWidth: 220)
                 }
             }
             Spacer()
+            let lang = AppLanguageStore.shared
             Button(action: onPlay) { Image(systemName: "play.fill") }
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Lire l'épisode")
+                .accessibilityLabel(lang.t("series.episode.playA11y"))
             Button(action: onDownload) { Image(systemName: "arrow.down.circle") }
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Télécharger l'épisode")
+                .accessibilityLabel(lang.t("series.episode.downloadA11y"))
             Menu {
                 if let media = PlayableMedia(item: episode) {
-                    Menu("Ouvrir dans…") {
+                    Menu(lang.t("series.action.openIn")) {
                         ForEach(ExternalPlayer.availableOnThisPlatform) { player in
                             Button(player.displayName) { Task { _ = await ExternalPlayerLauncher.launch(player, media: media) } }
                         }
                     }
-                    Button("Copier l'URL") { ExternalPlayerLauncher.copyStreamUrl(media) }
-                    Button("Copier la commande FFmpeg") { ExternalPlayerLauncher.copyFfmpegCommand(media) }
+                    Button(lang.t("series.action.copyUrl")) { ExternalPlayerLauncher.copyStreamUrl(media) }
+                    Button(lang.t("series.action.copyFfmpeg")) { ExternalPlayerLauncher.copyFfmpegCommand(media) }
                 }
                 if let onToggleBroken {
-                    Button(episode.isBroken ? "Rétablir le flux" : "Signaler en panne",
+                    Button(lang.t(episode.isBroken ? "series.broken.restore" : "series.broken.report"),
                            systemImage: episode.isBroken ? "checkmark.circle" : "exclamationmark.triangle",
                            action: onToggleBroken)
                 }
@@ -438,7 +442,7 @@ struct EpisodeRow: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .accessibilityLabel("Plus d'actions pour cet épisode")
+            .accessibilityLabel(lang.t("series.episode.moreA11y"))
         }
         .padding(.vertical, 8)
         .accessibleTap(perform: onPlay)

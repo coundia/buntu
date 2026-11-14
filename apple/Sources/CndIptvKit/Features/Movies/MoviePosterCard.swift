@@ -10,39 +10,40 @@ struct MovieActionsMenu: View {
     var onRefreshMetadata: (() -> Void)?
 
     var body: some View {
+        let lang = AppLanguageStore.shared
         if let position = VodContext.resumePosition(for: item) {
-            Button("Reprendre (\(TimeFormat.hms(milliseconds: position)))", systemImage: "play.fill") {
+            Button(lang.t("movies.action.resumeAt", TimeFormat.hms(milliseconds: position)), systemImage: "play.fill") {
                 vod.play(item, resume: true)
             }
-            Button("Recommencer depuis le début", systemImage: "arrow.counterclockwise") {
+            Button(lang.t("movies.action.restart"), systemImage: "arrow.counterclockwise") {
                 vod.play(item, resume: false)
             }
         } else {
-            Button("Lire", systemImage: "play.fill") { vod.play(item, resume: false) }
+            Button(lang.t("movies.action.play"), systemImage: "play.fill") { vod.play(item, resume: false) }
         }
-        Button(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
+        Button(lang.t(item.isFavorite ? "movies.favorite.remove" : "movies.favorite.add"),
                systemImage: item.isFavorite ? "star.slash" : "star", action: onToggleFavorite)
         if let onToggleBroken {
-            Button(item.isBroken ? "Rétablir le flux" : "Signaler en panne",
+            Button(lang.t(item.isBroken ? "movies.broken.restore" : "movies.broken.report"),
                    systemImage: item.isBroken ? "checkmark.circle" : "exclamationmark.triangle",
                    action: onToggleBroken)
         }
         PlayOnAnotherDeviceMenu(item: item, positionMs: UInt64(max(0, VodContext.resumePosition(for: item) ?? 0)))
-        Button("Télécharger", systemImage: "arrow.down.circle") { vod.downloadMovie(item) }
+        Button(lang.t("movies.action.download"), systemImage: "arrow.down.circle") { vod.downloadMovie(item) }
         if let media = PlayableMedia(item: item) {
-            Menu("Ouvrir dans…", systemImage: "arrow.up.forward.app") {
+            Menu(lang.t("movies.action.openIn"), systemImage: "arrow.up.forward.app") {
                 ForEach(ExternalPlayer.availableOnThisPlatform) { player in
                     Button(player.displayName) { Task { _ = await ExternalPlayerLauncher.launch(player, media: media) } }
                 }
             }
             Divider()
-            Button("Copier l'URL", systemImage: "link") { ExternalPlayerLauncher.copyStreamUrl(media) }
-            Button("Copier la commande FFmpeg", systemImage: "terminal") { ExternalPlayerLauncher.copyFfmpegCommand(media) }
-            Button("Copier la commande cURL", systemImage: "terminal") { ExternalPlayerLauncher.copyCurlCommand(media) }
+            Button(lang.t("movies.action.copyUrl"), systemImage: "link") { ExternalPlayerLauncher.copyStreamUrl(media) }
+            Button(lang.t("movies.action.copyFfmpeg"), systemImage: "terminal") { ExternalPlayerLauncher.copyFfmpegCommand(media) }
+            Button(lang.t("movies.action.copyCurl"), systemImage: "terminal") { ExternalPlayerLauncher.copyCurlCommand(media) }
         }
         if let onRefreshMetadata {
             Divider()
-            Button("Rafraîchir les métadonnées OMDb", systemImage: "arrow.clockwise", action: onRefreshMetadata)
+            Button(lang.t("movies.action.refreshOmdb"), systemImage: "arrow.clockwise", action: onRefreshMetadata)
         }
     }
 }
@@ -125,7 +126,7 @@ struct MoviePosterCard: View {
                     .foregroundStyle(item.isFavorite ? Color.yellow : Color.secondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(item.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+            .accessibilityLabel(AppLanguageStore.shared.t(item.isFavorite ? "movies.favorite.remove" : "movies.favorite.add"))
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())
