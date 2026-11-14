@@ -21,6 +21,75 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-14 — Antigravity, Constantes version & build sur toutes les apps
+
+- ✅ **Apple** : constantes `AppBrand.appVersion` (`"1.0.0"`) et `AppBrand.appBuild` (`"1"`) dans [`AppBrand.swift`](apple/Sources/CndIptvKit/Shared/Design/AppBrand.swift) ; `SettingsModel.appVersion` dans [`SettingsModel.swift`](apple/Sources/CndIptvKit/Features/Settings/SettingsModel.swift) utilise ces constantes en repli et formate `version (build X)` ; assertions ajoutées dans [`AppBrandTests.swift`](apple/Tests/CndIptvAppTests/AppBrandTests.swift).
+- ✅ **Android** : constantes `BuntuAboutInfo.APP_VERSION` (`"1.0.0"`) et `BuntuAboutInfo.APP_BUILD` (`"1"`) et affichage `Version : 1.0.0 (build 1)` dans [`SettingsScreen.kt`](android/feature/settings/src/main/kotlin/com/pcoundia/buntu/feature/settings/SettingsScreen.kt) ; assertions dans [`SettingsViewModelTest.kt`](android/feature/settings/src/test/kotlin/com/pcoundia/buntu/feature/settings/SettingsViewModelTest.kt).
+- ✅ **Tizen** : constantes `APP_VERSION`, `APP_BUILD` et `APP_VERSION_LABEL` dans [`appInfo.ts`](tizen/src/core/appInfo.ts), affichées dans [`SettingsView.tsx`](tizen/src/features/settings/SettingsView.tsx) ; test ajouté dans [`TizenNiceToHave.test.ts`](tizen/tests/TizenNiceToHave.test.ts).
+- ✅ **Tests** : `AppBrandTests` (Apple) → **7/7 passés** ; `:feature:settings:testDebugUnitTest` (Android) → **BUILD SUCCESSFUL** ; `tsc --noEmit` + `TizenNiceToHave.test.ts` (Tizen) → **9/9 passés** (0 échec).
+
+---
+
+## 2026-11-14 — Antigravity, Bouton Actualiser dans Foyer & Commande TV
+
+- ✅ **Apple** : ajout de `refreshPeers()` dans [`LocalSyncService.swift`](apple/Sources/CndIptvKit/Sync/LocalSyncService.swift) (relance Bonjour + Samsung transport + heartbeat) et du bouton « Actualiser » dans les en-têtes « Appareils du foyer » et « Appareils connectés » de [`HouseholdView.swift`](apple/Sources/CndIptvKit/Features/Household/HouseholdView.swift).
+- ✅ **Android** : ajout de `refreshPeers()` dans [`HouseholdRepository.kt`](android/core/domain/src/main/kotlin/com/pcoundia/buntu/core/domain/repository/HouseholdRepository.kt), [`LocalSyncService.kt`](android/core/platform/src/main/kotlin/com/pcoundia/buntu/core/platform/sync/LocalSyncService.kt) (relance NSD + heartbeat) et [`DevicesViewModel.kt`](android/feature/devices/src/main/kotlin/com/pcoundia/buntu/feature/devices/DevicesViewModel.kt) ; bouton « Actualiser » ajouté dans « Appareils découverts » et « Appareil cible » de [`DevicesScreen.kt`](android/feature/devices/src/main/kotlin/com/pcoundia/buntu/feature/devices/DevicesScreen.kt) ; test `refreshPeersCallsRepository` dans [`DevicesViewModelTest.kt`](android/feature/devices/src/test/kotlin/com/pcoundia/buntu/feature/devices/DevicesViewModelTest.kt).
+- ✅ **Tests** : `swift test --filter "SamsungChannelTransportTests|PromptSearchTests"` (Apple) → **19/19 passés** (0 échec) ; `./gradlew --offline :core:domain:test :core:platform:testDebugUnitTest :feature:devices:testDebugUnitTest` (Android) → **BUILD SUCCESSFUL**.
+- ⏸️ **À faire par l’utilisateur** : recompiler les apps Apple (`CndIPTV-macOS` / `iOS`) et Android (`assembleDebug`) ; non testé à l’écran sur les appareils physiques.
+
+---
+
+## 2026-11-14 — Antigravity, Réception `remote_text` côté Apple (macOS/iOS/tvOS)
+
+- ✅ **Apple (`LocalSyncService` + `AppShellView` + `AssistantModel`)** : ajout de `onRemoteText`, du `case "remote_text":` et du helper `shouldAcceptRemoteText(_:localDeviceId:)` dans [`LocalSyncService.swift`](apple/Sources/CndIptvKit/Sync/LocalSyncService.swift) (filtrage optionnel sur `target_device_id`, trim et rejet des textes vides) ; branchement de `state.localSync?.onRemoteText` dans [`AppShellView.swift`](apple/Sources/CndIptvKit/App/AppShellView.swift) vers `openAssistant(startingWith: text, scope: .all)` puis `await assistant.submit(autoPlayFirstHit: true)` ; ajout de `autoPlayFirstHit` dans [`AssistantModel.swift`](apple/Sources/CndIptvKit/Features/Assistant/AssistantModel.swift) pour lancer le premier résultat lorsqu'un fournisseur IA est indisponible (ex. HTTP 503) et bascule sur la recherche locale.
+- ✅ **Tests unitaires** : `swift test --filter "PromptSearchTests|SamsungChannelTransportTests"` → **19/19 passés** (`PromptSearchTests` 10/10, `SamsungChannelTransportTests` 9/9, 0 échec).
+- ⏸️ **À faire par l’utilisateur** : recompiler l'app macOS/iOS via Xcode (`xcodebuild` / `CndIPTV-macOS`), puis retester l'envoi de « Mets France 2 » depuis Android vers macOS (non testé à l'écran sur Mac + Android physiques).
+
+---
+
+## 2026-11-14 — Antigravity (Swarm), Écran Commande TV dédié + ciblage appareil foyer
+
+- ✅ **Tizen (`tizen-remote-target`)** : filtrage de `remote_text` par `target_device_id` dans [`LocalSyncService.ts`](tizen/src/core/sync/LocalSyncService.ts) (ignore si `target_device_id` non vide et différent de `getLocalDeviceId()`, conserve la diffusion si absent/vide) ; test unitaire ajouté dans [`TizenNiceToHave.test.ts`](tizen/tests/TizenNiceToHave.test.ts).
+- ✅ **Apple (`apple-remote-cmd`)** : `remoteTextPayload(_:targetDeviceId:)` et `sendRemoteText(_:targetPeerId:)` dans [`LocalSyncService.swift`](apple/Sources/CndIptvKit/Sync/LocalSyncService.swift) (routage ciblé `sendToPeer` ou diffusion `broadcastMessage`) ; `RemoteCommandTargetResolver` (sélection auto si 1 appareil connecté, « Tous » si >1) et écran dédié `#if !os(tvOS) RemoteCommandView` dans [`HouseholdView.swift`](apple/Sources/CndIptvKit/Features/Household/HouseholdView.swift) ; onglet/entrée de menu `remoteCommand` (« Commande TV », `mic.fill`) dans [`AppShellView.swift`](apple/Sources/CndIptvKit/App/AppShellView.swift) ; tests dans [`SamsungChannelTransportTests.swift`](apple/Tests/CndIptvAppTests/SamsungChannelTransportTests.swift). Aucun nouveau `.swift`.
+- ✅ **Android (`android-remote-cmd`)** : contrat `sendRemoteText(text, targetPeerId)` dans [`HouseholdRepository.kt`](android/core/domain/src/main/kotlin/com/pcoundia/buntu/core/domain/repository/HouseholdRepository.kt) et implémentation dans [`LocalSyncService.kt`](android/core/platform/src/main/kotlin/com/pcoundia/buntu/core/platform/sync/LocalSyncService.kt) ; `connectedPeers`, `selectedTargetId` (sélection auto si 1 connecté, `null` = tous si >1) et `selectTargetDevice` dans [`DevicesViewModel.kt`](android/feature/devices/src/main/kotlin/com/pcoundia/buntu/feature/devices/DevicesViewModel.kt) ; écran accessible `RemoteCommandRoute` (dictée `RecognizerIntent.ACTION_RECOGNIZE_SPEECH`, puces rapides, sélection d'appareil) dans [`DevicesScreen.kt`](android/feature/devices/src/main/kotlin/com/pcoundia/buntu/feature/devices/DevicesScreen.kt) ; route `BuntuRoutes.REMOTE_COMMAND` et entrée menu « Commande TV » dans [`BuntuRoutes.kt`](android/app/src/main/kotlin/com/pcoundia/buntu/navigation/BuntuRoutes.kt), [`BuntuNavHost.kt`](android/app/src/main/kotlin/com/pcoundia/buntu/navigation/BuntuNavHost.kt), [`MobileShell.kt`](android/app/src/main/kotlin/com/pcoundia/buntu/ui/MobileShell.kt) et [`SettingsScreen.kt`](android/feature/settings/src/main/kotlin/com/pcoundia/buntu/feature/settings/SettingsScreen.kt) ; tests dans [`DevicesViewModelTest.kt`](android/feature/devices/src/test/kotlin/com/pcoundia/buntu/feature/devices/DevicesViewModelTest.kt).
+- ✅ **Vérification (`verifier-3`)** :
+  - `./scripts/check-secrets.sh` → `secrets check: clean`
+  - Tizen : `npx tsc --noEmit` (0 erreur, code Chromium 56–76 sûr) ; `npx vitest run tests/TizenNiceToHave.test.ts tests/HomeNavigation.test.ts tests/NoUselessIcons.test.ts` → 3/3 fichiers, 25/25 tests passés (suite complète `npm test` : 63/64 fichiers, 367/368 tests passés, 1 échec préexistant hors périmètre dans `tests/AiKeyStore.test.ts`).
+  - Apple : `swift test` → `CndIptvAppTests.xctest` : 565 exécutés, 2 ignorés, 0 échec + Swift Testing : 15/15 tests dans 5 suites passés.
+  - Android : `./gradlew --offline :core:domain:test :core:platform:testDebugUnitTest :feature:devices:testDebugUnitTest :app:testDebugUnitTest --console=plain` → `BUILD SUCCESSFUL` ; `:app:testDebugUnitTest --tests com.pcoundia.buntu.ModuleArchitectureTest --rerun-tasks --console=plain` → `BUILD SUCCESSFUL in 22s` (357/357 tasks executed).
+- ⏸️ **À faire par l’utilisateur** : `./scripts/build-tizen.sh` + `./scripts/run-tizen.sh <IP_TV>`, `xcodebuild` (Apple) et `./gradlew assembleDebug` (Android) ; non testé à l’écran sur TV Samsung, iPhone/Mac ni téléphone Android physiques.
+
+---
+
+## 2026-11-14 — Antigravity (Swarm), Dictée vocale / IME Samsung & RemoteText téléphone → TV
+
+- ✅ **Tizen (`tizen-voice`)** : champ réel `#assistant-ime-input` + `#btn-assistant-submit`, prop `initialPhrase` et abonnement `onRemoteText` dans [`AssistantModal.tsx`](tizen/src/features/assistant/AssistantModal.tsx) ; routage `onRemoteText` dans [`App.tsx`](tizen/src/app/App.tsx) ; champ réel `#search-ime-input` dans [`SearchView.tsx`](tizen/src/features/search/SearchView.tsx) ; transmission `ENTER` (`13`) et Samsung IME Done (`65376`) au champ focalisé dans [`RemoteKeyHandler.ts`](tizen/src/core/input/RemoteKeyHandler.ts) ; tests dans [`TizenNiceToHave.test.ts`](tizen/tests/TizenNiceToHave.test.ts).
+- ✅ **Apple (`apple-voice`)** : `remoteTextPayload` / `sendRemoteText` (`type: "remote_text"`) dans [`LocalSyncService.swift`](apple/Sources/CndIptvKit/Sync/LocalSyncService.swift) ; section « Commande vocale / texte vers la TV » (`#if !os(tvOS)`) dans [`HouseholdView.swift`](apple/Sources/CndIptvKit/Features/Household/HouseholdView.swift) ; tests dans [`SamsungChannelTransportTests.swift`](apple/Tests/CndIptvAppTests/SamsungChannelTransportTests.swift). Aucun nouveau `.swift`.
+- ✅ **Android (`android-voice`)** : contrat `sendRemoteText` dans [`HouseholdRepository.kt`](android/core/domain/src/main/kotlin/com/pcoundia/buntu/core/domain/repository/HouseholdRepository.kt) et implémentation dans [`LocalSyncService.kt`](android/core/platform/src/main/kotlin/com/pcoundia/buntu/core/platform/sync/LocalSyncService.kt) ; `sendRemoteText` dans [`DevicesViewModel.kt`](android/feature/devices/src/main/kotlin/com/pcoundia/buntu/feature/devices/DevicesViewModel.kt) ; section « Commande vocale / texte vers la TV » + `RecognizerIntent.ACTION_RECOGNIZE_SPEECH` (`fr-FR`, repli `ActivityNotFoundException`) dans [`DevicesScreen.kt`](android/feature/devices/src/main/kotlin/com/pcoundia/buntu/feature/devices/DevicesScreen.kt) ; tests dans [`DevicesViewModelTest.kt`](android/feature/devices/src/test/kotlin/com/pcoundia/buntu/feature/devices/DevicesViewModelTest.kt). Architecture sans `:core:engine` respectée.
+- ✅ **Vérification (`verifier-2`)** :
+  - `./scripts/check-secrets.sh` → `secrets check: clean`
+  - Tizen : `npx tsc --noEmit` (0 erreur) ; `vitest run` (8 fichiers ciblés : `TizenNiceToHave`, `HomeNavigation`, `NoUselessIcons`, `SearchEngineButton`, `RemoteKeyHandler`, `TvKeyboard`, `SearchMode`, `Search` → 60/60 tests passés ; + `AssistantSettings`, `UiSounds`, `PairingView` → 3/3 fichiers, 13/13 tests passés)
+  - Apple : `swift test --filter SamsungChannelTransportTests` → 6/6 tests passés (0 échec)
+  - Android : `./gradlew --offline :core:domain:test :core:platform:testDebugUnitTest :feature:devices:testDebugUnitTest :app:testDebugUnitTest --rerun-tasks --console=plain` → `BUILD SUCCESSFUL in 24s` (375 tasks executed ; 50/50 tests sur ces 4 modules, dont `:feature:devices` 7/7 et `ModuleArchitectureTest` 2/2)
+- ⏸️ **À faire par l’utilisateur** : `./scripts/build-tizen.sh` + `./scripts/run-tizen.sh <IP_TV>`, `xcodebuild` (Apple) et `./gradlew assembleDebug` (Android) ; non testé à l’écran ni au micro sur TV Samsung, iPhone ou téléphone Android physiques.
+
+## 2026-11-14 — Antigravity, Nice-to-have Tizen (Passer l'intro, Écran noir, Sous-titres, Jauge Xtream)
+
+- ✅ **Passer l'intro (+85 s)** dans l'OSD VOD/Séries (`#btn-osd-skip-intro` → `seekDelta(85000)`) : [`tizen/src/features/player/PlayerView.tsx`](tizen/src/features/player/PlayerView.tsx).
+- ✅ **Mode audio uniquement / écran noir** (`#btn-osd-audio-only`, `#audio-only-curtain` dans [`theme.css`](tizen/src/ui/design/theme.css)) réveillé par OK / Retour / flèches : [`tizen/src/features/player/PlayerView.tsx`](tizen/src/features/player/PlayerView.tsx).
+- ✅ **Sous-titres personnalisables** (taille, couleur, fond opaque) : [`tizen/src/core/player/subtitlePrefs.ts`](tizen/src/core/player/subtitlePrefs.ts), [`SettingsView.tsx`](tizen/src/features/settings/SettingsView.tsx), [`PlayerView.tsx`](tizen/src/features/player/PlayerView.tsx).
+- ✅ **Jauge compte Xtream** (date d'expiration avec rappel J-7 + `max_connections`) dans Sources **et sur l'écran Home** (`.buntu-home-expirations`) via le helper partagé [`sourceExpiry.ts`](tizen/src/features/sources/sourceExpiry.ts) : [`SourcesView.tsx`](tizen/src/features/sources/SourcesView.tsx), [`HomeView.tsx`](tizen/src/features/home/HomeView.tsx).
+- ✅ Vérification : `npx tsc --noEmit` OK ; `npx vitest run tests/TizenNiceToHave.test.ts tests/HomeNavigation.test.ts tests/AccessibilityPrefs.test.ts tests/NoUselessIcons.test.ts` → 4/4 fichiers, 23/23 tests passés. Non testé à l’écran sur la TV physique.
+- ⏸️ **À faire par l’utilisateur** : `./scripts/build-tizen.sh` puis `./scripts/run-tizen.sh <IP_TV>`.
+
+## 2026-11-14 — Antigravity, Accessibilité visuelle Tizen (Contraste élevé + Taille du texte)
+
+- ✅ Préférences persistantes (`localStorage` `buntu.ui.accessibility`) et application au démarrage sur `document.documentElement` (`data-high-contrast`, `data-text-size` : `standard`, `large`, `xlarge`) : [`tizen/src/ui/design/accessibilityPrefs.ts`](tizen/src/ui/design/accessibilityPrefs.ts), [`tizen/src/index.tsx`](tizen/src/index.tsx).
+- ✅ Section **Accessibilité visuelle** dans Réglages > Système (`#btn-high-contrast`, `#btn-text-size`) + navigation spatiale : [`tizen/src/features/settings/SettingsView.tsx`](tizen/src/features/settings/SettingsView.tsx).
+- ✅ Tokens contraste élevé opaques + bordures de focus renforcées + mise à l’échelle typographique sans `zoom` (préserve les coordonnées `getBoundingClientRect()` d’AVPlay) : [`tizen/src/ui/design/theme.css`](tizen/src/ui/design/theme.css).
+- ✅ Vérification : `npx tsc --noEmit` OK ; `npx vitest run tests/AccessibilityPrefs.test.ts tests/NoUselessIcons.test.ts tests/SettingsHouseholdTransfer.test.ts` → 3/3 fichiers, 18/18 tests passés. Non testé à l’écran sur la TV physique.
+- ⏸️ **À faire par l’utilisateur** : `./scripts/build-tizen.sh` puis `./scripts/run-tizen.sh <IP_TV>` pour tester sur la TV Samsung.
+
 ## 2026-11-14 — Antigravity, DESIGN.md et refonte design solide (anti-IA)
 
 | Tâche / Fond | Fichiers | État | Détail |
