@@ -35,6 +35,7 @@ import {
   textSizeLabel,
 } from '../../ui/design/accessibilityPrefs';
 import { PairingOffer, PairingService } from '../../core/pairing/PairingService';
+import { PairingQr } from '../pairing/PairingQr';
 import { HouseholdStore, HouseholdInfo, PairedDevice } from '../../core/sync/HouseholdStore';
 import { LocalSyncService, SyncLogEntry } from '../../core/sync/LocalSyncService';
 import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
@@ -536,28 +537,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                       ? 'Scannez avec un appareil du foyer pour y ajouter cette TV'
                       : "Scannez pour envoyer votre clé d'IA de manière chiffrée"}
                   </div>
-                  <canvas
-                    ref={(el) => {
-                      if (!el || !qrOffer()) return;
-                      const offer = qrOffer()!;
-                      const ctx = el.getContext('2d');
-                      if (!ctx) return;
-                      const size = offer.qrSize;
-                      const scale = 4;
-                      el.width = size * scale;
-                      el.height = size * scale;
-                      ctx.fillStyle = '#FFFFFF';
-                      ctx.fillRect(0, 0, el.width, el.height);
-                      ctx.fillStyle = '#000000';
-                      for (let r = 0; r < size; r++) {
-                        for (let c = 0; c < size; c++) {
-                          if (offer.qrModules[r * size + c] === '1') {
-                            ctx.fillRect(c * scale, r * scale, scale, scale);
-                          }
-                        }
-                      }
-                    }}
-                  />
+                  <PairingQr size={qrOffer()!.qrSize} modules={qrOffer()!.qrModules} pixels={320} link={qrOffer()!.link} />
                   <button
                     id="btn-ai-stop-qr"
                     tabindex="-1"
@@ -916,28 +896,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                   <div style={{ 'font-size': '18px', color: 'var(--buntu-cyan)' }}>
                     Scannez pour ajouter cet appareil au foyer « {householdInfo()?.household_name} »
                   </div>
-                  <canvas
-                    ref={(el) => {
-                      if (!el || !householdQr()) return;
-                      const q = householdQr()!;
-                      const ctx = el.getContext('2d');
-                      if (!ctx) return;
-                      const size = q.size;
-                      const scale = 4;
-                      el.width = size * scale;
-                      el.height = size * scale;
-                      ctx.fillStyle = '#FFFFFF';
-                      ctx.fillRect(0, 0, el.width, el.height);
-                      ctx.fillStyle = '#000000';
-                      for (let r = 0; r < size; r++) {
-                        for (let c = 0; c < size; c++) {
-                          if (q.modules[r * size + c] === '1') {
-                            ctx.fillRect(c * scale, r * scale, scale, scale);
-                          }
-                        }
-                      }
-                    }}
-                  />
+                  <PairingQr size={householdQr()!.size} modules={householdQr()!.modules} pixels={320} />
                   <p style={{ color: 'var(--buntu-text-muted)', 'font-size': '15px', 'text-align': 'center', margin: 0 }}>
                     Ouvrez Buntu sur votre iPhone, iPad, Mac ou Android et scannez ce code dans Réglages &gt; Continuité.
                   </p>

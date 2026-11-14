@@ -10,6 +10,19 @@ export interface PairingQrProps {
   link?: string;
 }
 
+/** Empty white border, in modules, that every QR scanner (Google code scanner included) needs around the code. */
+export const QR_QUIET_ZONE = 4;
+
+/**
+ * Pixel layout of a QR code: `quiet` modules of white on every side and an integer `scale` per module,
+ * so the edges stay sharp. `side` is the canvas size, `target` the size it is shown at.
+ */
+export function layoutQr(size: number, pixels = 320) {
+  const total = size + QR_QUIET_ZONE * 2;
+  const scale = Math.max(1, Math.floor(pixels / total));
+  return { quiet: QR_QUIET_ZONE, total, scale, side: total * scale, target: pixels };
+}
+
 /**
  * Draws a QR code on a canvas: black modules on white with the 4-module quiet zone the scanners
  * need, and an integer scale so the edges stay sharp on a 4K screen.
@@ -20,11 +33,7 @@ export const PairingQr: Component<PairingQrProps> = (props) => {
   createEffect(() => {
     const n = props.size;
     const modules = props.modules;
-    const quiet = 4;
-    const total = n + quiet * 2;
-    const target = props.pixels ?? 320;
-    const scale = Math.max(1, Math.floor(target / total));
-    const side = total * scale;
+    const { quiet, scale, side, target } = layoutQr(n, props.pixels);
     canvas.width = side;
     canvas.height = side;
     canvas.style.width = `${target}px`;

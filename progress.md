@@ -21,6 +21,17 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-14 — Claude, QR de la TV Tizen illisible depuis Android (Appareils)
+
+- ✅ **Cause** : dans Réglages → Appareils, [`SettingsView.tsx`](tizen/src/features/settings/SettingsView.tsx) dessinait le QR « ajouter cette TV au foyer » à la main (4 px par module, **sans marge blanche**, sur la carte sombre). Un scanner (Google code scanner sur Android) ne retrouve pas les coins sans 4 modules blancs autour. Les écrans Sources et accueil utilisaient déjà [`PairingQr`](tizen/src/features/pairing/PairingQr.tsx) (marge + 320 px). Déduit du code ; non reproduit sur la TV ni le téléphone.
+- ✅ **Correctif** : les deux QR de `SettingsView` (appairage et invitation) passent par `PairingQr` ; `layoutQr()` et `QR_QUIET_ZONE` exportés pour être testés.
+- ✅ **Test de non-régression** : [`PairingQrScannable.test.ts`](tizen/tests/PairingQrScannable.test.ts) (3 tests) : échoue sur l'ancien `SettingsView`, passe avec le correctif.
+- ✅ **Android** : `:core:platform:testDebugUnitTest :feature:devices:testDebugUnitTest` → exit 0 (aucun changement Android).
+- ✅ Tizen : `tsc --noEmit` OK ; suite complète 375/378. ❌ 3 échecs **hors sujet**, causés par des changements non commités d'une autre session : `HomeNavigation` (BACK/sortie dans `App.tsx`), `TizenNiceToHave` (version `1.0.1` dans `appInfo.ts`), `HttpClient` (délai de 5 s dépassé).
+- ⏸️ **À faire par l'utilisateur** : `./scripts/build-tizen.sh` puis réinstaller sur la TV, et scanner le QR depuis l'Android (non testé sur appareil). Autres QR dessinés à la main, même défaut, laissés tels quels : `AssistantModal.tsx`, `SearchView.tsx`.
+
+---
+
 ## 2026-11-14 — Antigravity (Swarm), Localisation Live / Films / Séries FR/EN (Tizen, Apple, Android)
 
 - ✅ **Tizen (`tizen/`)** (`tizen-catalog-i18n`) : ajout des clés `live.*` (43), `movies.*` (37) et `series.*` (59) avec parité 100 % dans [`fr.ts`](tizen/src/core/i18n/fr.ts) et [`en.ts`](tizen/src/core/i18n/en.ts) ; remplacement des chaînes codées en dur par `t(...)` dans [`LiveView.tsx`](tizen/src/features/live/LiveView.tsx), [`MoviesView.tsx`](tizen/src/features/movies/MoviesView.tsx), [`SeriesView.tsx`](tizen/src/features/series/SeriesView.tsx) et [`SeriesDetailsView.tsx`](tizen/src/features/series/SeriesDetailsView.tsx).

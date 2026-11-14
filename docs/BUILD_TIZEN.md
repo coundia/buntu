@@ -45,26 +45,30 @@ L'application repose sur une architecture sans framework lourd (zéro React/Angu
 
 ---
 
-## 3. Commandes Rapides (`Taskfile.yml`)
+## 3. Déployer sur une TV Samsung
 
-Depuis la racine du projet :
+Pour une première installation, configurez le mode développeur et le profil de signature Samsung en suivant la section 4. Depuis la racine du dépôt, remplacez l’adresse dans cet exemple par l’IP affichée sur votre téléviseur.
 
 ```bash
-# 1. Lancer les tests unitaires Tizen (Vitest : lecteur AVPlay, client HTTP, télécommande)
-task tizen:test
-
-# 2. Compiler cnd-domain-wasm, bundler Vite et générer le paquet .wgt
-task tizen:build
-
-# 3. Installer le paquet sur un téléviseur Samsung en mode Développeur
 task tizen:install TV_IP="192.168.1.50"
-
-# 4. Activer le débogage distant Chrome DevTools
-task tizen:debug
 ```
 
-Le paquet final est généré dans :
-`build/tizen/cnd-iptv-tizen.wgt`
+Cette commande compile le WebAssembly et le bundle web, signe le paquet avec le profil Tizen actif (ou celui indiqué par `TIZEN_PROFILE`), puis installe et lance Buntu. Le paquet est généré dans `build/tizen/cnd-iptv-tizen.wgt`.
+
+Pour réinstaller un paquet de test déjà signé pour cette TV, vérifiez que le fichier existe, puis lancez la commande suivante. Si le paquet manque, le script relance la compilation.
+
+```bash
+task tizen:install TV_IP="192.168.1.50" NO_BUILD=1
+```
+
+Ajoutez `NO_LAUNCH=1` pour installer sans lancer Buntu. Au premier lancement, vérifiez la navigation à la télécommande et l’image et le son en lecture.
+
+Autres commandes depuis la racine du dépôt :
+
+- `task tizen:test` lance les tests unitaires Tizen.
+- `task tizen:build` génère le paquet de test. Si la CLI `tizen` est absente, le paquet est une archive non signée destinée à l’inspection.
+
+Pour publier Buntu sur la boutique Samsung, suivez le [guide de soumission au Samsung Apps TV Store](DEPLOY_TIZEN_STORE.md). Le build de publication écrit au même emplacement que le build de test. Conservez une copie du paquet de publication avant de relancer un build local.
 
 ---
 
@@ -86,10 +90,10 @@ Pour installer et tester l'application sur un téléviseur physique Samsung :
 ### Étape 2 : Connecter `sdb` au téléviseur
 Vérifier l'adresse IP du téléviseur dans le menu *Réseau > État du réseau* de la TV, puis exécuter :
 ```bash
-sdb connect <IP_DE_LA_TV>
+sdb connect 192.168.1.50:26101
 sdb devices
 ```
-L'appareil doit apparaître dans la liste avec son identifiant DUID.
+Remplacez l’adresse de l’exemple par l’IP de la TV. Dans `sdb devices`, vérifiez que cette adresse apparaît avec l’état `device`. Relevez le DUID dans le gestionnaire de certificats Samsung lors de la création du certificat de distribution.
 
 ### Étape 3 : Créer et enregistrer les Certificats Samsung
 1. Ouvrir le **Certificate Manager** de Tizen Studio :

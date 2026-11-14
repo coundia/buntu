@@ -29,6 +29,7 @@ import com.pcoundia.buntu.core.domain.model.UpNextContext
 import com.pcoundia.buntu.core.domain.model.UpNextItem
 import com.pcoundia.buntu.core.domain.model.UpNextPreferences
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.Flow
 
 interface SourcesRepository {
@@ -65,6 +66,8 @@ interface CatalogRepository {
     suspend fun getChannelByNumber(number: Int): ChannelItem?
     suspend fun listFavoriteChannels(): ImmutableList<ChannelItem>
     suspend fun listRecentChannels(limit: Int = 20): ImmutableList<ChannelItem>
+    suspend fun findChannelMirrors(itemId: Long): ImmutableList<ChannelItem> = persistentListOf()
+    suspend fun listChannelsInGroup(groupName: String?, limit: Int = 120): ImmutableList<ChannelItem> = persistentListOf()
 
     suspend fun getMovieDetail(itemId: Long, metadataApiKey: String? = null): MediaDetail?
     suspend fun getSeriesDetail(
