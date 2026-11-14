@@ -4,7 +4,7 @@
  * which the D-pad drives completely.
  */
 
-export type KeyKind = 'char' | 'insert' | 'backspace' | 'space' | 'shift' | 'clear' | 'reveal' | 'ok' | 'cancel';
+export type KeyKind = 'char' | 'insert' | 'backspace' | 'space' | 'shift' | 'clear' | 'reveal' | 'paste' | 'ok' | 'cancel';
 
 export interface KeyDef {
   id: string;
@@ -47,6 +47,7 @@ export function keyboardRows(): KeyDef[][] {
   ]);
   rows.push([
     { id: 'kb-reveal', kind: 'reveal', label: 'Afficher', wide: true },
+    { id: 'kb-paste', kind: 'paste', label: '📋 Coller', wide: true },
     { id: 'kb-ok', kind: 'ok', label: 'Valider', wide: true },
     { id: 'kb-cancel', kind: 'cancel', label: 'Annuler', wide: true },
   ]);
@@ -54,6 +55,16 @@ export function keyboardRows(): KeyDef[][] {
 }
 
 export const MAX_FIELD_LENGTH = 2048;
+
+/** Cleans pasted text and either replaces an existing HTTP(S) URL or appends up to MAX_FIELD_LENGTH. */
+export function applyPastedText(current: string, pasted: string): string {
+  const clean = pasted.replace(/[\r\n]+/g, '').trim();
+  if (!clean) return current;
+  if (/^https?:\/\//i.test(current.trim()) && /^https?:\/\//i.test(clean)) {
+    return clean.slice(0, MAX_FIELD_LENGTH);
+  }
+  return (current + clean).slice(0, MAX_FIELD_LENGTH);
+}
 
 /** The text after pressing a key. Keys that do not change the text (shift, ok…) return it unchanged. */
 export function applyKey(value: string, key: KeyDef, shift: boolean): string {
