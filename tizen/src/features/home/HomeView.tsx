@@ -1,7 +1,8 @@
 import { Component, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { spatialNav } from '../../ui/design/SpatialNav';
 import { CndEngine } from '../../core/engine/CndEngine';
-import type { ItemRecord } from '../../core/storage/Database';
+import { Database, type ItemRecord } from '../../core/storage/Database';
+import { describeSourceExpiry, type SourceExpiryInfo } from '../sources/sourceExpiry';
 import { describeResume } from './resumeInfo';
 
 export type HomeSection = 'live' | 'movies' | 'series';
@@ -30,6 +31,7 @@ export const HomeView: Component<HomeViewProps> = (props) => {
   };
   const [time, setTime] = createSignal(localTime());
   const [resume, setResume] = createSignal<ItemRecord | null>(null);
+  const [sourceExpiries, setSourceExpiries] = createSignal<{ id: number; name: string; info: SourceExpiryInfo }[]>([]);
   const shortcuts: { route: HomeDestination; title: string }[] = [
     { route: 'sources', title: 'Sources' },
     { route: 'devices', title: 'Appareils' },
@@ -72,6 +74,26 @@ export const HomeView: Component<HomeViewProps> = (props) => {
       } catch {
         /* nothing to offer */
       }
+      try {
+        const list = await Database.getInstance().getSources();
+        const expiries = list.map((src) => {
+          const info = describeSourceExpiry(src);
+          return {
+            id: src.id,
+            name: src.name || 'Source',
+            info: info ?? {
+              exp: 0,
+              daysLeft: 0,
+              dateStr: '',
+              status: 'ok' as const,
+              label: 'Sans date d’expiration',
+            },
+          };
+        });
+        setSourceExpiries(expiries);
+      } catch {
+        /* ignore source expiry lookup failure */
+      }
     })();
   });
 
@@ -87,6 +109,15 @@ export const HomeView: Component<HomeViewProps> = (props) => {
         <p>BIENVENUE CHEZ VOUS</p>
         <h1 id="home-title">Que voulez-vous regarder ?</h1>
       </div>
+      <Show when={sourceExpiries().length > 0}>
+        <div class="buntu-home-expirations" aria-label="Expiration des sources">
+          <For each={sourceExpiries()}>{(entry) => (
+            <span class={`buntu-home-expiry-pill ${entry.info.status === 'expired' ? 'is-expired' : entry.info.status === 'soon' ? 'is-soon' : ''}`}>
+              <strong>{entry.name}</strong> · {entry.info.label}
+            </span>
+          )}</For>
+        </div>
+      </Show>
       <Show when={resume()}>
         {(item) => {
           const info = () => describeResume(item());

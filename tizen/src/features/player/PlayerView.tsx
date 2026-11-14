@@ -16,6 +16,7 @@ import { createPlayerInfo } from './playerInfo';
 import { AssistantModal } from '../assistant/AssistantModal';
 import { LocalSyncService } from '../../core/sync/LocalSyncService';
 import { getUpNextPrefs, upNextChain } from '../../core/player/upNext';
+import { getSubtitlePrefs, subtitleBoxStyle } from '../../core/player/subtitlePrefs';
 import { isUhdTitle } from '../../core/player/uhd';
 
 export interface PlayerViewProps {
@@ -63,6 +64,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   const [aspectMode, setAspectMode] = createSignal<VideoAspectMode>(player.getAspectMode());
   const [sleepMinutes, setSleepMinutes] = createSignal(0);
   const [sleepRemainingSecs, setSleepRemainingSecs] = createSignal(0);
+  const [audioOnly, setAudioOnly] = createSignal(false);
   const [liveReturnChannel, setLiveReturnChannel] = createSignal<ItemRecord | null>(null);
   const [mirrors, setMirrors] = createSignal<ItemRecord[]>([]);
   const [showMirrors, setShowMirrors] = createSignal(false);
@@ -389,6 +391,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       },
       { id: 'btn-osd-seek-back', onSelect: () => seekDelta(-10000) },
       { id: 'btn-osd-seek-fwd', onSelect: () => seekDelta(10000) },
+      ...(!isLiveItem ? [{ id: 'btn-osd-skip-intro', onSelect: () => { seekDelta(85000); showToast('Intro passée (+85 s)'); } }] : []),
       ...(isLiveItem
         ? [
             ...(props.onPrevChannel ? [{ id: 'btn-osd-prev-ch', onSelect: () => props.onPrevChannel?.() }] : []),
@@ -407,6 +410,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         : []),
       { id: 'btn-osd-aspect', onSelect: () => toggleAspectMode() },
       { id: 'btn-osd-sleep', onSelect: () => cycleSleepTimer() },
+      { id: 'btn-osd-audio-only', onSelect: () => toggleAudioOnly() },
       {
         id: 'btn-osd-audio-track',
         onSelect: () => cycleAudioTrack(),
@@ -897,6 +901,18 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     }
   };
 
+  const toggleAudioOnly = () => {
+    const next = !audioOnly();
+    setAudioOnly(next);
+    if (next) {
+      setShowOsd(false);
+      announce("Mode audio uniquement activé. Appuyez sur OK ou Retour pour rallumer l'écran.");
+    } else {
+      showToast('Écran rallumé');
+      resetOsdTimer();
+    }
+  };
+
   const formatSleepRemaining = () => {
     const total = sleepRemainingSecs();
     const m = Math.floor(total / 60);
@@ -1082,6 +1098,12 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   };
 
   const handleKey = (key: RemoteKey): boolean => {
+    if (audioOnly() && (key === 'BACK' || key === 'ENTER' || key === 'UP' || key === 'DOWN' || key === 'LEFT' || key === 'RIGHT')) {
+      setAudioOnly(false);
+      showToast('Écran rallumé');
+      resetOsdTimer();
+      return true;
+    }
     if (showMiniGuide() && key === 'BACK') {
       closeMiniGuide();
       return true;
@@ -1386,9 +1408,25 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         </div>
       </Show>
 
-      {/* 5. Subtitle text rendering */}
+      {/* 5. Audio-only black screen curtain */}
+      <Show when={audioOnly() && !playerError()}>
+        <div
+          id="audio-only-curtain"
+          class="tv-audio-only-curtain"
+          onClick={() => toggleAudioOnly()}
+        >
+          <div style={{ "font-size": "24px", "font-weight": "700", color: "var(--buntu-text-muted)", "margin-bottom": "8px" }}>
+            🎵 Audio uniquement — {title()}
+          </div>
+          <div style={{ "font-size": "16px", color: "var(--buntu-text-muted)" }}>
+            Appuyez sur OK ou Retour pour rallumer l’écran
+          </div>
+        </div>
+      </Show>
+
+      {/* 6. Subtitle text rendering */}
       <Show when={activeSubtitle() && !showOsd()}>
-        <div class="tv-subtitle-box" aria-live="off">
+        <div class="tv-subtitle-box" style={subtitleBoxStyle(getSubtitlePrefs())} aria-live="off">
           {activeSubtitle()}
         </div>
       </Show>
@@ -1553,6 +1591,17 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               ⏩ +10 s
             </button>
 
+            <Show when={!isLive()}>
+              <button
+                id="btn-osd-skip-intro"
+                class={`tv-btn ${focusId() === 'btn-osd-skip-intro' ? 'focused' : ''}`}
+                onClick={() => { seekDelta(85000); showToast('Intro passée (+85 s)'); }}
+                aria-label="Passer l'intro de 85 secondes"
+              >
+                ⏭ Passer l'intro (+85 s)
+              </button>
+            </Show>
+
             <Show when={isLive()}>
               <Show when={props.onPrevChannel}>
                 <button
@@ -1652,6 +1701,15 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               aria-label="Configurer le minuteur de veille"
             >
               🌙 {sleepMinutes() > 0 ? `${sleepMinutes()}m` : 'Veille'}
+            </button>
+
+            <button
+              id="btn-osd-audio-only"
+              class={`tv-btn ${focusId() === 'btn-osd-audio-only' ? 'focused' : ''}`}
+              onClick={toggleAudioOnly}
+              aria-label="Mode audio uniquement avec écran noir"
+            >
+              🎵 Écran noir
             </button>
 
             <button

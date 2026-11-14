@@ -1,4 +1,5 @@
 import { SourceEditForm } from './SourceEditForm';
+import { describeSourceExpiry } from './sourceExpiry';
 import { Component, createSignal, onMount, onCleanup, For, Show } from 'solid-js';
 import { Database, SourceRecord } from '../../core/storage/Database';
 import { CndEngine } from '../../core/engine/CndEngine';
@@ -298,6 +299,33 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                         <span style={{ color: '#FF6B6B', 'margin-left': '8px' }}>⚠️ Mot de passe manquant</span>
                       )}
                     </p>
+                    <Show when={(source.exp_date && source.exp_date > 0) || (source.max_connections && source.max_connections > 0)}>
+                      {(() => {
+                        const expiry = describeSourceExpiry(source);
+                        const expColor = expiry
+                          ? expiry.status === 'expired'
+                            ? '#FF6B6B'
+                            : expiry.status === 'soon'
+                              ? 'var(--buntu-gold)'
+                              : 'var(--buntu-text-muted)'
+                          : 'var(--buntu-text-muted)';
+                        return (
+                          <p style={{ margin: '6px 0 0 0', 'font-size': '15px', color: 'var(--buntu-text-muted)' }}>
+                            <Show when={expiry}>
+                              <span style={{ color: expColor, 'font-weight': expiry!.status !== 'ok' ? '700' : '400' }}>
+                                {expiry!.label}
+                              </span>
+                            </Show>
+                            <Show when={source.max_connections && source.max_connections > 0}>
+                              <span>
+                                {expiry ? ' · ' : ''}
+                                {source.max_connections} connexion{source.max_connections! > 1 ? 's' : ''} max
+                              </span>
+                            </Show>
+                          </p>
+                        );
+                      })()}
+                    </Show>
                   </div>
                   <div style={{ display: 'flex', 'align-items': 'center', gap: '20px' }}>
                     <button

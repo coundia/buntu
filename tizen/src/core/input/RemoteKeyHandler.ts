@@ -121,7 +121,10 @@ export class RemoteKeyHandler {
         (active as HTMLElement).blur();
       }
       event.preventDefault();
-      event.stopPropagation();
+      // Let IME Done (65376) reach the focused input's onKeyDown handler so it can submit.
+      if (event.keyCode === 65385 || !isInputFocused) {
+        event.stopPropagation();
+      }
       return;
     }
 
@@ -131,7 +134,7 @@ export class RemoteKeyHandler {
     // When an input field has active DOM focus:
     // - BACK exits the input field (closes virtual keyboard) without leaving the screen
     // - UP / DOWN blurs the input field and moves spatial focus to the adjacent row
-    // - LEFT / RIGHT / numbers are left to the input cursor while editing
+    // - ENTER / LEFT / RIGHT / numbers are handled by the focused input while editing
     if (isInputFocused) {
       if (key === 'BACK') {
         (active as HTMLElement).blur();
@@ -139,7 +142,7 @@ export class RemoteKeyHandler {
         event.stopPropagation();
         return;
       }
-      if (key === 'LEFT' || key === 'RIGHT' || key.startsWith('NUM_')) {
+      if (key === 'ENTER' || key === 'LEFT' || key === 'RIGHT' || key.startsWith('NUM_')) {
         return;
       }
       if (key === 'UP' || key === 'DOWN') {
