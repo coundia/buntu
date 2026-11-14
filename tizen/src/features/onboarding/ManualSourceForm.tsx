@@ -2,7 +2,7 @@ import { Component, Show, createEffect, createSignal, onCleanup, onMount, untrac
 import { spatialNav } from '../../ui/design/SpatialNav';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
-import { createTvKeyboard } from '../../ui/components/TvKeyboard';
+import { createTvKeyboard, listenFocusedFieldPaste, pasteEventIntoField } from '../../ui/components/TvKeyboard';
 
 export interface ManualSourceFormProps {
   /** An account was added and synchronised. */
@@ -35,16 +35,17 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
       ? ['field-name', 'field-server', 'field-username', 'field-password']
       : ['field-name', 'field-url'];
 
+  const fieldSpec: Record<string, [string, () => string, (v: string) => void, boolean]> = {
+    'field-name': ['Nom', name, setName, false],
+    'field-server': ['Serveur', server, setServer, false],
+    'field-username': ['Identifiant', username, setUsername, false],
+    'field-password': ['Mot de passe', password, setPassword, true],
+    'field-url': ['Adresse de la playlist', url, setUrl, false],
+  };
+
   /** OK on a field: the on-screen keyboard (the Samsung system keyboard is not reliable with a remote). */
   const openFieldKeyboard = (id: string) => {
-    const spec: Record<string, [string, () => string, (v: string) => void, boolean]> = {
-      'field-name': ['Nom', name, setName, false],
-      'field-server': ['Serveur', server, setServer, false],
-      'field-username': ['Identifiant', username, setUsername, false],
-      'field-password': ['Mot de passe', password, setPassword, true],
-      'field-url': ['Adresse de la playlist', url, setUrl, false],
-    };
-    const entry = spec[id];
+    const entry = fieldSpec[id];
     if (entry) keyboard.open(entry[0], entry[1](), entry[2], entry[3]);
   };
 
@@ -63,6 +64,7 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
   };
 
   let backUnsub: (() => void) | null = null;
+  let pasteUnsub: (() => void) | null = null;
 
   onMount(() => {
     updateGrid();
@@ -73,10 +75,19 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
       }
       return false;
     });
+    pasteUnsub = listenFocusedFieldPaste(
+      () => keyboard.isOpen() || busy(),
+      (id) => {
+        if (!fieldIds().includes(id) && id !== 'field-name') return undefined;
+        const entry = fieldSpec[id];
+        return entry ? [entry[1], entry[2]] : undefined;
+      }
+    );
   });
 
   onCleanup(() => {
     if (backUnsub) backUnsub();
+    if (pasteUnsub) pasteUnsub();
   });
 
   // The kind changes the fields: rebuild the grid (keeps the focus on the kind buttons).
@@ -147,6 +158,7 @@ export const ManualSourceForm: Component<ManualSourceFormProps> = (props) => {
         inputMode="none"
         onClick={() => openFieldKeyboard(id)}
         onInput={(e) => set((e.currentTarget as HTMLInputElement).value)}
+        onPaste={(e) => pasteEventIntoField(e, value, set)}
       />
     </label>
   );

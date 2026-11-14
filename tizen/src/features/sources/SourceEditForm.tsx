@@ -3,7 +3,7 @@ import { SourceRecord } from '../../core/storage/Database';
 import { CndEngine } from '../../core/engine/CndEngine';
 import { spatialNav } from '../../ui/design/SpatialNav';
 import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
-import { createTvKeyboard } from '../../ui/components/TvKeyboard';
+import { createTvKeyboard, listenFocusedFieldPaste, pasteEventIntoField } from '../../ui/components/TvKeyboard';
 
 export const SourceEditForm: Component<{ source: SourceRecord; onSaved: () => void; onCancel: () => void }> = (props) => {
   const [host, setHost] = createSignal(props.source.server || '');
@@ -15,6 +15,7 @@ export const SourceEditForm: Component<{ source: SourceRecord; onSaved: () => vo
   const [focus] = spatialNav.getFocusSignal();
   const keyboard = createTvKeyboard();
   let unsubscribe: (() => void) | undefined;
+  let pasteUnsub: (() => void) | undefined;
   const cancel = () => { if (!busy()) props.onCancel(); };
   const submit = async () => {
     if (busy()) return;
@@ -51,11 +52,19 @@ export const SourceEditForm: Component<{ source: SourceRecord; onSaved: () => vo
       if (key !== 'BACK' || keyboard.isOpen()) return false;
       cancel(); return true;
     });
+    pasteUnsub = listenFocusedFieldPaste(
+      () => keyboard.isOpen() || busy(),
+      (id) => {
+        if (!ids.includes(id)) return undefined;
+        const entry = fields[id];
+        return entry ? [entry[1], entry[2]] : undefined;
+      }
+    );
   });
-  onCleanup(() => { unsubscribe?.(); setPassword(''); });
+  onCleanup(() => { unsubscribe?.(); pasteUnsub?.(); setPassword(''); });
   const field = (id: string, label: string, value: () => string, setter: (s: string) => void, type = 'text') =>
     <label style={{ display: 'block', 'margin-bottom': '16px' }}>{label}
-      <input id={id} type={type} autocomplete="off" value={value()} disabled={busy()} readOnly inputMode="none" onClick={() => openKeyboard(id)} class={`tv-input ${focus() === id ? 'focused' : ''}`} onInput={(e) => setter(e.currentTarget.value)} />
+      <input id={id} type={type} autocomplete="off" value={value()} disabled={busy()} readOnly inputMode="none" onClick={() => openKeyboard(id)} class={`tv-input ${focus() === id ? 'focused' : ''}`} onInput={(e) => setter(e.currentTarget.value)} onPaste={(e) => { if (!busy()) pasteEventIntoField(e, value, setter); }} />
     </label>;
   return <div style={{ 'max-width': '760px', margin: '0 auto', padding: '24px' }}>
     <h2>Modifier « {props.source.name} » sur cette TV</h2>
