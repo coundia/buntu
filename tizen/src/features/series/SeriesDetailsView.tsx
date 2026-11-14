@@ -4,6 +4,7 @@ import { ItemRecord } from '../../core/storage/Database';
 import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { announce } from '../../ui/design/a11y';
+import { t } from '../../core/i18n';
 
 export interface SeriesDetailsViewProps {
   item: ItemRecord;
@@ -92,7 +93,7 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
       const initialSeason = res.seasons.length > 0 ? res.seasons[0].season_num : 1;
       setSelectedSeasonNum(initialSeason);
       rebuildGrid(res, initialSeason, false);
-      announce(`Série ${title()}, ${res.seasons.length} saisons disponibles.`);
+      announce(t('series.detailsAnnounce', { title: title(), count: res.seasons.length }));
     } catch (err) {
       console.error('[SeriesDetailsView] Error fetching series details:', err);
     } finally {
@@ -109,7 +110,7 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
       const season = d.seasons.find((s) => s.season_num === seasonNum);
       if (season && season.episodes.length > 0) {
         spatialNav.setFocusById(`episode-${season.episodes[0].id}`);
-        announce(`${season.name}, ${season.episodes.length} épisodes.`);
+        announce(t('series.seasonSelectedAnnounce', { name: season.name, count: season.episodes.length }));
       }
     }
   };
@@ -143,7 +144,7 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
   };
 
   return (
-    <div class="tv-series-container" role="region" aria-label={`Détails de la série ${title()}`}>
+    <div class="tv-series-container" role="region" aria-label={t('series.detailsRegionAria', { title: title() })}>
       {/* Top Header Card */}
       <div class="tv-series-header-card">
         {/* Left: Series Cover Poster */}
@@ -195,62 +196,66 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
             </span>
 
             <span class="tv-details-badge" style={{ color: "var(--buntu-cyan)" }}>
-              {details()?.info.genre || props.item.group_title || 'Série TV'}
+              {details()?.info.genre || props.item.group_title || t('series.genreFallback')}
             </span>
 
             <Show when={details()?.seasons.length}>
               <span class="tv-details-pill">
-                {details()!.seasons.length} {details()!.seasons.length > 1 ? 'Saisons' : 'Saison'}
+                {details()!.seasons.length > 1
+                  ? t('series.seasonsPlural', { count: details()!.seasons.length })
+                  : t('series.seasonsSingular', { count: details()!.seasons.length })}
               </span>
             </Show>
 
             <Show when={totalEpisodesCount() > 0}>
               <span class="tv-details-pill">
-                {totalEpisodesCount()} Épisodes
+                {t('series.episodesCount', { count: totalEpisodesCount() })}
               </span>
             </Show>
           </div>
 
           <p class="tv-series-synopsis">
-            {details()?.info.plot || props.item.plot || "Aucun synopsis disponible pour cette série. Choisissez un épisode ci-dessous pour lancer la lecture avec décodage matériel AVPlay."}
+            {details()?.info.plot || props.item.plot || t('series.noSynopsis')}
           </p>
 
           {/* Action Toolbar */}
-          <div class="tv-details-actions" role="toolbar" aria-label="Actions de la série">
+          <div class="tv-details-actions" role="toolbar" aria-label={t('series.actionsAria')}>
             <button
               id="btn-series-play-first"
               role="button"
               tabindex="-1"
-              aria-label={`Lancer le premier épisode de ${title()}`}
+              aria-label={t('series.playFirstAria', { title: title() })}
               class={`tv-btn ${focusId() === 'btn-series-play-first' ? 'focused' : ''}`}
               onClick={handlePlayFirst}
             >
-              ▶ {currentSeason() ? `Regarder S${currentSeason()!.season_num}:E1` : 'Lancer la lecture'}
+              {currentSeason()
+                ? t('series.watchFirstEpisode', { season: currentSeason()!.season_num })
+                : t('series.startPlayback')}
             </button>
 
             <button
               id="btn-series-fav"
               role="button"
               tabindex="-1"
-              aria-label={isFav() ? 'Retirer cette série des favoris' : 'Ajouter cette série aux favoris'}
+              aria-label={isFav() ? t('series.removeFavoriteAria') : t('series.addFavoriteAria')}
               class={`tv-btn ${focusId() === 'btn-series-fav' ? 'focused' : ''}`}
               onClick={async () => {
                 const next = await engine.toggleFavorite(props.item.id);
                 setIsFav(next);
               }}
             >
-              {isFav() ? '★ Retirer des favoris' : '☆ Favoris'}
+              {isFav() ? t('series.removeFavoriteBtn') : t('series.addFavoriteBtn')}
             </button>
 
             <button
               id="btn-series-back"
               role="button"
               tabindex="-1"
-              aria-label="Retourner au catalogue des séries"
+              aria-label={t('series.backToSeriesAria')}
               class={`tv-btn ${focusId() === 'btn-series-back' ? 'focused' : ''}`}
               onClick={() => props.onBack()}
             >
-              ← Retour aux Séries
+              {t('series.backToSeriesBtn')}
             </button>
           </div>
         </div>
@@ -258,7 +263,7 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
 
       {/* Season Selection Pills Bar */}
       <Show when={details() && details()!.seasons.length > 0}>
-        <div class="tv-series-seasons-bar" role="tablist" aria-label="Saisons disponibles">
+        <div class="tv-series-seasons-bar" role="tablist" aria-label={t('series.seasonsTablistAria')}>
           <For each={details()!.seasons}>
             {(season) => {
               const isActive = () => selectedSeasonNum() === season.season_num;
@@ -269,7 +274,7 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
                   role="tab"
                   tabindex="-1"
                   aria-selected={isActive()}
-                  aria-label={`${season.name}, ${season.episodes.length} épisodes`}
+                  aria-label={t('series.seasonTabAria', { name: season.name, count: season.episodes.length })}
                   class={`tv-season-pill ${isActive() ? 'active' : ''} ${isFocused() ? 'focused' : ''}`}
                   onClick={() => handleSelectSeason(season.season_num)}
                 >
@@ -286,14 +291,14 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
       <div
         class="tv-episodes-container"
         role="list"
-        aria-label={`Épisodes de la ${currentSeason()?.name || 'Saison'}`}
+        aria-label={t('series.episodesListAria', { season: currentSeason()?.name || t('series.seasonFallbackName') })}
       >
         <Show
           when={!loading()}
           fallback={
             <div class="tv-infinite-loader" style={{ padding: "40px 0" }}>
               <span class="tv-spinner-small" />
-              <span>Chargement des saisons et épisodes...</span>
+              <span>{t('series.loadingDetails')}</span>
             </div>
           }
         >
@@ -301,7 +306,7 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
             when={currentSeason() && currentSeason()!.episodes.length > 0}
             fallback={
               <div style={{ padding: "40px", "text-align": "center", color: "var(--buntu-text-muted)", "font-size": "20px" }}>
-                Aucun épisode disponible pour cette saison.
+                {t('series.noEpisodesInSeason')}
               </div>
             }
           >
@@ -313,7 +318,12 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
                     id={`episode-${ep.id}`}
                     role="button"
                     tabindex="-1"
-                    aria-label={`Épisode numéro ${ep.episode_num} : ${ep.title}. ${ep.duration || ''}. ${ep.plot || ''}. Appuyez pour regarder.`}
+                    aria-label={t('series.episodeAria', {
+                      num: ep.episode_num,
+                      title: ep.title,
+                      duration: ep.duration || '',
+                      plot: ep.plot || '',
+                    })}
                     class={`tv-episode-row ${isFocused() ? 'focused' : ''}`}
                     onClick={() => handlePlayEpisode(ep)}
                   >
@@ -358,7 +368,7 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
                         </Show>
                       </div>
                       <div class="tv-episode-plot">
-                        {ep.plot || `Épisode ${ep.episode_num} de la saison ${currentSeason()?.season_num || 1}.`}
+                        {ep.plot || t('series.episodeFallbackPlot', { ep: ep.episode_num, season: currentSeason()?.season_num || 1 })}
                       </div>
                     </div>
 
@@ -367,7 +377,7 @@ export const SeriesDetailsView: Component<SeriesDetailsViewProps> = (props) => {
                       <Show when={isFocused()}>
                         <div class="tv-watch-pill">
                           <span>▶</span>
-                          <span>REGARDER</span>
+                          <span>{t('series.watchPill')}</span>
                         </div>
                       </Show>
                     </div>

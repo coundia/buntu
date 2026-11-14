@@ -13,6 +13,7 @@ import { FocusableItem, spatialNav } from '../../ui/design/SpatialNav';
 import { PairingOffer, PairingService } from '../../core/pairing/PairingService';
 import { getAiSettings, PROVIDER_DEFAULTS } from '../../core/ai/AiSettings';
 import { LocalSyncService } from '../../core/sync/LocalSyncService';
+import { t, type TranslationKey } from '../../core/i18n';
 
 export interface AssistantModalProps {
   onClose: () => void;
@@ -40,12 +41,12 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
   let unsubRemoteText: (() => void) | null = null;
   let actionTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const QUICK_COMMANDS = [
-    'France 2',
-    'Mets le match du PSG',
-    'Un film comme Inception',
-    'Chaîne suivante',
-    'Chaîne précédente',
+  const QUICK_COMMAND_KEYS: TranslationKey[] = [
+    'assistant.quickCmd0',
+    'assistant.quickCmd1',
+    'assistant.quickCmd2',
+    'assistant.quickCmd3',
+    'assistant.quickCmd4',
   ];
 
   const loadHistory = () => {
@@ -92,9 +93,9 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
     ]);
 
     // Quick command buttons
-    const cmdRow: FocusableItem[] = QUICK_COMMANDS.map((cmd, idx) => ({
+    const cmdRow: FocusableItem[] = QUICK_COMMAND_KEYS.map((cmdKey, idx) => ({
       id: `btn-quick-cmd-${idx}`,
-      onSelect: () => void executeCommand(cmd),
+      onSelect: () => void executeCommand(t(cmdKey)),
     }));
     grid.push(cmdRow);
 
@@ -152,7 +153,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
 
     setInputPhrase(cleaned);
     setIsLoading(true);
-    setStatusMessage('L’assistant réfléchit…');
+    setStatusMessage(t('assistant.thinking'));
     saveHistory(cleaned);
 
     try {
@@ -160,7 +161,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
       setIsLoading(false);
 
       if (res.resolvedItem) {
-        setStatusMessage(`Lancement de ${res.resolvedItem.name}…`);
+        setStatusMessage(t('assistant.launching', { name: res.resolvedItem.name }));
         actionTimer = setTimeout(() => {
           props.onPlayItem?.(res.resolvedItem!);
           props.onClose();
@@ -169,7 +170,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
       }
 
       if (res.action?.search?.query) {
-        setStatusMessage(`Recherche de : ${res.action.search.query}`);
+        setStatusMessage(t('assistant.searching', { query: res.action.search.query }));
         actionTimer = setTimeout(() => {
           props.onSearchQuery?.(res.action.search.query);
           props.onClose();
@@ -180,9 +181,9 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
       if (res.reply) {
         setStatusMessage(res.reply);
       } else if (res.error) {
-        setStatusMessage(`Assistant indisponible : ${res.error}`);
+        setStatusMessage(t('assistant.unavailable', { error: res.error }));
       } else {
-        setStatusMessage('Aucune action trouvée');
+        setStatusMessage(t('assistant.noAction'));
       }
     } catch (err: any) {
       setIsLoading(false);
@@ -212,7 +213,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
   });
 
   const settings = getAiSettings();
-  const providerLabel = PROVIDER_DEFAULTS[settings.provider]?.label || 'Désactivé';
+  const providerLabel = () => PROVIDER_DEFAULTS[settings.provider]?.label || t('assistant.providerDisabled');
 
   return (
     <div
@@ -247,9 +248,9 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
         {/* Header */}
         <div style={{ display: 'flex', 'justify-content': 'space-between', 'align-items': 'center' }}>
           <div>
-            <h2 style={{ 'font-size': '32px', color: 'var(--buntu-gold)', margin: 0 }}>✨ Assistant Buntu</h2>
+            <h2 style={{ 'font-size': '32px', color: 'var(--buntu-gold)', margin: 0 }}>{t('assistant.title')}</h2>
             <div style={{ color: 'var(--buntu-text-muted)', 'font-size': '16px', 'margin-top': '4px' }}>
-              Fournisseur : <span style={{ color: 'var(--buntu-cyan)' }}>{providerLabel}</span>
+              {t('assistant.provider')} <span style={{ color: 'var(--buntu-cyan)' }}>{providerLabel()}</span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
@@ -260,7 +261,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
               style={{ padding: '10px 18px', 'font-size': '16px' }}
               onClick={startPhonePairing}
             >
-              📱 Écrire depuis le téléphone
+              {t('assistant.writeFromPhone')}
             </button>
             <button
               id="btn-assistant-close"
@@ -269,7 +270,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
               style={{ padding: '10px 18px', 'font-size': '16px' }}
               onClick={props.onClose}
             >
-              ✕ Fermer
+              {t('assistant.close')}
             </button>
           </div>
         </div>
@@ -288,10 +289,10 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
             }}
           >
             <h3 style={{ 'font-size': '20px', margin: 0, color: 'var(--buntu-gold)' }}>
-              Scannez pour écrire depuis votre smartphone
+              {t('assistant.qrTitle')}
             </h3>
             <p style={{ color: 'var(--buntu-text-muted)', margin: 0, 'font-size': '16px', 'text-align': 'center' }}>
-              La phrase sera envoyée instantanément à la télévision par canal chiffré de bout en bout.
+              {t('assistant.qrDesc')}
             </p>
             <div
               style={{
@@ -330,7 +331,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
               class={`tv-btn ${focusId() === 'btn-assistant-close-qr' ? 'focused' : ''}`}
               onClick={stopPairing}
             >
-              Annuler la saisie téléphone
+              {t('assistant.cancelPhone')}
             </button>
           </div>
         </Show>
@@ -344,8 +345,8 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
               type="text"
               tabindex="-1"
               value={inputPhrase()}
-              placeholder="Dicter ou saisir une commande (ex : Mets France 2)…"
-              aria-label="Dicter ou saisir une commande pour l’assistant"
+              placeholder={t('assistant.inputPlaceholder')}
+              aria-label={t('assistant.inputAria')}
               class={`tv-input ${focusId() === 'assistant-ime-input' ? 'focused' : ''}`}
               style={{
                 flex: 1,
@@ -377,7 +378,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
               style={{ padding: '14px 22px', 'font-size': '18px', 'flex-shrink': 0 }}
               onClick={() => void executeCommand(inputPhrase())}
             >
-              Exécuter
+              {t('assistant.submit')}
             </button>
           </div>
 
@@ -398,25 +399,25 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
             <Show when={isLoading()}>
               <span style={{ 'margin-right': '12px' }}>⏳</span>
             </Show>
-            {statusMessage() || 'Choisissez une commande rapide ou écrivez depuis votre téléphone.'}
+            {statusMessage() || t('assistant.idleStatus')}
           </div>
 
           {/* Quick Commands Row */}
           <div>
             <div style={{ 'font-size': '18px', color: 'var(--buntu-gold)', 'margin-bottom': '12px' }}>
-              Commandes rapides :
+              {t('assistant.quickCommandsTitle')}
             </div>
             <div style={{ display: 'flex', gap: '10px', 'flex-wrap': 'wrap' }}>
-              <For each={QUICK_COMMANDS}>
-                {(cmd, idx) => (
+              <For each={QUICK_COMMAND_KEYS}>
+                {(cmdKey, idx) => (
                   <button
                     id={`btn-quick-cmd-${idx()}`}
                     tabindex="-1"
                     class={`tv-btn ${focusId() === `btn-quick-cmd-${idx()}` ? 'focused' : ''}`}
                     style={{ padding: '12px 18px', 'font-size': '16px' }}
-                    onClick={() => void executeCommand(cmd)}
+                    onClick={() => void executeCommand(t(cmdKey))}
                   >
-                    {cmd}
+                    {t(cmdKey)}
                   </button>
                 )}
               </For>
@@ -427,7 +428,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
           <Show when={history().length > 0}>
             <div>
               <div style={{ 'font-size': '18px', color: 'var(--buntu-cyan)', 'margin-bottom': '12px' }}>
-                Dernières demandes :
+                {t('assistant.historyTitle')}
               </div>
               <div style={{ display: 'flex', gap: '10px', 'flex-wrap': 'wrap' }}>
                 <For each={history().slice(0, 4)}>

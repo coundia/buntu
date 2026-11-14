@@ -4,6 +4,7 @@ import { announce } from '../../ui/design/a11y';
 import { RemoteKey, RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
 import { PairingEvents, PairingOffer, PairingRequest, PairingService } from '../../core/pairing/PairingService';
 import { PairingQr } from './PairingQr';
+import { t } from '../../core/i18n';
 
 export interface PairingViewProps {
   /** Called when pairing and sync succeed with the number of accounts added. */
@@ -30,7 +31,7 @@ export const PairingView: Component<PairingViewProps> = (props) => {
   const [request, setRequest] = createSignal<PairingRequest | null>(null);
   const [replaceDuplicates, setReplaceDuplicates] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
-  const [importStep, setImportStep] = createSignal('Préparation de l’importation…');
+  const [importStep, setImportStep] = createSignal(t('pairing.preparing'));
   const [importPercent, setImportPercent] = createSignal(5);
   const [result, setResult] = createSignal('');
   const [isErrorResult, setIsErrorResult] = createSignal(false);
@@ -130,7 +131,7 @@ export const PairingView: Component<PairingViewProps> = (props) => {
     setBusy(true);
     setResult('');
     setIsErrorResult(false);
-    setImportStep('Connexion au fournisseur IPTV…');
+    setImportStep(t('pairing.connecting'));
     setImportPercent(5);
     spatialNav.setGrid([]);
 
@@ -168,7 +169,7 @@ export const PairingView: Component<PairingViewProps> = (props) => {
     await r.refuse();
     setRequest(null);
     setIsErrorResult(false);
-    setResult('Envoi refusé');
+    setResult(t('pairing.refused'));
     announce('Importation refusée');
     void startPairing();
     updateGrid();
@@ -240,18 +241,18 @@ export const PairingView: Component<PairingViewProps> = (props) => {
           <button
             id="btn-pairing-back"
             tabindex="-1"
-            aria-label="Retour à l'écran précédent"
+            aria-label={t('common.back')}
             class={`tv-btn ${focusId() === 'btn-pairing-back' ? 'focused' : ''}`}
             onClick={() => props.onBack()}
           >
-            ← Retour
+            {t('pairing.back')}
           </button>
           <div style={{ flex: 1, 'text-align': 'center' }}>
             <h1 style={{ 'font-size': '40px', color: 'var(--buntu-gold)', margin: '0 0 8px 0' }}>
-              {props.title || 'Ajouter depuis votre smartphone'}
+              {props.title || t('pairing.defaultTitle')}
             </h1>
             <p style={{ 'font-size': '20px', color: 'var(--buntu-text-muted)', margin: 0 }}>
-              {props.subtitle || 'Scannez le QR code avec l’appareil photo ou l’application Buntu pour transférer vos comptes.'}
+              {props.subtitle || t('pairing.defaultSubtitle')}
             </p>
           </div>
           <div style={{ width: '120px' }} />
@@ -260,9 +261,9 @@ export const PairingView: Component<PairingViewProps> = (props) => {
         {/* In-Flight Import Loader */}
         <Show when={!busy()} fallback={
           <div class="tv-loader-card" style={{ 'margin-bottom': '40px' }}>
-            <div class="tv-spinner" role="status" aria-label="Importation en cours" />
+            <div class="tv-spinner" role="status" aria-label={t('pairing.importingTitle')} />
             <h2 style={{ 'font-size': '32px', color: 'var(--buntu-gold)', margin: 0 }}>
-              Importation du compte en cours…
+              {t('pairing.importingTitle')}
             </h2>
             <p style={{ 'font-size': '24px', color: 'var(--buntu-cyan)', margin: 0 }}>
               {importStep()}
@@ -271,7 +272,7 @@ export const PairingView: Component<PairingViewProps> = (props) => {
               <div class="tv-progress-bar" style={{ width: `${importPercent()}%` }} />
             </div>
             <p style={{ 'font-size': '18px', color: 'var(--buntu-text-muted)', margin: 0 }}>
-              Veuillez patienter sans fermer l’application ({importPercent()}%)
+              {t('pairing.importingWait', { percent: importPercent() })}
             </p>
           </div>
         }>
@@ -294,12 +295,12 @@ export const PairingView: Component<PairingViewProps> = (props) => {
                 {request()!.preview.sources.length > 1 ? 's' : ''}
               </h2>
               <span style={{ color: 'var(--buntu-cyan)', 'font-size': '18px', 'font-weight': '600' }}>
-                Chiffrement de bout en bout AES-256
+                {t('pairing.aesBadge')}
               </span>
             </div>
 
             <p style={{ color: 'var(--buntu-text-muted)', 'font-size': '18px', 'margin-bottom': '20px' }}>
-              Vérifiez les comptes reçus ci-dessous avant d’autoriser l’enregistrement sur cette TV :
+              {t('pairing.reviewHint')}
             </p>
 
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '12px', 'margin-bottom': '24px' }}>
@@ -331,7 +332,7 @@ export const PairingView: Component<PairingViewProps> = (props) => {
                         'font-weight': '700',
                       }}
                     >
-                      {src.duplicate ? '⚠️ Déjà présent' : '✓ Nouveau'}
+                      {src.duplicate ? t('pairing.duplicate') : t('pairing.new')}
                     </span>
                   </div>
                 )}
@@ -347,7 +348,7 @@ export const PairingView: Component<PairingViewProps> = (props) => {
                   class={`tv-btn ${focusId() === 'btn-pair-toggle-dup' ? 'focused' : ''}`}
                   onClick={toggleDuplicateMode}
                 >
-                  {replaceDuplicates() ? '🔄 Doublons : Remplacer l’existant' : '⏭️ Doublons : Ignorer'}
+                  {replaceDuplicates() ? t('pairing.dupReplace') : t('pairing.dupIgnore')}
                 </button>
                 <span style={{ color: 'var(--buntu-text-muted)', 'font-size': '18px' }}>
                   {replaceDuplicates()
@@ -361,21 +362,21 @@ export const PairingView: Component<PairingViewProps> = (props) => {
               <button
                 id="btn-pair-accept"
                 tabindex="-1"
-                aria-label="Ajouter les comptes reçus sur cette TV"
+                aria-label={t('pairing.accept')}
                 class={`tv-btn ${focusId() === 'btn-pair-accept' ? 'focused' : ''}`}
                 style={{ 'background-color': focusId() === 'btn-pair-accept' ? 'var(--buntu-gold)' : 'var(--buntu-slate-light)' }}
                 onClick={() => void accept()}
               >
-                ✓ Ajouter sur cette TV
+                {t('pairing.accept')}
               </button>
               <button
                 id="btn-pair-refuse"
                 tabindex="-1"
-                aria-label="Refuser l'importation des comptes"
+                aria-label={t('pairing.refuse')}
                 class={`tv-btn ${focusId() === 'btn-pair-refuse' ? 'focused' : ''}`}
                 onClick={() => void refuse()}
               >
-                ✕ Refuser
+                {t('pairing.refuse')}
               </button>
             </div>
           </div>
@@ -413,17 +414,17 @@ export const PairingView: Component<PairingViewProps> = (props) => {
                 when={offer()}
                 fallback={
                   <div style={{ color: '#000000', 'font-size': '18px', 'text-align': 'center' }}>
-                    <p>{pairingError() || 'Génération du code QR…'}</p>
+                    <p>{pairingError() || t('pairing.generatingQr')}</p>
                     <Show when={pairingError()}>
                       <button
                         id="btn-retry"
                         tabindex="-1"
-                        aria-label="Réessayer la génération du code QR d'appariement"
+                        aria-label={t('common.retry')}
                         class={`tv-btn ${focusId() === 'btn-retry' ? 'focused' : ''}`}
                         style={{ 'margin-top': '12px' }}
                         onClick={() => void startPairing()}
                       >
-                        Réessayer
+                        {t('common.retry')}
                       </button>
                     </Show>
                   </div>
@@ -437,51 +438,51 @@ export const PairingView: Component<PairingViewProps> = (props) => {
             <div style={{ 'text-align': 'left', flex: 1, display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
               <div>
                 <h3 style={{ 'font-size': '24px', 'margin-bottom': '6px', color: 'var(--buntu-gold)' }}>
-                  1. Scannez avec votre téléphone
+                  {t('pairing.step1Title')}
                 </h3>
                 <p style={{ color: 'var(--buntu-text-muted)', 'font-size': '18px', margin: 0, 'line-height': '1.4' }}>
-                  Ouvrez l'appareil photo de votre iPhone ou Android, ou l'application Buntu (Sources &gt; « Envoyer vers une TV »).
+                  {t('pairing.step1Desc')}
                 </p>
               </div>
 
               <div>
                 <h3 style={{ 'font-size': '24px', 'margin-bottom': '6px', color: 'var(--buntu-gold)' }}>
-                  2. Même réseau Wi-Fi requis
+                  {t('pairing.step2Title')}
                 </h3>
                 <p style={{ color: 'var(--buntu-text-muted)', 'font-size': '18px', margin: 0, 'line-height': '1.4' }}>
-                  Le smartphone et cette TV doivent être connectés au même réseau Wi-Fi (les réseaux invités isolés sont incompatibles).
+                  {t('pairing.step2Desc')}
                 </p>
               </div>
 
               <div>
                 <h3 style={{ 'font-size': '24px', 'margin-bottom': '6px', color: 'var(--buntu-gold)' }}>
-                  3. Informations de connexion TV
+                  {t('pairing.step3Title')}
                 </h3>
                 <p style={{ color: 'var(--buntu-text)', 'font-size': '18px', margin: 0, 'line-height': '1.4' }}>
-                  TV : <strong>{offer()?.tvName || 'Samsung TV'}</strong> · Adresse :{' '}
+                  TV : <strong>{offer()?.tvName || 'Samsung TV'}</strong> ·{' '}
                   <span style={{ color: 'var(--buntu-cyan)' }}>
-                    {offer() ? `${offer()!.host}:${offer()!.port}` : 'Détection…'}
+                    {offer() ? `${offer()!.host}:${offer()!.port}` : t('pairing.detecting')}
                   </span>
                 </p>
                 <p style={{ color: 'var(--buntu-text-muted)', 'font-size': '16px', 'margin-top': '4px' }}>
-                  Si la TV affiche une demande d'autorisation Samsung, sélectionnez « Autoriser » avec la télécommande.
+                  {t('pairing.samsungPrompt')}
                 </p>
               </div>
 
               <div style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', 'margin-top': '4px' }}>
                 <span style={{ color: 'var(--buntu-text-muted)', 'font-size': '18px' }}>
                   <Show when={offer()}>
-                    Session valide encore <strong style={{ color: 'var(--buntu-gold)' }}>{minutes()}</strong>
+                    {t('pairing.sessionValid')} <strong style={{ color: 'var(--buntu-gold)' }}>{minutes()}</strong>
                   </Show>
                 </span>
                 <button
                   id="btn-pair-renew"
                   tabindex="-1"
-                  aria-label="Renouveler le code QR immédiatement"
+                  aria-label={t('pairing.renewQr')}
                   class={`tv-btn ${focusId() === 'btn-pair-renew' ? 'focused' : ''}`}
                   onClick={() => void startPairing()}
                 >
-                  🔄 Renouveler le code
+                  {t('pairing.renewQr')}
                 </button>
               </div>
             </div>
@@ -510,22 +511,22 @@ export const PairingView: Component<PairingViewProps> = (props) => {
               <button
                 id="btn-pair-manual"
                 tabindex="-1"
-                aria-label="Saisir votre source IPTV manuellement avec la télécommande"
+                aria-label={t('pairing.manual')}
                 class={`tv-btn ${focusId() === 'btn-pair-manual' ? 'focused' : ''}`}
                 onClick={() => props.onSwitchToManual!()}
               >
-                ✍️ Saisir avec la télécommande
+                {t('pairing.manual')}
               </button>
             </Show>
             <Show when={props.onSkip}>
               <button
                 id="btn-pair-skip"
                 tabindex="-1"
-                aria-label="Passer cette étape et explorer l'application"
+                aria-label={t('pairing.skip')}
                 class={`tv-btn ${focusId() === 'btn-pair-skip' ? 'focused' : ''}`}
                 onClick={() => props.onSkip!()}
               >
-                Passer / Essai
+                {t('pairing.skip')}
               </button>
             </Show>
           </div>

@@ -17,6 +17,7 @@ import { MiniPlayerPanel } from '../../ui/components/MiniPlayerPanel';
 import { InfoChips, InfoSection, InfoProgress } from '../../ui/components/InfoParts';
 import { formatClock } from '../../core/utils/timeFormat';
 import { panelFocusItems, panelItemsForRow, installPanelLeftReturn, PANEL_MIN_ROWS } from '../../ui/design/miniPlayerFocus';
+import { t } from '../../core/i18n';
 
 export interface LiveViewProps {
   onPlayChannel: (channel: ItemRecord) => void;
@@ -121,7 +122,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     },
     onBatchLoaded: (list, total) => {
       if (!isSearchMode()) {
-        announce(`Live TV, ${list.length} chaînes affichées sur ${total}`);
+        announce(t('live.announceLoaded', { shown: list.length, total }));
         void hydrateEpgForList(list);
         if (!previewChannel() && list.length > 0) {
           void selectForPreview(list[0]);
@@ -371,7 +372,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     const next = await engine.toggleFavorite(ch.id);
     ch.is_favorite = next ? 1 : 0;
     setFavTick((t) => t + 1);
-    announce(next ? 'Ajouté aux favoris' : 'Retiré des favoris');
+    announce(next ? t('live.addedToFavorites') : t('live.removedFromFavorites'));
     await refreshShelvesAndCounts();
     if (selectedCategory() === FAVORITES_CATEGORY) {
       await scroller.reset();
@@ -393,7 +394,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       const extra = await aiSuggestions(engine, query, 'live').catch(() => []);
       if (searchQuery() !== query || extra.length === 0) return;
       setSearchResults(mergeSuggestions(searchResults(), extra));
-      announce(`L’assistant propose ${extra.length} résultat(s)`);
+      announce(t('live.aiSuggestionsAnnounce', { count: extra.length }));
       scheduleRebuildGrid(true);
     }, 900);
   };
@@ -413,7 +414,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     const results = await engine.searchCatalog(query, 'live', 100);
     setSearchResults(results);
     void hydrateEpgForList(results);
-    announce(`${results.length} chaînes trouvées`);
+    announce(t('live.searchAnnounce', { count: results.length }));
     scheduleAiRefine(query);
     scheduleRebuildGrid(true);
   };
@@ -596,7 +597,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
         id={cardId}
         role="button"
         tabindex="-1"
-        aria-label={`${cleanTitle()}, chaîne ${ch.chno || fallbackIdx + 1}${isBroken() ? ', hors service' : ''}`}
+        aria-label={isBroken() ? t('live.cardAriaBroken', { title: cleanTitle(), num: ch.chno || fallbackIdx + 1 }) : t('live.cardAria', { title: cleanTitle(), num: ch.chno || fallbackIdx + 1 })}
         class={`buntu-ch-card ${isPlaying() ? 'playing' : ''} ${isBroken() ? 'broken' : ''} ${focusId() === cardId ? 'focused' : ''}`}
         onClick={() => handleCardActivate(ch)}
       >
@@ -622,7 +623,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                 <span class={`buntu-q-badge ${quality() === '4K' ? 'uhd' : ''}`}>{quality()}</span>
               </Show>
               <Show when={isBroken()}>
-                <span class="buntu-hs-badge" title="Chaîne temporairement hors service">HS</span>
+                <span class="buntu-hs-badge" title={t('live.brokenBadgeTitle')}>{t('live.brokenBadge')}</span>
               </Show>
             </div>
             <Show when={ch.group_title}>
@@ -634,7 +635,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
             type="button"
             tabindex="-1"
             class={`buntu-ch-star ${isFav(ch) ? 'fav' : ''}`}
-            title="Favori"
+            title={t('live.favoriteTitle')}
             onClick={(e) => void handleToggleFavorite(ch, e)}
           >
             {isFav(ch) ? '★' : '☆'}
@@ -646,7 +647,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
             when={nowProg()}
             fallback={
               <div class="buntu-epg-empty">
-                {ch.tvg_id ? 'Guide indisponible' : 'Pas de guide'}
+                {ch.tvg_id ? t('live.epgUnavailable') : t('live.noGuide')}
               </div>
             }
           >
@@ -669,28 +670,28 @@ export const LiveView: Component<LiveViewProps> = (props) => {
             id="live-brand-home"
             type="button"
             tabindex="-1"
-            aria-label="Buntu — Retour à l'accueil"
-            title="Retour à l'accueil"
+            aria-label={t('live.backHomeAria')}
+            title={t('live.backHomeTitle')}
             class={`buntu-toolbar-brand ${focusId() === 'live-brand-home' ? 'focused' : ''}`}
             onClick={goHome}
           >
             <img src="./icon.png" alt="" class="buntu-toolbar-brand-logo" />
           </button>
-          <h1 class="buntu-toolbar-title">Live TV</h1>
+          <h1 class="buntu-toolbar-title">{t('live.title')}</h1>
           <Show when={totalCount() > 0}>
-            <span class="buntu-toolbar-subtitle">{formatBuntuCount(totalCount())} chaînes</span>
+            <span class="buntu-toolbar-subtitle">{t('live.channelsCount', { count: formatBuntuCount(totalCount()) })}</span>
           </Show>
         </div>
 
         <div class="buntu-toolbar-right">
-          <span class="buntu-key-hint"><i class="buntu-key-dot" />Favori</span>
+          <span class="buntu-key-hint"><i class="buntu-key-dot" />{t('live.favoriteHint')}</span>
           <div class="buntu-search-wrap">
             <span class="buntu-search-icon">🔍</span>
             <input
               id="live-search-input"
               type="text"
               value={searchQuery()}
-              placeholder="Rechercher une chaîne"
+              placeholder={t('live.searchPlaceholder')}
               class={`buntu-search-field ${focusId() === 'live-search-input' ? 'focused' : ''}`}
               onInput={(e) => void handleSearch(e.currentTarget.value)}
             />
@@ -700,7 +701,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
             type="button"
             tabindex="-1"
             class={`buntu-mode-btn ${searchMode() === 'ai' ? 'ai' : ''} ${focusId() === 'live-search-mode' ? 'focused' : ''}`}
-            aria-label={searchMode() === 'ai' ? 'Moteur de recherche : IA. OK pour passer en local' : 'Moteur de recherche : local. OK pour passer en IA'}
+            aria-label={searchMode() === 'ai' ? t('live.searchModeAiAria') : t('live.searchModeLocalAria')}
             onClick={switchSearchEngine}
           >
             {searchModeLabel(searchMode())}
@@ -712,13 +713,13 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       <div class="buntu-body-split">
         {/* Column 1: Categories List */}
         <Show when={showCats()}>
-          <aside class="buntu-cat-pane" aria-label="Catégories Live TV">
+          <aside class="buntu-cat-pane" aria-label={t('live.categoriesAria')}>
             <div class="buntu-cat-filter-bar">
               <input
                 id="live-cat-filter"
                 type="text"
                 value={catFilter()}
-                placeholder="Filtrer les catégories"
+                placeholder={t('live.filterCategoriesPlaceholder')}
                 class={`buntu-cat-filter-input ${focusId() === 'live-cat-filter' ? 'focused' : ''}`}
                 onInput={(e) => {
                   setCatFilter(e.currentTarget.value);
@@ -738,7 +739,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               >
                 <div class="buntu-cat-row-left">
                   <span class="buntu-cat-row-icon">🕒</span>
-                  <span class="buntu-cat-row-title">Récemment vus</span>
+                  <span class="buntu-cat-row-title">{t('live.catRecent')}</span>
                 </div>
                 <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(recentCount())}</span></Show>
               </div>
@@ -753,7 +754,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               >
                 <div class="buntu-cat-row-left">
                   <span class="buntu-cat-row-icon fav">★</span>
-                  <span class="buntu-cat-row-title">Favoris</span>
+                  <span class="buntu-cat-row-title">{t('live.catFavorites')}</span>
                 </div>
                 <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(favCount())}</span></Show>
               </div>
@@ -768,7 +769,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               >
                 <div class="buntu-cat-row-left">
                   <span class="buntu-cat-row-icon">⊞</span>
-                  <span class="buntu-cat-row-title">Toutes</span>
+                  <span class="buntu-cat-row-title">{t('live.catAll')}</span>
                 </div>
                 <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span></Show>
               </div>
@@ -811,9 +812,9 @@ export const LiveView: Component<LiveViewProps> = (props) => {
             fallback={
               <div class="tv-loader-card" style={{ margin: 'auto', 'max-width': '520px' }}>
                 <div style={{ 'font-size': '44px' }}>📡</div>
-                <h2 style={{ margin: 0, 'font-size': '24px' }}>Aucune chaîne disponible</h2>
+                <h2 style={{ margin: 0, 'font-size': '24px' }}>{t('live.emptyTitle')}</h2>
                 <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', 'font-size': '15px' }}>
-                  Ajoutez une source IPTV M3U ou Xtream Codes pour charger vos chaînes en direct.
+                  {t('live.emptyDesc')}
                 </p>
                 <Show when={props.onAddSource}>
                   <button
@@ -823,7 +824,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                     class={`buntu-action-primary ${focusId() === 'btn-live-add-source' ? 'focused' : ''}`}
                     onClick={() => props.onAddSource?.()}
                   >
-                    + Ajouter une source IPTV
+                    {t('live.addSource')}
                   </button>
                 </Show>
               </div>
@@ -834,7 +835,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               <div class="buntu-section">
                 <div class="buntu-section-header">
                   <h2 class="buntu-section-title">
-                    <span style={{ opacity: 0.7 }}>🕒</span> Récemment consultés
+                    <span style={{ opacity: 0.7 }}>🕒</span> {t('live.shelfRecent')}
                   </h2>
                 </div>
                 <div class="buntu-shelf-scroll">
@@ -850,7 +851,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               <div class="buntu-section">
                 <div class="buntu-section-header">
                   <h2 class="buntu-section-title">
-                    <span style={{ color: 'var(--buntu-star)' }}>★</span> Favoris
+                    <span style={{ color: 'var(--buntu-star)' }}>★</span> {t('live.shelfFavorites')}
                   </h2>
                 </div>
                 <div class="buntu-shelf-scroll">
@@ -866,7 +867,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               <div class="buntu-section">
                 <div class="buntu-section-header">
                   <h2 class="buntu-section-title">
-                    <span style={{ opacity: 0.7 }}>✨</span> Recommandé pour vous
+                    <span style={{ opacity: 0.7 }}>✨</span> {t('live.shelfRecommended')}
                   </h2>
                 </div>
                 <div class="buntu-shelf-scroll">
@@ -882,18 +883,18 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               <div class="buntu-section-header">
                 <h2 class="buntu-section-title">
                   {isSearchMode()
-                    ? `Recherche : « ${searchQuery()} »`
+                    ? t('live.searchHeader', { query: searchQuery() })
                     : selectedCategory() === RECENT_CATEGORY
-                      ? 'Récemment vus'
+                      ? t('live.catRecent')
                       : selectedCategory() === FAVORITES_CATEGORY
-                      ? 'Favoris'
-                      : selectedCategory() || 'Toutes les chaînes'}
+                      ? t('live.catFavorites')
+                      : selectedCategory() || t('live.allChannelsTitle')}
                 </h2>
                 <Show when={loaded()}>
                 <span class="buntu-section-meta">
                   {isSearchMode()
-                    ? `${searchResults().length} résultats`
-                    : `${formatBuntuCount(scroller.total())} chaînes`}
+                    ? t('live.searchResultsCount', { count: searchResults().length })
+                    : t('live.channelsCount', { count: formatBuntuCount(scroller.total()) })}
                 </span>
                 </Show>
               </div>
@@ -901,7 +902,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
               <Show when={!loaded()}>
               <div class="buntu-first-load" role="status" aria-live="polite">
                 <div class="tv-spinner" />
-                <span>Chargement des chaînes…</span>
+                <span>{t('live.loadingChannels')}</span>
               </div>
             </Show>
 
@@ -924,15 +925,15 @@ export const LiveView: Component<LiveViewProps> = (props) => {
             >
               <p class="buntu-empty-hint">
                 {selectedCategory() === RECENT_CATEGORY
-                  ? 'Regardez une chaîne : il apparaîtra ici.'
-                  : 'Aucun favori pour l’instant : ajoutez-en avec ☆ Favori.'}
+                  ? t('live.emptyRecentHint')
+                  : t('live.emptyFavHint')}
               </p>
             </Show>
 
             <Show when={!isSearchMode() && scroller.isLoading()}>
                 <div class="tv-infinite-loader">
                   <div class="tv-spinner-small" />
-                  <span>Chargement des chaînes…</span>
+                  <span>{t('live.loadingChannels')}</span>
                 </div>
               </Show>
             </div>
@@ -961,24 +962,24 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                 </div>
                 <InfoChips
                   chips={[
-                    isChannelBroken(ch) ? { text: '⚠ HORS SERVICE', tone: 'quality' as const } : null,
+                    isChannelBroken(ch) ? { text: t('live.chipBroken'), tone: 'quality' as const } : null,
                     quality ? { text: quality, tone: quality === '4K' ? 'uhd' : 'quality' } : null,
                     ch.country ? { text: ch.country.toUpperCase() } : null,
                     ch.language ? { text: ch.language.toUpperCase() } : null,
-                    (ch.catchup_days || 0) > 0 ? { text: `↺ Replay ${ch.catchup_days} j` } : null,
+                    (ch.catchup_days || 0) > 0 ? { text: t('live.chipReplay', { days: ch.catchup_days || 0 }) } : null,
                     ch.group_title ? { text: ch.group_title } : null,
                   ]}
                 />
 
                 <Show
                   when={previewEpg()?.now}
-                  fallback={<p class="buntu-inspector-desc">Pas de guide pour cette chaîne.</p>}
+                  fallback={<p class="buntu-inspector-desc">{t('live.noGuideChannel')}</p>}
                 >
                   <InfoSection
                     label={
                       started()
-                        ? `EN CE MOMENT · ${formatClock(previewEpg()!.now!.start_ts)} – ${formatClock(previewEpg()!.now!.end_ts)}`
-                        : `BIENTÔT · ${formatClock(previewEpg()!.now!.start_ts)}`
+                        ? t('live.epgNow', { start: formatClock(previewEpg()!.now!.start_ts), end: formatClock(previewEpg()!.now!.end_ts) })
+                        : t('live.epgSoon', { start: formatClock(previewEpg()!.now!.start_ts) })
                     }
                   >
                     <div class="buntu-insp-epg-title">{previewEpg()!.now!.title}</div>
@@ -992,7 +993,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
                 </Show>
 
                 <Show when={previewUpcoming().length > 0}>
-                  <InfoSection label="À SUIVRE">
+                  <InfoSection label={t('live.epgUpcoming')}>
                     <ul class="buntu-insp-upcoming">
                       <For each={previewUpcoming().slice(0, 3)}>
                         {(program) => (

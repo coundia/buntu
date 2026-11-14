@@ -11,6 +11,7 @@ import { createInfiniteScroller } from '../../core/pagination/InfiniteScrollCont
 import { cleanMediaTitle } from '../../core/utils/titleCleaner';
 import { detectChannelQuality, formatBuntuCount } from '../../core/utils/categoryMeta';
 import { announce } from '../../ui/design/a11y';
+import { t } from '../../core/i18n';
 
 export interface SeriesViewProps {
   onSelectSeries: (series: ItemRecord) => void;
@@ -85,7 +86,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     },
     onBatchLoaded: (list, total) => {
       if (!isSearchMode()) {
-        announce(`Séries, ${list.length} séries affichées sur ${total}`);
+        announce(t('series.announceLoaded', { shown: list.length, total }));
         if (!previewSeries() && list.length > 0) {
           setPreviewSeries(list[0]);
         }
@@ -269,7 +270,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     e?.stopPropagation();
     const next = await engine.toggleFavorite(s.id);
     s.is_favorite = next ? 1 : 0;
-    announce(next ? 'Série ajoutée aux favoris' : 'Série retirée des favoris');
+    announce(next ? t('series.addedToFavorites') : t('series.removedFromFavorites'));
     await refreshShelvesAndCounts();
     if (selectedCat() === FAVORITES_CATEGORY) {
       await scroller.reset();
@@ -290,7 +291,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
       const extra = await aiSuggestions(engine, query, 'series').catch(() => []);
       if (searchQuery() !== query || extra.length === 0) return;
       setSearchResults(mergeSuggestions(searchResults(), extra));
-      announce(`L’assistant propose ${extra.length} résultat(s)`);
+      announce(t('series.aiSuggestionsAnnounce', { count: extra.length }));
       scheduleRebuildGrid(true);
     }, 900);
   };
@@ -309,7 +310,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
     }
     const results = await engine.searchCatalog(query, 'series', 100);
     setSearchResults(results);
-    announce(`${results.length} séries trouvées`);
+    announce(t('series.searchAnnounce', { count: results.length }));
     scheduleAiRefine(query);
     scheduleRebuildGrid(true);
   };
@@ -457,7 +458,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
         id={cardId}
         role="button"
         tabindex="-1"
-        aria-label={`Série ${title()}`}
+        aria-label={t('series.cardAria', { title: title() })}
         class={`buntu-vod-card ${focusId() === cardId ? 'focused' : ''}`}
         onClick={() => handleCardActivate(s)}
       >
@@ -494,7 +495,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
               type="button"
               tabindex="-1"
               class={`buntu-vod-star-overlay ${s.is_favorite === 1 ? 'fav' : ''}`}
-              title="Favori"
+              title={t('series.favoriteTitle')}
               onClick={(e) => void handleToggleFavorite(s, e)}
             >
               {s.is_favorite === 1 ? '★' : '☆'}
@@ -506,7 +507,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
           <div class="buntu-vod-title">{title()}</div>
           <div class="buntu-vod-sub">
             <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>
-              {s.season_num ? `Saison ${s.season_num}` : (year() ? `${year()}${s.group_title ? ' · ' + s.group_title : ''}` : s.group_title || 'Série')}
+              {s.season_num ? t('series.seasonLabel', { num: s.season_num }) : (year() ? `${year()}${s.group_title ? ' · ' + s.group_title : ''}` : s.group_title || t('series.seriesFallback'))}
             </span>
             <Show when={viewMode() === 'list'}>
               <button
@@ -533,28 +534,28 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
             id="s-brand-home"
             type="button"
             tabindex="-1"
-            aria-label="Buntu — Retour à l'accueil"
-            title="Retour à l'accueil"
+            aria-label={t('series.backHomeAria')}
+            title={t('series.backHomeTitle')}
             class={`buntu-toolbar-brand ${focusId() === 's-brand-home' ? 'focused' : ''}`}
             onClick={goHome}
           >
             <img src="./icon.png" alt="" class="buntu-toolbar-brand-logo" />
           </button>
-          <h1 class="buntu-toolbar-title">Séries</h1>
+          <h1 class="buntu-toolbar-title">{t('series.title')}</h1>
           <Show when={totalCount() > 0}>
-            <span class="buntu-toolbar-subtitle">{formatBuntuCount(totalCount())} séries</span>
+            <span class="buntu-toolbar-subtitle">{t('series.seriesCount', { count: formatBuntuCount(totalCount()) })}</span>
           </Show>
         </div>
 
         <div class="buntu-toolbar-right">
-          <span class="buntu-key-hint"><i class="buntu-key-dot" />Favori</span>
+          <span class="buntu-key-hint"><i class="buntu-key-dot" />{t('series.favoriteHint')}</span>
           <div class="buntu-search-wrap">
             <span class="buntu-search-icon">🔍</span>
             <input
               id="s-search-input"
               type="text"
               value={searchQuery()}
-              placeholder="Rechercher une série"
+              placeholder={t('series.searchPlaceholder')}
               class={`buntu-search-field ${focusId() === 's-search-input' ? 'focused' : ''}`}
               onInput={(e) => void handleSearch(e.currentTarget.value)}
             />
@@ -564,7 +565,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
             type="button"
             tabindex="-1"
             class={`buntu-mode-btn ${searchMode() === 'ai' ? 'ai' : ''} ${focusId() === 's-search-mode' ? 'focused' : ''}`}
-            aria-label={searchMode() === 'ai' ? 'Moteur de recherche : IA. OK pour passer en local' : 'Moteur de recherche : local. OK pour passer en IA'}
+            aria-label={searchMode() === 'ai' ? t('series.searchModeAiAria') : t('series.searchModeLocalAria')}
             onClick={switchSearchEngine}
           >
             {searchModeLabel(searchMode())}
@@ -575,13 +576,13 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
       {/* Split Body */}
       <div class="buntu-body-split">
         <Show when={showCats()}>
-          <aside class="buntu-cat-pane" aria-label="Catégories Séries">
+          <aside class="buntu-cat-pane" aria-label={t('series.categoriesAria')}>
             <div class="buntu-cat-filter-bar">
               <input
                 id="s-cat-filter"
                 type="text"
                 value={catFilter()}
-                placeholder="Filtrer les catégories"
+                placeholder={t('series.filterCategoriesPlaceholder')}
                 class={`buntu-cat-filter-input ${focusId() === 's-cat-filter' ? 'focused' : ''}`}
                 onInput={(e) => {
                   setCatFilter(e.currentTarget.value);
@@ -601,7 +602,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
               >
                 <div class="buntu-cat-row-left">
                   <span class="buntu-cat-row-icon">🕒</span>
-                  <span class="buntu-cat-row-title">Récemment vus</span>
+                  <span class="buntu-cat-row-title">{t('series.catRecent')}</span>
                 </div>
                 <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(recentCount())}</span></Show>
               </div>
@@ -615,7 +616,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
               >
                 <div class="buntu-cat-row-left">
                   <span class="buntu-cat-row-icon">⊞</span>
-                  <span class="buntu-cat-row-title">Toutes les séries</span>
+                  <span class="buntu-cat-row-title">{t('series.catAll')}</span>
                 </div>
                 <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span></Show>
               </div>
@@ -629,7 +630,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
               >
                 <div class="buntu-cat-row-left">
                   <span class="buntu-cat-row-icon fav">★</span>
-                  <span class="buntu-cat-row-title">Favoris</span>
+                  <span class="buntu-cat-row-title">{t('series.catFavorites')}</span>
                 </div>
                 <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(favCount())}</span></Show>
               </div>
@@ -670,7 +671,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
             <div class="buntu-section">
               <div class="buntu-section-header">
                 <h2 class="buntu-section-title">
-                  <span style={{ color: 'var(--buntu-accent)' }}>▶</span> Reprendre
+                  <span style={{ color: 'var(--buntu-accent)' }}>▶</span> {t('series.shelfResume')}
                 </h2>
               </div>
               <div class="buntu-vod-shelf">
@@ -686,7 +687,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
             <div class="buntu-section">
               <div class="buntu-section-header">
                 <h2 class="buntu-section-title">
-                  <span style={{ color: 'var(--buntu-star)' }}>★</span> Favoris
+                  <span style={{ color: 'var(--buntu-star)' }}>★</span> {t('series.shelfFavorites')}
                 </h2>
               </div>
               <div class="buntu-vod-shelf">
@@ -702,18 +703,18 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
             <div class="buntu-section-header">
               <h2 class="buntu-section-title">
                 {isSearchMode()
-                  ? `Recherche : « ${searchQuery()} »`
+                  ? t('series.searchHeader', { query: searchQuery() })
                   : selectedCat() === RECENT_CATEGORY
-                    ? 'Récemment vus'
+                    ? t('series.catRecent')
                     : selectedCat() === FAVORITES_CATEGORY
-                    ? 'Favoris'
-                    : selectedCat() || 'Toutes les séries'}
+                    ? t('series.catFavorites')
+                    : selectedCat() || t('series.catAll')}
               </h2>
               <Show when={loaded()}>
               <span class="buntu-section-meta">
                 {isSearchMode()
-                  ? `${searchResults().length} résultats`
-                  : `${formatBuntuCount(scroller.total())} séries`}
+                  ? t('series.searchResultsCount', { count: searchResults().length })
+                  : t('series.seriesCount', { count: formatBuntuCount(scroller.total()) })}
               </span>
               </Show>
             </div>
@@ -721,7 +722,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
             <Show when={!loaded()}>
               <div class="buntu-first-load" role="status" aria-live="polite">
                 <div class="tv-spinner" />
-                <span>Chargement des séries…</span>
+                <span>{t('series.loadingSeries')}</span>
               </div>
             </Show>
 
@@ -744,15 +745,15 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
             >
               <p class="buntu-empty-hint">
                 {selectedCat() === RECENT_CATEGORY
-                  ? 'Ouvrez une série : il apparaîtra ici.'
-                  : 'Aucun favori pour l’instant : ajoutez-en avec ☆ Favori.'}
+                  ? t('series.emptyRecentHint')
+                  : t('series.emptyFavHint')}
               </p>
             </Show>
 
             <Show when={!isSearchMode() && scroller.isLoading()}>
               <div class="tv-infinite-loader">
                 <div class="tv-spinner-small" />
-                <span>Chargement des séries…</span>
+                <span>{t('series.loadingSeries')}</span>
               </div>
             </Show>
           </div>
@@ -760,7 +761,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
 
         {/* Optional Inspector Pane */}
         <Show when={showInspector() && previewSeries()}>
-          <aside class="buntu-inspector-pane" aria-label="Aperçu série">
+          <aside class="buntu-inspector-pane" aria-label={t('series.inspectorAria')}>
             <div ref={viewportRef} class="buntu-inspector-viewport" style={{ background: '#111318' }}>
               <Show when={previewSeries()?.logo_url} fallback={<div class="tv-mini-mock-screen">🍿</div>}>
                 <img
@@ -774,7 +775,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
               {previewSeries()!.name_clean || previewSeries()!.name}
             </h3>
             <p class="buntu-inspector-desc">
-              {previewSeries()!.plot || previewSeries()!.group_title || 'Série VOD complète avec saisons et épisodes.'}
+              {previewSeries()!.plot || previewSeries()!.group_title || t('series.inspectorDefaultPlot')}
             </p>
             <div class="buntu-inspector-actions">
               <button
@@ -784,7 +785,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
                 class={`buntu-action-primary ${focusId() === 's-insp-details' ? 'focused' : ''}`}
                 onClick={() => handleCardActivate(previewSeries()!)}
               >
-                ▶ Voir les épisodes
+                {t('series.seeEpisodes')}
               </button>
               <button
                 id="s-insp-fav"

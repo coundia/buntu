@@ -18,6 +18,7 @@ import { LocalSyncService } from '../../core/sync/LocalSyncService';
 import { getUpNextPrefs, upNextChain } from '../../core/player/upNext';
 import { getSubtitlePrefs, subtitleBoxStyle } from '../../core/player/subtitlePrefs';
 import { isUhdTitle } from '../../core/player/uhd';
+import { t } from '../../core/i18n';
 
 export interface PlayerViewProps {
   item: ItemRecord;
@@ -1257,15 +1258,15 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
 
   const audioLabel = () => {
     const tracks = audioTracks();
-    if (tracks.length === 0) return 'Audio';
+    if (tracks.length === 0) return t('player.audio');
     const curr = tracks[activeAudioIndex()];
-    return `Audio: ${curr?.extra_info?.language?.toUpperCase() || (activeAudioIndex() + 1)}`;
+    return `${t('player.audio')}: ${curr?.extra_info?.language?.toUpperCase() || (activeAudioIndex() + 1)}`;
   };
 
   const subtitleLabel = () => {
-    if (activeSubIndex() === -1) return 'Sous-titres : Désactivés';
+    if (activeSubIndex() === -1) return t('player.subtitlesOff');
     const curr = subtitleTracks()[activeSubIndex()];
-    return `Sous-titres : ${curr?.extra_info?.language?.toUpperCase() || (activeSubIndex() + 1)}`;
+    return t('player.subtitlesLabel', { lang: curr?.extra_info?.language?.toUpperCase() || (activeSubIndex() + 1) });
   };
 
   return (
@@ -1365,7 +1366,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         <div class="tv-player-error-card" role="alert">
           <div style={{ "font-size": "48px" }}>⚠️</div>
           <h2 style={{ "font-size": "32px", color: "var(--buntu-danger)", margin: 0 }}>
-            Problème de lecture
+            {t('player.errorTitle')}
           </h2>
           <p style={{ "font-size": "22px", color: "var(--buntu-text)", margin: 0 }}>
             {playerError()}
@@ -1386,7 +1387,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               class={`tv-btn ${focusId() === 'btn-player-retry' ? 'focused' : ''}`}
               onClick={retryPlayback}
             >
-              🔄 Réessayer
+              {t('player.retry')}
             </button>
             <Show when={props.onNextChannel && isLive()}>
               <button
@@ -1394,7 +1395,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
                 class={`tv-btn ${focusId() === 'btn-player-next' ? 'focused' : ''}`}
                 onClick={() => props.onNextChannel?.()}
               >
-                ⏭ Chaîne suivante
+                {t('player.nextChannel')}
               </button>
             </Show>
             <button
@@ -1402,7 +1403,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               class={`tv-btn ${focusId() === 'btn-player-exit' ? 'focused' : ''}`}
               onClick={() => { player.stop(); props.onExit(); }}
             >
-              ← Retour aux chaînes
+              {t('player.backToChannels')}
             </button>
           </div>
         </div>
@@ -1416,10 +1417,10 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
           onClick={() => toggleAudioOnly()}
         >
           <div style={{ "font-size": "24px", "font-weight": "700", color: "var(--buntu-text-muted)", "margin-bottom": "8px" }}>
-            🎵 Audio uniquement — {title()}
+            {t('player.audioOnlyTitle', { title: title() })}
           </div>
           <div style={{ "font-size": "16px", color: "var(--buntu-text-muted)" }}>
-            Appuyez sur OK ou Retour pour rallumer l’écran
+            {t('player.audioOnlyHint')}
           </div>
         </div>
       </Show>
@@ -1569,9 +1570,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               id="btn-osd-play-pause"
               class={`tv-btn ${focusId() === 'btn-osd-play-pause' ? 'focused' : ''}`}
               onClick={togglePlayPause}
-              aria-label={isPlaying() ? 'Mettre en pause' : 'Reprendre la lecture'}
+              aria-label={isPlaying() ? t('player.pause') : t('player.play')}
             >
-              {isPlaying() ? '⏸ Pause' : '▶ Lecture'}
+              {isPlaying() ? t('player.pause') : t('player.play')}
             </button>
 
             <button
@@ -1595,10 +1596,10 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               <button
                 id="btn-osd-skip-intro"
                 class={`tv-btn ${focusId() === 'btn-osd-skip-intro' ? 'focused' : ''}`}
-                onClick={() => { seekDelta(85000); showToast('Intro passée (+85 s)'); }}
-                aria-label="Passer l'intro de 85 secondes"
+                onClick={() => { seekDelta(85000); showToast(t('player.skipIntroToast')); }}
+                aria-label={t('player.skipIntro')}
               >
-                ⏭ Passer l'intro (+85 s)
+                {t('player.skipIntro')}
               </button>
             </Show>
 
@@ -1608,9 +1609,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
                   id="btn-osd-prev-ch"
                   class={`tv-btn ${focusId() === 'btn-osd-prev-ch' ? 'focused' : ''}`}
                   onClick={() => { props.onPrevChannel?.(); triggerChannelHud(); }}
-                  aria-label="Chaîne précédente"
+                  aria-label={t('player.prevCh')}
                 >
-                  ⏮ Précédente
+                  {t('player.prevCh')}
                 </button>
               </Show>
               <Show when={props.onNextChannel}>
@@ -1618,9 +1619,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
                   id="btn-osd-next-ch"
                   class={`tv-btn ${focusId() === 'btn-osd-next-ch' ? 'focused' : ''}`}
                   onClick={() => { props.onNextChannel?.(); triggerChannelHud(); }}
-                  aria-label="Chaîne suivante"
+                  aria-label={t('player.nextCh')}
                 >
-                  ⏭ Suivante
+                  {t('player.nextCh')}
                 </button>
               </Show>
               <Show when={props.canRecall && props.onRecall}>
@@ -1628,9 +1629,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
                   id="btn-osd-recall"
                   class={`tv-btn ${focusId() === 'btn-osd-recall' ? 'focused' : ''}`}
                   onClick={triggerRecall}
-                  aria-label="Revenir à la chaîne précédente"
+                  aria-label={t('player.recall')}
                 >
-                  ↺ Dernière
+                  {t('player.recall')}
                 </button>
               </Show>
               <Show when={startOverUrl()}>
@@ -1638,27 +1639,27 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
                   id="btn-osd-startover"
                   class={`tv-btn ${focusId() === 'btn-osd-startover' ? 'focused' : ''}`}
                   onClick={startOverProgram}
-                  aria-label="Revoir le programme depuis le début"
+                  aria-label={t('player.startOver')}
                 >
-                  ↺ Début
+                  {t('player.startOver')}
                 </button>
               </Show>
               <button
                 id="btn-osd-miniguide"
                 class={`tv-btn ${focusId() === 'btn-osd-miniguide' ? 'focused' : ''}`}
                 onClick={toggleMiniGuide}
-                aria-label="Ouvrir la liste des chaînes"
+                aria-label={t('player.channels')}
               >
-                📋 Chaînes
+                {t('player.channels')}
               </button>
               <Show when={mirrors().length > 0}>
                 <button
                   id="btn-osd-mirrors"
                   class={`tv-btn ${focusId() === 'btn-osd-mirrors' ? 'focused' : ''}`}
                   onClick={toggleMirrors}
-                  aria-label="Choisir une source ou qualité alternative"
+                  aria-label={t('sources.title')}
                 >
-                  📡 Sources ({mirrors().length + 1})
+                  📡 {t('sources.title')} ({mirrors().length + 1})
                 </button>
               </Show>
             </Show>
@@ -1668,9 +1669,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
                 id="btn-osd-return-live"
                 class={`tv-btn ${focusId() === 'btn-osd-return-live' ? 'focused' : ''}`}
                 onClick={returnToLive}
-                aria-label="Revenir au direct"
+                aria-label={t('player.live')}
               >
-                📡 Direct
+                {t('player.live')}
               </button>
             </Show>
 
@@ -1679,9 +1680,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
                 id="btn-osd-fav"
                 class={`tv-btn ${focusId() === 'btn-osd-fav' ? 'focused' : ''}`}
                 onClick={() => void toggleFavorite()}
-                aria-label={info.isFavorite() ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                aria-label={t('player.favorite')}
               >
-                {info.isFavorite() ? '★ Favori' : '☆ Favori'}
+                {info.isFavorite() ? `★ ${t('player.favorite')}` : `☆ ${t('player.favorite')}`}
               </button>
             </Show>
 
@@ -1698,18 +1699,18 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               id="btn-osd-sleep"
               class={`tv-btn ${focusId() === 'btn-osd-sleep' ? 'focused' : ''}`}
               onClick={cycleSleepTimer}
-              aria-label="Configurer le minuteur de veille"
+              aria-label={t('player.sleep')}
             >
-              🌙 {sleepMinutes() > 0 ? `${sleepMinutes()}m` : 'Veille'}
+              🌙 {sleepMinutes() > 0 ? `${sleepMinutes()}m` : t('player.sleep')}
             </button>
 
             <button
               id="btn-osd-audio-only"
               class={`tv-btn ${focusId() === 'btn-osd-audio-only' ? 'focused' : ''}`}
               onClick={toggleAudioOnly}
-              aria-label="Mode audio uniquement avec écran noir"
+              aria-label={t('player.audioOnlyBtn')}
             >
-              🎵 Écran noir
+              {t('player.audioOnlyBtn')}
             </button>
 
             <button
@@ -1720,7 +1721,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
             >
               🔊 {audioLabel()}
               <Show when={audioTracks().length > 1}>
-                <span class="tv-btn-count"> · {audioTracks().length} pistes</span>
+                <span class="tv-btn-count"> · {audioTracks().length}</span>
               </Show>
             </button>
 
@@ -1737,9 +1738,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               id="btn-osd-assistant"
               class={`tv-btn ${focusId() === 'btn-osd-assistant' ? 'focused' : ''}`}
               onClick={() => setShowAssistant(true)}
-              aria-label="Ouvrir l'assistant IA"
+              aria-label={t('player.assistant')}
             >
-              ✨ Assistant
+              {t('player.assistant')}
             </button>
           </div>
 
@@ -1751,9 +1752,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
                 </div>
               </Show>
               <Show when={stillWatching()}>
-                <div class="tv-osd-countdown" role="status">Toujours là ? Choisissez un film pour continuer.</div>
+                <div class="tv-osd-countdown" role="status">{t('player.stillWatching')}</div>
               </Show>
-              <div class="tv-osd-next-label">À SUIVRE · FILMS SIMILAIRES</div>
+              <div class="tv-osd-next-label">{t('player.upNextHeader')}</div>
               <div class="tv-osd-next-row">
                 <For each={similar()}>
                   {(film) => (
@@ -1779,30 +1780,30 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
           </Show>
 
           <div class="tv-osd-hints">
-            <span><b>◀ ▶ ▲ ▼</b> naviguer</span>
-            <span><b>OK</b> valider</span>
+            <span><b>◀ ▶ ▲ ▼</b> {t('player.hintNav')}</span>
+            <span><b>OK</b> {t('player.hintOk')}</span>
             <Show when={isLive()}>
-              <span><b>CH +/−</b> zapper · <b>0–9</b> numéro</span>
+              <span><b>CH +/−</b> zapper · <b>0–9</b></span>
             </Show>
             <Show when={!isLive()}>
               <span><b>⏪ ⏩</b> ±30 s</span>
             </Show>
-            <span><b>RETOUR</b> quitter</span>
+            <span><b>RETOUR</b> {t('player.hintBack')}</span>
           </div>
         </div>
       </Show>
 
       {/* 9. Transparent Mini-Guide Drawer (AVPlay stays visible on the right) */}
       <Show when={showMiniGuide() && !playerError()}>
-        <div class="tv-miniguide-drawer" role="dialog" aria-label="Liste des chaînes en direct">
+        <div class="tv-miniguide-drawer" role="dialog" aria-label={t('player.channels')}>
           <div class="tv-miniguide-header">
-            <div class="tv-miniguide-title">Chaînes · {props.liveCategory || props.item.group_title || 'Tout'}</div>
+            <div class="tv-miniguide-title">{props.liveCategory || props.item.group_title || t('player.allChannels')}</div>
             <button
               id="btn-miniguide-close"
               class={`tv-btn ${focusId() === 'btn-miniguide-close' ? 'focused' : ''}`}
               onClick={closeMiniGuide}
             >
-              ✕ Fermer
+              {t('player.close')}
             </button>
           </div>
           <div class="tv-miniguide-list">
@@ -1829,15 +1830,15 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
 
       {/* 10. Quality & Mirrors Bar */}
       <Show when={showMirrors() && !playerError()}>
-        <div class="tv-mirrors-bar" role="dialog" aria-label="Sources alternatives">
-          <div class="tv-osd-label">QUALITÉ ET MIROIRS DISPONIBLES</div>
+        <div class="tv-mirrors-bar" role="dialog" aria-label={t('player.mirrorsTitle')}>
+          <div class="tv-osd-label">{t('player.mirrorsTitle')}</div>
           <div class="tv-mirrors-row">
             <button
               id={`mirror-item-${props.item.id}`}
               class={`tv-btn ${focusId() === `mirror-item-${props.item.id}` ? 'focused' : ''}`}
               onClick={closeMirrors}
             >
-              ✓ {title()} (actuel)
+              ✓ {title()} {t('player.current')}
             </button>
             <For each={mirrors()}>
               {(mirror) => (
@@ -1855,7 +1856,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               class={`tv-btn ${focusId() === 'btn-mirrors-close' ? 'focused' : ''}`}
               onClick={closeMirrors}
             >
-              ✕ Fermer
+              {t('player.close')}
             </button>
           </div>
         </div>

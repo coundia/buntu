@@ -15,6 +15,13 @@ TIZEN_DIR="$ROOT_DIR/tizen"
 WASM_CRATE_DIR="$ROOT_DIR/crates/cnd-domain-wasm"
 OUT_DIR="$ROOT_DIR/build/tizen"
 WGT_ROOT="$OUT_DIR/wgt_root"
+PROD_MODE="${TIZEN_PROD:-0}"
+
+for arg in "$@"; do
+    case "$arg" in
+        --prod) PROD_MODE=1 ;;
+    esac
+done
 
 # Automatically pick up Tizen Studio CLI & sdb if installed in the default location
 if [ -d "$HOME/tizen-studio/tools" ]; then
@@ -75,6 +82,12 @@ cp -R "$TIZEN_DIR/dist/"* "$WGT_ROOT/"
 cp "$TIZEN_DIR/config.xml" "$WGT_ROOT/config.xml"
 cp "$TIZEN_DIR/icon.png" "$WGT_ROOT/icon.png"
 
+if [ "$PROD_MODE" = "1" ]; then
+    echo "Production mode: stripping devel.mode metadata from packaged config.xml..."
+    grep -v 'http://samsung.com/tv/metadata/devel.mode' "$WGT_ROOT/config.xml" > "$WGT_ROOT/config.xml.tmp"
+    mv "$WGT_ROOT/config.xml.tmp" "$WGT_ROOT/config.xml"
+fi
+
 echo "=== [5/5] Creating .wgt Package ==="
 WGT_PATH="$OUT_DIR/cnd-iptv-tizen.wgt"
 cd "$WGT_ROOT"
@@ -89,6 +102,10 @@ if command -v tizen >/dev/null 2>&1; then
     tizen package -t wgt "${PROFILE_ARGS[@]}" -o "$OUT_DIR" -- "$WGT_ROOT"
     SIGNED="$(ls -t "$OUT_DIR"/*.wgt | grep -v cnd-iptv-tizen.wgt | head -1)"
     if [ -n "$SIGNED" ]; then mv "$SIGNED" "$WGT_PATH"; fi
+elif [ "$PROD_MODE" = "1" ]; then
+    echo "ERROR: Tizen Studio CLI ('tizen') is required in --prod mode to sign the .wgt package."
+    echo "       export PATH=\"\$PATH:\$HOME/tizen-studio/tools:\$HOME/tizen-studio/tools/ide/bin\""
+    exit 1
 else
     echo "WARNING: the Tizen Studio CLI is not in PATH: this .wgt is NOT signed and a TV will refuse it"
     echo "         (install error 'Check certificate error'). Run:"

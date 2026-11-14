@@ -3695,17 +3695,15 @@ html, body, #root {
 .buntu-home-sections { display: flex; flex: 1; min-height: 290px; }
 .buntu-home-card {
   position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end;
-  flex: 1; min-width: 0; padding: 32px; border: 2px solid #2A344A; border-radius: 20px;
-  background: #161F2E; color: var(--buntu-text);
+  flex: 1; min-width: 0; padding: 32px; border: 2px solid var(--buntu-border); border-radius: 20px;
+  background: var(--buntu-slate); color: var(--buntu-text);
   text-align: left; font-family: inherit; cursor: pointer;
   transition: none;
 }
 .buntu-home-card + .buntu-home-card { margin-left: 28px; }
-.buntu-home-card-movies { background: #221C17; }
-.buntu-home-card-series { background: #1C1929; }
-.buntu-home-symbol { display: block; margin-bottom: auto; padding-bottom: 24px; font-size: 64px; line-height: 1; color: #8cd6f5; }
-.buntu-home-symbol-movies { color: #f4c27e; }
-.buntu-home-symbol-series { color: #c2b4f5; }
+.buntu-home-symbol { display: block; margin-bottom: auto; padding-bottom: 24px; font-size: 64px; line-height: 1; color: var(--buntu-cyan); }
+.buntu-home-symbol-movies { color: var(--buntu-gold); }
+.buntu-home-symbol-series { color: #93C5FD; }
 .buntu-home-card-subtitle { font-size: 17px; color: #c2cbd8; }
 .buntu-home-card-title { margin: 8px 0 12px; font-size: 46px; font-weight: 700; }
 .buntu-home-card-detail { font-size: 19px; color: #c2cbd8; }

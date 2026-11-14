@@ -11,6 +11,7 @@ import { ManualSourceForm } from '../onboarding/ManualSourceForm';
 import { LocalSyncService } from '../../core/sync/LocalSyncService';
 import { HouseholdStore } from '../../core/sync/HouseholdStore';
 import { HouseholdJoinView } from '../pairing/HouseholdJoinView';
+import { t } from '../../core/i18n';
 
 export interface SourcesViewProps {
   onBack: () => void;
@@ -225,46 +226,48 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
           <div class="tv-header" style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', 'margin-bottom': '28px' }}>
             <div>
               <h2 style={{ 'font-size': '36px', color: 'var(--buntu-gold)', margin: '0 0 6px 0' }}>
-                Sources
+                {t('sources.title')}
               </h2>
               <p style={{ 'font-size': '18px', color: 'var(--buntu-text-muted)', margin: 0 }}>
-                {sources().length} source{sources().length > 1 ? 's' : ''} enregistrée{sources().length > 1 ? 's' : ''}
+                {sources().length > 1
+                  ? t('sources.countPlural', { count: sources().length })
+                  : t('sources.countSingle', { count: sources().length })}
               </p>
-              <p class="buntu-return-hint">Retour : accueil</p>
+              <p class="buntu-return-hint">{t('sources.returnHome')}</p>
             </div>
             <div class="buntu-simple-actions">
               <button
                 id="btn-import-phone"
                 tabindex="-1"
-                aria-label="Importer des comptes depuis un téléphone"
+                aria-label={t('sources.importPhoneAria')}
                 class={`tv-btn ${focusId() === 'btn-import-phone' ? 'focused' : ''}`}
                 onClick={() => setSubview('pairing')}
               >
-                Ajouter par téléphone
+                {t('sources.importPhone')}
               </button>
               <button
                 id="btn-add-manual"
                 tabindex="-1"
-                aria-label="Ajouter manuellement une source IPTV avec la télécommande"
+                aria-label={t('sources.addManualAria')}
                 class={`tv-btn ${focusId() === 'btn-add-manual' ? 'focused' : ''}`}
                 onClick={() => setSubview('manual')}
               >
-                Saisie manuelle
+                {t('sources.addManual')}
               </button>
             </div>
           </div>
 
           <section class="buntu-source-household" aria-label="Foyer Buntu">
-            <span>{salon() ? `Foyer : ${salon()!.household_name}` : 'TV non associée à un foyer'}</span>
+            <span>{salon() ? t('sources.householdLabel', { name: salon()!.household_name }) : t('sources.noHousehold')}</span>
             <button id="btn-add-phone" tabindex="-1" class={`tv-btn ${focusId() === 'btn-add-phone' ? 'focused' : ''}`} onClick={() => setSubview('household')}>
-              Associer la TV (QR)
+              {t('sources.pairTvQr')}
             </button>
           </section>
 
           {/* Sources List */}
           <div
             role="list"
-            aria-label="Liste des sources d'abonnements"
+            aria-label={t('sources.listAria')}
             class="buntu-source-list"
           >
             <For each={sources()}>
@@ -291,12 +294,12 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                     <p style={{ color: 'var(--buntu-text-muted)', margin: 0, 'font-size': '18px' }}>
                       <strong style={{ color: 'var(--buntu-gold)' }}>{source.source_type.toUpperCase()}</strong> ·{' '}
                       {source.item_count > 0 ? (
-                        <span>{source.item_count} chaînes / flux</span>
+                        <span>{t('sources.streamsCount', { count: source.item_count })}</span>
                       ) : (
-                        <span style={{ color: 'var(--buntu-cyan)' }}>Préparation du catalogue…</span>
+                        <span style={{ color: 'var(--buntu-cyan)' }}>{t('sources.preparing')}</span>
                       )}
                       {source.source_type === 'xtream' && !source.password && (
-                        <span style={{ color: '#FF6B6B', 'margin-left': '8px' }}>⚠️ Mot de passe manquant</span>
+                        <span style={{ color: '#FF6B6B', 'margin-left': '8px' }}>{t('sources.missingPassword')}</span>
                       )}
                     </p>
                     <Show when={(source.exp_date && source.exp_date > 0) || (source.max_connections && source.max_connections > 0)}>
@@ -334,11 +337,11 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                       class={`tv-btn ${focusId() === `source-edit-${source.id}` ? 'focused' : ''}`}
                       onClick={(e) => { e.stopPropagation(); editSource(source); }}
                       style={{ 'margin-right': '16px' }}
-                    >Modifier</button>
+                    >{t('common.edit')}</button>
                     <button
                       id={`source-del-${source.id}`}
                       tabindex="-1"
-                      aria-label={`Supprimer la source ${source.name}`}
+                      aria-label={`${t('common.delete')} ${source.name}`}
                       class={`tv-btn tv-btn-danger ${focusId() === `source-del-${source.id}` ? 'focused' : ''}`}
                       style={{ padding: '10px 18px', 'font-size': '16px' }}
                       onClick={(e) => {
@@ -346,7 +349,7 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                         promptDelete(source);
                       }}
                     >
-                      🗑️ Supprimer
+                      🗑️ {t('common.delete')}
                     </button>
                   </div>
                 </div>
@@ -365,10 +368,10 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
               >
                 <div style={{ 'font-size': '48px', 'margin-bottom': '16px' }}>📡</div>
                 <h3 style={{ 'font-size': '26px', color: '#FFFFFF', 'margin-bottom': '8px' }}>
-                  Aucun abonnement enregistré
+                  {t('sources.emptyTitle')}
                 </h3>
                 <p style={{ 'font-size': '20px', 'max-width': '600px', margin: '0 auto 24px auto' }}>
-                  Choisissez « Ajouter par téléphone » ou « Saisie manuelle ».
+                  {t('sources.emptyHint')}
                 </p>
 
               </div>
@@ -385,11 +388,10 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                 id="del-modal-title"
                 style={{ 'font-size': '32px', 'font-weight': '800', color: 'var(--buntu-gold)', margin: 0 }}
               >
-                Supprimer la source IPTV ?
+                {t('sources.deleteModalTitle')}
               </h2>
               <p style={{ 'font-size': '22px', color: 'var(--buntu-text-muted)', margin: 0, 'max-width': '520px', 'line-height': '1.4' }}>
-                Voulez-vous vraiment supprimer « <strong style={{ color: '#FFFFFF' }}>{sourceToDelete()?.name}</strong> » ?
-                Toutes les chaînes, films, séries et favoris associés seront retirés de cette TV.
+                {t('sources.deleteModalConfirm', { name: sourceToDelete()?.name || '' })}
               </p>
               <Show when={deleteError()}>
                 <p role="alert" style={{ color: 'var(--buntu-danger)' }}>{deleteError()}</p>
@@ -398,22 +400,22 @@ export const SourcesView: Component<SourcesViewProps> = (props) => {
                 <button
                   id="btn-confirm-delete"
                   tabindex="-1"
-                  aria-label="Confirmer la suppression de la source"
+                  aria-label={t('sources.confirmDelete')}
                   disabled={isDeleting()}
                   class={`tv-btn tv-btn-danger ${focusId() === 'btn-confirm-delete' ? 'focused' : ''}`}
                   onClick={() => void confirmDelete()}
                 >
-                  {isDeleting() ? 'Suppression…' : '🗑️ Oui, supprimer'}
+                  {isDeleting() ? t('sources.deleting') : t('sources.confirmDelete')}
                 </button>
                 <button
                   id="btn-cancel-delete"
                   tabindex="-1"
-                  aria-label="Annuler la suppression"
+                  aria-label={t('common.cancel')}
                   disabled={isDeleting()}
                   class={`tv-btn ${focusId() === 'btn-cancel-delete' ? 'focused' : ''}`}
                   onClick={closeDeleteModal}
                 >
-                  Annuler
+                  {t('common.cancel')}
                 </button>
               </div>
             </div>
