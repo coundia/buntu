@@ -1,7 +1,8 @@
-import { Component, createSignal, createEffect, onMount, onCleanup, Show, For } from 'solid-js';
-import { AVPlayerService, FULL_SCREEN, TrackInfo } from '../../core/player/AVPlayerService';
+import { Component, createSignal, createEffect, onMount, onCleanup, Show, For, untrack } from 'solid-js';
+import { aspectModeLabel, AVPlayerService, FULL_SCREEN, TrackInfo, VideoAspectMode } from '../../core/player/AVPlayerService';
 import { HttpClient } from '../../core/net/HttpClient';
-import { ItemRecord } from '../../core/storage/Database';
+import { EpgProgramRecord, ItemRecord } from '../../core/storage/Database';
+import { isSameLiveChannel } from '../../core/engine/livePlayerHelpers';
 import { RemoteKey, RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
 import { spatialNav } from '../../ui/design/SpatialNav';
 import { announce } from '../../ui/design/a11y';
@@ -24,6 +25,12 @@ export interface PlayerViewProps {
   onPrevChannel?: () => void;
   /** OK on a film of the « À suivre » shelf: play it next. */
   onPlayNext?: (item: ItemRecord) => void;
+  canRecall?: boolean;
+  onRecall?: () => void;
+  onSelectChannelNumber?: (chno: number) => Promise<ItemRecord | null>;
+  onSwitchStream?: (item: ItemRecord) => void;
+  liveCategory?: string;
+  isZapPending?: boolean;
 }
 
 export const PlayerView: Component<PlayerViewProps> = (props) => {
@@ -32,7 +39,10 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
 
   const [isPlaying, setIsPlaying] = createSignal(true);
   const [currentTimeMs, setCurrentTimeMs] = createSignal(0);
-  const [durationMs, setDurationMs] = createSignal(0);
+  const [durationMs, setDurationMs] = createSignal(
+    props.item.duration_ms > 0 ? props.item.duration_ms : player.getDuration()
+  );
+  const [liveSeekOffsetMs, setLiveSeekOffsetMs] = createSignal(0);
   const [showOsd, setShowOsd] = createSignal(true);
   const [isBuffering, setIsBuffering] = createSignal(true);
   const [bufferingPercent, setBufferingPercent] = createSignal(0);
@@ -49,12 +59,28 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   const [showAssistant, setShowAssistant] = createSignal(false);
   const [focusId] = spatialNav.getFocusSignal();
   const [seekToast, setSeekToast] = createSignal('');
+  const [channelDigits, setChannelDigits] = createSignal('');
+  const [aspectMode, setAspectMode] = createSignal<VideoAspectMode>(player.getAspectMode());
+  const [sleepMinutes, setSleepMinutes] = createSignal(0);
+  const [sleepRemainingSecs, setSleepRemainingSecs] = createSignal(0);
+  const [liveReturnChannel, setLiveReturnChannel] = createSignal<ItemRecord | null>(null);
+  const [mirrors, setMirrors] = createSignal<ItemRecord[]>([]);
+  const [showMirrors, setShowMirrors] = createSignal(false);
+  const [showMiniGuide, setShowMiniGuide] = createSignal(false);
+  const [miniGuideChannels, setMiniGuideChannels] = createSignal<ItemRecord[]>([]);
+  const [miniGuideEpg, setMiniGuideEpg] = createSignal<Record<number, EpgProgramRecord | undefined>>({});
+  let digitTimer: ReturnType<typeof setTimeout> | null = null;
+  let sleepInterval: ReturnType<typeof setInterval> | null = null;
+  let failoverCount = 0;
+  const triedMirrorIds = new Set<number>();
+  let lastLiveFamilyItem: ItemRecord | null = null;
   // « À suivre »: films similar to the one that plays, at the bottom of the controls.
   const [similar, setSimilar] = createSignal<ItemRecord[]>([]);
   let endShelfShown = false;
   // A film that pauses to load after it has played: say why (speed), once the viewer did not just seek.
   const [rebuffers, setRebuffers] = createSignal(0);
   let hasPlayedOnce = false;
+  let userPaused = false;
   let lastSeekAt = 0;
   const isUhd = () => info.stream()?.quality === '4K' || isUhdTitle(props.item);
   const slowStreamMessage = () =>
@@ -148,6 +174,18 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   const [reconnectAttempt, setReconnectAttempt] = createSignal(0);
   let reconnectTimer: any = null;
   let reconnectWatch: any = null;
+
+  const clearDigitTimer = () => {
+    if (digitTimer) clearTimeout(digitTimer);
+    digitTimer = null;
+  };
+
+  const stopSleepTimer = () => {
+    if (sleepInterval) clearInterval(sleepInterval);
+    sleepInterval = null;
+    setSleepMinutes(0);
+    setSleepRemainingSecs(0);
+  };
 
   const clearTimers = () => {
     if (reconnectTimer) {
@@ -249,6 +287,21 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
 
   const handleStreamError = (errorMsg: string) => {
     clearTimers();
+    if (props.item.kind === 'live' && failoverCount < 2) {
+      const candidate = mirrors().find((m) => !triedMirrorIds.has(m.id));
+      if (candidate && props.onSwitchStream) {
+        failoverCount += 1;
+        triedMirrorIds.add(candidate.id);
+        setBrokenTag(true);
+        props.item.is_broken = 1;
+        void Database.getInstance().setBroken(props.item.id, true);
+        const mirrorName = candidate.name_clean || candidate.name;
+        showToast(`📡 Bascule auto : ${mirrorName}`);
+        announce(`Flux indisponible, bascule vers ${mirrorName}`);
+        props.onSwitchStream(candidate);
+        return;
+      }
+    }
     if (props.item.kind === 'live' && retryCount() < MAX_RETRIES) {
       const nextAttempt = retryCount() + 1;
       setRetryCount(nextAttempt);
@@ -276,7 +329,14 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     focusErrorAction();
   };
 
-  const updateGrid = () => {
+  const startOverUrl = () => {
+    if (!isLive()) return null;
+    const prog = epgNow();
+    if (!prog) return null;
+    return CndEngine.getInstance().buildCatchupUrl(props.item, prog, info.nowTs());
+  };
+
+  const updateGrid = (preserveFocus = false) => {
     const isLiveItem = props.item.kind === 'live';
     if (playerError()) {
       const errorRow = [
@@ -290,28 +350,70 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       return;
     }
 
+    if (showMiniGuide()) {
+      const channelRows = miniGuideChannels().map((ch) => [
+        {
+          id: `miniguide-ch-${ch.id}`,
+          onSelect: () => selectMiniGuideChannel(ch),
+        },
+      ]);
+      const closeRow = [{ id: 'btn-miniguide-close', onSelect: () => closeMiniGuide() }];
+      spatialNav.setGrid([...channelRows, closeRow], 0, 0, false);
+      return;
+    }
+
+    if (showMirrors()) {
+      const mirrorRow = [
+        { id: `mirror-item-${props.item.id}`, onSelect: () => closeMirrors() },
+        ...mirrors().map((m) => ({
+          id: `mirror-item-${m.id}`,
+          onSelect: () => selectMirror(m),
+        })),
+        { id: 'btn-mirrors-close', onSelect: () => closeMirrors() },
+      ];
+      spatialNav.setGrid([mirrorRow], 0, 0, false);
+      return;
+    }
+
+    const progressRow = [
+      {
+        id: 'osd-progress-bar',
+        onSelect: () => togglePlayPause(),
+      },
+    ];
+
     const actionRow = [
       {
         id: 'btn-osd-play-pause',
-        onSelect: togglePlayPause,
+        onSelect: () => togglePlayPause(),
       },
-      ...(!isLiveItem
+      { id: 'btn-osd-seek-back', onSelect: () => seekDelta(-10000) },
+      { id: 'btn-osd-seek-fwd', onSelect: () => seekDelta(10000) },
+      ...(isLiveItem
         ? [
-            { id: 'btn-osd-seek-back', onSelect: () => seekDelta(-10000) },
-            { id: 'btn-osd-seek-fwd', onSelect: () => seekDelta(10000) },
-          ]
-        : [
             ...(props.onPrevChannel ? [{ id: 'btn-osd-prev-ch', onSelect: () => props.onPrevChannel?.() }] : []),
             ...(props.onNextChannel ? [{ id: 'btn-osd-next-ch', onSelect: () => props.onNextChannel?.() }] : []),
-          ]),
-      { id: 'btn-osd-fav', onSelect: () => void toggleFavorite() },
+            ...(props.canRecall && props.onRecall ? [{ id: 'btn-osd-recall', onSelect: () => triggerRecall() }] : []),
+            ...(startOverUrl() ? [{ id: 'btn-osd-startover', onSelect: () => startOverProgram() }] : []),
+            { id: 'btn-osd-miniguide', onSelect: () => toggleMiniGuide() },
+            ...(mirrors().length > 0 ? [{ id: 'btn-osd-mirrors', onSelect: () => toggleMirrors() }] : []),
+          ]
+        : []),
+      ...(liveReturnChannel()
+        ? [{ id: 'btn-osd-return-live', onSelect: () => returnToLive() }]
+        : []),
+      ...(!liveReturnChannel()
+        ? [{ id: 'btn-osd-fav', onSelect: () => void toggleFavorite() }]
+        : []),
+      { id: 'btn-osd-aspect', onSelect: () => toggleAspectMode() },
+      { id: 'btn-osd-sleep', onSelect: () => cycleSleepTimer() },
       {
         id: 'btn-osd-audio-track',
-        onSelect: cycleAudioTrack,
+        onSelect: () => cycleAudioTrack(),
       },
       {
         id: 'btn-osd-sub-track',
-        onSelect: cycleSubtitleTrack,
+        onSelect: () => cycleSubtitleTrack(),
       },
       {
         id: 'btn-osd-assistant',
@@ -322,7 +424,12 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     const shelfRow = !isLiveItem
       ? similar().map((film) => ({ id: `player-next-${film.id}`, onSelect: () => playNext(film) }))
       : [];
-    spatialNav.setGrid(shelfRow.length > 0 ? [actionRow, shelfRow] : [actionRow]);
+    spatialNav.setGrid(
+      shelfRow.length > 0 ? [progressRow, actionRow, shelfRow] : [progressRow, actionRow],
+      1,
+      0,
+      preserveFocus
+    );
   };
 
   const filmTitle = (film: ItemRecord) =>
@@ -355,7 +462,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     setReconnectAttempt(0);
     hasPlayedOnce = true;
     setIsBuffering(false);
-    setIsPlaying(true);
+    if (!userPaused && player.getState() !== 'PAUSED') {
+      setIsPlaying(true);
+    }
     setPlayerError(null);
     setRetryCount(1);
     setBrokenTag(false);
@@ -373,31 +482,84 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     if (hadError) updateGrid();
   };
 
+  const loadLiveMirrors = (liveItem: ItemRecord) => {
+    if (liveItem.kind !== 'live') {
+      setMirrors([]);
+      return;
+    }
+    const targetId = liveItem.id;
+    void CndEngine.getInstance()
+      .findMirrors(liveItem)
+      .then((list) => {
+        if (props.item.id === targetId) {
+          setMirrors(list);
+          updateGrid(true);
+        }
+      })
+      .catch(() => {});
+  };
+
   let previousItemId: number | null = null;
   createEffect(() => {
-    const currentId = props.item.id;
+    const currentItem = props.item;
+    const currentId = currentItem.id;
     if (previousItemId === null) {
       previousItemId = currentId;
+      if (currentItem.kind === 'live') {
+        lastLiveFamilyItem = currentItem;
+        triedMirrorIds.add(currentId);
+        loadLiveMirrors(currentItem);
+      }
       return;
     }
     if (previousItemId === currentId) return;
     previousItemId = currentId;
-    setBrokenTag(props.item.is_broken === 1);
+    setBrokenTag(currentItem.is_broken === 1);
+    if (currentId > 0) setLiveReturnChannel(null);
+
+    if (currentItem.kind === 'live') {
+      if (!lastLiveFamilyItem || !isSameLiveChannel(lastLiveFamilyItem, currentItem)) {
+        failoverCount = 0;
+        triedMirrorIds.clear();
+      }
+      lastLiveFamilyItem = currentItem;
+      triedMirrorIds.add(currentId);
+      loadLiveMirrors(currentItem);
+    } else {
+      setMirrors([]);
+      setShowMirrors(false);
+      setShowMiniGuide(false);
+    }
 
     clearTimers();
     setReconnectAttempt(0);
     setRebuffers(0);
     hasPlayedOnce = false;
+    userPaused = false;
     setRetryCount(1);
     setPlayerError(null);
     setIsBuffering(true);
     setBufferingPercent(0);
     setCurrentTimeMs(0);
-    setDurationMs(0);
+    setDurationMs(currentItem.duration_ms > 0 ? currentItem.duration_ms : 0);
+    setLiveSeekOffsetMs(0);
     hasResumed = false;
     updateGrid();
     triggerChannelHud();
     startConnectionWatchdog(currentId);
+  });
+
+  createEffect(() => {
+    void isLive();
+    void Boolean(startOverUrl());
+    void (mirrors().length > 0);
+    void Boolean(props.canRecall);
+    void Boolean(liveReturnChannel());
+    untrack(() => {
+      if (!showMiniGuide() && !showMirrors() && !playerError()) {
+        updateGrid(true);
+      }
+    });
   });
 
   onMount(() => {
@@ -416,19 +578,27 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     // 3. Set up player listeners
     player.setListener({
       onBufferingStart: () => {
+        if (userPaused || player.getState() === 'PAUSED') return;
         setIsBuffering(true);
         setPlayerError(null);
         if (props.item.kind !== 'live' && hasPlayedOnce && Date.now() - lastSeekAt > 8000) setRebuffers((n) => n + 1);
       },
-      onBufferingProgress: (pct) => setBufferingPercent(pct),
+      onBufferingProgress: (pct) => {
+        if (userPaused || player.getState() === 'PAUSED') return;
+        setBufferingPercent(pct);
+      },
       onBufferingComplete: finishBuffering,
       onCurrentPlayTime: (ms) => {
+        if (userPaused || player.getState() === 'PAUSED') return;
         const advancing = ms > currentTimeMs();
         if (advancing && (isBuffering() || playerError() || retryTimer || connectionTimeoutTimer)) {
           finishBuffering();
         }
         setCurrentTimeMs(ms);
-        setDurationMs(player.getDuration());
+        const avDuration = player.getDuration();
+        if (avDuration > 0 || props.item.duration_ms <= 0) {
+          setDurationMs(avDuration > 0 ? avDuration : props.item.duration_ms > 0 ? props.item.duration_ms : 0);
+        }
         // The film is ending: bring up what to watch next and keep it on screen.
         const total = player.getDuration();
         if (!endShelfShown && props.item.kind === 'movie' && total > 0 && ms / total >= 0.97 && similar().length > 0) {
@@ -493,6 +663,17 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
           props.onExit();
         }
       },
+      onStateChange: (state) => {
+        if (state === 'PAUSED') {
+          userPaused = true;
+          setIsPlaying(false);
+          setIsBuffering(false);
+        } else if (state === 'PLAYING') {
+          userPaused = false;
+          setIsPlaying(true);
+          setIsBuffering(false);
+        }
+      },
     });
 
     // Detect audio and subtitle tracks once metadata is parsed
@@ -533,15 +714,20 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     if (hudTimer) clearTimeout(hudTimer);
     if (toastTimer) clearTimeout(toastTimer);
     if (subtitleTimer()) clearTimeout(subtitleTimer());
+    clearDigitTimer();
+    stopSleepTimer();
     player.stop();
   });
 
   const resetOsdTimer = () => {
     setShowOsd(true);
     if (osdTimer) clearTimeout(osdTimer);
-    osdTimer = setTimeout(() => {
-      setShowOsd(false);
-    }, 5000);
+    osdTimer = null;
+    if (isPlaying()) {
+      osdTimer = setTimeout(() => {
+        setShowOsd(false);
+      }, 5000);
+    }
   };
 
   const triggerChannelHud = () => {
@@ -554,6 +740,9 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
 
   const togglePlayPause = () => {
     if (isPlaying()) {
+      userPaused = true;
+      clearTimers();
+      setIsBuffering(false);
       player.pause();
       setIsPlaying(false);
       announce('Pause');
@@ -566,6 +755,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         );
       }
     } else {
+      userPaused = false;
       player.play();
       setIsPlaying(true);
       announce('Lecture');
@@ -587,14 +777,70 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     resetOsdTimer();
   };
 
-  const seekDelta = (deltaMs: number) => {
-    const target = Math.max(0, currentTimeMs() + deltaMs);
+  const effectiveDurationMs = (): number => {
+    if (isLive()) {
+      const prog = epgNow();
+      if (prog && prog.end_ts > prog.start_ts) {
+        return Math.max(60_000, (prog.end_ts - prog.start_ts) * 1000);
+      }
+    }
+    if (durationMs() > 0) return durationMs();
+    if (props.item.duration_ms > 0) return props.item.duration_ms;
+    return Math.max(currentTimeMs() + 60_000, 3_600_000);
+  };
+
+  const liveNaturalMs = (): number => {
+    const prog = epgNow();
+    if (!prog || prog.end_ts <= prog.start_ts) return 0;
+    const progDuration = Math.max(60_000, (prog.end_ts - prog.start_ts) * 1000);
+    return Math.max(0, Math.min(progDuration, (info.nowTs() - prog.start_ts) * 1000));
+  };
+
+  const effectivePositionMs = (): number => {
+    const total = effectiveDurationMs();
+    if (isLive() && epgNow()) {
+      return Math.max(0, Math.min(total, liveNaturalMs() + liveSeekOffsetMs()));
+    }
+    return Math.max(0, Math.min(total, currentTimeMs()));
+  };
+
+  const seekToPositionMs = (targetMs: number, toastMessage?: string, spokenMessage?: string) => {
+    const total = effectiveDurationMs();
+    const clamped = Math.max(0, Math.min(total, Math.round(targetMs)));
+    if (isLive() && epgNow()) {
+      setLiveSeekOffsetMs(clamped - liveNaturalMs());
+    }
+    setCurrentTimeMs(clamped);
     lastSeekAt = Date.now();
-    player.seekTo(target);
-    const secs = Math.abs(Math.round(deltaMs / 1000));
-    showToast(deltaMs > 0 ? `⏩ +${secs} s` : `⏪ −${secs} s`);
-    announce(deltaMs > 0 ? `Avance rapide de ${secs} secondes` : `Retour arrière de ${secs} secondes`);
+    player.seekTo(clamped);
+    const toast = toastMessage || `⏩ ${formatTime(clamped)}`;
+    showToast(toast);
+    announce(spokenMessage || `Position : ${formatTime(clamped)}`);
     resetOsdTimer();
+  };
+
+  const seekDelta = (deltaMs: number) => {
+    const target = effectivePositionMs() + deltaMs;
+    const secs = Math.abs(Math.round(deltaMs / 1000));
+    seekToPositionMs(
+      target,
+      deltaMs > 0 ? `⏩ +${secs} s` : `⏪ −${secs} s`,
+      deltaMs > 0 ? `Avance rapide de ${secs} secondes` : `Retour arrière de ${secs} secondes`
+    );
+  };
+
+  const seekToRatio = (ratio: number) => {
+    const clampedRatio = Math.max(0, Math.min(1, ratio));
+    const target = Math.round(effectiveDurationMs() * clampedRatio);
+    seekToPositionMs(target);
+  };
+
+  const handleProgressPointer = (el: HTMLElement, clientX: number) => {
+    const rect = el.getBoundingClientRect();
+    const width = rect.width > 0 ? rect.width : 1920;
+    const left = rect.width > 0 ? rect.left : 0;
+    const ratio = Math.max(0, Math.min(1, (clientX - left) / width));
+    seekToRatio(ratio);
   };
 
   const cycleAudioTrack = () => {
@@ -635,6 +881,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
 
   const retryPlayback = async () => {
     clearTimers();
+    userPaused = false;
     setReconnectAttempt(0);
     setRetryCount(1);
     setPlayerError(null);
@@ -650,7 +897,207 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     }
   };
 
+  const formatSleepRemaining = () => {
+    const total = sleepRemainingSecs();
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  };
+
+  const commitChannelDigits = async () => {
+    clearDigitTimer();
+    const raw = channelDigits();
+    setChannelDigits('');
+    const num = Number.parseInt(raw, 10);
+    if (!Number.isFinite(num) || num <= 0 || !props.onSelectChannelNumber) return;
+    const hit = await props.onSelectChannelNumber(num);
+    if (!hit) {
+      showToast(`Chaîne ${num} introuvable`);
+      announce(`Chaîne ${num} introuvable`);
+    } else {
+      triggerChannelHud();
+    }
+  };
+
+  const pushChannelDigit = (digit: string) => {
+    clearDigitTimer();
+    const next = (channelDigits() + digit).slice(0, 4);
+    setChannelDigits(next);
+    digitTimer = setTimeout(() => {
+      void commitChannelDigits();
+    }, 1200);
+  };
+
+  const triggerRecall = () => {
+    setShowMirrors(false);
+    setShowMiniGuide(false);
+    props.onRecall?.();
+    triggerChannelHud();
+    resetOsdTimer();
+  };
+
+  const startOverProgram = () => {
+    const prog = epgNow();
+    const url = startOverUrl();
+    if (!prog || !url || !props.onSwitchStream) return;
+    setLiveReturnChannel(props.item);
+    setShowMirrors(false);
+    setShowMiniGuide(false);
+    const duration = Math.max(0, (prog.end_ts - prog.start_ts) * 1000);
+    const replayItem: ItemRecord = {
+      ...props.item,
+      id: -Math.abs(props.item.id || 1),
+      kind: 'movie',
+      name_clean: `${title()} · Replay`,
+      stream_url: url,
+      playback_position_ms: 0,
+      duration_ms: duration,
+      plot: prog.description || prog.title,
+    };
+    announce(`Revoir depuis le début : ${prog.title}`);
+    props.onSwitchStream(replayItem);
+  };
+
+  const returnToLive = () => {
+    const target = liveReturnChannel();
+    if (!target || !props.onSwitchStream) return;
+    setLiveReturnChannel(null);
+    announce(`Retour au direct : ${target.name_clean || target.name}`);
+    props.onSwitchStream(target);
+  };
+
+  const closeMiniGuide = () => {
+    setShowMiniGuide(false);
+    resetOsdTimer();
+    updateGrid();
+  };
+
+  const toggleMiniGuide = () => {
+    if (showMiniGuide()) {
+      closeMiniGuide();
+      return;
+    }
+    setShowMirrors(false);
+    if (osdTimer) clearTimeout(osdTimer);
+    setShowOsd(false);
+    setShowMiniGuide(true);
+    const cat = props.liveCategory || props.item.group_title || '';
+    void (async () => {
+      const list = await CndEngine.getInstance().getCatalog('live', cat || undefined, 0, 80);
+      const channels = list.filter((ch) => ch.kind === 'live');
+      setMiniGuideChannels(channels);
+      const epgEntries = await Promise.all(
+        channels.slice(0, 30).map(async (ch) => {
+          if (!ch.tvg_id) return [ch.id, undefined] as const;
+          const { now } = await Database.getInstance()
+            .getEpgNowNext(ch.tvg_id, info.nowTs())
+            .catch(() => ({ now: undefined }));
+          return [ch.id, now] as const;
+        })
+      );
+      const map: Record<number, EpgProgramRecord | undefined> = {};
+      for (const [id, prog] of epgEntries) map[id] = prog;
+      setMiniGuideEpg(map);
+      updateGrid();
+      if (channels.length > 0) {
+        const active = channels.find((c) => c.id === props.item.id) ?? channels[0];
+        setTimeout(() => spatialNav.setFocusById(`miniguide-ch-${active.id}`), 0);
+      }
+    })();
+  };
+
+  const selectMiniGuideChannel = (ch: ItemRecord) => {
+    setShowMiniGuide(false);
+    props.onSwitchStream?.(ch);
+    triggerChannelHud();
+    resetOsdTimer();
+  };
+
+  const closeMirrors = () => {
+    setShowMirrors(false);
+    resetOsdTimer();
+    updateGrid();
+  };
+
+  const toggleMirrors = () => {
+    if (showMirrors()) {
+      closeMirrors();
+      return;
+    }
+    setShowMiniGuide(false);
+    if (osdTimer) clearTimeout(osdTimer);
+    setShowOsd(false);
+    setShowMirrors(true);
+    updateGrid();
+    setTimeout(() => spatialNav.setFocusById(`mirror-item-${props.item.id}`), 0);
+  };
+
+  const selectMirror = (mirror: ItemRecord) => {
+    failoverCount = 0;
+    triedMirrorIds.clear();
+    triedMirrorIds.add(mirror.id);
+    setShowMirrors(false);
+    props.onSwitchStream?.(mirror);
+    triggerChannelHud();
+    resetOsdTimer();
+  };
+
+  const toggleAspectMode = () => {
+    const next = player.cycleAspectMode();
+    setAspectMode(next);
+    const label = aspectModeLabel(next);
+    showToast(`📐 Format : ${label}`);
+    announce(`Format vidéo : ${label}`);
+    resetOsdTimer();
+  };
+
+  const SLEEP_PRESETS = [0, 15, 30, 60, 90];
+  const cycleSleepTimer = () => {
+    const idx = SLEEP_PRESETS.indexOf(sleepMinutes());
+    const nextMin = SLEEP_PRESETS[(idx + 1) % SLEEP_PRESETS.length];
+    if (sleepInterval) clearInterval(sleepInterval);
+    sleepInterval = null;
+    setSleepMinutes(nextMin);
+    if (nextMin === 0) {
+      setSleepRemainingSecs(0);
+      showToast('🌙 Minuteur de veille désactivé');
+      announce('Minuteur de veille désactivé');
+    } else {
+      setSleepRemainingSecs(nextMin * 60);
+      showToast(`🌙 Arrêt programmé dans ${nextMin} min`);
+      announce(`Arrêt programmé dans ${nextMin} minutes`);
+      sleepInterval = setInterval(() => {
+        const nextSecs = sleepRemainingSecs() - 1;
+        if (nextSecs <= 0) {
+          stopSleepTimer();
+          announce('Minuteur de veille écoulé : arrêt de la lecture');
+          player.stop();
+          props.onExit();
+        } else {
+          setSleepRemainingSecs(nextSecs);
+        }
+      }, 1000);
+    }
+    resetOsdTimer();
+  };
+
   const handleKey = (key: RemoteKey): boolean => {
+    if (showMiniGuide() && key === 'BACK') {
+      closeMiniGuide();
+      return true;
+    }
+    if (showMirrors() && key === 'BACK') {
+      closeMirrors();
+      return true;
+    }
+    if ((isLive() || liveReturnChannel()) && key.startsWith('NUM_') && !playerError()) {
+      pushChannelDigit(key.slice(4));
+      return true;
+    }
+    if (channelDigits() && key === 'ENTER') {
+      void commitChannelDigits();
+      return true;
+    }
     // BACK during the countdown only cancels it; the next BACK leaves the player as usual.
     if (key === 'BACK' && countdown() !== null) {
       stopCountdown();
@@ -664,7 +1111,23 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       return true;
     }
 
-    if (key === 'PLAY' || key === 'PAUSE' || key === 'PLAY_PAUSE') {
+    if (key === 'PAUSE') {
+      if (!playerError()) {
+        if (isPlaying()) togglePlayPause();
+        else resetOsdTimer();
+        return true;
+      }
+    }
+
+    if (key === 'PLAY') {
+      if (!playerError()) {
+        if (!isPlaying()) togglePlayPause();
+        else resetOsdTimer();
+        return true;
+      }
+    }
+
+    if (key === 'PLAY_PAUSE') {
       if (!playerError()) {
         togglePlayPause();
         return true;
@@ -685,7 +1148,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       }
     }
 
-    if (key === 'CHANNEL_UP' || (key === 'UP' && (!showOsd() || playerError()) && props.item.kind === 'live')) {
+    if (key === 'CHANNEL_UP' || (key === 'UP' && (!showOsd() || playerError()) && !showMiniGuide() && !showMirrors() && props.item.kind === 'live')) {
       if (props.onNextChannel) {
         props.onNextChannel();
         triggerChannelHud();
@@ -693,7 +1156,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       }
     }
 
-    if (key === 'CHANNEL_DOWN' || (key === 'DOWN' && (!showOsd() || playerError()) && props.item.kind === 'live')) {
+    if (key === 'CHANNEL_DOWN' || (key === 'DOWN' && (!showOsd() || playerError()) && !showMiniGuide() && !showMirrors() && props.item.kind === 'live')) {
       if (props.onPrevChannel) {
         props.onPrevChannel();
         triggerChannelHud();
@@ -703,6 +1166,21 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
 
     if (playerError()) {
       return false;
+    }
+
+    if (showMiniGuide() || showMirrors()) {
+      return false;
+    }
+
+    if (showOsd() && focusId() === 'osd-progress-bar') {
+      if (key === 'LEFT') {
+        seekDelta(-10000);
+        return true;
+      }
+      if (key === 'RIGHT') {
+        seekDelta(10000);
+        return true;
+      }
     }
 
     // Any arrow or enter key brings back the OSD
@@ -730,9 +1208,30 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   };
 
   const progressPct = () => {
-    if (!durationMs()) return 0;
-    return Math.min(100, (currentTimeMs() / durationMs()) * 100);
+    const total = effectiveDurationMs();
+    if (total <= 0) return 0;
+    return Math.min(100, Math.max(0, (effectivePositionMs() / total) * 100));
   };
+
+  const InteractiveProgressBar = (label: string) => (
+    <div
+      id="osd-progress-bar"
+      role="slider"
+      tabindex="-1"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={Math.round(effectiveDurationMs() / 1000)}
+      aria-valuenow={Math.round(effectivePositionMs() / 1000)}
+      class={`tv-osd-progress-bg ${focusId() === 'osd-progress-bar' ? 'focused' : ''}`}
+      onClick={(e) => handleProgressPointer(e.currentTarget, e.clientX)}
+      onMouseMove={(e) => {
+        if (e.buttons === 1) handleProgressPointer(e.currentTarget, e.clientX);
+      }}
+    >
+      <div class="tv-osd-progress-fill" style={{ width: `${progressPct()}%` }} />
+      <div class="tv-osd-progress-thumb" style={{ left: `${progressPct()}%` }} />
+    </div>
+  );
 
   const audioLabel = () => {
     const tracks = audioTracks();
@@ -777,6 +1276,13 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         </div>
       </Show>
 
+      {/* 1b. Direct 0-9 channel entry badge */}
+      <Show when={channelDigits()}>
+        <div class="tv-digit-hud" role="status" aria-live="polite">
+          CH {channelDigits()}
+        </div>
+      </Show>
+
       {/* 2. Rate limit 429 warning banner */}
       <Show when={net.isRateLimited()}>
         <div style={{
@@ -815,13 +1321,15 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
           <div class="tv-spinner" style={{ width: "40px", height: "40px", "border-width": "4px" }} />
           <div>
           <div style={{ "font-size": "24px", "font-weight": "700" }}>
-            {isLive()
-              ? reconnectAttempt() > 0
-                ? `Connexion perdue… reconnexion (${reconnectAttempt()}/${RECONNECT_DELAYS_MS.length})`
-                : `Connexion… (tentative ${retryCount()}/${MAX_RETRIES})`
-              : rebuffers() > 0
-                ? slowStreamMessage().title
-                : `Chargement... ${bufferingPercent() > 0 ? `${bufferingPercent()}%` : ''}`}
+            {props.isZapPending
+              ? `Zapping vers ${title()}…`
+              : isLive()
+                ? reconnectAttempt() > 0
+                  ? `Connexion perdue… reconnexion (${reconnectAttempt()}/${RECONNECT_DELAYS_MS.length})`
+                  : `Connexion… (tentative ${retryCount()}/${MAX_RETRIES})`
+                : rebuffers() > 0
+                  ? slowStreamMessage().title
+                  : `Chargement... ${bufferingPercent() > 0 ? `${bufferingPercent()}%` : ''}`}
           </div>
           <Show when={!isLive() && rebuffers() > 0}>
             <div style={{ "font-size": "16px", color: "var(--buntu-text-muted)" }}>{slowStreamMessage().hint}</div>
@@ -892,9 +1400,12 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         </div>
       </Show>
 
-      {/* 7. Top bar: the clock and what the TV decodes */}
-      <Show when={showOsd() && !playerError()}>
+      {/* 7. Top bar: sleep pill, what the TV decodes and the clock */}
+      <Show when={showOsd() && !showMiniGuide() && !showMirrors() && !playerError()}>
         <div class="tv-osd-top">
+          <Show when={sleepRemainingSecs() > 0}>
+            <div class="tv-sleep-pill" role="status">🌙 {formatSleepRemaining()}</div>
+          </Show>
           <Show when={info.stream()}>
             <div class="tv-osd-tech">
               <Show when={info.stream()!.height > 0}>
@@ -918,7 +1429,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       </Show>
 
       {/* 8. Controls and information */}
-      <Show when={showOsd() && !playerError()}>
+      <Show when={showOsd() && !showMiniGuide() && !showMirrors() && !playerError()}>
         <div class="tv-osd">
           <div class="tv-osd-head">
             <div class="tv-osd-heading">
@@ -932,7 +1443,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
             </div>
             <Show when={!isLive()}>
               <div class="tv-osd-clockline">
-                {formatDuration(currentTimeMs())} / {formatDuration(durationMs())}
+                {formatDuration(effectivePositionMs())} / {formatDuration(durationMs())}
               </div>
             </Show>
           </div>
@@ -964,7 +1475,15 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
 
           {/* Live: the program on air and the next ones */}
           <Show when={isLive()}>
-            <Show when={epgNow()} fallback={<div class="tv-osd-note">Pas de guide pour cette chaîne.</div>}>
+            <Show
+              when={epgNow()}
+              fallback={
+                <>
+                  <div class="tv-osd-note">Pas de guide pour cette chaîne.</div>
+                  {InteractiveProgressBar('Barre de progression du direct')}
+                </>
+              }
+            >
               <div class="tv-osd-program">
                 <div class="tv-osd-label">
                   EN CE MOMENT · {formatClock(epgNow()!.start_ts)} – {formatClock(epgNow()!.end_ts)} · il reste{' '}
@@ -973,9 +1492,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
                     : `${minutesLeft(epgNow()!.end_ts)} min`}
                 </div>
                 <div class="tv-osd-program-title">{epgNow()!.title}</div>
-                <InfoProgress
-                  percent={percentOf(info.nowTs() - epgNow()!.start_ts, epgNow()!.end_ts - epgNow()!.start_ts)}
-                />
+                {InteractiveProgressBar('Barre de progression du direct')}
                 <Show when={epgNow()!.description}>
                   <p class="tv-osd-desc">{epgNow()!.description}</p>
                 </Show>
@@ -997,12 +1514,10 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
 
           {/* Film / episode: progress, end time and synopsis */}
           <Show when={!isLive()}>
-            <div class="tv-osd-progress-bg">
-              <div class="tv-osd-progress-fill" style={{ width: `${progressPct()}%` }} />
-            </div>
+            {InteractiveProgressBar('Barre de progression de la lecture')}
             <Show when={durationMs() > 0}>
               <div class="tv-osd-note">
-                Il reste {formatRuntime(Math.max(0, durationMs() - currentTimeMs()))} · se termine à {endsAt()}
+                Il reste {formatRuntime(Math.max(0, durationMs() - effectivePositionMs()))} · se termine à {endsAt()}
               </div>
             </Show>
             <Show when={props.item.plot}>
@@ -1013,6 +1528,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
           {/* Action buttons */}
           <div class="tv-osd-actions">
             <button
+              id="btn-osd-play-pause"
               class={`tv-btn ${focusId() === 'btn-osd-play-pause' ? 'focused' : ''}`}
               onClick={togglePlayPause}
               aria-label={isPlaying() ? 'Mettre en pause' : 'Reprendre la lecture'}
@@ -1020,26 +1536,27 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               {isPlaying() ? '⏸ Pause' : '▶ Lecture'}
             </button>
 
-            <Show when={!isLive()}>
-              <button
-                class={`tv-btn ${focusId() === 'btn-osd-seek-back' ? 'focused' : ''}`}
-                onClick={() => seekDelta(-10000)}
-                aria-label="Reculer de 10 secondes"
-              >
-                ⏪ −10 s
-              </button>
-              <button
-                class={`tv-btn ${focusId() === 'btn-osd-seek-fwd' ? 'focused' : ''}`}
-                onClick={() => seekDelta(10000)}
-                aria-label="Avancer de 10 secondes"
-              >
-                ⏩ +10 s
-              </button>
-            </Show>
+            <button
+              id="btn-osd-seek-back"
+              class={`tv-btn ${focusId() === 'btn-osd-seek-back' ? 'focused' : ''}`}
+              onClick={() => seekDelta(-10000)}
+              aria-label="Reculer de 10 secondes"
+            >
+              ⏪ −10 s
+            </button>
+            <button
+              id="btn-osd-seek-fwd"
+              class={`tv-btn ${focusId() === 'btn-osd-seek-fwd' ? 'focused' : ''}`}
+              onClick={() => seekDelta(10000)}
+              aria-label="Avancer de 10 secondes"
+            >
+              ⏩ +10 s
+            </button>
 
             <Show when={isLive()}>
               <Show when={props.onPrevChannel}>
                 <button
+                  id="btn-osd-prev-ch"
                   class={`tv-btn ${focusId() === 'btn-osd-prev-ch' ? 'focused' : ''}`}
                   onClick={() => { props.onPrevChannel?.(); triggerChannelHud(); }}
                   aria-label="Chaîne précédente"
@@ -1049,6 +1566,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
               </Show>
               <Show when={props.onNextChannel}>
                 <button
+                  id="btn-osd-next-ch"
                   class={`tv-btn ${focusId() === 'btn-osd-next-ch' ? 'focused' : ''}`}
                   onClick={() => { props.onNextChannel?.(); triggerChannelHud(); }}
                   aria-label="Chaîne suivante"
@@ -1056,17 +1574,88 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
                   ⏭ Suivante
                 </button>
               </Show>
+              <Show when={props.canRecall && props.onRecall}>
+                <button
+                  id="btn-osd-recall"
+                  class={`tv-btn ${focusId() === 'btn-osd-recall' ? 'focused' : ''}`}
+                  onClick={triggerRecall}
+                  aria-label="Revenir à la chaîne précédente"
+                >
+                  ↺ Dernière
+                </button>
+              </Show>
+              <Show when={startOverUrl()}>
+                <button
+                  id="btn-osd-startover"
+                  class={`tv-btn ${focusId() === 'btn-osd-startover' ? 'focused' : ''}`}
+                  onClick={startOverProgram}
+                  aria-label="Revoir le programme depuis le début"
+                >
+                  ↺ Début
+                </button>
+              </Show>
+              <button
+                id="btn-osd-miniguide"
+                class={`tv-btn ${focusId() === 'btn-osd-miniguide' ? 'focused' : ''}`}
+                onClick={toggleMiniGuide}
+                aria-label="Ouvrir la liste des chaînes"
+              >
+                📋 Chaînes
+              </button>
+              <Show when={mirrors().length > 0}>
+                <button
+                  id="btn-osd-mirrors"
+                  class={`tv-btn ${focusId() === 'btn-osd-mirrors' ? 'focused' : ''}`}
+                  onClick={toggleMirrors}
+                  aria-label="Choisir une source ou qualité alternative"
+                >
+                  📡 Sources ({mirrors().length + 1})
+                </button>
+              </Show>
+            </Show>
+
+            <Show when={liveReturnChannel()}>
+              <button
+                id="btn-osd-return-live"
+                class={`tv-btn ${focusId() === 'btn-osd-return-live' ? 'focused' : ''}`}
+                onClick={returnToLive}
+                aria-label="Revenir au direct"
+              >
+                📡 Direct
+              </button>
+            </Show>
+
+            <Show when={!liveReturnChannel()}>
+              <button
+                id="btn-osd-fav"
+                class={`tv-btn ${focusId() === 'btn-osd-fav' ? 'focused' : ''}`}
+                onClick={() => void toggleFavorite()}
+                aria-label={info.isFavorite() ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+              >
+                {info.isFavorite() ? '★ Favori' : '☆ Favori'}
+              </button>
             </Show>
 
             <button
-              class={`tv-btn ${focusId() === 'btn-osd-fav' ? 'focused' : ''}`}
-              onClick={() => void toggleFavorite()}
-              aria-label={info.isFavorite() ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+              id="btn-osd-aspect"
+              class={`tv-btn ${focusId() === 'btn-osd-aspect' ? 'focused' : ''}`}
+              onClick={toggleAspectMode}
+              aria-label={`Format vidéo : ${aspectModeLabel(aspectMode())}`}
             >
-              {info.isFavorite() ? '★ Favori' : '☆ Favori'}
+              📐 {aspectModeLabel(aspectMode())}
             </button>
 
             <button
+              id="btn-osd-sleep"
+              class={`tv-btn ${focusId() === 'btn-osd-sleep' ? 'focused' : ''}`}
+              onClick={cycleSleepTimer}
+              aria-label="Configurer le minuteur de veille"
+            >
+              🌙 {sleepMinutes() > 0 ? `${sleepMinutes()}m` : 'Veille'}
+            </button>
+
+            <button
+              id="btn-osd-audio-track"
               class={`tv-btn ${focusId() === 'btn-osd-audio-track' ? 'focused' : ''}`}
               onClick={cycleAudioTrack}
               aria-label={audioLabel()}
@@ -1078,6 +1667,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
             </button>
 
             <button
+              id="btn-osd-sub-track"
               class={`tv-btn ${focusId() === 'btn-osd-sub-track' ? 'focused' : ''}`}
               onClick={cycleSubtitleTrack}
               aria-label={subtitleLabel()}
@@ -1134,12 +1724,81 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
             <span><b>◀ ▶ ▲ ▼</b> naviguer</span>
             <span><b>OK</b> valider</span>
             <Show when={isLive()}>
-              <span><b>CH +/−</b> changer de chaîne</span>
+              <span><b>CH +/−</b> zapper · <b>0–9</b> numéro</span>
             </Show>
             <Show when={!isLive()}>
               <span><b>⏪ ⏩</b> ±30 s</span>
             </Show>
             <span><b>RETOUR</b> quitter</span>
+          </div>
+        </div>
+      </Show>
+
+      {/* 9. Transparent Mini-Guide Drawer (AVPlay stays visible on the right) */}
+      <Show when={showMiniGuide() && !playerError()}>
+        <div class="tv-miniguide-drawer" role="dialog" aria-label="Liste des chaînes en direct">
+          <div class="tv-miniguide-header">
+            <div class="tv-miniguide-title">Chaînes · {props.liveCategory || props.item.group_title || 'Tout'}</div>
+            <button
+              id="btn-miniguide-close"
+              class={`tv-btn ${focusId() === 'btn-miniguide-close' ? 'focused' : ''}`}
+              onClick={closeMiniGuide}
+            >
+              ✕ Fermer
+            </button>
+          </div>
+          <div class="tv-miniguide-list">
+            <For each={miniGuideChannels()}>
+              {(ch) => (
+                <button
+                  id={`miniguide-ch-${ch.id}`}
+                  class={`tv-miniguide-row ${ch.id === props.item.id ? 'active' : ''} ${focusId() === `miniguide-ch-${ch.id}` ? 'focused' : ''}`}
+                  onClick={() => selectMiniGuideChannel(ch)}
+                >
+                  <span class="tv-miniguide-chno">{ch.chno ? ch.chno : '•'}</span>
+                  <span class="tv-miniguide-info">
+                    <div class="tv-miniguide-name">{ch.name_clean || cleanMediaTitle(ch.name).clean}</div>
+                    <Show when={miniGuideEpg()[ch.id]}>
+                      <div class="tv-miniguide-epg">{miniGuideEpg()[ch.id]!.title}</div>
+                    </Show>
+                  </span>
+                </button>
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
+
+      {/* 10. Quality & Mirrors Bar */}
+      <Show when={showMirrors() && !playerError()}>
+        <div class="tv-mirrors-bar" role="dialog" aria-label="Sources alternatives">
+          <div class="tv-osd-label">QUALITÉ ET MIROIRS DISPONIBLES</div>
+          <div class="tv-mirrors-row">
+            <button
+              id={`mirror-item-${props.item.id}`}
+              class={`tv-btn ${focusId() === `mirror-item-${props.item.id}` ? 'focused' : ''}`}
+              onClick={closeMirrors}
+            >
+              ✓ {title()} (actuel)
+            </button>
+            <For each={mirrors()}>
+              {(mirror) => (
+                <button
+                  id={`mirror-item-${mirror.id}`}
+                  class={`tv-btn ${focusId() === `mirror-item-${mirror.id}` ? 'focused' : ''}`}
+                  onClick={() => selectMirror(mirror)}
+                >
+                  {mirror.name_clean || cleanMediaTitle(mirror.name).clean}
+                </button>
+              )}
+            </For>
+            <button
+              id="btn-mirrors-close"
+              class={`tv-btn ${focusId() === 'btn-mirrors-close' ? 'focused' : ''}`}
+              onClick={closeMirrors}
+            >
+              ✕ Fermer
+            </button>
           </div>
         </div>
       </Show>

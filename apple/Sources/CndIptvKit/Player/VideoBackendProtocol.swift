@@ -1,6 +1,28 @@
 import Foundation
 import QuartzCore
 
+public enum VideoAspectRatioMode: String, CaseIterable, Sendable, Equatable {
+    case fit
+    case fill
+    case stretch
+
+    public var displayName: String {
+        switch self {
+        case .fit: return "Ajuster"
+        case .fill: return "Remplir"
+        case .stretch: return "16:9 étiré"
+        }
+    }
+
+    public var systemImage: String {
+        switch self {
+        case .fit: return "rectangle.arrowtriangle.2.inward"
+        case .fill: return "rectangle.arrowtriangle.2.outward"
+        case .stretch: return "arrow.left.and.right.square"
+        }
+    }
+}
+
 public enum PlaybackState: Equatable, Sendable {
     case idle
     case loading
@@ -138,6 +160,7 @@ public protocol VideoBackend: AnyObject {
     /// `0...1`
     func setVolume(_ volume: Float)
     func setMuted(_ muted: Bool)
+    func setAspectRatio(_ mode: VideoAspectRatioMode)
 
     func audioTracks() -> [MediaTrack]
     func subtitleTracks() -> [MediaTrack]
@@ -160,6 +183,7 @@ public protocol VideoBackend: AnyObject {
 }
 
 extension VideoBackend {
+    public func setAspectRatio(_ mode: VideoAspectRatioMode) {}
     public func currentVideoFormat() -> VideoFormatReading? { nil }
     public func networkReading() -> NetworkReading? { nil }
     public func setAudioEnhancement(_ config: AudioEnhancementConfig) {}

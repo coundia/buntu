@@ -21,6 +21,7 @@ import com.pcoundia.buntu.core.domain.model.PlayableStream
 import com.pcoundia.buntu.core.domain.model.RecoDomainKind
 import com.pcoundia.buntu.core.domain.model.RecoShelfGroup
 import com.pcoundia.buntu.core.domain.model.SeriesItem
+import com.pcoundia.buntu.core.domain.model.StreamDiagnosis
 import com.pcoundia.buntu.core.domain.model.StreamKind
 import com.pcoundia.buntu.core.domain.model.UpNextContext
 import com.pcoundia.buntu.core.domain.model.UpNextItem
@@ -37,9 +38,11 @@ import com.pcoundia.buntu.core.domain.usecase.NextUpTiming
 import com.pcoundia.buntu.core.domain.usecase.ZapToChannelUseCase
 import com.pcoundia.buntu.core.platform.device.DeviceCapabilities
 import com.pcoundia.buntu.core.player.PlayerEngineState
+import com.pcoundia.buntu.core.player.VideoAspectMode
 import com.pcoundia.buntu.core.player.VideoEngine
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
@@ -271,7 +274,166 @@ class PlayerViewModelTest {
         vm.toggleTrackSheet(true)
         assertTrue(vm.screenState.value.showTrackSheet)
     }
+
+    @Test
+    fun `live zapping debounces rapid presses at 250ms and recall restores previous channel`() = playerTest {
+        val h = PlayerHarness(kind = StreamKind.LIVE)
+        val ch1 = fakeChannel(1L, "TF1 HD", number = 1)
+        val ch2 = fakeChannel(2L, "France 2", number = 2)
+        val ch3 = fakeChannel(3L, "France 3", number = 3)
+        val ch4 = fakeChannel(4L, "Canal+", number = 4)
+        h.catalog.channels = listOf(ch1, ch2, ch3, ch4)
+
+        val vm = h.viewModel(itemId = 1L)
+        vm.zapDebounceMs = 250L
+        h.catalog.resolvedIds.clear()
+
+        // Three rapid CH+ clicks within 250ms: HUD updates immediately, network resolves only target #4.
+        vm.zapAdjacentLive(+1)
+        assertEquals("France 2", vm.screenState.value.pendingZapTitle)
+        advanceTimeBy(80L)
+        vm.zapAdjacentLive(+1)
+        assertEquals("France 3", vm.screenState.value.pendingZapTitle)
+        advanceTimeBy(80L)
+        vm.zapAdjacentLive(+1)
+        assertEquals("Canal+", vm.screenState.value.pendingZapTitle)
+        assertTrue("No stream should resolve before debounce settles", h.catalog.resolvedIds.isEmpty())
+
+        advanceTimeBy(300L)
+        runCurrent()
+        assertEquals(listOf(4L), h.catalog.resolvedIds)
+        assertEquals(4L, h.engine.state.value.activeStream?.itemId)
+        assertNull(vm.screenState.value.pendingZapTitle)
+        assertTrue(vm.screenState.value.canRecallLive)
+
+        vm.recallPreviousChannel()
+        assertEquals(1L, h.engine.state.value.activeStream?.itemId)
+    }
+
+    @Test
+    fun `numeric channel input resolves matching channel and unknown number toasts`() = playerTest {
+        val h = PlayerHarness(kind = StreamKind.LIVE)
+        val ch1 = fakeChannel(1L, "TF1", number = 1)
+        val ch12 = fakeChannel(12L, "Arte", number = 12)
+        h.catalog.channels = listOf(ch1, ch12)
+
+        val vm = h.viewModel(itemId = 1L)
+        vm.digitCommitMs = 1_200L
+        vm.appendChannelDigit(1)
+        vm.appendChannelDigit(2)
+        assertEquals("12", vm.screenState.value.channelDigitBuffer)
+
+        vm.commitChannelNumber()
+        assertEquals("", vm.screenState.value.channelDigitBuffer)
+        assertEquals(12L, h.engine.state.value.activeStream?.itemId)
+
+        vm.appendChannelDigit(9)
+        vm.appendChannelDigit(9)
+        advanceTimeBy(1_300L)
+        runCurrent()
+        assertEquals("Chaîne 99 introuvable", vm.screenState.value.statusToast)
+    }
+
+    @Test
+    fun `live failover auto-switches up to 2 mirrors on diagnosis error`() = playerTest {
+        val h = PlayerHarness(kind = StreamKind.LIVE)
+        val main = fakeChannel(10L, "TF1 4K", number = 1)
+        val m1 = fakeChannel(11L, "TF1 FHD", number = 1)
+        val m2 = fakeChannel(12L, "TF1 HD", number = 1)
+        val m3 = fakeChannel(13L, "TF1 SD", number = 1)
+        h.catalog.channels = listOf(main, m1, m2, m3)
+        h.catalog.mirrorsById = mapOf(
+            10L to listOf(main, m1, m2, m3),
+            11L to listOf(main, m1, m2, m3),
+            12L to listOf(main, m1, m2, m3),
+        )
+
+        val vm = h.viewModel(itemId = 10L)
+        assertEquals(4, vm.screenState.value.liveMirrors.size)
+
+        h.engine.triggerDiagnosis()
+        runCurrent()
+        assertEquals(11L, h.engine.state.value.activeStream?.itemId)
+        assertEquals("Bascule vers TF1 FHD", vm.screenState.value.failoverBanner)
+
+        h.engine.triggerDiagnosis()
+        runCurrent()
+        assertEquals(12L, h.engine.state.value.activeStream?.itemId)
+
+        // Third failure must NOT switch to a 3rd mirror (PRD-17 cap = 2 failovers/session).
+        h.engine.triggerDiagnosis()
+        runCurrent()
+        assertEquals(12L, h.engine.state.value.activeStream?.itemId)
+    }
+
+    @Test
+    fun `live epg, start-over, mini-guide drawer, aspect toggle, and sleep timer work together`() = playerTest {
+        val h = PlayerHarness(kind = StreamKind.LIVE)
+        val ch1 = fakeChannel(1L, "TF1", number = 1, tvgId = "tf1.fr", catchupDays = 7)
+        val ch2 = fakeChannel(2L, "France 2", number = 2, tvgId = "f2.fr")
+        h.catalog.channels = listOf(ch1, ch2)
+        val nowSecs = System.currentTimeMillis() / 1000L
+        h.epg.slotsByTvgId["tf1.fr"] = persistentListOf(
+            EpgSlot(1L, "tf1.fr", "Journal 20h", null, null, nowSecs - 600, nowSecs + 1200, true),
+            EpgSlot(2L, "tf1.fr", "Film du soir", null, null, nowSecs + 1200, nowSecs + 4800, false),
+        )
+
+        val vm = h.viewModel(itemId = 1L)
+        vm.sleepTimerTickMs = 50L
+        assertEquals("Journal 20h", vm.screenState.value.liveNowSlot?.title)
+        assertEquals("Film du soir", vm.screenState.value.liveNextSlot?.title)
+        assertTrue(vm.screenState.value.canStartOverLive)
+
+        vm.startOverCurrentProgram()
+        assertEquals(StreamKind.CATCHUP, h.engine.state.value.activeStream?.kind)
+        vm.returnToLive()
+        assertEquals(StreamKind.LIVE, h.engine.state.value.activeStream?.kind)
+
+        vm.toggleChannelDrawer(true)
+        assertEquals(2, vm.screenState.value.drawerChannels.size)
+        vm.selectChannelFromDrawer(ch2)
+        assertFalse(vm.screenState.value.showChannelDrawer)
+        assertEquals(2L, h.engine.state.value.activeStream?.itemId)
+
+        vm.cycleAspectMode()
+        assertEquals(VideoAspectMode.FILL, h.engine.state.value.aspectMode)
+        vm.cycleAspectMode()
+        assertEquals(VideoAspectMode.STRETCH, h.engine.state.value.aspectMode)
+
+        vm.startSleepCountdownSeconds(2)
+        assertEquals(2, vm.screenState.value.sleepTimerRemainingSeconds)
+        advanceTimeBy(150L)
+        runCurrent()
+        assertNull(h.engine.state.value.activeStream)
+        assertNull(vm.screenState.value.sleepTimerRemainingSeconds)
+    }
 }
+
+private fun fakeChannel(
+    id: Long,
+    name: String,
+    number: Int?,
+    group: String = "Général",
+    tvgId: String? = null,
+    catchupDays: Int? = null,
+) = ChannelItem(
+    id = id,
+    sourceId = 1L,
+    stableHash = "hash_$id",
+    name = name,
+    channelNumber = number,
+    groupTitle = group,
+    logoUrl = null,
+    tvgId = tvgId,
+    streamUrl = "http://provider.tv/live/$id.ts",
+    containerExtension = "ts",
+    host = "provider.tv",
+    userAgent = null,
+    referer = null,
+    catchupDays = catchupDays,
+    isFavorite = false,
+    isBroken = false,
+)
 
 /** View models created by the current test, cancelled when it ends. */
 private val openViewModels = mutableListOf<PlayerViewModel>()
@@ -283,6 +445,7 @@ private class PlayerHarness(
 ) {
     val engine = FakePlayerVideoEngine()
     val catalog = FakePlayerCatalogRepository(kind)
+    val epg = FakeEpgRepository()
     val downloads = FakeDownloads()
     val watchNext = FakeWatchNext()
     val reco = FakeUpNextRecommendations(kind)
@@ -295,7 +458,7 @@ private class PlayerHarness(
         savedStateHandle = SavedStateHandle(mapOf("itemId" to itemId, "startPositionMs" to startPositionMs)),
         appContext = android.content.ContextWrapper(null),
         catalogRepository = catalog,
-        epgRepository = NoEpg,
+        epgRepository = epg,
         downloadsRepository = downloads,
         settingsRepository = settings,
         watchNextPublisher = watchNext,
@@ -331,6 +494,10 @@ private class FakePlayerVideoEngine : VideoEngine {
         _state.value = s.copy(isPlaying = false, isEnded = true, positionMs = s.durationMs)
     }
 
+    fun triggerDiagnosis(diagnosis: StreamDiagnosis = StreamDiagnosis.Unreachable) {
+        _state.value = _state.value.copy(isPlaying = false, diagnosis = diagnosis)
+    }
+
     override fun zap(stream: PlayableStream) = play(stream)
     override fun togglePlayPause() = Unit
     override fun pause() = Unit
@@ -343,8 +510,11 @@ private class FakePlayerVideoEngine : VideoEngine {
     override fun setPlaybackSpeed(speed: Float) {
         _state.value = _state.value.copy(playbackSpeed = speed)
     }
+    override fun setAspectMode(mode: VideoAspectMode) {
+        _state.value = _state.value.copy(aspectMode = mode)
+    }
     override fun dismissBandwidthWarning() = Unit
-    override fun stop() { _state.value = PlayerEngineState() }
+    override fun stop() { _state.value = PlayerEngineState(aspectMode = _state.value.aspectMode) }
 }
 
 private fun upNextItem(itemId: Long, kind: StreamKind) = UpNextItem(
@@ -431,7 +601,9 @@ private class FakePlayerSettings(private val prefs: AppPreferences) : SettingsRe
     override suspend fun setUpNextPreferences(preferences: UpNextPreferences) = Unit
 }
 
-private object NoEpg : EpgRepository {
+private class FakeEpgRepository : EpgRepository {
+    val slotsByTvgId = mutableMapOf<String, ImmutableList<EpgSlot>>()
+
     override suspend fun loadGuideGrid(
         groupName: String?,
         fromEpochSecs: Long,
@@ -442,12 +614,20 @@ private object NoEpg : EpgRepository {
         tvgId: String,
         fromEpochSecs: Long,
         toEpochSecs: Long,
-    ): ImmutableList<EpgSlot> = persistentListOf()
+    ): ImmutableList<EpgSlot> = slotsByTvgId[tvgId] ?: persistentListOf()
     override suspend fun buildCatchupStream(
         channelItemId: Long,
         startEpochSecs: Long,
         endEpochSecs: Long,
-    ): PlayableStream? = null
+    ): PlayableStream? = PlayableStream(
+        itemId = channelItemId,
+        stableHash = "catchup_$channelItemId",
+        title = "Replay",
+        originalUrl = "http://provider.tv/catchup/$channelItemId.ts",
+        playbackUrl = "http://provider.tv/catchup/$channelItemId.ts",
+        kind = StreamKind.CATCHUP,
+        host = "provider.tv",
+    )
 }
 
 private object NoRemotePlayback : RemotePlaybackRepository {
@@ -472,15 +652,28 @@ private object NoRemotePlayback : RemotePlaybackRepository {
 private class FakePlayerCatalogRepository(private val kind: StreamKind) : CatalogRepository {
     val savedProgress = mutableMapOf<String, Long>()
     val favoriteToggles = mutableListOf<Long>()
+    val resolvedIds = mutableListOf<Long>()
+    var channels: List<ChannelItem> = emptyList()
+    var mirrorsById: Map<Long, List<ChannelItem>> = emptyMap()
     private var favorite = false
 
     override fun pagedLiveChannels(query: CatalogQuery): Flow<PagingData<ChannelItem>> = flowOf(PagingData.empty())
     override fun pagedMovies(query: CatalogQuery): Flow<PagingData<MovieItem>> = flowOf(PagingData.empty())
     override fun pagedSeries(query: CatalogQuery): Flow<PagingData<SeriesItem>> = flowOf(PagingData.empty())
     override suspend fun getGroups(kind: String, sourceId: Long?): ImmutableList<CategoryFacet> = persistentListOf()
-    override suspend fun getChannelById(itemId: Long): ChannelItem? = null
-    override suspend fun getAdjacentChannel(currentItemId: Long, delta: Int, groupName: String?): ChannelItem? = null
-    override suspend fun getChannelByNumber(number: Int): ChannelItem? = null
+    override suspend fun getChannelById(itemId: Long): ChannelItem? = channels.firstOrNull { it.id == itemId }
+    override suspend fun getAdjacentChannel(currentItemId: Long, delta: Int, groupName: String?): ChannelItem? {
+        if (channels.isEmpty()) return null
+        val idx = channels.indexOfFirst { it.id == currentItemId }
+        val next = if (idx < 0) 0 else ((idx + delta) % channels.size + channels.size) % channels.size
+        return channels[next]
+    }
+    override suspend fun getChannelByNumber(number: Int): ChannelItem? =
+        channels.firstOrNull { it.channelNumber == number }
+    override suspend fun findChannelMirrors(itemId: Long): ImmutableList<ChannelItem> =
+        (mirrorsById[itemId] ?: emptyList()).toImmutableList()
+    override suspend fun listChannelsInGroup(groupName: String?, limit: Int): ImmutableList<ChannelItem> =
+        channels.take(limit).toImmutableList()
     override suspend fun listFavoriteChannels(): ImmutableList<ChannelItem> = persistentListOf()
     override suspend fun listRecentChannels(limit: Int): ImmutableList<ChannelItem> = persistentListOf()
     override suspend fun getMovieDetail(itemId: Long, metadataApiKey: String?): MediaDetail? = null
@@ -501,14 +694,16 @@ private class FakePlayerCatalogRepository(private val kind: StreamKind) : Catalo
     override suspend fun recordWatchProgress(stableHash: String, positionMs: Long, durationMs: Long) {
         savedProgress[stableHash] = positionMs
     }
-    override suspend fun resolvePlayableStream(itemId: Long, startPositionMs: Long): PlayableStream =
-        PlayableStream(
+    override suspend fun resolvePlayableStream(itemId: Long, startPositionMs: Long): PlayableStream {
+        resolvedIds += itemId
+        val ch = channels.firstOrNull { it.id == itemId }
+        return PlayableStream(
             itemId = itemId,
-            stableHash = "hash_$itemId",
-            title = "Titre $itemId",
-            originalUrl = "http://provider.tv/media/$itemId.mkv",
+            stableHash = ch?.stableHash ?: "hash_$itemId",
+            title = ch?.name ?: "Titre $itemId",
+            originalUrl = ch?.streamUrl ?: "http://provider.tv/media/$itemId.mkv",
             playbackUrl = if (kind == StreamKind.LIVE) {
-                "http://provider.tv/live/$itemId.ts"
+                ch?.streamUrl ?: "http://provider.tv/live/$itemId.ts"
             } else {
                 "http://127.0.0.1:49152/stream/$itemId.mkv"
             },
@@ -518,4 +713,5 @@ private class FakePlayerCatalogRepository(private val kind: StreamKind) : Catalo
             startPositionMs = startPositionMs,
             maxConnectionsForSource = 1,
         )
+    }
 }

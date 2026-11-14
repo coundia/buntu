@@ -19,6 +19,13 @@ data class TrackOption(
 )
 
 @Immutable
+enum class VideoAspectMode(val label: String) {
+    FIT("Ajuster"),
+    FILL("Remplir"),
+    STRETCH("16:9 étiré"),
+}
+
+@Immutable
 data class PlayerEngineState(
     val activeStream: PlayableStream? = null,
     val isPlaying: Boolean = false,
@@ -38,6 +45,9 @@ data class PlayerEngineState(
     val subtitleOffsetMs: Long = 0L,
     val diagnosis: StreamDiagnosis? = null,
     val bandwidthWarning: BandwidthAssessment? = null,
+    val aspectMode: VideoAspectMode = VideoAspectMode.FIT,
+    val isLiveSeekable: Boolean = false,
+    val liveOffsetMs: Long = 0L,
 )
 
 /**
@@ -60,6 +70,8 @@ interface VideoEngine {
     fun setSubtitleOffsetMs(offsetMs: Long)
     /** Ignored on a live channel, which always plays at normal speed. */
     fun setPlaybackSpeed(speed: Float)
+    fun setAspectMode(mode: VideoAspectMode) = Unit
+    fun seekToLiveEdge() = Unit
     fun dismissBandwidthWarning()
     fun stop()
 }

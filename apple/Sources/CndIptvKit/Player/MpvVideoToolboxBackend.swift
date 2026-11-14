@@ -733,6 +733,23 @@ public final class MpvVideoToolboxBackend: VideoBackend {
     public func setVolume(_ volume: Float) { setProperty("volume", String(Int(min(max(volume, 0), 1) * 100))) }
     public func setMuted(_ muted: Bool) { setProperty("mute", muted ? "yes" : "no") }
 
+    public func setAspectRatio(_ mode: VideoAspectRatioMode) {
+        switch mode {
+        case .fit:
+            renderer?.layer.videoGravity = .resizeAspect
+            setProperty("keepaspect", "yes")
+            setProperty("panscan", "0.0")
+        case .fill:
+            renderer?.layer.videoGravity = .resizeAspectFill
+            setProperty("keepaspect", "yes")
+            setProperty("panscan", "1.0")
+        case .stretch:
+            renderer?.layer.videoGravity = .resize
+            setProperty("keepaspect", "no")
+            setProperty("panscan", "0.0")
+        }
+    }
+
     public func audioTracks() -> [MediaTrack] { tracks(ofType: "audio") }
     public func subtitleTracks() -> [MediaTrack] { tracks(ofType: "sub") }
 
