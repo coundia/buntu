@@ -248,6 +248,7 @@ public final class LocalSyncService: @unchecked Sendable {
     public var onReleaseStream: (@Sendable (_ sourceKey: String) -> Void)?
     public var onReleaseRequest: (@Sendable (_ requestId: String, _ senderId: String) -> Void)?
     public var onReleaseDone: (@Sendable (_ requestId: String, _ contentKey: String?, _ positionMs: UInt64) -> Void)?
+    public var onRemoteText: (@Sendable (_ text: String) -> Void)?
 
     /// This device's household identifier (the one announced to the other devices).
     public var localDeviceId: String { store.deviceId }
@@ -360,6 +361,19 @@ public final class LocalSyncService: @unchecked Sendable {
         }
         samsungTransport.ensureRunning()
         // Back in the foreground: say we are here, and reopen the connections iOS closed meanwhile.
+        queue.async { [weak self] in self?.heartbeat() }
+    }
+
+    /// Forces a fresh Bonjour/Samsung scan and sends a heartbeat to check which household devices are online.
+    public func refreshPeers() {
+        guard store.isJoined else { return }
+        if !isRunning {
+            start()
+            return
+        }
+        log("Actualisation des appareils du foyer…")
+        restartNetworking()
+        samsungTransport.ensureRunning()
         queue.async { [weak self] in self?.heartbeat() }
     }
 
@@ -779,6 +793,13 @@ public final class LocalSyncService: @unchecked Sendable {
                 }
             }
 
+        case "remote_text":
+            if let text = Self.shouldAcceptRemoteText(root, localDeviceId: store.deviceId) {
+                Task { @MainActor in
+                    self.onRemoteText?(text)
+                }
+            }
+
         case "release_stream":
             if let sourceKey = root["source_key"] as? String {
                 Task { @MainActor in
@@ -819,6 +840,17 @@ public final class LocalSyncService: @unchecked Sendable {
         default:
             break
         }
+    }
+
+    static func shouldAcceptRemoteText(_ root: [String: Any], localDeviceId: String) -> String? {
+        if let targetId = (root["target_device_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !targetId.isEmpty,
+           targetId != localDeviceId {
+            return nil
+        }
+        guard let rawText = root["text"] as? String else { return nil }
+        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     // MARK: - Bonjour Browser (Client)
@@ -1261,6 +1293,31 @@ public final class LocalSyncService: @unchecked Sendable {
 
         if let data = try? JSONSerialization.data(withJSONObject: dict),
            let json = String(data: data, encoding: .utf8) {
+            broadcastMessage(json)
+        }
+    }
+
+    static func remoteTextPayload(_ text: String, targetDeviceId: String? = nil) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var dict: [String: Any] = ["type": "remote_text", "text": trimmed]
+        if let targetDeviceId {
+            let trimmedTarget = targetDeviceId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedTarget.isEmpty {
+                dict["target_device_id"] = trimmedTarget
+            }
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    public func sendRemoteText(_ text: String, targetPeerId: String? = nil) {
+        let trimmedTarget = targetPeerId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedTarget = (trimmedTarget?.isEmpty == false) ? trimmedTarget : nil
+        guard let json = Self.remoteTextPayload(text, targetDeviceId: resolvedTarget) else { return }
+        if let resolvedTarget {
+            sendToPeer(peerId: resolvedTarget, messageJson: json)
+        } else {
             broadcastMessage(json)
         }
     }

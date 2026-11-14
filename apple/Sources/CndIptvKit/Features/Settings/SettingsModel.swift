@@ -189,10 +189,7 @@ final class SettingsModel {
     var engineVersion: String { engine.version() }
 
     nonisolated static var appVersion: String {
-        let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "dev"
-        let build = info?["CFBundleVersion"] as? String
-        return build.map { "\(version) (\($0))" } ?? version
+        "\(AppBrand.appVersion) (build \(AppBrand.appBuild))"
     }
 }
 
