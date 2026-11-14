@@ -224,8 +224,28 @@ export class AVPlayerService {
     return 0;
   }
 
+  private updateScreenSaver(enabled: boolean) {
+    const appCommon = (window as any).webapis?.appcommon;
+    if (!appCommon) return;
+    try {
+      const states = appCommon.AppCommonScreenSaverState;
+      appCommon.setScreenSaver(
+        enabled ? states.SCREEN_SAVER_ON : states.SCREEN_SAVER_OFF,
+        undefined,
+        () => console.warn('[AVPlay] Could not change the screensaver state'),
+      );
+    } catch {
+      console.warn('[AVPlay] Could not change the screensaver state');
+    }
+  }
+
   private setState(newState: PlayerState) {
+    const wasPlaying = this.state === 'PLAYING' || this.state === 'BUFFERING';
+    const isPlaying = newState === 'PLAYING' || newState === 'BUFFERING';
     this.state = newState;
+    if (!this.isSuspended && wasPlaying !== isPlaying) {
+      this.updateScreenSaver(!isPlaying);
+    }
     this.listener.onStateChange?.(newState);
   }
 
@@ -426,6 +446,8 @@ export class AVPlayerService {
     }
     try {
       this.avplay.play();
+      // A restored stream can already be marked as playing.
+      if (this.state === 'PLAYING' || this.state === 'BUFFERING') this.updateScreenSaver(false);
       this.setState('PLAYING');
       // Some firmwares only honor a window smaller than the screen once the stream is running.
       this.applyDisplayArea();
@@ -578,6 +600,7 @@ export class AVPlayerService {
   public suspend() {
     if (this.isSuspended || this.state === 'NONE') return;
     this.isSuspended = true;
+    this.updateScreenSaver(true);
     this.resumeTimeMs = this.currentTimeMs;
     this.stopStallWatchdog();
     if (this.avplay) {
@@ -654,6 +677,7 @@ export class AVPlayerService {
       },
       onstreamcompleted: () => {
         if (!current()) return;
+        this.updateScreenSaver(true);
         this.listener.onStreamCompleted?.();
       },
     };

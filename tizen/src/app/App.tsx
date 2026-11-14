@@ -116,6 +116,7 @@ export const App: Component = () => {
 
   const confirmExit = () => {
     announce("Fermeture de l'application.");
+    engine.stopPlayback();
     PlatformService.exitApp();
   };
 
@@ -316,22 +317,23 @@ export const App: Component = () => {
       if (currentRoute() === 'player') {
         return false;
       }
-      if (currentRoute() !== 'onboarding') {
-        if (goBack()) {
-          return true;
-        }
-        if (currentRoute() !== 'home') {
-          navigateTo('home', { reset: true });
-          return true;
-        }
-        if (!hasSources()) {
-          navigateTo('onboarding');
-          return true;
-        }
-        // BACK from the home screen asks to exit
-        openExitDialog();
+      if (currentRoute() === 'onboarding') {
+        confirmExit();
         return true;
       }
+      if (goBack()) {
+        return true;
+      }
+      if (currentRoute() !== 'home') {
+        navigateTo('home', { reset: true });
+        return true;
+      }
+      if (!hasSources()) {
+        navigateTo('onboarding');
+        return true;
+      }
+      confirmExit();
+      return true;
     }
 
     return false;
