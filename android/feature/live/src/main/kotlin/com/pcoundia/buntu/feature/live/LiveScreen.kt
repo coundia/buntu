@@ -61,6 +61,8 @@ import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.BuntuPrimaryActionButton
 import com.pcoundia.buntu.core.designsystem.BuntuShelfCardData
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
+import com.pcoundia.buntu.core.designsystem.i18n.rememberAppLanguage
+import com.pcoundia.buntu.core.designsystem.i18n.t
 import com.pcoundia.buntu.core.domain.model.ChannelItem
 import com.pcoundia.buntu.core.domain.model.RecoShelfGroup
 import com.pcoundia.buntu.core.player.BuntuVideoSurface
@@ -82,6 +84,8 @@ fun LiveRoute(
     val playerState by viewModel.playerState.collectAsStateWithLifecycle()
     val pagedChannels = viewModel.pagedChannels.collectAsLazyPagingItems()
     val metrics = LocalBuntuMetrics.current
+    @Suppress("UNUSED_VARIABLE")
+    val currentLanguage = rememberAppLanguage()
     val remoteDevices by viewModel.remoteDevices.collectAsStateWithLifecycle()
     val remoteStatus by viewModel.remoteStatus.collectAsStateWithLifecycle()
     var remoteTarget by remember { mutableStateOf<Pair<Long, String>?>(null) }
@@ -195,7 +199,7 @@ fun LiveRoute(
                     .padding(metrics.spacingXL),
             ) {
                 Text(
-                    text = "Chaîne ${state.numericBuffer} ⏎",
+                    text = t("live.numeric_zap", state.numericBuffer),
                     style = MaterialTheme.typography.headlineMedium,
                     color = BuntuPalette.TerangaGold,
                     fontWeight = FontWeight.Bold,
@@ -228,7 +232,7 @@ private fun CompactLiveLayout(
         // Inline live player at top of phone view
         if (playerState.activeStream != null || state.activeChannelId != null) {
             InlineLivePlayerCard(
-                title = state.activeChannelTitle ?: "TV en direct",
+                title = state.activeChannelTitle ?: t("live.inline_default_title"),
                 subtitle = state.activeChannelNow,
                 playerState = playerState,
                 videoEngine = videoEngine,
@@ -285,9 +289,9 @@ private fun CompactLiveLayout(
             if (pagedChannels.itemCount == 0) {
                 item(key = "empty_live", contentType = "empty_state") {
                     BuntuEmptyState(
-                        title = "Aucune chaîne disponible",
-                        subtitle = "Synchronisez votre source IPTV ou modifiez vos filtres.",
-                        actionLabel = "Gérer les sources",
+                        title = t("live.empty_title"),
+                        subtitle = t("live.empty_subtitle"),
+                        actionLabel = t("live.manage_sources"),
                         onAction = onOpenSources,
                     )
                 }
@@ -358,9 +362,9 @@ private fun ExpandedOrTvLiveLayout(
 
             if (pagedChannels.itemCount == 0) {
                 BuntuEmptyState(
-                    title = "Aucune chaîne",
-                    subtitle = "Ajoutez ou synchronisez une source IPTV.",
-                    actionLabel = "Sources IPTV",
+                    title = t("live.tv_empty_title"),
+                    subtitle = t("live.tv_empty_subtitle"),
+                    actionLabel = t("live.tv_sources_action"),
                     onAction = onOpenSources,
                 )
             } else {
@@ -393,7 +397,7 @@ private fun ExpandedOrTvLiveLayout(
         ) {
             item(key = "tv_inline_player", contentType = "inline_player") {
                 InlineLivePlayerCard(
-                    title = state.activeChannelTitle ?: "Sélectionnez une chaîne",
+                    title = state.activeChannelTitle ?: t("live.select_channel"),
                     subtitle = state.activeChannelNow,
                     playerState = playerState,
                     videoEngine = videoEngine,
@@ -489,13 +493,13 @@ private fun InlineLivePlayerCard(
                 if (playerState.activeStream != null) {
                     OutlinedButton(onClick = { videoEngine.togglePlayPause() }) {
                         Text(
-                            text = if (playerState.isPlaying) "Pause" else "Lecture",
+                            text = if (playerState.isPlaying) t("live.pause") else t("live.play"),
                             color = BuntuPalette.PureWhite,
                         )
                     }
                     Spacer(modifier = Modifier.width(metrics.spacingS))
                     BuntuPrimaryActionButton(
-                        label = "Plein écran",
+                        label = t("live.fullscreen"),
                         onClick = onOpenFullscreen,
                     )
                 }
@@ -532,7 +536,7 @@ private fun LiveFilterToolbar(
                     onValueChange = onUpdateSearch,
                     placeholder = {
                         Text(
-                            text = "Filtrer les chaînes…",
+                            text = t("live.filter_placeholder"),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -553,12 +557,12 @@ private fun LiveFilterToolbar(
                                 modifier = Modifier.size(FilterChipDefaults.IconSize),
                             )
                         },
-                        label = { Text("Rechercher") },
+                        label = { Text(t("live.search")) },
                     )
                     FilterChip(
                         selected = favoritesOnly,
                         onClick = onToggleFavorites,
-                        label = { Text("★ Favoris") },
+                        label = { Text(t("live.favorites")) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = BuntuPalette.TerangaGold,
                             selectedLabelColor = BuntuPalette.Midnight,
@@ -623,7 +627,7 @@ private fun ChannelRowWithStatusBadge(
                     .padding(6.dp),
             ) {
                 Text(
-                    text = "HS",
+                    text = t("live.outage_badge"),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = BuntuPalette.PureWhite,
@@ -640,13 +644,14 @@ private fun LiveRecoShelfSection(
     onSelectChannelId: (Long) -> Unit,
 ) {
     val openRemoteMenu = LocalOpenRemoteMenu.current
-    val shelfCards = remember(shelf.cards) {
+    val liveBadge = t("live.badge")
+    val shelfCards = remember(shelf.cards, liveBadge) {
         shelf.cards.map { card ->
             BuntuShelfCardData(
                 key = card.stableHash,
                 title = card.title,
                 subtitle = card.subtitle ?: card.reasonLabel,
-                badge = "DIRECT",
+                badge = liveBadge,
                 posterUrl = card.posterUrl,
             )
         }.toImmutableList()

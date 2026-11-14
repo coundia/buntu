@@ -1,5 +1,6 @@
 package com.pcoundia.buntu.feature.live
 
+import com.pcoundia.buntu.core.designsystem.i18n.AppLanguageState
 import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
 import com.pcoundia.buntu.core.domain.usecase.PlayOnAnotherDeviceUseCase
 import androidx.compose.runtime.Immutable
@@ -173,7 +174,7 @@ class LiveViewModel @Inject constructor(
                 }
                 videoEngine.zap(stream)
             } else {
-                localState.update { it.copy(errorMessage = "Impossible d'ouvrir la chaîne sélectionnée.") }
+                localState.update { it.copy(errorMessage = AppLanguageState.translate("live.open_channel_error")) }
             }
         }
     }

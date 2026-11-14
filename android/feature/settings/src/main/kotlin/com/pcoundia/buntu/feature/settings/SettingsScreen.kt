@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -50,6 +51,10 @@ import com.pcoundia.buntu.core.designsystem.BuntuBrandMark
 import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.BuntuPrimaryActionButton
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
+import com.pcoundia.buntu.core.designsystem.i18n.AppLanguage
+import com.pcoundia.buntu.core.designsystem.i18n.AppLanguageState
+import com.pcoundia.buntu.core.designsystem.i18n.rememberAppLanguage
+import com.pcoundia.buntu.core.designsystem.i18n.t
 import com.pcoundia.buntu.core.domain.model.AiProviderType
 import com.pcoundia.buntu.core.domain.model.ConnectionBudget
 import com.pcoundia.buntu.core.domain.model.RecoDomainKind
@@ -84,6 +89,8 @@ fun SettingsRoute(
     val stats = state.dbStats
     val budget = ConnectionBudget(prefs.assumedMaxConnections)
     val metrics = LocalBuntuMetrics.current
+    val context = LocalContext.current
+    val currentLanguage = rememberAppLanguage()
     var showAiPrivacyDetails by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -99,7 +106,7 @@ fun SettingsRoute(
         item(key = "settings_hdr", contentType = "header") {
             Column(verticalArrangement = Arrangement.spacedBy(metrics.spacingM)) {
                 Text(
-                    text = "Réglages",
+                    text = t("settings.title"),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = BuntuPalette.PureWhite,
@@ -109,16 +116,37 @@ fun SettingsRoute(
                     verticalArrangement = Arrangement.spacedBy(metrics.spacingS),
                 ) {
                     OutlinedButton(onClick = onOpenDevices) {
-                        Text("Appareils & Foyer", color = BuntuPalette.PureWhite)
+                        Text(t("settings.nav.devices"), color = BuntuPalette.PureWhite)
                     }
                     OutlinedButton(onClick = onOpenRemoteCommand) {
-                        Text("Commande TV", color = BuntuPalette.PureWhite)
+                        Text(t("settings.nav.remote"), color = BuntuPalette.PureWhite)
                     }
                     OutlinedButton(onClick = onOpenSources) {
-                        Text("Sources IPTV", color = BuntuPalette.PureWhite)
+                        Text(t("settings.nav.sources"), color = BuntuPalette.PureWhite)
                     }
                     OutlinedButton(onClick = onOpenProfiles) {
-                        Text("Profils & Bouquets", color = BuntuPalette.PureWhite)
+                        Text(t("settings.nav.profiles"), color = BuntuPalette.PureWhite)
+                    }
+                }
+            }
+        }
+
+        // 0. Langue / Language
+        item(key = "language_section", contentType = "settings_card") {
+            SettingsCard(
+                title = t("settings.language.title"),
+                subtitle = t("settings.language.subtitle"),
+            ) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
+                    verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
+                ) {
+                    AppLanguage.entries.forEach { lang ->
+                        FilterChip(
+                            selected = currentLanguage == lang,
+                            onClick = { AppLanguageState.setLanguage(lang, context) },
+                            label = { Text(lang.label) },
+                        )
                     }
                 }
             }
@@ -134,10 +162,10 @@ fun SettingsRoute(
             val blocker = effectiveAiConfig.blocker(hasKey = hasEffectiveKey)
 
             SettingsCard(
-                title = "Assistant IA (Recherche, Commandes & Recommandations)",
-                subtitle = "Désactivé automatiquement sur le profil Enfants.",
+                title = t("settings.ai.title"),
+                subtitle = t("settings.ai.subtitle"),
             ) {
-                Text("Fournisseur", color = BuntuPalette.PureWhite, fontWeight = FontWeight.Medium)
+                Text(t("settings.ai.provider"), color = BuntuPalette.PureWhite, fontWeight = FontWeight.Medium)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
                     verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
@@ -162,7 +190,7 @@ fun SettingsRoute(
                         value = state.aiModelDraft,
                         onValueChange = viewModel::updateAiModelDraft,
                         label = {
-                            Text("Modèle (par défaut : ${aiConfig.provider.defaultModel})")
+                            Text(t("settings.ai.model_label", aiConfig.provider.defaultModel))
                         },
                         placeholder = { Text(aiConfig.provider.defaultModel) },
                         keyboardOptions = KeyboardOptions(
@@ -178,7 +206,7 @@ fun SettingsRoute(
                     OutlinedTextField(
                         value = state.aiEndpointDraft,
                         onValueChange = viewModel::updateAiEndpointDraft,
-                        label = { Text("Adresse du serveur (optionnel)") },
+                        label = { Text(t("settings.ai.endpoint_label")) },
                         placeholder = { Text(aiConfig.provider.endpointPlaceholder) },
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.None,
@@ -195,12 +223,9 @@ fun SettingsRoute(
                         onValueChange = viewModel::updateApiKeyDraft,
                         label = {
                             val labelText = when {
-                                state.hasSavedApiKey ->
-                                    "Clé API enregistrée dans Keystore (saisir pour remplacer)"
-                                aiConfig.provider.requiresApiKey ->
-                                    "Clé API (chiffrée dans Android Keystore)"
-                                else ->
-                                    "Clé API facultative (chiffrée dans Android Keystore)"
+                                state.hasSavedApiKey -> t("settings.ai.key_saved")
+                                aiConfig.provider.requiresApiKey -> t("settings.ai.key_required")
+                                else -> t("settings.ai.key_optional")
                             }
                             Text(labelText)
                         },
@@ -212,7 +237,7 @@ fun SettingsRoute(
                         trailingIcon = {
                             TextButton(onClick = viewModel::toggleShowApiKey) {
                                 Text(
-                                    text = if (state.showApiKey) "Masquer" else "Afficher",
+                                    text = if (state.showApiKey) t("settings.ai.hide") else t("settings.ai.show"),
                                     color = BuntuPalette.LeerCyan,
                                 )
                             }
@@ -226,7 +251,7 @@ fun SettingsRoute(
                         verticalArrangement = Arrangement.spacedBy(metrics.spacingS),
                     ) {
                         BuntuPrimaryActionButton(
-                            label = "Enregistrer la clé API",
+                            label = t("settings.ai.save_key"),
                             onClick = viewModel::saveApiKeyToKeystore,
                         )
                         OutlinedButton(
@@ -240,14 +265,14 @@ fun SettingsRoute(
                                     modifier = Modifier.size(16.dp),
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Test en cours…", color = BuntuPalette.PureWhite)
+                                Text(t("settings.ai.testing"), color = BuntuPalette.PureWhite)
                             } else {
-                                Text("Tester l'IA", color = BuntuPalette.PureWhite)
+                                Text(t("settings.ai.test_btn"), color = BuntuPalette.PureWhite)
                             }
                         }
                         if (state.hasSavedApiKey) {
                             OutlinedButton(onClick = viewModel::deleteApiKeyFromKeystore) {
-                                Text("Supprimer la clé", color = BuntuPalette.DangerRed)
+                                Text(t("settings.ai.delete_key"), color = BuntuPalette.DangerRed)
                             }
                         }
                     }
@@ -282,28 +307,28 @@ fun SettingsRoute(
 
                     if (effectiveAiConfig.isEndpointLocal) {
                         Text(
-                            text = "🔒 Serveur sur cet appareil ou réseau local : rien ne quitte votre réseau.",
+                            text = t("settings.ai.local_notice"),
                             color = BuntuPalette.SuccessGreen,
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Medium,
                         )
                     } else {
                         SettingToggleRow(
-                            label = "J'accepte d'envoyer mes commandes à ce fournisseur",
+                            label = t("settings.ai.consent"),
                             checked = aiConfig.consent,
                             onCheckedChange = viewModel::setAiConsent,
                         )
                     }
 
                     SettingToggleRow(
-                        label = "Chercher avec l'assistant pendant la saisie",
+                        label = t("settings.ai.auto_search"),
                         checked = aiConfig.autoSearch,
                         onCheckedChange = viewModel::setAiAutoSearch,
                     )
 
                     if (!effectiveAiConfig.isEndpointLocal) {
                         SettingToggleRow(
-                            label = "Envoyer mes derniers titres regardés à l'IA distante (« Pour vous »)",
+                            label = t("settings.ai.send_recent"),
                             checked = aiConfig.sendRecentTitles,
                             onCheckedChange = viewModel::setAiSendRecentTitles,
                         )
@@ -311,7 +336,7 @@ fun SettingsRoute(
 
                     if (blocker != null) {
                         Text(
-                            text = "ℹ️ $blocker En attendant, la résolution reste locale.",
+                            text = t("settings.ai.blocker_suffix", blocker),
                             color = BuntuPalette.MutedSilver,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -319,7 +344,7 @@ fun SettingsRoute(
 
                     OutlinedButton(onClick = { showAiPrivacyDetails = !showAiPrivacyDetails }) {
                         Text(
-                            text = if (showAiPrivacyDetails) "Masquer « Ce qui est envoyé »" else "Ce qui est envoyé",
+                            text = if (showAiPrivacyDetails) t("settings.ai.privacy_hide") else t("settings.ai.privacy_show"),
                             color = BuntuPalette.PureWhite,
                         )
                     }
@@ -335,24 +360,24 @@ fun SettingsRoute(
                                 verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
                             ) {
                                 Text(
-                                    text = "Envoyé",
+                                    text = t("settings.ai.privacy_sent_title"),
                                     color = BuntuPalette.LeerCyan,
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                 )
                                 Text(
-                                    text = "• la phrase que vous tapez\n• pour 40 chaînes ou titres au plus : nom, catégorie, numéro, programme en cours et suivant\n• la langue de l'interface",
+                                    text = t("settings.ai.privacy_sent_body"),
                                     color = BuntuPalette.MutedSilver,
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                                 Text(
-                                    text = "Jamais envoyé",
+                                    text = t("settings.ai.privacy_never_title"),
                                     color = BuntuPalette.TerangaGold,
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                 )
                                 Text(
-                                    text = "• les adresses des flux et le serveur IPTV\n• identifiants, mots de passe, en-têtes\n• l'historique complet, les favoris hors propositions, les téléchargements",
+                                    text = t("settings.ai.privacy_never_body"),
                                     color = BuntuPalette.MutedSilver,
                                     style = MaterialTheme.typography.bodySmall,
                                 )
@@ -361,7 +386,7 @@ fun SettingsRoute(
                     }
                 } else {
                     Text(
-                        text = "Les commandes explicites (« France 2 », « chaîne 6 », « suivante ») et la recherche instantanée sont résolues sur l'appareil, sans aucun envoi. Choisissez un fournisseur pour les demandes plus libres.",
+                        text = t("settings.ai.local_only_hint"),
                         color = BuntuPalette.MutedSilver,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -373,27 +398,27 @@ fun SettingsRoute(
         item(key = "upnext_section", contentType = "settings_card") {
             val upNext = prefs.upNext
             SettingsCard(
-                title = "Recommandations, « À suivre » & « Pour vous »",
-                subtitle = "Les films, les séries et la TV ont chacun leurs goûts et leurs rangées : ils ne se mélangent jamais.",
+                title = t("settings.reco.title"),
+                subtitle = t("settings.reco.subtitle"),
             ) {
                 SettingToggleRow(
-                    label = "Afficher « À suivre » sous le lecteur",
+                    label = t("settings.reco.shelf_enabled"),
                     checked = upNext.shelfEnabled,
                     onCheckedChange = { viewModel.setUpNextPreferences(upNext.copy(shelfEnabled = it)) },
                 )
                 SettingToggleRow(
-                    label = "Carte « Film suivant » en fin de lecture",
+                    label = t("settings.reco.next_up_card"),
                     checked = upNext.nextUpCardEnabled,
                     onCheckedChange = { viewModel.setUpNextPreferences(upNext.copy(nextUpCardEnabled = it)) },
                 )
                 if (upNext.nextUpCardEnabled) {
                     SettingToggleRow(
-                        label = "Lecture automatique du titre suivant",
+                        label = t("settings.reco.autoplay"),
                         checked = upNext.autoPlayNext,
                         onCheckedChange = { viewModel.setUpNextPreferences(upNext.copy(autoPlayNext = it)) },
                     )
                     if (upNext.autoPlayNext) {
-                        Text("Compte à rebours", color = BuntuPalette.PureWhite)
+                        Text(t("settings.reco.countdown"), color = BuntuPalette.PureWhite)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
                             UpNextPreferences.COUNTDOWN_CHOICES.forEach { secs ->
                                 FilterChip(
@@ -407,7 +432,7 @@ fun SettingsRoute(
                 }
 
                 Text(
-                    text = "Réinitialiser les recommandations",
+                    text = t("settings.reco.reset_title"),
                     color = BuntuPalette.PureWhite,
                     fontWeight = FontWeight.Medium,
                 )
@@ -416,16 +441,16 @@ fun SettingsRoute(
                     verticalArrangement = Arrangement.spacedBy(metrics.spacingS),
                 ) {
                     OutlinedButton(onClick = viewModel::resetDismissedRecommendations) {
-                        Text("Réinitialiser « Pas intéressé »", color = BuntuPalette.PureWhite)
+                        Text(t("settings.reco.reset_dismissed"), color = BuntuPalette.PureWhite)
                     }
                     OutlinedButton(onClick = { viewModel.resetTaste(RecoDomainKind.MOVIES) }) {
-                        Text("Goûts : Films", color = BuntuPalette.PureWhite)
+                        Text(t("settings.reco.reset_movies"), color = BuntuPalette.PureWhite)
                     }
                     OutlinedButton(onClick = { viewModel.resetTaste(RecoDomainKind.SERIES) }) {
-                        Text("Goûts : Séries", color = BuntuPalette.PureWhite)
+                        Text(t("settings.reco.reset_series"), color = BuntuPalette.PureWhite)
                     }
                     OutlinedButton(onClick = { viewModel.resetTaste(RecoDomainKind.LIVE_TV) }) {
-                        Text("Goûts : TV", color = BuntuPalette.PureWhite)
+                        Text(t("settings.reco.reset_live"), color = BuntuPalette.PureWhite)
                     }
                 }
 
@@ -437,9 +462,9 @@ fun SettingsRoute(
 
         // 3. Abonnement, Téléchargements & Réseau (`RuntimeSettings` de `cnd-core`)
         item(key = "budget_section", contentType = "settings_card") {
-            SettingsCard(title = "Abonnement, Téléchargements & Réseau") {
+            SettingsCard(title = t("settings.network.title")) {
                 Text(
-                    text = "Connexions de mon abonnement : ${prefs.assumedMaxConnections}",
+                    text = t("settings.network.connections", prefs.assumedMaxConnections),
                     color = BuntuPalette.PureWhite,
                     fontWeight = FontWeight.Medium,
                 )
@@ -448,22 +473,27 @@ fun SettingsRoute(
                         FilterChip(
                             selected = prefs.assumedMaxConnections == count,
                             onClick = { viewModel.setAssumedMaxConnections(count) },
-                            label = { Text("$count conn.") },
+                            label = { Text(t("settings.network.conn_chip", count)) },
                         )
                     }
                 }
                 Text(
                     text = if (budget.pausesDownloadsDuringPlayback) {
-                        "Avec une seule connexion, un téléchargement ne peut pas tourner pendant une lecture : il est mis en pause puis repris à la fin. Si votre abonnement en autorise plusieurs, indiquez-le ci-dessus."
+                        t("settings.network.single_conn_hint")
                     } else {
-                        "Une connexion reste libre pour regarder : les téléchargements en utilisent au plus ${budget.downloadConnections} ensemble."
+                        t("settings.network.multi_conn_hint", budget.downloadConnections)
                     },
                     color = BuntuPalette.MutedSilver,
                     style = MaterialTheme.typography.bodySmall,
                 )
 
                 Text(
-                    text = "Segments par fichier : ${runtime.segmentsPerFile} · Taille d'une partie : ${runtime.partSizeMb} Mo · Fichiers simultanés : ${runtime.maxActiveFiles}",
+                    text = t(
+                        "settings.network.segments_summary",
+                        runtime.segmentsPerFile,
+                        runtime.partSizeMb,
+                        runtime.maxActiveFiles,
+                    ),
                     color = BuntuPalette.PureWhite,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -472,14 +502,14 @@ fun SettingsRoute(
                         FilterChip(
                             selected = runtime.partSizeMb == mb,
                             onClick = { viewModel.updateDownloadEngineSettings(partSizeMb = mb) },
-                            label = { Text("Partie $mb Mo") },
+                            label = { Text(t("settings.network.part_chip", mb)) },
                         )
                     }
                 }
 
                 if (!state.isTv) {
                     SettingToggleRow(
-                        label = "Autoriser les téléchargements cellulaires (4G/5G)",
+                        label = t("settings.network.cellular"),
                         checked = prefs.downloadOverCellular,
                         onCheckedChange = viewModel::setDownloadOverCellular,
                     )
@@ -488,14 +518,14 @@ fun SettingsRoute(
                 OutlinedTextField(
                     value = runtime.defaultUserAgent,
                     onValueChange = { viewModel.updateNetworkHeaders(it, runtime.defaultReferer) },
-                    label = { Text("User-Agent HTTP") },
+                    label = { Text(t("settings.network.user_agent")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = runtime.defaultReferer,
                     onValueChange = { viewModel.updateNetworkHeaders(runtime.defaultUserAgent, it) },
-                    label = { Text("Referer HTTP (optionnel)") },
+                    label = { Text(t("settings.network.referer")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -504,10 +534,14 @@ fun SettingsRoute(
 
         // 4. Apparence & Contrôle parental
         item(key = "appearance_parental_section", contentType = "settings_card") {
-            SettingsCard(title = "Apparence & Contrôle parental") {
-                Text("Taille de l'interface", color = BuntuPalette.PureWhite, fontWeight = FontWeight.Medium)
+            SettingsCard(title = t("settings.appearance.title")) {
+                Text(t("settings.appearance.ui_scale"), color = BuntuPalette.PureWhite, fontWeight = FontWeight.Medium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
-                    listOf(0.9f to "Compact", 1.0f to "Standard", 1.15f to "Grand").forEach { (scale, label) ->
+                    listOf(
+                        0.9f to t("settings.appearance.scale_compact"),
+                        1.0f to t("settings.appearance.scale_standard"),
+                        1.15f to t("settings.appearance.scale_large"),
+                    ).forEach { (scale, label) ->
                         FilterChip(
                             selected = kotlin.math.abs(prefs.uiScale - scale) < 0.03f,
                             onClick = { viewModel.setUiScale(scale) },
@@ -517,12 +551,12 @@ fun SettingsRoute(
                 }
 
                 SettingToggleRow(
-                    label = "Afficher les catégories adultes (+18)",
+                    label = t("settings.appearance.adult_toggle"),
                     checked = prefs.adultCategoriesUnlocked,
                     onCheckedChange = viewModel::setAdultCategoriesUnlocked,
                 )
                 Text(
-                    text = "Les catégories adultes sont masquées par défaut partout, recherche comprise, et ne sont jamais montrées au profil Enfants.",
+                    text = t("settings.appearance.adult_hint"),
                     color = BuntuPalette.MutedSilver,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -532,22 +566,25 @@ fun SettingsRoute(
         // 5. Métadonnées OMDb & Sous-titres OpenSubtitles
         item(key = "metadata_subtitles_section", contentType = "settings_card") {
             SettingsCard(
-                title = "Métadonnées OMDb & Sous-titres OpenSubtitles",
-                subtitle = "Clés conservées dans Android Keystore, jamais dans la base de données.",
+                title = t("settings.meta.title"),
+                subtitle = t("settings.meta.subtitle"),
             ) {
                 OutlinedTextField(
                     value = state.omdbKeyDraft,
                     onValueChange = viewModel::updateOmdbKeyDraft,
                     label = {
                         Text(
-                            if (state.hasSavedOmdbKey) "Clé API OMDb enregistrée (saisir pour remplacer)"
-                            else "Clé API OMDb (enrichit les fiches films et séries)",
+                            if (state.hasSavedOmdbKey) t("settings.meta.omdb_saved")
+                            else t("settings.meta.omdb_hint"),
                         )
                     },
                     visualTransformation = if (state.showOmdbKey) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
                         TextButton(onClick = viewModel::toggleShowOmdbKey) {
-                            Text(if (state.showOmdbKey) "Masquer" else "Afficher", color = BuntuPalette.LeerCyan)
+                            Text(
+                                if (state.showOmdbKey) t("settings.ai.hide") else t("settings.ai.show"),
+                                color = BuntuPalette.LeerCyan,
+                            )
                         }
                     },
                     singleLine = true,
@@ -555,7 +592,7 @@ fun SettingsRoute(
                 )
                 OutlinedButton(onClick = viewModel::saveOmdbKey) {
                     Text(
-                        text = if (state.omdbKeyDraft.isBlank() && state.hasSavedOmdbKey) "Supprimer la clé OMDb" else "Enregistrer la clé OMDb",
+                        text = if (state.omdbKeyDraft.isBlank() && state.hasSavedOmdbKey) t("settings.meta.omdb_delete") else t("settings.meta.omdb_save"),
                         color = BuntuPalette.PureWhite,
                     )
                 }
@@ -565,14 +602,17 @@ fun SettingsRoute(
                     onValueChange = viewModel::updateOpenSubtitlesKeyDraft,
                     label = {
                         Text(
-                            if (state.hasSavedOpenSubtitlesKey) "Clé API OpenSubtitles enregistrée (saisir pour remplacer)"
-                            else "Clé API OpenSubtitles (sous-titres en ligne)",
+                            if (state.hasSavedOpenSubtitlesKey) t("settings.meta.os_saved")
+                            else t("settings.meta.os_hint"),
                         )
                     },
                     visualTransformation = if (state.showOpenSubtitlesKey) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
                         TextButton(onClick = viewModel::toggleShowOpenSubtitlesKey) {
-                            Text(if (state.showOpenSubtitlesKey) "Masquer" else "Afficher", color = BuntuPalette.LeerCyan)
+                            Text(
+                                if (state.showOpenSubtitlesKey) t("settings.ai.hide") else t("settings.ai.show"),
+                                color = BuntuPalette.LeerCyan,
+                            )
                         }
                     },
                     singleLine = true,
@@ -580,7 +620,7 @@ fun SettingsRoute(
                 )
                 OutlinedButton(onClick = viewModel::saveOpenSubtitlesKey) {
                     Text(
-                        text = if (state.openSubtitlesKeyDraft.isBlank() && state.hasSavedOpenSubtitlesKey) "Supprimer la clé OpenSubtitles" else "Enregistrer la clé OpenSubtitles",
+                        text = if (state.openSubtitlesKeyDraft.isBlank() && state.hasSavedOpenSubtitlesKey) t("settings.meta.os_delete") else t("settings.meta.os_save"),
                         color = BuntuPalette.PureWhite,
                     )
                 }
@@ -590,23 +630,23 @@ fun SettingsRoute(
         // 6. Android TV Home Cinema Options
         if (state.isTv) {
             item(key = "tv_section", contentType = "settings_card") {
-                SettingsCard(title = "Android TV · Home Cinéma") {
+                SettingsCard(title = t("settings.tv.title")) {
                     SettingToggleRow(
-                        label = "Adaptation automatique de fréquence HDMI (24p / 50 Hz / 60 Hz)",
+                        label = t("settings.tv.afr"),
                         checked = prefs.autoFrameRateMatchingTv,
                         onCheckedChange = {
                             viewModel.setTvOptions(it, prefs.audioPassthroughTv, prefs.tunnelingEnabledTv)
                         },
                     )
                     SettingToggleRow(
-                        label = "Passthrough audio HDMI (AC3 / E-AC3 / DTS)",
+                        label = t("settings.tv.passthrough"),
                         checked = prefs.audioPassthroughTv,
                         onCheckedChange = {
                             viewModel.setTvOptions(prefs.autoFrameRateMatchingTv, it, prefs.tunnelingEnabledTv)
                         },
                     )
                     SettingToggleRow(
-                        label = "Décodage matériel tunnelisé 4K HDR",
+                        label = t("settings.tv.tunneling"),
                         checked = prefs.tunnelingEnabledTv,
                         onCheckedChange = {
                             viewModel.setTvOptions(prefs.autoFrameRateMatchingTv, prefs.audioPassthroughTv, it)
@@ -619,8 +659,8 @@ fun SettingsRoute(
         // 7. À propos de Buntu
         item(key = "about_section", contentType = "settings_card") {
             SettingsCard(
-                title = "À propos de ${BuntuAboutInfo.APP_NAME}",
-                subtitle = BuntuAboutInfo.SLOGAN,
+                title = t("settings.about.title", BuntuAboutInfo.APP_NAME),
+                subtitle = t("settings.about.slogan"),
                 focusable = state.isTv,
             ) {
                 BuntuBrandMark(logoSize = 40.dp)
@@ -634,35 +674,35 @@ fun SettingsRoute(
                         verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
                     ) {
                         Text(
-                            text = "Créateur : ${BuntuAboutInfo.AUTHOR_NAME}",
+                            text = t("settings.about.creator", BuntuAboutInfo.AUTHOR_NAME),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
                             color = BuntuPalette.PureWhite,
                         )
                         Text(
-                            text = "E-mail : ${BuntuAboutInfo.AUTHOR_EMAIL}",
+                            text = t("settings.about.email", BuntuAboutInfo.AUTHOR_EMAIL),
                             style = MaterialTheme.typography.bodyMedium,
                             color = BuntuPalette.LeerCyan,
                         )
                         Text(
-                            text = "Pays : ${BuntuAboutInfo.AUTHOR_COUNTRY}",
+                            text = t("settings.about.country", t("settings.about.country_value")),
                             style = MaterialTheme.typography.bodyMedium,
                             color = BuntuPalette.PureWhite,
                         )
                         Text(
-                            text = "Version : ${BuntuAboutInfo.APP_VERSION} (build ${BuntuAboutInfo.APP_BUILD})",
+                            text = t("settings.about.version", BuntuAboutInfo.APP_VERSION, BuntuAboutInfo.APP_BUILD),
                             style = MaterialTheme.typography.bodyMedium,
                             color = BuntuPalette.PureWhite,
                         )
                         Text(
-                            text = "Licence : ${BuntuAboutInfo.LICENSE}",
+                            text = t("settings.about.license", BuntuAboutInfo.LICENSE),
                             style = MaterialTheme.typography.bodyMedium,
                             color = BuntuPalette.PureWhite,
                         )
                     }
                 }
                 Text(
-                    text = BuntuAboutInfo.LEGAL_NOTICE,
+                    text = t("settings.about.legal"),
                     style = MaterialTheme.typography.bodySmall,
                     color = BuntuPalette.MutedSilver,
                 )
@@ -678,46 +718,57 @@ fun SettingsRoute(
                     else -> "${stats.dbSizeBytes} o"
                 }
             }
-            SettingsCard(title = "À propos & Diagnostics moteur") {
+            SettingsCard(title = t("settings.diag.title")) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(metrics.spacingM),
                 ) {
                     BuntuBrandMark(logoSize = 36.dp)
                     Text(
-                        text = "Lecteur IPTV natif — Moteur Rust & Jetpack Compose",
+                        text = t("settings.diag.subtitle"),
                         style = MaterialTheme.typography.bodySmall,
                         color = BuntuPalette.MutedSilver,
                     )
                 }
                 Text(
-                    text = "Moteur Rust : ${state.engineVersion} · Frames lentes (>16 ms) : ${state.frameStats.jankyFrames}/${state.frameStats.totalFrames} (%.1f%%)".format(
+                    text = t(
+                        "settings.diag.engine",
+                        state.engineVersion,
+                        state.frameStats.jankyFrames,
+                        state.frameStats.totalFrames,
                         state.frameStats.jankPercent,
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = BuntuPalette.LeerCyan,
                 )
                 Text(
-                    text = "Base de données : $dbSizeFormatted · Sources : ${stats.totalSources}\n" +
-                        "Chaînes / Films / Séries : ${stats.totalLiveChannels} / ${stats.totalMovies} / ${stats.totalSeries}\n" +
-                        "Favoris / En panne : ${stats.totalFavorites} / ${stats.totalBroken}",
+                    text = t(
+                        "settings.diag.db",
+                        dbSizeFormatted,
+                        stats.totalSources,
+                        stats.totalLiveChannels,
+                        stats.totalMovies,
+                        stats.totalSeries,
+                        stats.totalFavorites,
+                        stats.totalBroken,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color = BuntuPalette.PureWhite,
                 )
 
                 SettingToggleRow(
-                    label = "Afficher la console réseau",
+                    label = t("settings.diag.console"),
                     checked = runtime.showNetworkConsole,
                     onCheckedChange = viewModel::setShowNetworkConsole,
                 )
 
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
                     OutlinedButton(onClick = viewModel::refreshDiagnostics) {
-                        Text("Actualiser les journaux", color = BuntuPalette.PureWhite)
+                        Text(t("settings.diag.refresh"), color = BuntuPalette.PureWhite)
                     }
                     OutlinedButton(onClick = viewModel::clearDiagnostics) {
-                        Text("Effacer", color = BuntuPalette.MutedSilver)
+                        Text(t("settings.diag.clear"), color = BuntuPalette.MutedSilver)
                     }
                 }
             }

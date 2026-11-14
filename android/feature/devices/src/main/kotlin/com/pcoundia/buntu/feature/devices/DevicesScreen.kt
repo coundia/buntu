@@ -89,6 +89,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.BuntuPrimaryActionButton
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
+import com.pcoundia.buntu.core.designsystem.i18n.AppLanguage
+import com.pcoundia.buntu.core.designsystem.i18n.rememberAppLanguage
+import com.pcoundia.buntu.core.designsystem.i18n.t
 import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
 import com.pcoundia.buntu.core.domain.model.SyncLogEntry
 import com.pcoundia.buntu.core.platform.tv.QrMatrix
@@ -105,6 +108,7 @@ fun DevicesRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val metrics = LocalBuntuMetrics.current
     val context = LocalContext.current
+    val currentLanguage = rememberAppLanguage()
     val coroutineScope = rememberCoroutineScope()
 
     var showJoinDialog by remember { mutableStateOf(false) }
@@ -144,13 +148,13 @@ fun DevicesRoute(
                 IconButton(onClick = onBack) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Retour",
+                        contentDescription = t("common.back"),
                         tint = BuntuPalette.PureWhite,
                     )
                 }
                 Spacer(modifier = Modifier.width(metrics.spacingM))
                 Text(
-                    text = "Appareils du foyer",
+                    text = t("devices.title"),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = BuntuPalette.PureWhite,
@@ -194,32 +198,35 @@ fun DevicesRoute(
 
         if (!state.isTv) {
             item(key = "scan_send_tv") {
-                DeviceSectionCard(title = "Envoyer vers une TV") {
+                DeviceSectionCard(title = t("devices.scan_send_title")) {
                     OutlinedButton(
                         onClick = { viewModel.scanAndSend(context) },
                         enabled = !state.isScanning,
                     ) {
                         Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = BuntuPalette.PureWhite)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (state.isScanning) "Scan / envoi en cours…" else "Scanner un QR et envoyer mes données", color = BuntuPalette.PureWhite)
+                        Text(
+                            if (state.isScanning) t("devices.scan_send_busy") else t("devices.scan_send_btn"),
+                            color = BuntuPalette.PureWhite,
+                        )
                     }
-                    Text("Sur la TV : affichez le QR d’ajout au foyer, puis confirmez à la télécommande. Un foyer sera créé sur ce téléphone si nécessaire.", color = BuntuPalette.MutedSilver)
+                    Text(t("devices.scan_send_hint"), color = BuntuPalette.MutedSilver)
                 }
             }
         }
 
         if (!state.isJoined) {
             item(key = "not_joined") {
-                DeviceSectionCard(title = "Aucun foyer configuré") {
+                DeviceSectionCard(title = t("devices.not_joined_title")) {
                     Text(
-                        text = "Reliez vos appareils Buntu (iPhone, Mac, TV, Android) sur le Wi-Fi de la maison, sans serveur : favoris, reprises de lecture, comptes IPTV et « Lire sur… ».",
+                        text = t("devices.not_joined_desc"),
                         color = BuntuPalette.MutedSilver,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(modifier = Modifier.height(metrics.spacingM))
                     Column(verticalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
                         BuntuPrimaryActionButton(
-                            label = "Créer un foyer",
+                            label = t("devices.create_household"),
                             onClick = viewModel::createHousehold,
                         )
                         // Android TV has no camera: there, the phone scans the code shown by the TV.
@@ -230,16 +237,16 @@ fun DevicesRoute(
                             ) {
                                 Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = BuntuPalette.PureWhite)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Scanner un QR code", color = BuntuPalette.PureWhite)
+                                Text(t("devices.scan_qr"), color = BuntuPalette.PureWhite)
                             }
                         }
                         OutlinedButton(onClick = { showJoinDialog = true }) {
-                            Text("Rejoindre avec la clé…", color = BuntuPalette.PureWhite)
+                            Text(t("devices.join_with_key"), color = BuntuPalette.PureWhite)
                         }
                     }
                     Spacer(modifier = Modifier.height(metrics.spacingS))
                     Text(
-                        text = "Sur un appareil déjà dans le foyer, ouvrez Appareils puis « Afficher le QR code », et visez-le avec la caméra.",
+                        text = t("devices.join_hint"),
                         color = BuntuPalette.MutedSilver,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -248,7 +255,7 @@ fun DevicesRoute(
         } else {
             // Cet appareil
             item(key = "this_device") {
-                DeviceSectionCard(title = "Cet appareil") {
+                DeviceSectionCard(title = t("devices.this_device")) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = deviceTypeIcon(state.deviceType),
@@ -266,7 +273,7 @@ fun DevicesRoute(
                             )
                             state.householdId?.let { hId ->
                                 Text(
-                                    text = "Foyer ${hId.take(12)}…",
+                                    text = t("devices.household_id", hId.take(12)),
                                     style = MaterialTheme.typography.bodySmall,
                                     fontFamily = FontFamily.Monospace,
                                     color = BuntuPalette.MutedSilver,
@@ -294,11 +301,11 @@ fun DevicesRoute(
 
             if (!state.isTv) {
                 item(key = "remote_text") {
-                    DeviceSectionCard(title = "Commande vocale / texte vers la TV") {
+                    DeviceSectionCard(title = t("devices.remote_title")) {
                         OutlinedTextField(
                             value = remoteCommandText,
                             onValueChange = { remoteCommandText = it },
-                            label = { Text("Dicter ou écrire une commande pour la TV") },
+                            label = { Text(t("devices.remote_field_label")) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                             keyboardActions = KeyboardActions(
@@ -318,12 +325,13 @@ fun DevicesRoute(
                         ) {
                             OutlinedButton(
                                 onClick = {
+                                    val speechLang = if (currentLanguage == AppLanguage.EN) "en-US" else "fr-FR"
                                     val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                                         putExtra(
                                             RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                                             RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
                                         )
-                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fr-FR")
+                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, speechLang)
                                     }
                                     try {
                                         speechUnavailable = false
@@ -339,10 +347,10 @@ fun DevicesRoute(
                                     tint = BuntuPalette.PureWhite,
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Dicter", color = BuntuPalette.PureWhite, maxLines = 1)
+                                Text(t("devices.dictate"), color = BuntuPalette.PureWhite, maxLines = 1)
                             }
                             BuntuPrimaryActionButton(
-                                label = "Envoyer à la TV",
+                                label = t("devices.send_to_tv"),
                                 enabled = remoteCommandText.isNotBlank(),
                                 onClick = {
                                     viewModel.sendRemoteText(remoteCommandText)
@@ -353,7 +361,7 @@ fun DevicesRoute(
                         }
                         if (speechUnavailable) {
                             Text(
-                                text = "Dictée vocale indisponible sur cet appareil.",
+                                text = t("devices.speech_unavailable"),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFFFFB74D),
                             )
@@ -364,12 +372,13 @@ fun DevicesRoute(
 
             // Appareils du foyer
             item(key = "peers_header") {
+                val refreshCd = t("devices.refresh_cd")
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        text = "Appareils découverts",
+                        text = t("devices.discovered_title"),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = BuntuPalette.TerangaGold,
@@ -378,7 +387,7 @@ fun DevicesRoute(
                     TextButton(
                         onClick = viewModel::refreshPeers,
                         modifier = Modifier.semantics {
-                            contentDescription = "Actualiser les appareils du foyer"
+                            contentDescription = refreshCd
                         },
                     ) {
                         Icon(
@@ -388,7 +397,7 @@ fun DevicesRoute(
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Actualiser", color = BuntuPalette.TerangaGold)
+                        Text(t("common.refresh"), color = BuntuPalette.TerangaGold)
                     }
                 }
             }
@@ -397,7 +406,7 @@ fun DevicesRoute(
                 item(key = "no_peers") {
                     DeviceSectionCard(title = "") {
                         Text(
-                            text = "Aucun autre appareil détecté pour l'instant.\nOuvrez Buntu sur votre iPhone, Mac ou Android TV sur le même réseau Wi-Fi.",
+                            text = t("devices.no_peers"),
                             color = BuntuPalette.MutedSilver,
                             style = MaterialTheme.typography.bodyMedium,
                         )
@@ -411,7 +420,7 @@ fun DevicesRoute(
 
             // Actions
             item(key = "actions") {
-                DeviceSectionCard(title = "Gestion du foyer") {
+                DeviceSectionCard(title = t("devices.actions_title")) {
                     // One button per line: both stay readable on a small phone.
                     Column(verticalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
                         // Two additive buttons instead of "Synchroniser": nothing is ever deleted, an account is
@@ -419,17 +428,17 @@ fun DevicesRoute(
                         OutlinedButton(onClick = viewModel::sendNow) {
                             Icon(Icons.Default.Upload, contentDescription = null, tint = BuntuPalette.PureWhite)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Envoyer mes données", color = BuntuPalette.PureWhite)
+                            Text(t("devices.send_data"), color = BuntuPalette.PureWhite)
                         }
                         OutlinedButton(onClick = viewModel::receiveNow) {
                             Icon(Icons.Default.Download, contentDescription = null, tint = BuntuPalette.PureWhite)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Recevoir les données", color = BuntuPalette.PureWhite)
+                            Text(t("devices.receive_data"), color = BuntuPalette.PureWhite)
                         }
                     }
                     Spacer(modifier = Modifier.height(metrics.spacingS))
                     Text(
-                        text = "Envoyer et Recevoir ajoutent les comptes, favoris et reprises sans jamais rien supprimer ; un même compte n'est jamais ajouté deux fois. Supprimer un compte ne le retire que de cet appareil.",
+                        text = t("devices.additive_hint"),
                         style = MaterialTheme.typography.bodySmall,
                         color = BuntuPalette.MutedSilver,
                     )
@@ -449,21 +458,21 @@ fun DevicesRoute(
                         }) {
                             Icon(Icons.Default.ContentCopy, contentDescription = null, tint = BuntuPalette.PureWhite)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Copier la clé", color = BuntuPalette.PureWhite)
+                            Text(t("devices.copy_key"), color = BuntuPalette.PureWhite)
                         }
                     }
                     Spacer(modifier = Modifier.height(metrics.spacingS))
                     OutlinedButton(onClick = viewModel::showInviteQr) {
                         Icon(Icons.Default.QrCode, contentDescription = null, tint = BuntuPalette.PureWhite)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Afficher le QR code (pour ajouter un appareil)", color = BuntuPalette.PureWhite)
+                        Text(t("devices.show_qr"), color = BuntuPalette.PureWhite)
                     }
                     Spacer(modifier = Modifier.height(metrics.spacingS))
                     Button(
                         onClick = { showLeaveConfirmDialog = true },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B1D1D)),
                     ) {
-                        Text("Quitter le foyer", color = Color.White)
+                        Text(t("devices.leave_household"), color = Color.White)
                     }
                 }
             }
@@ -471,7 +480,7 @@ fun DevicesRoute(
             // Journal de synchronisation
             item(key = "log_header") {
                 Text(
-                    text = "Journal de synchronisation",
+                    text = t("devices.sync_log_title"),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = BuntuPalette.TerangaGold,
@@ -481,7 +490,7 @@ fun DevicesRoute(
             if (state.syncLog.isEmpty()) {
                 item(key = "empty_log") {
                     Text(
-                        text = "Aucun événement pour le moment.",
+                        text = t("devices.sync_log_empty"),
                         color = BuntuPalette.MutedSilver,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -497,15 +506,15 @@ fun DevicesRoute(
     if (showJoinDialog) {
         AlertDialog(
             onDismissRequest = { showJoinDialog = false },
-            title = { Text("Rejoindre un foyer") },
+            title = { Text(t("devices.join_dialog_title")) },
             text = {
                 Column {
-                    Text("Collez la clé affichée sur un autre appareil du foyer (écran Appareils, « Copier la clé »), ou le lien buntu://household.")
+                    Text(t("devices.join_dialog_body"))
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = joinKeyInput,
                         onValueChange = { joinKeyInput = it },
-                        label = { Text("Clé du foyer") },
+                        label = { Text(t("devices.join_dialog_label")) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -517,12 +526,12 @@ fun DevicesRoute(
                     showJoinDialog = false
                     joinKeyInput = ""
                 }) {
-                    Text("Rejoindre")
+                    Text(t("devices.join_dialog_confirm"))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showJoinDialog = false }) {
-                    Text("Annuler")
+                    Text(t("common.cancel"))
                 }
             },
         )
@@ -531,7 +540,7 @@ fun DevicesRoute(
     state.inviteQr?.let { qr ->
         AlertDialog(
             onDismissRequest = viewModel::hideInviteQr,
-            title = { Text("Ajouter un appareil au foyer") },
+            title = { Text(t("devices.qr_dialog_title")) },
             text = {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -541,16 +550,16 @@ fun DevicesRoute(
                         matrix = qr,
                         modifier = Modifier.size(if (state.isTv) 280.dp else 240.dp),
                     )
-                    Text("Sur l'autre appareil : Appareils, puis « Scanner un QR code ».")
+                    Text(t("devices.qr_dialog_hint"))
                     Text(
-                        text = "Ce code donne accès à vos favoris et à vos comptes IPTV. Ne le montrez qu'à vos propres appareils, et fermez cet écran ensuite.",
+                        text = t("devices.qr_dialog_warning"),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
             },
             confirmButton = {
                 TextButton(onClick = viewModel::hideInviteQr) {
-                    Text("Fermer")
+                    Text(t("common.close"))
                 }
             },
         )
@@ -559,9 +568,9 @@ fun DevicesRoute(
     if (showLeaveConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showLeaveConfirmDialog = false },
-            title = { Text("Quitter le foyer ?") },
+            title = { Text(t("devices.leave_dialog_title")) },
             text = {
-                Text("Cet appareil ne partagera plus ses favoris, reprises et comptes avec le foyer. Les autres appareils ne sont pas modifiés.")
+                Text(t("devices.leave_dialog_body"))
             },
             confirmButton = {
                 Button(
@@ -571,23 +580,23 @@ fun DevicesRoute(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB00020)),
                 ) {
-                    Text("Quitter le foyer")
+                    Text(t("devices.leave_household"))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showLeaveConfirmDialog = false }) {
-                    Text("Annuler")
+                    Text(t("common.cancel"))
                 }
             },
         )
     }
 }
 
-private val QUICK_REMOTE_COMMANDS = listOf(
-    "Mets France 2",
-    "Ouvre Arte",
-    "Monte le son",
-    "Pause",
+private val QUICK_REMOTE_COMMAND_KEYS = listOf(
+    "remote.quick.1",
+    "remote.quick.2",
+    "remote.quick.3",
+    "remote.quick.4",
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -598,6 +607,7 @@ fun RemoteCommandRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val metrics = LocalBuntuMetrics.current
+    val currentLanguage = rememberAppLanguage()
     var remoteCommandText by remember { mutableStateOf("") }
     var speechUnavailable by remember { mutableStateOf(false) }
 
@@ -637,13 +647,13 @@ fun RemoteCommandRoute(
                 IconButton(onClick = onBack) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Retour",
+                        contentDescription = t("common.back"),
                         tint = BuntuPalette.PureWhite,
                     )
                 }
                 Spacer(modifier = Modifier.width(metrics.spacingM))
                 Text(
-                    text = "Commande TV",
+                    text = t("remote.title"),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = BuntuPalette.PureWhite,
@@ -685,7 +695,8 @@ fun RemoteCommandRoute(
         }
 
         item(key = "remote_target_selector") {
-            DeviceSectionCard(title = "Appareil cible") {
+            val refreshConnectedCd = t("remote.refresh_cd")
+            DeviceSectionCard(title = t("remote.target_title")) {
                 Row(
                     horizontalArrangement = Arrangement.End,
                     modifier = Modifier.fillMaxWidth(),
@@ -693,7 +704,7 @@ fun RemoteCommandRoute(
                     TextButton(
                         onClick = viewModel::refreshPeers,
                         modifier = Modifier.semantics {
-                            contentDescription = "Actualiser les appareils connectés"
+                            contentDescription = refreshConnectedCd
                         },
                     ) {
                         Icon(
@@ -703,22 +714,24 @@ fun RemoteCommandRoute(
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Actualiser", color = BuntuPalette.TerangaGold)
+                        Text(t("common.refresh"), color = BuntuPalette.TerangaGold)
                     }
                 }
                 when {
                     state.connectedPeers.isEmpty() -> {
+                        val noPeersCd = t("remote.no_peers_cd")
                         Text(
-                            text = "Aucun appareil connecté détecté dans le foyer. Ouvrez Buntu sur votre TV sur le même réseau Wi-Fi.",
+                            text = t("remote.no_peers"),
                             style = MaterialTheme.typography.bodyMedium,
                             color = BuntuPalette.MutedSilver,
                             modifier = Modifier.semantics {
-                                contentDescription = "Aucun appareil connecté détecté dans le foyer"
+                                contentDescription = noPeersCd
                             },
                         )
                     }
                     state.connectedPeers.size == 1 -> {
                         val uniquePeer = state.connectedPeers[0]
+                        val autoCd = t("remote.target_auto_cd", uniquePeer.name)
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
                             verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
@@ -742,12 +755,13 @@ fun RemoteCommandRoute(
                                 modifier = Modifier.semantics {
                                     role = Role.RadioButton
                                     selected = true
-                                    contentDescription = "Appareil cible : ${uniquePeer.name}, sélectionné automatiquement"
+                                    contentDescription = autoCd
                                 },
                             )
                         }
                     }
                     else -> {
+                        val allTargetsLabel = t("remote.all_targets")
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
                             verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
@@ -757,7 +771,7 @@ fun RemoteCommandRoute(
                             FilterChip(
                                 selected = allSelected,
                                 onClick = { viewModel.selectTargetDevice(null) },
-                                label = { Text("Tous les appareils connectés") },
+                                label = { Text(allTargetsLabel) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = BuntuPalette.TerangaGold,
                                     selectedLabelColor = BuntuPalette.Midnight,
@@ -765,11 +779,12 @@ fun RemoteCommandRoute(
                                 modifier = Modifier.semantics {
                                     role = Role.RadioButton
                                     selected = allSelected
-                                    contentDescription = "Tous les appareils connectés"
+                                    contentDescription = allTargetsLabel
                                 },
                             )
                             state.connectedPeers.forEach { peer ->
                                 val isSelected = state.selectedTargetId == peer.id
+                                val peerCd = t("remote.target_cd", peer.name)
                                 FilterChip(
                                     selected = isSelected,
                                     onClick = { viewModel.selectTargetDevice(peer.id) },
@@ -788,7 +803,7 @@ fun RemoteCommandRoute(
                                     modifier = Modifier.semantics {
                                         role = Role.RadioButton
                                         selected = isSelected
-                                        contentDescription = "Appareil cible : ${peer.name}"
+                                        contentDescription = peerCd
                                     },
                                 )
                             }
@@ -799,11 +814,14 @@ fun RemoteCommandRoute(
         }
 
         item(key = "remote_command_input") {
-            DeviceSectionCard(title = "Commande vocale ou texte") {
+            val inputCd = t("remote.input_cd")
+            val dictateCd = t("remote.dictate_cd")
+            val sendCd = t("remote.send_cd")
+            DeviceSectionCard(title = t("remote.input_title")) {
                 OutlinedTextField(
                     value = remoteCommandText,
                     onValueChange = { remoteCommandText = it },
-                    label = { Text("Dicter ou écrire une commande pour la TV") },
+                    label = { Text(t("devices.remote_field_label")) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(
@@ -816,7 +834,7 @@ fun RemoteCommandRoute(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .semantics { contentDescription = "Champ de commande pour la TV" },
+                        .semantics { contentDescription = inputCd },
                 )
 
                 Row(
@@ -826,12 +844,13 @@ fun RemoteCommandRoute(
                 ) {
                     OutlinedButton(
                         onClick = {
+                            val speechLang = if (currentLanguage == AppLanguage.EN) "en-US" else "fr-FR"
                             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                                 putExtra(
                                     RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
                                 )
-                                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fr-FR")
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE, speechLang)
                             }
                             try {
                                 speechUnavailable = false
@@ -841,7 +860,7 @@ fun RemoteCommandRoute(
                             }
                         },
                         modifier = Modifier.semantics {
-                            contentDescription = "Dicter une commande vocale"
+                            contentDescription = dictateCd
                         },
                     ) {
                         Icon(
@@ -850,11 +869,11 @@ fun RemoteCommandRoute(
                             tint = BuntuPalette.PureWhite,
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Dicter", color = BuntuPalette.PureWhite, maxLines = 1)
+                        Text(t("devices.dictate"), color = BuntuPalette.PureWhite, maxLines = 1)
                     }
 
                     BuntuPrimaryActionButton(
-                        label = "Envoyer à la TV",
+                        label = t("devices.send_to_tv"),
                         enabled = canSend,
                         onClick = {
                             viewModel.sendRemoteText(remoteCommandText)
@@ -862,20 +881,20 @@ fun RemoteCommandRoute(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .semantics { contentDescription = "Envoyer la commande à la TV" },
+                            .semantics { contentDescription = sendCd },
                     )
                 }
 
                 if (speechUnavailable) {
                     Text(
-                        text = "Dictée vocale indisponible sur cet appareil.",
+                        text = t("devices.speech_unavailable"),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFFFFB74D),
                     )
                 }
 
                 Text(
-                    text = "Commandes rapides",
+                    text = t("remote.quick_commands"),
                     style = MaterialTheme.typography.labelLarge,
                     color = BuntuPalette.MutedSilver,
                     modifier = Modifier.semantics { heading() },
@@ -885,12 +904,14 @@ fun RemoteCommandRoute(
                     horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
                     verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
                 ) {
-                    QUICK_REMOTE_COMMANDS.forEach { command ->
+                    QUICK_REMOTE_COMMAND_KEYS.forEach { cmdKey ->
+                        val command = t(cmdKey)
+                        val quickCd = t("remote.quick_cd", command)
                         SuggestionChip(
                             onClick = { remoteCommandText = command },
                             label = { Text(command) },
                             modifier = Modifier.semantics {
-                                contentDescription = "Commande rapide : $command"
+                                contentDescription = quickCd
                             },
                         )
                     }
@@ -903,11 +924,12 @@ fun RemoteCommandRoute(
 /** Black on white with a quiet zone, readable by any phone camera. */
 @Composable
 private fun HouseholdQrCode(matrix: QrMatrix, modifier: Modifier = Modifier) {
+    val qrCd = t("devices.qr_cd")
     Canvas(
         modifier = modifier
             .background(Color.White, RoundedCornerShape(12.dp))
             .padding(8.dp)
-            .semantics { contentDescription = "QR code pour ajouter un appareil au foyer" },
+            .semantics { contentDescription = qrCd },
     ) {
         val cell = size.minDimension / matrix.size.toFloat()
         for (y in 0 until matrix.size) {
@@ -953,7 +975,7 @@ private fun PeerRow(peer: DiscoveredPeer) {
                         color = if (isOnline) BuntuPalette.PureWhite else BuntuPalette.MutedSilver,
                     )
                     Text(
-                        text = if (isOnline) "Connecté" else "Dernière connexion récente",
+                        text = if (isOnline) t("devices.peer_online") else t("devices.peer_recent"),
                         style = MaterialTheme.typography.bodySmall,
                         color = BuntuPalette.MutedSilver,
                     )
@@ -976,7 +998,7 @@ private fun PeerRow(peer: DiscoveredPeer) {
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isOnline) "Disponible" else "Hors ligne",
+                        text = if (isOnline) t("devices.peer_available") else t("devices.peer_offline"),
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White,
                     )

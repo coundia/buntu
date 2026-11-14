@@ -36,6 +36,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.pcoundia.buntu.core.designsystem.BuntuBrandMark
 import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.BuntuWindowWidth
+import com.pcoundia.buntu.core.designsystem.i18n.t
 import com.pcoundia.buntu.navigation.BuntuNavHost
 import com.pcoundia.buntu.navigation.BuntuRoutes
 import com.pcoundia.buntu.navigation.TopLevelDestination
@@ -101,10 +102,11 @@ fun MobileShell(
                             TopLevelDestination.DEVICES,
                             TopLevelDestination.REMOTE_COMMAND,
                         ).forEach { secondary ->
+                            val secondaryLabel = t(secondary.labelKey)
                             FilterChip(
                                 selected = secondary.matches(currentRoute),
                                 onClick = { navigateTopLevel(secondary.route) },
-                                label = { Text(secondary.label) },
+                                label = { Text(secondaryLabel) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = BuntuPalette.TerangaGold,
                                     selectedLabelColor = BuntuPalette.Midnight,
@@ -116,11 +118,12 @@ fun MobileShell(
                 bottomBar = {
                     NavigationBar(containerColor = BuntuPalette.Slate) {
                         bottomItems.forEach { dest ->
+                            val destLabel = t(dest.labelKey)
                             NavigationBarItem(
                                 selected = dest.matches(currentRoute),
                                 onClick = { navigateTopLevel(dest.route) },
-                                icon = { Icon(dest.icon, contentDescription = dest.label) },
-                                label = { Text(dest.label) },
+                                icon = { Icon(dest.icon, contentDescription = destLabel) },
+                                label = { Text(destLabel) },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = BuntuPalette.Midnight,
                                     selectedTextColor = BuntuPalette.TerangaGold,
@@ -152,11 +155,12 @@ fun MobileShell(
             ) {
                 NavigationRail(containerColor = BuntuPalette.Slate) {
                     TopLevelDestination.entries.forEach { dest ->
+                        val destLabel = t(dest.labelKey)
                         NavigationRailItem(
                             selected = dest.matches(currentRoute),
                             onClick = { navigateTopLevel(dest.route) },
-                            icon = { Icon(dest.icon, contentDescription = dest.label) },
-                            label = { Text(dest.label) },
+                            icon = { Icon(dest.icon, contentDescription = destLabel) },
+                            label = { Text(destLabel) },
                             colors = NavigationRailItemDefaults.colors(
                                 selectedIconColor = BuntuPalette.Midnight,
                                 selectedTextColor = BuntuPalette.TerangaGold,
@@ -196,11 +200,12 @@ fun MobileShell(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     )
                     TopLevelDestination.entries.forEach { dest ->
+                        val destLabel = t(dest.labelKey)
                         NavigationDrawerItem(
                             selected = dest.matches(currentRoute),
                             onClick = { navigateTopLevel(dest.route) },
-                            icon = { Icon(dest.icon, contentDescription = dest.label) },
-                            label = { Text(dest.label) },
+                            icon = { Icon(dest.icon, contentDescription = destLabel) },
+                            label = { Text(destLabel) },
                             colors = NavigationDrawerItemDefaults.colors(
                                 selectedContainerColor = BuntuPalette.TerangaGold,
                                 selectedIconColor = BuntuPalette.Midnight,
