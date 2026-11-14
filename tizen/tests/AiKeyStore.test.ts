@@ -84,6 +84,19 @@ describe('AiKeyStore', () => {
   let mockIdb: ReturnType<typeof createMockIndexedDB>;
 
   beforeEach(() => {
+    const storage = new Map<string, string>();
+    (globalThis as any).localStorage = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, String(value));
+      },
+      removeItem: (key: string) => {
+        storage.delete(key);
+      },
+      clear: () => {
+        storage.clear();
+      },
+    };
     mockIdb = createMockIndexedDB();
     (globalThis as any).indexedDB = mockIdb;
     // Reset private singleton state between tests

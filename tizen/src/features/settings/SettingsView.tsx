@@ -38,6 +38,7 @@ import { PairingOffer, PairingService } from '../../core/pairing/PairingService'
 import { HouseholdStore, HouseholdInfo, PairedDevice } from '../../core/sync/HouseholdStore';
 import { LocalSyncService, SyncLogEntry } from '../../core/sync/LocalSyncService';
 import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
+import { appLanguage, setAppLanguage, t } from '../../core/i18n';
 
 export interface SettingsViewProps {
   onRequestExit?: () => void;
@@ -445,6 +446,10 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     }
     if (!householdOnly() && panel() === 'system') {
       grid.push([
+        { id: 'btn-lang-fr', onSelect: () => setAppLanguage('fr') },
+        { id: 'btn-lang-en', onSelect: () => setAppLanguage('en') },
+      ]);
+      grid.push([
         { id: 'btn-high-contrast', onSelect: toggleHighContrast },
         { id: 'btn-text-size', onSelect: cycleTextSize },
       ]);
@@ -580,45 +585,45 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     >
       <div class="tv-header">
         <h2 style={{ 'font-size': '32px', color: 'var(--buntu-gold)' }}>
-          {householdOnly() ? 'Appareils' : 'Réglages'}
+          {householdOnly() ? t('settings.devicesTitle') : t('settings.title')}
         </h2>
-        <p class="buntu-return-hint">Retour : {panel() ? 'réglages' : 'accueil'}</p>
+        <p class="buntu-return-hint">{panel() ? t('settings.returnToSettings') : t('settings.returnToHome')}</p>
       </div>
 
       <div class="buntu-settings-stack" style={{ display: 'flex', 'flex-direction': 'column', 'max-width': '1100px', 'padding-bottom': '40px' }}>
         <Show when={!householdOnly() && panel() === null}>
-          <p class="buntu-simple-intro">Choisissez ce que vous souhaitez régler.</p>
+          <p class="buntu-simple-intro">{t('settings.intro')}</p>
           <div class="buntu-settings-choices">
             <button id="settings-connection" tabindex="-1" class={`buntu-settings-choice ${focusId() === 'settings-connection' ? 'focused' : ''}`} onClick={() => openPanel('connection')}>
-              <strong>Connexion</strong><span>Gérer la connexion au fournisseur</span>
+              <strong>{t('settings.cardConnectionTitle')}</strong><span>{t('settings.cardConnectionDesc')}</span>
             </button>
             <button id="settings-ai" tabindex="-1" class={`buntu-settings-choice ${focusId() === 'settings-ai' ? 'focused' : ''}`} onClick={() => openPanel('ai')}>
-              <strong>Assistant</strong><span>Configurer l’aide à la recherche</span>
+              <strong>{t('settings.cardAiTitle')}</strong><span>{t('settings.cardAiDesc')}</span>
             </button>
             <button id="settings-system" tabindex="-1" class={`buntu-settings-choice ${focusId() === 'settings-system' ? 'focused' : ''}`} onClick={() => openPanel('system')}>
-              <strong>Stockage et informations</strong><span>Cache, télévision et version de Buntu</span>
+              <strong>{t('settings.cardSystemTitle')}</strong><span>{t('settings.cardSystemDesc')}</span>
             </button>
             <button id="settings-about" tabindex="-1" class={`buntu-settings-choice ${focusId() === 'settings-about' ? 'focused' : ''}`} onClick={() => openPanel('about')}>
-              <strong>À propos</strong><span>Créateur, contact et informations sur Buntu</span>
+              <strong>{t('settings.cardAboutTitle')}</strong><span>{t('settings.cardAboutDesc')}</span>
             </button>
             <Show when={props.onProfiles}>
               <button id="settings-profiles" tabindex="-1" class={`buntu-settings-choice ${focusId() === 'settings-profiles' ? 'focused' : ''}`} onClick={() => props.onProfiles?.()}>
-                <strong>Profils</strong><span>Choisir qui regarde</span>
+                <strong>{t('settings.cardProfilesTitle')}</strong><span>{t('settings.cardProfilesDesc')}</span>
               </button>
             </Show>
           </div>
         </Show>
         <Show when={!householdOnly() && panel() !== null}>
-          <button id="settings-back" tabindex="-1" class={`tv-btn ${focusId() === 'settings-back' ? 'focused' : ''}`} onClick={() => openPanel(null)}>← Réglages</button>
+          <button id="settings-back" tabindex="-1" class={`tv-btn ${focusId() === 'settings-back' ? 'focused' : ''}`} onClick={() => openPanel(null)}>{t('settings.backToSettings')}</button>
         </Show>
         {/* Section Assistant IA (PRD 40) */}
         <Show when={!householdOnly() && panel() === 'ai'}>
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '2px solid var(--buntu-border)' }}>
           <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px', color: 'var(--buntu-gold)' }}>
-            Assistant
+            {t('settings.aiTitle')}
           </h3>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            Choisissez le service utilisé pour vous aider à trouver un programme.
+            {t('settings.aiDesc')}
           </p>
 
           <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
@@ -630,7 +635,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                 class={`tv-btn ${focusId() === 'btn-ai-provider' ? 'focused' : ''}`}
                 onClick={cycleProvider}
               >
-                Fournisseur : {PROVIDER_DEFAULTS[aiProvider()]?.label} ↻
+                {t('settings.aiProvider', { label: PROVIDER_DEFAULTS[aiProvider()]?.label || '' })}
               </button>
             </div>
 
@@ -638,19 +643,19 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               {/* API Key management */}
               <div style={{ display: 'flex', 'align-items': 'center', gap: '12px', 'flex-wrap': 'wrap' }}>
                 <span style={{ color: 'var(--buntu-text-muted)', 'font-size': '18px' }}>
-                  Clé API : <strong style={{ color: '#FFFFFF' }}>{aiMaskedKey() || 'Aucune clé enregistrée'}</strong>
+                  {t('settings.aiApiKey')} <strong style={{ color: '#FFFFFF' }}>{aiMaskedKey() || t('settings.aiNoKey')}</strong>
                 </span>
                 <span class="buntu-ai-sync-note">
                   {householdInfo()
-                    ? 'La clé se synchronise automatiquement avec votre foyer : saisie ici, ou reçue d’un autre appareil (« Envoyer mes données »).'
-                    : 'Saisissez la clé avec le clavier. Une fois la TV associée à un foyer, elle se synchronise automatiquement.'}
+                    ? t('settings.aiSyncHousehold')
+                    : t('settings.aiSyncStandalone')}
                 </span>
               </div>
 
               {/* Type or paste the key on the TV */}
               <div style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}>
                 <label for="ai-key-input" style={{ color: 'var(--buntu-text-muted)', 'font-size': '18px' }}>
-                  Clé {PROVIDER_DEFAULTS[aiProvider()]?.label} :
+                  {t('settings.aiKeyLabel', { label: PROVIDER_DEFAULTS[aiProvider()]?.label || '' })}
                 </label>
                 <input
                   id="ai-key-input"
@@ -659,7 +664,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                   readOnly
                   inputMode="none"
                   autocomplete="off"
-                  placeholder={aiMaskedKey() ? 'Clé enregistrée — OK pour la remplacer' : 'OK pour saisir la clé avec le clavier'}
+                  placeholder={aiMaskedKey() ? t('settings.aiKeyPlaceholderSaved') : t('settings.aiKeyPlaceholderEmpty')}
                   class={`tv-input ${focusId() === 'ai-key-input' ? 'focused' : ''}`}
                   value={keyDraft()}
                   onClick={editKey}
@@ -676,7 +681,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                     class={`tv-btn ${focusId() === 'btn-ai-paste-key' ? 'focused' : ''}`}
                     onClick={() => void pasteKey()}
                   >
-                    📋 Coller
+                    {t('settings.aiPaste')}
                   </button>
                   <button
                     id="btn-ai-save-key"
@@ -684,7 +689,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                     class={`tv-btn ${focusId() === 'btn-ai-save-key' ? 'focused' : ''}`}
                     onClick={() => void saveTypedKey()}
                   >
-                    💾 Enregistrer la clé
+                    {t('settings.aiSaveKey')}
                   </button>
                   <Show when={aiMaskedKey()}>
                     <button
@@ -693,7 +698,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                       class={`tv-btn tv-btn-danger ${focusId() === 'btn-ai-del-key' ? 'focused' : ''}`}
                       onClick={deleteKey}
                     >
-                      Supprimer la clé
+                      {t('settings.aiDeleteKey')}
                     </button>
                   </Show>
                 </div>
@@ -754,7 +759,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                   class={`tv-btn ${focusId() === 'btn-ai-consent' ? 'focused' : ''}`}
                   onClick={toggleConsent}
                 >
-                  Consentement : {aiConsent() ? '✓ Accordé' : '✗ Requis (Non accordé)'}
+                  {t('settings.aiConsent', { state: aiConsent() ? t('settings.aiConsentGranted') : t('settings.aiConsentRequired') })}
                 </button>
                 <button
                   id="btn-ai-test"
@@ -762,7 +767,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                   class={`tv-btn ${focusId() === 'btn-ai-test' ? 'focused' : ''}`}
                   onClick={testConnection}
                 >
-                  {isTesting() ? 'Test en cours…' : 'Tester la connexion'}
+                  {isTesting() ? t('settings.aiTesting') : t('settings.aiTest')}
                 </button>
               </div>
 
@@ -774,7 +779,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                   class={`tv-btn ${focusId() === 'btn-ai-cap' ? 'focused' : ''}`}
                   onClick={cycleDailyCap}
                 >
-                  Plafond quotidien recommandations : {aiDailyCap()} appels/jour ↻
+                  {t('settings.aiDailyCap', { cap: aiDailyCap() })}
                 </button>
               </div>
 
@@ -808,7 +813,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '2px solid var(--buntu-border)' }}>
           <div style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', 'margin-bottom': '8px' }}>
             <h3 style={{ 'font-size': '22px', color: 'var(--buntu-cyan)', margin: 0 }}>
-              Votre foyer
+              {t('settings.hhTitle')}
             </h3>
             <span
               style={{
@@ -821,11 +826,11 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                 border: `1px solid ${syncConnected() ? '#22C55E' : '#344058'}`,
               }}
             >
-              {syncConnected() ? 'Connecté' : 'Hors connexion'}
+              {syncConnected() ? t('settings.hhConnected') : t('settings.hhOffline')}
             </span>
           </div>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            Partagez vos sources, favoris et clés IA avec les appareils de la maison.
+            {t('settings.hhDesc')}
           </p>
 
           <Show
@@ -833,7 +838,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             fallback={
               <div style={{ display: 'flex', 'flex-direction': 'column', gap: '12px' }}>
                 <p style={{ color: 'var(--buntu-text-muted)', margin: 0 }}>
-                  Cette TV ne fait actuellement partie d'aucun foyer Buntu. Ajoutez cette TV au foyer de votre téléphone par QR code.
+                  {t('settings.hhNone')}
                 </p>
                 <div style={{ display: 'flex', gap: '12px', 'flex-wrap': 'wrap' }}>
 
@@ -843,7 +848,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                     class={`tv-btn ${focusId() === 'btn-hh-join-qr' ? 'focused' : ''}`}
                     onClick={() => void startKeyPairing()}
                   >
-                    📲 Rejoindre un foyer (QR Code)
+                    {t('settings.hhJoinQr')}
                   </button>
                 </div>
               </div>
@@ -851,18 +856,18 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
           >
             <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
               <div style={{ display: 'grid', 'grid-template-columns': '180px 1fr', gap: '8px', 'font-size': '17px' }}>
-                <span style={{ color: 'var(--buntu-text-muted)' }}>Nom du foyer :</span>
+                <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.hhName')}</span>
                 <span style={{ 'font-weight': '700', color: 'var(--buntu-gold)' }}>{householdInfo()!.household_name}</span>
 
-                <span style={{ color: 'var(--buntu-text-muted)' }}>Appareils jumelés :</span>
-                <span>{pairedDevices().length} appareil(s)</span>
+                <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.hhDevices')}</span>
+                <span>{t('settings.hhDevicesCount', { count: pairedDevices().length })}</span>
               </div>
 
               {/* Paired devices list */}
               <Show when={pairedDevices().length > 0}>
                 <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
                   <div style={{ 'font-weight': '600', color: 'var(--buntu-cyan)', 'font-size': '16px' }}>
-                    Appareils actifs sur le réseau :
+                    {t('settings.hhActiveDevices')}
                   </div>
                   <div style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
                     {pairedDevices().map((dev) => {
@@ -885,7 +890,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                             <span style={{ 'font-weight': '600' }}>{dev.device_name}</span>
                           </div>
                           <span style={{ color: isRecent ? '#4ADE80' : 'var(--buntu-text-muted)' }}>
-                            {isRecent ? '🟢 En ligne' : 'Vu récemment'}
+                            {isRecent ? t('settings.hhOnline') : t('settings.hhRecent')}
                           </span>
                         </div>
                       );
@@ -956,7 +961,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                   class={`tv-btn ${focusId() === 'btn-hh-receive' ? 'focused' : ''}`}
                   onClick={() => void transferHouseholdData('receive')}
                 >
-                  Recevoir les données
+                  {t('settings.hhReceive')}
                 </button>
                 <button
                   id="btn-hh-send"
@@ -965,7 +970,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                   class={`tv-btn ${focusId() === 'btn-hh-send' ? 'focused' : ''}`}
                   onClick={() => void transferHouseholdData('send')}
                 >
-                  Envoyer mes données
+                  {t('settings.hhSend')}
                 </button>
                 <button
                   id="btn-hh-invite"
@@ -973,10 +978,10 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                   class={`tv-btn ${focusId() === 'btn-hh-invite' ? 'focused' : ''}`}
                   onClick={() => void showInviteDeviceQr()}
                 >
-                  📱 Inviter un appareil (QR)
+                  {t('settings.hhInvite')}
                 </button>
                 <button id="btn-hh-details" tabindex="-1" class={`tv-btn ${focusId() === 'btn-hh-details' ? 'focused' : ''}`} aria-expanded={deviceDetails()} onClick={toggleDeviceDetails}>
-                  {deviceDetails() ? 'Moins d’options' : 'Plus d’options'}
+                  {deviceDetails() ? t('settings.hhLess') : t('settings.hhMore')}
                 </button>
                 <Show when={deviceDetails()}>
                 <button
@@ -985,7 +990,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
                   class={`tv-btn tv-btn-danger ${focusId() === 'btn-hh-leave' ? 'focused' : ''}`}
                   onClick={() => void leaveHousehold()}
                 >
-                  Quitter le foyer
+                  {t('settings.hhLeave')}
                 </button>
                 </Show>
               </div>
@@ -1038,9 +1043,9 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
         <Show when={!householdOnly() && panel() === 'connection'}>
         {/* Connection Settings */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px' }}>
-          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Connexion au fournisseur</h3>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>{t('settings.connTitle')}</h3>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            Activez ce mode si votre abonnement autorise une seule connexion à la fois.
+            {t('settings.connDesc')}
           </p>
           <button
             id="btn-single-conn"
@@ -1048,38 +1053,66 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             class={`tv-btn ${focusId() === 'btn-single-conn' ? 'focused' : ''}`}
             onClick={toggleSingleConnection}
           >
-            Une seule connexion : {singleConn() ? 'activée' : 'désactivée'}
+            {t('settings.singleConn', { state: singleConn() ? t('settings.singleConnOn') : t('settings.singleConnOff') })}
           </button>
         </div>
 
         </Show>
         <Show when={!householdOnly() && panel() === 'system'}>
+        {/* Language selector */}
+        <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '1px solid var(--buntu-border)' }}>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>{t('settings.langTitle')}</h3>
+          <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
+            {t('settings.langDesc')}
+          </p>
+          <div style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '12px' }}>
+            <button
+              id="btn-lang-fr"
+              tabindex="-1"
+              aria-pressed={appLanguage() === 'fr'}
+              class={`tv-btn ${focusId() === 'btn-lang-fr' ? 'focused' : ''}`}
+              onClick={() => setAppLanguage('fr')}
+            >
+              {appLanguage() === 'fr' ? `✓ ${t('settings.langFr')}` : t('settings.langFr')}
+            </button>
+            <button
+              id="btn-lang-en"
+              tabindex="-1"
+              aria-pressed={appLanguage() === 'en'}
+              class={`tv-btn ${focusId() === 'btn-lang-en' ? 'focused' : ''}`}
+              onClick={() => setAppLanguage('en')}
+            >
+              {appLanguage() === 'en' ? `✓ ${t('settings.langEn')}` : t('settings.langEn')}
+            </button>
+          </div>
+        </div>
+
         {/* Diagnostics Info */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px' }}>
-          <h3 style={{ 'font-size': '22px', 'margin-bottom': '16px' }}>Informations système</h3>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '16px' }}>{t('settings.sysTitle')}</h3>
           <div style={{ display: 'grid', 'grid-template-columns': '200px 1fr', gap: '12px', 'font-size': '18px' }}>
-            <span style={{ color: 'var(--buntu-text-muted)' }}>Appareil :</span>
+            <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.sysDevice')}</span>
             <span style={{ 'font-weight': '700' }}>{tvModel()}</span>
 
-            <span style={{ color: 'var(--buntu-text-muted)' }}>Cœur Métier :</span>
+            <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.sysCore')}</span>
             <span style={{ color: 'var(--buntu-cyan)', 'font-weight': '700' }}>{wasmVer()}</span>
 
-            <span style={{ color: 'var(--buntu-text-muted)' }}>Moteur Vidéo :</span>
-            <span style={{ color: 'var(--buntu-gold)', 'font-weight': '700' }}>Samsung AVPlay (Décodage matériel)</span>
+            <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.sysVideo')}</span>
+            <span style={{ color: 'var(--buntu-gold)', 'font-weight': '700' }}>{t('settings.sysVideoVal')}</span>
 
-            <span style={{ color: 'var(--buntu-text-muted)' }}>Résolution :</span>
-            <span>1920 × 1080 (Mise à l'échelle TV)</span>
+            <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.sysRes')}</span>
+            <span>{t('settings.sysResVal')}</span>
 
-            <span style={{ color: 'var(--buntu-text-muted)' }}>Créateur :</span>
-            <span>Papa COUNDIA (papacoundia@gmail.com · Sénégal)</span>
+            <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.sysCreator')}</span>
+            <span>Papa COUNDIA (papacoundia@gmail.com · {t('settings.aboutCountryVal')})</span>
           </div>
         </div>
 
         {/* Accessibilité visuelle */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '1px solid var(--buntu-border)' }}>
-          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Accessibilité visuelle</h3>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>{t('settings.a11yTitle')}</h3>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            Renforce les contrastes et la bordure de sélection, ou agrandit les textes à l’écran pour une meilleure lisibilité à distance.
+            {t('settings.a11yDesc')}
           </p>
           <div style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '12px' }}>
             <button
@@ -1089,7 +1122,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               class={`tv-btn ${focusId() === 'btn-high-contrast' ? 'focused' : ''}`}
               onClick={toggleHighContrast}
             >
-              Contraste élevé : {a11yPrefs().highContrast ? '✓ Activé' : '✗ Désactivé'}
+              {t('settings.a11yHighContrast', { state: a11yPrefs().highContrast ? `✓ ${t('common.enabled')}` : `✗ ${t('common.disabled')}` })}
             </button>
             <button
               id="btn-text-size"
@@ -1097,16 +1130,16 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               class={`tv-btn ${focusId() === 'btn-text-size' ? 'focused' : ''}`}
               onClick={cycleTextSize}
             >
-              Taille du texte : {textSizeLabel(a11yPrefs().textSize)} ↻
+              {t('settings.a11yTextSize', { size: textSizeLabel(a11yPrefs().textSize) })}
             </button>
           </div>
         </div>
 
         {/* Sous-titres */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px', border: '1px solid var(--buntu-border)' }}>
-          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Sous-titres</h3>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>{t('settings.subTitle')}</h3>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            Personnalisez la taille, la couleur et le fond des sous-titres affichés dans le lecteur.
+            {t('settings.subDesc')}
           </p>
           <div style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '12px' }}>
             <button
@@ -1115,7 +1148,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               class={`tv-btn ${focusId() === 'btn-sub-size' ? 'focused' : ''}`}
               onClick={cycleSubSize}
             >
-              Taille : {subtitleSizeLabel(subPrefs().size)} ↻
+              {t('settings.subSize', { size: subtitleSizeLabel(subPrefs().size) })}
             </button>
             <button
               id="btn-sub-color"
@@ -1123,7 +1156,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               class={`tv-btn ${focusId() === 'btn-sub-color' ? 'focused' : ''}`}
               onClick={cycleSubColor}
             >
-              Couleur : {subtitleColorLabel(subPrefs().color)} ↻
+              {t('settings.subColor', { color: subtitleColorLabel(subPrefs().color) })}
             </button>
             <button
               id="btn-sub-bg"
@@ -1132,18 +1165,18 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               class={`tv-btn ${focusId() === 'btn-sub-bg' ? 'focused' : ''}`}
               onClick={toggleSubOpaque}
             >
-              Fond opaque : {subPrefs().opaqueBox ? '✓ Activé' : '✗ Désactivé'}
+              {t('settings.subBg', { state: subPrefs().opaqueBox ? `✓ ${t('common.enabled')}` : `✗ ${t('common.disabled')}` })}
             </button>
           </div>
         </div>
 
         {/* Navigation sounds */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px' }}>
-          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Sons de navigation</h3>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>{t('settings.soundsTitle')}</h3>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
             {UiSounds.getInstance().isAvailable()
-              ? 'Les sons de la télévision quand vous choisissez, validez ou revenez en arrière. Aucun son pendant la lecture plein écran.'
-              : 'Cette télévision ne propose pas ses sons système à l’application : rien ne sera joué.'}
+              ? t('settings.soundsDescAvail')
+              : t('settings.soundsDescUnavail')}
           </p>
           <button
             id="btn-ui-sounds"
@@ -1152,16 +1185,15 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             class={`tv-btn ${focusId() === 'btn-ui-sounds' ? 'focused' : ''}`}
             onClick={toggleSounds}
           >
-            Sons : {soundsOn() ? '✓ Activés' : '✗ Désactivés'}
+            {t('settings.soundsBtn', { state: soundsOn() ? `✓ ${t('common.enabledPlural')}` : `✗ ${t('common.disabledPlural')}` })}
           </button>
         </div>
 
         {/* Next film */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px' }}>
-          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Film suivant</h3>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>{t('settings.upnextTitle')}</h3>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            À la fin d’un film, le lecteur propose des films similaires. Avec la lecture automatique, le premier démarre après le
-            compte à rebours (Retour l’annule). Après 3 films de suite sans touche, il demande « Toujours là ? ».
+            {t('settings.upnextDesc')}
           </p>
           <button
             id="btn-upnext-auto"
@@ -1170,7 +1202,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             class={`tv-btn ${focusId() === 'btn-upnext-auto' ? 'focused' : ''}`}
             onClick={toggleUpNextAuto}
           >
-            Lecture automatique : {upNext().auto ? '✓ Activée' : '✗ Désactivée'}
+            {t('settings.upnextAuto', { state: upNext().auto ? `✓ ${t('common.enabledFem')}` : `✗ ${t('common.disabledFem')}` })}
           </button>
           <button
             id="btn-upnext-seconds"
@@ -1178,15 +1210,15 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             class={`tv-btn ${focusId() === 'btn-upnext-seconds' ? 'focused' : ''}`}
             onClick={cycleUpNextSeconds}
           >
-            Compte à rebours : {upNext().seconds} s ↻
+            {t('settings.upnextCountdown', { seconds: upNext().seconds })}
           </button>
         </div>
 
         {/* Maintenance */}
         <div style={{ background: 'var(--buntu-slate)', padding: '24px', 'border-radius': '12px' }}>
-          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>Maintenance du stockage</h3>
+          <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px' }}>{t('settings.storageTitle')}</h3>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            Libère l'espace disque IndexedDB en conservant vos favoris et vos sources.
+            {t('settings.storageDesc')}
           </p>
           <button
             id="btn-purge-cache"
@@ -1194,7 +1226,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             class={`tv-btn ${focusId() === 'btn-purge-cache' ? 'focused' : ''}`}
             onClick={purgeCache}
           >
-            Purger le cache
+            {t('settings.purgeCache')}
           </button>
           {purgeMsg() && (
             <div style={{ 'margin-top': '12px', color: 'var(--buntu-cyan)' }}>{purgeMsg()}</div>
@@ -1211,10 +1243,10 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
           }}
         >
           <h3 style={{ 'font-size': '22px', 'margin-bottom': '8px', color: '#F87171' }}>
-            Fermer l'application
+            {t('settings.exitTitle')}
           </h3>
           <p style={{ color: 'var(--buntu-text-muted)', 'margin-bottom': '16px' }}>
-            Revenir à la télévision.
+            {t('settings.exitDesc')}
           </p>
           <button
             id="btn-exit-app"
@@ -1222,7 +1254,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
             class={`tv-btn tv-btn-danger ${focusId() === 'btn-exit-app' ? 'focused' : ''}`}
             onClick={handleExit}
           >
-            ⏻ Fermer Buntu
+            {t('settings.exitBtn')}
           </button>
         </div>
         </Show>
@@ -1240,13 +1272,13 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
         >
           <div style={{ 'margin-bottom': '20px' }}>
             <div style={{ 'font-size': '15px', 'text-transform': 'uppercase', 'letter-spacing': '0.06em', color: 'var(--buntu-text-muted)', 'margin-bottom': '6px' }}>
-              À propos de Buntu
+              {t('settings.aboutLabel')}
             </div>
             <h3 style={{ 'font-size': '28px', margin: '0 0 8px 0', color: 'var(--buntu-gold)' }}>
               Buntu
             </h3>
             <p style={{ margin: 0, 'font-size': '18px', color: 'var(--buntu-text-muted)' }}>
-              « Sa bunt ci lépp » — La porte d'entrée de tous vos médias.
+              {t('settings.aboutTagline')}
             </p>
           </div>
 
@@ -1260,22 +1292,22 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               'margin-bottom': '20px',
             }}
           >
-            <span style={{ color: 'var(--buntu-text-muted)' }}>Créateur :</span>
+            <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.aboutCreator')}</span>
             <span style={{ 'font-weight': '700' }}>Papa COUNDIA</span>
 
-            <span style={{ color: 'var(--buntu-text-muted)' }}>E-mail :</span>
+            <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.aboutEmail')}</span>
             <span style={{ color: 'var(--buntu-cyan)' }}>papacoundia@gmail.com</span>
 
-            <span style={{ color: 'var(--buntu-text-muted)' }}>Pays :</span>
-            <span>Sénégal</span>
+            <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.aboutCountry')}</span>
+            <span>{t('settings.aboutCountryVal')}</span>
 
-            <span style={{ color: 'var(--buntu-text-muted)' }}>Version :</span>
+            <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.aboutVersion')}</span>
             <span>{APP_VERSION_LABEL}</span>
 
-            <span style={{ color: 'var(--buntu-text-muted)' }}>Cœur Métier :</span>
+            <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.aboutCore')}</span>
             <span style={{ color: 'var(--buntu-cyan)', 'font-weight': '700' }}>{wasmVer()}</span>
 
-            <span style={{ color: 'var(--buntu-text-muted)' }}>Licence :</span>
+            <span style={{ color: 'var(--buntu-text-muted)' }}>{t('settings.aboutLicense')}</span>
             <span>MIT / Apache-2.0</span>
           </div>
 
@@ -1290,7 +1322,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               'line-height': '1.5',
             }}
           >
-            Buntu est un lecteur neutre : il ne fournit aucun contenu et lit uniquement les sources que vous ajoutez. Vos données restent sur votre appareil.
+            {t('settings.aboutDisclaimer')}
           </div>
         </div>
         </Show>

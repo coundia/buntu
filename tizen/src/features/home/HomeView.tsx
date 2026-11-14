@@ -4,6 +4,7 @@ import { CndEngine } from '../../core/engine/CndEngine';
 import { Database, type ItemRecord } from '../../core/storage/Database';
 import { describeSourceExpiry, type SourceExpiryInfo } from '../sources/sourceExpiry';
 import { describeResume } from './resumeInfo';
+import { t, type TranslationKey } from '../../core/i18n';
 
 export type HomeSection = 'live' | 'movies' | 'series';
 type HomeDestination = HomeSection | 'sources' | 'devices' | 'settings';
@@ -16,10 +17,16 @@ interface HomeViewProps {
   onResume?: (item: ItemRecord) => void;
 }
 
-const sections: { route: HomeSection; title: string; subtitle: string; icon: string; detail: string }[] = [
-  { route: 'live', title: 'Live', subtitle: 'En direct', icon: 'live', detail: 'Vos chaînes et le guide TV' },
-  { route: 'movies', title: 'Films', subtitle: 'À votre rythme', icon: 'movies', detail: 'Le cinéma, quand vous voulez' },
-  { route: 'series', title: 'Séries', subtitle: 'Épisode après épisode', icon: 'series', detail: 'Retrouvez vos séries préférées' },
+const sections: {
+  route: HomeSection;
+  titleKey: TranslationKey;
+  subtitleKey: TranslationKey;
+  icon: string;
+  detailKey: TranslationKey;
+}[] = [
+  { route: 'live', titleKey: 'home.liveTitle', subtitleKey: 'home.liveSubtitle', icon: 'live', detailKey: 'home.liveDetail' },
+  { route: 'movies', titleKey: 'home.moviesTitle', subtitleKey: 'home.moviesSubtitle', icon: 'movies', detailKey: 'home.moviesDetail' },
+  { route: 'series', titleKey: 'home.seriesTitle', subtitleKey: 'home.seriesSubtitle', icon: 'series', detailKey: 'home.seriesDetail' },
 ];
 
 /** A lightweight entrance: no catalogue, thumbnails, counters or player on this screen. */
@@ -32,10 +39,10 @@ export const HomeView: Component<HomeViewProps> = (props) => {
   const [time, setTime] = createSignal(localTime());
   const [resume, setResume] = createSignal<ItemRecord | null>(null);
   const [sourceExpiries, setSourceExpiries] = createSignal<{ id: number; name: string; info: SourceExpiryInfo }[]>([]);
-  const shortcuts: { route: HomeDestination; title: string }[] = [
-    { route: 'sources', title: 'Sources' },
-    { route: 'devices', title: 'Appareils' },
-    { route: 'settings', title: 'Réglages' },
+  const shortcuts: { route: HomeDestination; titleKey: TranslationKey }[] = [
+    { route: 'sources', titleKey: 'home.sources' },
+    { route: 'devices', titleKey: 'home.devices' },
+    { route: 'settings', titleKey: 'home.settings' },
   ];
 
   onMount(() => {
@@ -80,13 +87,13 @@ export const HomeView: Component<HomeViewProps> = (props) => {
           const info = describeSourceExpiry(src);
           return {
             id: src.id,
-            name: src.name || 'Source',
+            name: src.name || t('home.sourceFallback'),
             info: info ?? {
               exp: 0,
               daysLeft: 0,
               dateStr: '',
               status: 'ok' as const,
-              label: 'Sans date d’expiration',
+              label: t('home.noExpiry'), // Sans date d’expiration
             },
           };
         });
@@ -102,15 +109,15 @@ export const HomeView: Component<HomeViewProps> = (props) => {
       <header class="buntu-home-brand">
         <img src="./icon.png" alt="" />
         <span>Buntu</span>
-        <span class="buntu-home-brand-caption">Votre télévision, simplement.</span>
-        <time class="buntu-home-clock" aria-label={`Heure locale : ${time()}`}>{time()}</time>
+        <span class="buntu-home-brand-caption">{t('home.brandCaption')}</span>
+        <time class="buntu-home-clock" aria-label={t('home.localTimeAria', { time: time() })}>{time()}</time>
       </header>
       <div class="buntu-home-heading">
-        <p>BIENVENUE CHEZ VOUS</p>
-        <h1 id="home-title">Que voulez-vous regarder ?</h1>
+        <p>{t('home.welcome')}</p>
+        <h1 id="home-title">{t('home.question')}</h1>
       </div>
       <Show when={sourceExpiries().length > 0}>
-        <div class="buntu-home-expirations" aria-label="Expiration des sources">
+        <div class="buntu-home-expirations" aria-label={t('home.expirationsAria')}>
           <For each={sourceExpiries()}>{(entry) => (
             <span class={`buntu-home-expiry-pill ${entry.info.status === 'expired' ? 'is-expired' : entry.info.status === 'soon' ? 'is-soon' : ''}`}>
               <strong>{entry.name}</strong> · {entry.info.label}
@@ -132,7 +139,7 @@ export const HomeView: Component<HomeViewProps> = (props) => {
             >
               <span class="buntu-home-resume-play" aria-hidden="true">▶</span>
               <span class="buntu-home-resume-text">
-                <span class="buntu-home-resume-label">REPRENDRE · {info().kind}</span>
+                <span class="buntu-home-resume-label">{t('home.resumeLabel', { kind: info().kind })}</span>
                 <span class="buntu-home-resume-title">{info().title}</span>
                 <span class="buntu-home-resume-action">{info().action}</span>
               </span>
@@ -157,10 +164,10 @@ export const HomeView: Component<HomeViewProps> = (props) => {
             <span class={`buntu-home-symbol buntu-home-symbol-${section.icon}`} aria-hidden="true">
               {section.route === 'live' ? '◉' : section.route === 'movies' ? '▶' : '▤'}
             </span>
-            <span class="buntu-home-card-subtitle">{section.subtitle}</span>
-            <span class="buntu-home-card-title">{section.title}</span>
-            <span class="buntu-home-card-detail">{section.detail}</span>
-            <span class="buntu-home-card-open" aria-hidden="true">Explorer →</span>
+            <span class="buntu-home-card-subtitle">{t(section.subtitleKey)}</span>
+            <span class="buntu-home-card-title">{t(section.titleKey)}</span>
+            <span class="buntu-home-card-detail">{t(section.detailKey)}</span>
+            <span class="buntu-home-card-open" aria-hidden="true">{t('home.explore')}</span>
           </button>
         )}</For>
       </div>
@@ -169,13 +176,13 @@ export const HomeView: Component<HomeViewProps> = (props) => {
           <For each={shortcuts}>{(shortcut) => (
             <button type="button" tabindex="-1" id={`home-${shortcut.route}`}
               class={`buntu-home-shortcut ${focusId() === `home-${shortcut.route}` ? 'focused' : ''}`}
-              onClick={() => props.onOpen(shortcut.route)}>{shortcut.title}</button>
+              onClick={() => props.onOpen(shortcut.route)}>{t(shortcut.titleKey)}</button>
           )}</For>
           <button type="button" tabindex="-1" id="home-exit"
             class={`buntu-home-shortcut ${focusId() === 'home-exit' ? 'focused' : ''}`}
-            onClick={props.onExit}>Quitter</button>
+            onClick={props.onExit}>{t('home.exit')}</button>
         </div>
-        <p>← → Choisir <span>OK Ouvrir</span></p>
+        <p>{t('home.footerChoose')} <span>{t('home.footerOpen')}</span></p>
       </footer>
     </section>
   );

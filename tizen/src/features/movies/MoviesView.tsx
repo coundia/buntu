@@ -16,6 +16,7 @@ import { MiniPlayerPanel } from '../../ui/components/MiniPlayerPanel';
 import { InfoChips, InfoSection, InfoProgress } from '../../ui/components/InfoParts';
 import { formatDuration, formatRuntime, percentOf } from '../../core/utils/timeFormat';
 import { panelFocusItems, panelItemsForRow, installPanelLeftReturn, PANEL_MIN_ROWS } from '../../ui/design/miniPlayerFocus';
+import { t } from '../../core/i18n';
 
 export interface MoviesViewProps {
   onSelectMovie: (movie: ItemRecord) => void;
@@ -52,7 +53,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     player,
     onFullscreen: (mv) => (props.onPlayMovie ? props.onPlayMovie(mv) : props.onSelectMovie(mv)),
     startTimeoutMs: 45000, // a film resolves its final address first, then buffers more than a channel
-    timeoutMessage: 'Le serveur ne répond pas',
+    timeoutMessage: t('movies.timeoutMessage'),
     // OK on a film plays it in the panel and moves the cursor there, to read its text; full screen is chosen in the panel.
     focusPanelOnActivate: () => {
       spatialNav.setFocusById('mv-insp-screen');
@@ -109,7 +110,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     },
     onBatchLoaded: (list, total) => {
       if (!isSearchMode()) {
-        announce(`Films, ${list.length} films affichés sur ${total}`);
+        announce(t('movies.announceLoaded', { shown: list.length, total }));
         if (!previewMovie() && list.length > 0) {
           setPreviewMovie(list[0]);
         }
@@ -298,7 +299,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     const next = await engine.toggleFavorite(mv.id);
     mv.is_favorite = next ? 1 : 0;
     setFavTick((t) => t + 1);
-    announce(next ? 'Film ajouté aux favoris' : 'Film retiré des favoris');
+    announce(next ? t('movies.addedToFavorites') : t('movies.removedFromFavorites'));
     await refreshShelvesAndCounts();
     if (selectedCat() === FAVORITES_CATEGORY) {
       await scroller.reset();
@@ -319,7 +320,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       const extra = await aiSuggestions(engine, query, 'movie').catch(() => []);
       if (searchQuery() !== query || extra.length === 0) return;
       setSearchResults(mergeSuggestions(searchResults(), extra));
-      announce(`L’assistant propose ${extra.length} résultat(s)`);
+      announce(t('movies.aiSuggestionsAnnounce', { count: extra.length }));
       scheduleRebuildGrid(true);
     }, 900);
   };
@@ -338,7 +339,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     }
     const results = await engine.searchCatalog(query, 'movie', 100);
     setSearchResults(results);
-    announce(`${results.length} films trouvés`);
+    announce(t('movies.searchAnnounce', { count: results.length }));
     scheduleAiRefine(query);
     scheduleRebuildGrid(true);
   };
@@ -456,7 +457,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     const inspectorItems: FocusableItem[] =
       mini.visible() && previewMovie()
         ? panelFocusItems(mini, 'mv-insp', (mv) => void handleToggleFavorite(mv), [
-            { id: 'mv-insp-details', label: 'ℹ Fiche', onSelect: () => openDetails(mini.focused()) },
+            { id: 'mv-insp-details', label: t('movies.detailsAction'), onSelect: () => openDetails(mini.focused()) },
           ])
         : [];
 
@@ -530,7 +531,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
               type="button"
               tabindex="-1"
               class={`buntu-vod-star-overlay ${isFav(mv) ? 'fav' : ''}`}
-              title="Favori"
+              title={t('movies.favoriteTitle')}
               onClick={(e) => void handleToggleFavorite(mv, e)}
             >
               {isFav(mv) ? '★' : '☆'}
@@ -542,7 +543,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
           <div class="buntu-vod-title">{title()}</div>
           <div class="buntu-vod-sub">
             <span style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>
-              {year() ? `${year()}${mv.group_title ? ' · ' + mv.group_title : ''}` : mv.group_title || 'VOD'}
+              {year() ? `${year()}${mv.group_title ? ' · ' + mv.group_title : ''}` : mv.group_title || t('movies.vodFallback')}
             </span>
             <Show when={viewMode() === 'list'}>
               <button
@@ -569,28 +570,28 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
             id="mv-brand-home"
             type="button"
             tabindex="-1"
-            aria-label="Buntu — Retour à l'accueil"
-            title="Retour à l'accueil"
+            aria-label={t('movies.backHomeAria')}
+            title={t('movies.backHomeTitle')}
             class={`buntu-toolbar-brand ${focusId() === 'mv-brand-home' ? 'focused' : ''}`}
             onClick={goHome}
           >
             <img src="./icon.png" alt="" class="buntu-toolbar-brand-logo" />
           </button>
-          <h1 class="buntu-toolbar-title">Films</h1>
+          <h1 class="buntu-toolbar-title">{t('movies.title')}</h1>
           <Show when={totalCount() > 0}>
-            <span class="buntu-toolbar-subtitle">{formatBuntuCount(totalCount())} films</span>
+            <span class="buntu-toolbar-subtitle">{t('movies.moviesCount', { count: formatBuntuCount(totalCount()) })}</span>
           </Show>
         </div>
 
         <div class="buntu-toolbar-right">
-          <span class="buntu-key-hint"><i class="buntu-key-dot" />Favori</span>
+          <span class="buntu-key-hint"><i class="buntu-key-dot" />{t('movies.favoriteHint')}</span>
           <div class="buntu-search-wrap">
             <span class="buntu-search-icon">🔍</span>
             <input
               id="mv-search-input"
               type="text"
               value={searchQuery()}
-              placeholder="Rechercher un film"
+              placeholder={t('movies.searchPlaceholder')}
               class={`buntu-search-field ${focusId() === 'mv-search-input' ? 'focused' : ''}`}
               onInput={(e) => void handleSearch(e.currentTarget.value)}
             />
@@ -600,7 +601,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
             type="button"
             tabindex="-1"
             class={`buntu-mode-btn ${searchMode() === 'ai' ? 'ai' : ''} ${focusId() === 'mv-search-mode' ? 'focused' : ''}`}
-            aria-label={searchMode() === 'ai' ? 'Moteur de recherche : IA. OK pour passer en local' : 'Moteur de recherche : local. OK pour passer en IA'}
+            aria-label={searchMode() === 'ai' ? t('movies.searchModeAiAria') : t('movies.searchModeLocalAria')}
             onClick={switchSearchEngine}
           >
             {searchModeLabel(searchMode())}
@@ -611,13 +612,13 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       {/* Split Body */}
       <div class="buntu-body-split">
         <Show when={showCats()}>
-          <aside class="buntu-cat-pane" aria-label="Catégories Films">
+          <aside class="buntu-cat-pane" aria-label={t('movies.categoriesAria')}>
             <div class="buntu-cat-filter-bar">
               <input
                 id="mv-cat-filter"
                 type="text"
                 value={catFilter()}
-                placeholder="Filtrer les catégories"
+                placeholder={t('movies.filterCategoriesPlaceholder')}
                 class={`buntu-cat-filter-input ${focusId() === 'mv-cat-filter' ? 'focused' : ''}`}
                 onInput={(e) => {
                   setCatFilter(e.currentTarget.value);
@@ -637,7 +638,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
               >
                 <div class="buntu-cat-row-left">
                   <span class="buntu-cat-row-icon">🕒</span>
-                  <span class="buntu-cat-row-title">Récemment vus</span>
+                  <span class="buntu-cat-row-title">{t('movies.catRecent')}</span>
                 </div>
                 <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(recentCount())}</span></Show>
               </div>
@@ -651,7 +652,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
               >
                 <div class="buntu-cat-row-left">
                   <span class="buntu-cat-row-icon">⊞</span>
-                  <span class="buntu-cat-row-title">Tous les films</span>
+                  <span class="buntu-cat-row-title">{t('movies.catAll')}</span>
                 </div>
                 <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(totalCount())}</span></Show>
               </div>
@@ -665,7 +666,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
               >
                 <div class="buntu-cat-row-left">
                   <span class="buntu-cat-row-icon fav">★</span>
-                  <span class="buntu-cat-row-title">Favoris</span>
+                  <span class="buntu-cat-row-title">{t('movies.catFavorites')}</span>
                 </div>
                 <Show when={loaded()}><span class="buntu-cat-count">{formatBuntuCount(favCount())}</span></Show>
               </div>
@@ -706,7 +707,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
             <div class="buntu-section">
               <div class="buntu-section-header">
                 <h2 class="buntu-section-title">
-                  <span style={{ color: 'var(--buntu-accent)' }}>▶</span> Reprendre
+                  <span style={{ color: 'var(--buntu-accent)' }}>▶</span> {t('movies.shelfResume')}
                 </h2>
               </div>
               <div class="buntu-vod-shelf">
@@ -722,7 +723,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
             <div class="buntu-section">
               <div class="buntu-section-header">
                 <h2 class="buntu-section-title">
-                  <span style={{ color: 'var(--buntu-star)' }}>★</span> Favoris
+                  <span style={{ color: 'var(--buntu-star)' }}>★</span> {t('movies.shelfFavorites')}
                 </h2>
               </div>
               <div class="buntu-vod-shelf">
@@ -738,18 +739,18 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
             <div class="buntu-section-header">
               <h2 class="buntu-section-title">
                 {isSearchMode()
-                  ? `Recherche : « ${searchQuery()} »`
+                  ? t('movies.searchHeader', { query: searchQuery() })
                   : selectedCat() === RECENT_CATEGORY
-                    ? 'Récemment vus'
+                    ? t('movies.catRecent')
                     : selectedCat() === FAVORITES_CATEGORY
-                    ? 'Favoris'
-                    : selectedCat() || 'Tous les films'}
+                    ? t('movies.catFavorites')
+                    : selectedCat() || t('movies.catAll')}
               </h2>
               <Show when={loaded()}>
               <span class="buntu-section-meta">
                 {isSearchMode()
-                  ? `${searchResults().length} résultats`
-                  : `${formatBuntuCount(scroller.total())} films`}
+                  ? t('movies.searchResultsCount', { count: searchResults().length })
+                  : t('movies.moviesCount', { count: formatBuntuCount(scroller.total()) })}
               </span>
               </Show>
             </div>
@@ -757,7 +758,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
             <Show when={!loaded()}>
               <div class="buntu-first-load" role="status" aria-live="polite">
                 <div class="tv-spinner" />
-                <span>Chargement des films…</span>
+                <span>{t('movies.loadingMovies')}</span>
               </div>
             </Show>
 
@@ -780,15 +781,15 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
             >
               <p class="buntu-empty-hint">
                 {selectedCat() === RECENT_CATEGORY
-                  ? 'Lancez un film : il apparaîtra ici.'
-                  : 'Aucun favori pour l’instant : ajoutez-en avec ☆ Favori.'}
+                  ? t('movies.emptyRecentHint')
+                  : t('movies.emptyFavHint')}
               </p>
             </Show>
 
             <Show when={!isSearchMode() && scroller.isLoading()}>
               <div class="tv-infinite-loader">
                 <div class="tv-spinner-small" />
-                <span>Chargement des films…</span>
+                <span>{t('movies.loadingMovies')}</span>
               </div>
             </Show>
           </div>
@@ -802,10 +803,10 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
           posterUrl={(mv) => mv.logo_url}
           titleOf={(mv) => mv.name_clean || cleanMediaTitle(mv.name).clean}
           fallbackIcon="🎬"
-          idleHint="▶ Lecture"
+          idleHint={t('movies.idleHint')}
           isFavorite={isFav}
           onToggleFavorite={(mv) => void handleToggleFavorite(mv)}
-          extraActions={[{ id: 'mv-insp-details', label: 'ℹ Fiche', onSelect: () => openDetails(mini.focused()) }]}
+          extraActions={[{ id: 'mv-insp-details', label: t('movies.detailsAction'), onSelect: () => openDetails(mini.focused()) }]}
           details={(mv) => {
             const parsed = cleanMediaTitle(mv.name);
             const year = mv.year || parsed.year;
@@ -843,33 +844,33 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
                 />
 
                 <Show when={resumed() > 0 && resumed() < 95}>
-                  <InfoSection label="REPRISE">
+                  <InfoSection label={t('movies.resumeSection')}>
                     <div class="buntu-insp-epg-title">
-                      Reprendre à {formatDuration(mv.playback_position_ms)} · {resumed()} %
+                      {t('movies.resumeAt', { time: formatDuration(mv.playback_position_ms), percent: resumed() })}
                     </div>
                     <InfoProgress percent={resumed()} />
                   </InfoSection>
                 </Show>
 
-                <InfoSection label="SYNOPSIS">
+                <InfoSection label={t('movies.synopsisSection')}>
                   <p class="buntu-inspector-desc buntu-insp-clamp buntu-insp-plot">
-                    {plot() || 'Aucun résumé disponible pour ce film.'}
+                    {plot() || t('movies.noSynopsis')}
                   </p>
                 </InfoSection>
 
                 {/* Only what the provider gave: nothing is shown for a missing fact */}
                 <Show when={info()?.director}>
-                  <InfoSection label="RÉALISATION">
+                  <InfoSection label={t('movies.directorSection')}>
                     <p class="buntu-inspector-desc">{info()!.director}</p>
                   </InfoSection>
                 </Show>
                 <Show when={info()?.cast}>
-                  <InfoSection label="DISTRIBUTION">
+                  <InfoSection label={t('movies.castSection')}>
                     <p class="buntu-inspector-desc buntu-insp-clamp">{info()!.cast}</p>
                   </InfoSection>
                 </Show>
                 <Show when={info()?.releaseDate}>
-                  <InfoSection label="SORTIE">
+                  <InfoSection label={t('movies.releaseSection')}>
                     <p class="buntu-inspector-desc">{info()!.releaseDate}</p>
                   </InfoSection>
                 </Show>
