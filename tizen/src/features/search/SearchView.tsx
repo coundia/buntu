@@ -303,8 +303,8 @@ export const SearchView: Component<SearchViewProps> = (props) => {
       <Show when={aiNotice()}>
         <div
           style={{
-            background: isAiLoading() ? 'rgba(212, 160, 23, 0.2)' : 'rgba(30, 41, 59, 0.8)',
-            border: '1px solid var(--buntu-gold)',
+            background: isAiLoading() ? '#242014' : '#161B26',
+            border: '2px solid var(--buntu-gold)',
             padding: '10px 20px',
             'border-radius': '8px',
             'font-size': '16px',

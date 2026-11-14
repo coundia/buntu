@@ -21,9 +21,14 @@ import { panelFocusItems, panelItemsForRow, installPanelLeftReturn, PANEL_MIN_RO
 export interface LiveViewProps {
   onPlayChannel: (channel: ItemRecord) => void;
   onAddSource?: () => void;
+  onHome?: () => void;
 }
 
 export const LiveView: Component<LiveViewProps> = (props) => {
+  const goHome = () => {
+    if (props.onHome) props.onHome();
+    else window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 10009, bubbles: true }));
+  };
   const engine = CndEngine.getInstance();
   const db = Database.getInstance();
   const player = AVPlayerService.getInstance();
@@ -444,10 +449,12 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     const cats = filteredCategories();
 
     if (totalCount() === 0 && list.length === 0 && cats.length === 0) {
+      const emptyGrid: FocusableItem[][] = [[{ id: 'live-brand-home', onSelect: goHome }]];
       if (props.onAddSource) {
-        spatialNav.setGrid([[{ id: 'btn-live-add-source', onSelect: () => props.onAddSource?.() }]]);
+        emptyGrid.push([{ id: 'btn-live-add-source', onSelect: () => props.onAddSource?.() }]);
+        spatialNav.setGrid(emptyGrid, 1, 0, preserveFocus);
       } else {
-        spatialNav.setGrid([]);
+        spatialNav.setGrid(emptyGrid, 0, 0, preserveFocus);
       }
       return;
     }
@@ -456,6 +463,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
     // Row 0: Top Toolbar
     const toolbarRow: FocusableItem[] = [
+      { id: 'live-brand-home', onSelect: goHome },
       { id: 'live-search-input', onSelect: () => focusDomInput('live-search-input') },
       { id: 'live-search-mode', onSelect: switchSearchEngine },
     ];
@@ -657,6 +665,17 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       {/* Top Buntu Toolbar */}
       <header class="buntu-toolbar">
         <div class="buntu-toolbar-left">
+          <button
+            id="live-brand-home"
+            type="button"
+            tabindex="-1"
+            aria-label="Buntu — Retour à l'accueil"
+            title="Retour à l'accueil"
+            class={`buntu-toolbar-brand ${focusId() === 'live-brand-home' ? 'focused' : ''}`}
+            onClick={goHome}
+          >
+            <img src="./icon.png" alt="" class="buntu-toolbar-brand-logo" />
+          </button>
           <h1 class="buntu-toolbar-title">Live TV</h1>
           <Show when={totalCount() > 0}>
             <span class="buntu-toolbar-subtitle">{formatBuntuCount(totalCount())} chaînes</span>

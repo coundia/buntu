@@ -200,8 +200,7 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
         left: 0,
         width: '100vw',
         height: '100vh',
-        background: 'rgba(10, 15, 29, 0.92)',
-        'backdrop-filter': 'blur(16px)',
+        background: '#0B0E14',
         display: 'flex',
         'align-items': 'center',
         'justify-content': 'center',
@@ -212,16 +211,15 @@ export const AssistantModal: Component<AssistantModalProps> = (props) => {
     >
       <div
         style={{
-          background: 'var(--buntu-navy)',
+          background: 'var(--buntu-slate)',
           border: '2px solid var(--buntu-gold)',
-          'border-radius': '24px',
+          'border-radius': '20px',
           padding: '36px 48px',
           width: '840px',
           'max-width': '95vw',
           display: 'flex',
           'flex-direction': 'column',
           gap: '24px',
-          'box-shadow': '0 24px 64px rgba(0, 0, 0, 0.8)',
         }}
       >
         {/* Header */}
