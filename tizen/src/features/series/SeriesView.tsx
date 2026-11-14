@@ -14,9 +14,14 @@ import { announce } from '../../ui/design/a11y';
 
 export interface SeriesViewProps {
   onSelectSeries: (series: ItemRecord) => void;
+  onHome?: () => void;
 }
 
 export const SeriesView: Component<SeriesViewProps> = (props) => {
+  const goHome = () => {
+    if (props.onHome) props.onHome();
+    else window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 10009, bubbles: true }));
+  };
   const engine = CndEngine.getInstance();
   const player = AVPlayerService.getInstance();
   const PAGE_SIZE = 40;
@@ -343,6 +348,7 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
 
     // Row 0: Toolbar
     const toolbarRow: FocusableItem[] = [
+      { id: 's-brand-home', onSelect: goHome },
       { id: 's-search-input', onSelect: () => focusDomInput('s-search-input') },
       { id: 's-search-mode', onSelect: switchSearchEngine },
     ];
@@ -523,6 +529,17 @@ export const SeriesView: Component<SeriesViewProps> = (props) => {
       {/* Top Toolbar */}
       <header class="buntu-toolbar">
         <div class="buntu-toolbar-left">
+          <button
+            id="s-brand-home"
+            type="button"
+            tabindex="-1"
+            aria-label="Buntu — Retour à l'accueil"
+            title="Retour à l'accueil"
+            class={`buntu-toolbar-brand ${focusId() === 's-brand-home' ? 'focused' : ''}`}
+            onClick={goHome}
+          >
+            <img src="./icon.png" alt="" class="buntu-toolbar-brand-logo" />
+          </button>
           <h1 class="buntu-toolbar-title">Séries</h1>
           <Show when={totalCount() > 0}>
             <span class="buntu-toolbar-subtitle">{formatBuntuCount(totalCount())} séries</span>

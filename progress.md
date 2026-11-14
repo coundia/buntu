@@ -21,6 +21,45 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-14 — Antigravity, DESIGN.md et refonte design solide (anti-IA)
+
+| Tâche / Fond | Fichiers | État | Détail |
+| :--- | :--- | :--- | :--- |
+| Rédaction du guide de design | [`DESIGN.md`](DESIGN.md) | ✅ | Charte « Sobriété Matérielle — Anti-IA » : palette 100 % opaque, boutons solides, règles focus 10-foot, compatibilité Chromium 56–76, exception unique de transparence AVPlay. |
+| Refonte CSS solide (Tizen) | [`theme.css`](tizen/src/ui/design/theme.css), [`AssistantModal.tsx`](tizen/src/features/assistant/AssistantModal.tsx), [`SearchView.tsx`](tizen/src/features/search/SearchView.tsx), [`PairingView.tsx`](tizen/src/features/pairing/PairingView.tsx), [`SettingsView.tsx`](tizen/src/features/settings/SettingsView.tsx) | ✅ | Suppression de tous les `linear-gradient`, `radial-gradient`, `backdrop-filter` et boutons/panneaux `rgba(...)` translucides au profit de surfaces et boutons 100 % solides (sauf les zones vidéo AVPlay qui restent `transparent`). |
+| Non-régression design solide | [`NoUselessIcons.test.ts`](tizen/tests/NoUselessIcons.test.ts) | ✅ | Vérifie l'absence de `backdrop-filter`/`linear-gradient`/`radial-gradient` dans `theme.css` et des fonds solides sans `rgba(` sur les boutons principaux. |
+| Validation TypeScript + Vitest ciblée | `npx tsc --noEmit` + `vitest run` (5 fichiers) | ✅ | `tsc --noEmit` (0 erreur) ; 5 fichiers, 30/30 tests passés (`NoUselessIcons`, `HomeNavigation`, `SearchEngineButton`, `LiveReturnFromPlayer`, `MoviePanelFocus`). |
+| Build + test sur la TV Samsung | `./scripts/build-tizen.sh` / `./scripts/run-tizen.sh <IP>` | ⏳ À faire par l'utilisateur | Non essayé à l'écran ni sur la TV (`AGENTS.md § 2`). |
+
+## 2026-11-14 — Antigravity, logo Buntu de retour à l'accueil (Tizen)
+
+| Tâche | État | Détail |
+| :--- | :--- | :--- |
+| Logo Buntu de retour à l'accueil sur `LiveView`, `MoviesView`, `SeriesView` | ✅ | Bouton icône `*-brand-home` (`live-brand-home`, `mv-brand-home`, `s-brand-home`) avec uniquement le logo `./icon.png` (sans texte `Buntu`) ajouté en tête de `.buntu-toolbar-left` et en ligne 0 de `toolbarRow` (y compris à l'état vide Live TV), relié à `onHome={() => navigateTo('home', { reset: true })}` dans `App.tsx`, et stylé dans `theme.css` (compatible Chromium 76). Non testé sur la TV (`build-tizen.sh` à faire par l'utilisateur). |
+| Validation Tizen (`tsc --noEmit` + tests Vitest) | ✅ | `tsc --noEmit` sans erreur ; tests ciblés `NoUselessIcons`, `HomeNavigation`, `SearchEngineButton`, `LiveReturnFromPlayer`, `MoviePanelFocus` : 5/5 fichiers (28/28) réussis. Suite complète `npm test` : 61/62 fichiers (352/353) réussis ; 1 échec hors périmètre dans `tests/AiKeyStore.test.ts` (`migrates the old encrypted slot only to the selected provider`). |
+
+## 2026-11-14 — Antigravity, collage dans Sources et clavier TV Tizen
+
+| Tâche | État | Détail |
+| :--- | :--- | :--- |
+| Collage dans `TvKeyboard`, `ManualSourceForm` et `SourceEditForm` | ✅ | Touche `📋 Coller` (`#kb-paste`) et fonction `applyPastedText` dans `tvKeyboardLogic.ts`, support `navigator.clipboard.readText()` + écouteur `paste` dans `TvKeyboard.tsx`, collage direct sur les champs focalisés (`ManualSourceForm.tsx`, `SourceEditForm.tsx`) via `listenFocusedFieldPaste` et `pasteEventIntoField` sans double collage. Non essayé sur TV Samsung ni avec SmartThings réel. |
+| Validation Tizen | ✅ | `npx tsc --noEmit` (0 erreur) et `npx vitest run tests/TvKeyboard.test.ts tests/SourcesView.test.ts tests/AssistantSettings.test.ts` : **3 fichiers / 24 tests passés** (`TvKeyboard` 14/14, `SourcesView` 7/7, `AssistantSettings` 3/3). |
+| Build `.wgt` (à faire par l'utilisateur) | ⏸️ | Lancer `./scripts/build-tizen.sh` puis `./scripts/run-tizen.sh --no-build <IP_TV>` pour installer et tester sur la TV Samsung. |
+
+---
+
+## 2026-11-14 — Antigravity (Swarm), page À propos sur Tizen, Apple et Android
+
+| Tâche | État | Détail |
+| :--- | :--- | :--- |
+| Tizen (`SettingsView.tsx`, `config.xml`, `SettingsHouseholdTransfer.test.ts`) | ✅ | Page « À propos de Buntu » (`#about-page` via `#settings-about`), identité `Buntu` (`« Sa bunt ci lépp »`), créateur `Papa COUNDIA`, `papacoundia@gmail.com`, `Sénégal`, `MIT / Apache-2.0`, mention lecteur neutre, ligne créateur dans « Informations système » et `<author>` dans `config.xml`. Retour/`BACK` restaure le focus sur `settings-about` ; règles Chromium 76 respectées. Non essayé sur la TV Samsung. |
+| Apple (`AppBrand.swift`, `SettingsView.swift`, `AppBrandTests.swift`) | ✅ | Constantes ajoutées à `AppBrand` (`authorName`, `authorEmail`, `authorCountry`, `license`, `neutralPlayerNotice`), affichées dans `aboutSection` et dans `AboutDetailView` (via `NavigationLink`), tests `AppBrandTests` étendus sans créer de nouveau fichier `.swift`. Non compilé via `xcodebuild` et non essayé sur appareil. |
+| Android (`SettingsScreen.kt`, `SettingsViewModelTest.kt`) | ✅ | Objet `BuntuAboutInfo` et carte `about_section` dans `SettingsRoute` (lisible sur téléphone et focus D-pad sur Android TV avec `BuntuPalette`), test unitaire dédié dans `SettingsViewModelTest` ; aucune dépendance vers `:core:engine`. Non essayé sur téléphone ni Android TV. |
+| Validations unitaires ciblées (vérificateur) | ✅ | Tizen : `npx tsc --noEmit` (0 erreur) et `npx vitest run tests/SettingsHouseholdTransfer.test.ts tests/AssistantSettings.test.ts tests/UiSounds.test.ts` (`Test Files 3 passed (3)`, `Tests 16 passed (16)` : `SettingsHouseholdTransfer` 6/6, `UiSounds` 7/7, `AssistantSettings` 3/3) ; Apple : `swift test --filter AppBrandTests` (`Executed 7 tests, with 0 failures`) ; Android : `./gradlew --offline :feature:settings:testDebugUnitTest --rerun-tasks --console=plain` (`BUILD SUCCESSFUL in 13s`, `50 actionable tasks: 50 executed`, `SettingsViewModelTest` : `tests="8" skipped="0" failures="0" errors="0"`). |
+| Builds d'application (à faire par l'utilisateur) | ⏸️ | Aucune modification UniFFI/`cnd-domain` ni ajout de fichier Swift : lancer si souhaité `./scripts/build-tizen.sh` / `./scripts/run-tizen.sh <IP>`, `xcodebuild -project apple/CndIPTV.xcodeproj -scheme <schéma> CODE_SIGNING_ALLOWED=NO build` et `cd android && ./gradlew :app:assembleDebug`. |
+
+---
+
 ## 2026-11-13 — Antigravity, PRD-46 amélioration du lecteur Live TV
 
 | Tâche | État | Détail |

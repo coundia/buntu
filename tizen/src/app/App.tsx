@@ -514,6 +514,7 @@ export const App: Component = () => {
             <LiveView
               onPlayChannel={handlePlayItem}
               onAddSource={() => navigateTo('onboarding')}
+              onHome={() => navigateTo('home', { reset: true })}
             />
           </Match>
 
@@ -525,11 +526,15 @@ export const App: Component = () => {
             <MoviesView
               onSelectMovie={handleSelectDetails}
               onPlayMovie={handlePlayItem}
+              onHome={() => navigateTo('home', { reset: true })}
             />
           </Match>
 
           <Match when={currentRoute() === 'series'}>
-            <SeriesView onSelectSeries={handleSelectDetails} />
+            <SeriesView
+              onSelectSeries={handleSelectDetails}
+              onHome={() => navigateTo('home', { reset: true })}
+            />
           </Match>
 
           <Match when={currentRoute() === 'details' && selectedItem()?.kind === 'series'}>

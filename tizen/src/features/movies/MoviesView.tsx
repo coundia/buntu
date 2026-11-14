@@ -20,9 +20,14 @@ import { panelFocusItems, panelItemsForRow, installPanelLeftReturn, PANEL_MIN_RO
 export interface MoviesViewProps {
   onSelectMovie: (movie: ItemRecord) => void;
   onPlayMovie?: (movie: ItemRecord) => void;
+  onHome?: () => void;
 }
 
 export const MoviesView: Component<MoviesViewProps> = (props) => {
+  const goHome = () => {
+    if (props.onHome) props.onHome();
+    else window.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 10009, bubbles: true }));
+  };
   const engine = CndEngine.getInstance();
   const player = AVPlayerService.getInstance();
   const PAGE_SIZE = 48;
@@ -372,6 +377,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
 
     // Row 0: Toolbar
     const toolbarRow: FocusableItem[] = [
+      { id: 'mv-brand-home', onSelect: goHome },
       { id: 'mv-search-input', onSelect: () => focusDomInput('mv-search-input') },
       { id: 'mv-search-mode', onSelect: switchSearchEngine },
     ];
@@ -559,6 +565,17 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       {/* Top Toolbar */}
       <header class="buntu-toolbar">
         <div class="buntu-toolbar-left">
+          <button
+            id="mv-brand-home"
+            type="button"
+            tabindex="-1"
+            aria-label="Buntu — Retour à l'accueil"
+            title="Retour à l'accueil"
+            class={`buntu-toolbar-brand ${focusId() === 'mv-brand-home' ? 'focused' : ''}`}
+            onClick={goHome}
+          >
+            <img src="./icon.png" alt="" class="buntu-toolbar-brand-logo" />
+          </button>
           <h1 class="buntu-toolbar-title">Films</h1>
           <Show when={totalCount() > 0}>
             <span class="buntu-toolbar-subtitle">{formatBuntuCount(totalCount())} films</span>

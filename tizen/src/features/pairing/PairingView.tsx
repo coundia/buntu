@@ -286,7 +286,6 @@ export const PairingView: Component<PairingViewProps> = (props) => {
               'margin-bottom': '32px',
               border: '2px solid var(--buntu-gold)',
               'text-align': 'left',
-              'box-shadow': '0 12px 36px rgba(0,0,0,0.6)',
             }}
           >
             <div style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', 'margin-bottom': '16px' }}>
@@ -311,7 +310,8 @@ export const PairingView: Component<PairingViewProps> = (props) => {
                       display: 'flex',
                       'justify-content': 'space-between',
                       'align-items': 'center',
-                      background: 'rgba(255,255,255,0.04)',
+                      background: '#1F2736',
+                      border: '1px solid #2A344A',
                       padding: '16px 20px',
                       'border-radius': '8px',
                       'font-size': '22px',
