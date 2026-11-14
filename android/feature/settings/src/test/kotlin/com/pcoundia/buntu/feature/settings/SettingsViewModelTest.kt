@@ -246,6 +246,20 @@ class SettingsViewModelTest {
         collector.cancel()
     }
 
+    @Test
+    fun `about info exposes Buntu identity, author metadata, license and neutral player notice`() {
+        assertEquals("Buntu", BuntuAboutInfo.APP_NAME)
+        assertEquals("Sa bunt ci lépp — La porte d'entrée de tous vos médias.", BuntuAboutInfo.SLOGAN)
+        assertEquals("Papa COUNDIA", BuntuAboutInfo.AUTHOR_NAME)
+        assertEquals("papacoundia@gmail.com", BuntuAboutInfo.AUTHOR_EMAIL)
+        assertEquals("Sénégal", BuntuAboutInfo.AUTHOR_COUNTRY)
+        assertEquals("MIT / Apache-2.0", BuntuAboutInfo.LICENSE)
+        assertEquals(
+            "Buntu est un lecteur neutre : il ne fournit aucun contenu et lit uniquement les sources que vous ajoutez. Vos données restent sur votre appareil.",
+            BuntuAboutInfo.LEGAL_NOTICE,
+        )
+    }
+
     private fun createViewModel(
         settingsRepo: FakeSettingsRepository,
         secretStore: FakeSecretStore,
