@@ -19,6 +19,7 @@ import com.pcoundia.buntu.core.domain.model.SearchScopeKind
 enum class TopLevelDestination(
     val route: String,
     val label: String,
+    val labelKey: String,
     val icon: ImageVector,
     val showOnPhoneBottomBar: Boolean,
     val showOnTvRail: Boolean,
@@ -26,6 +27,7 @@ enum class TopLevelDestination(
     LIVE(
         route = BuntuRoutes.LIVE,
         label = "Direct",
+        labelKey = "nav.live",
         icon = Icons.Default.LiveTv,
         showOnPhoneBottomBar = true,
         showOnTvRail = true,
@@ -33,6 +35,7 @@ enum class TopLevelDestination(
     GUIDE(
         route = BuntuRoutes.GUIDE,
         label = "Guide",
+        labelKey = "nav.guide",
         icon = Icons.Default.ViewTimeline,
         showOnPhoneBottomBar = false,
         showOnTvRail = true,
@@ -40,6 +43,7 @@ enum class TopLevelDestination(
     MOVIES(
         route = BuntuRoutes.MOVIES,
         label = "Films",
+        labelKey = "nav.movies",
         icon = Icons.Default.Movie,
         showOnPhoneBottomBar = true,
         showOnTvRail = true,
@@ -47,6 +51,7 @@ enum class TopLevelDestination(
     SERIES(
         route = BuntuRoutes.SERIES,
         label = "Séries",
+        labelKey = "nav.series",
         icon = Icons.Default.Tv,
         showOnPhoneBottomBar = true,
         showOnTvRail = true,
@@ -54,6 +59,7 @@ enum class TopLevelDestination(
     FOR_YOU(
         route = BuntuRoutes.RECOMMENDATIONS,
         label = "Pour vous",
+        labelKey = "nav.for_you",
         icon = Icons.Default.Explore,
         showOnPhoneBottomBar = false,
         showOnTvRail = true,
@@ -61,6 +67,7 @@ enum class TopLevelDestination(
     DOWNLOADS(
         route = BuntuRoutes.DOWNLOADS,
         label = "Hors-ligne",
+        labelKey = "nav.downloads",
         icon = Icons.Default.Download,
         showOnPhoneBottomBar = false,
         showOnTvRail = false,
@@ -69,6 +76,7 @@ enum class TopLevelDestination(
     SOURCES(
         route = BuntuRoutes.SOURCES,
         label = "Sources",
+        labelKey = "nav.sources",
         icon = Icons.Default.SettingsInputAntenna,
         showOnPhoneBottomBar = false,
         showOnTvRail = true,
@@ -76,6 +84,7 @@ enum class TopLevelDestination(
     DEVICES(
         route = BuntuRoutes.DEVICES,
         label = "Appareils",
+        labelKey = "nav.devices",
         icon = Icons.Default.Devices,
         showOnPhoneBottomBar = false,
         showOnTvRail = true,
@@ -83,6 +92,7 @@ enum class TopLevelDestination(
     REMOTE_COMMAND(
         route = BuntuRoutes.REMOTE_COMMAND,
         label = "Commande TV",
+        labelKey = "nav.remote_command",
         icon = Icons.Default.Mic,
         showOnPhoneBottomBar = false,
         showOnTvRail = false,
@@ -90,6 +100,7 @@ enum class TopLevelDestination(
     PROFILES(
         route = BuntuRoutes.PROFILES,
         label = "Profils",
+        labelKey = "nav.profiles",
         icon = Icons.Default.Person,
         showOnPhoneBottomBar = false,
         showOnTvRail = true,
@@ -97,6 +108,7 @@ enum class TopLevelDestination(
     SETTINGS(
         route = BuntuRoutes.SETTINGS,
         label = "Plus",
+        labelKey = "nav.settings",
         icon = Icons.Default.Settings,
         showOnPhoneBottomBar = true,
         showOnTvRail = true,

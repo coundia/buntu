@@ -42,6 +42,8 @@ import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.BuntuPosterCard
 import com.pcoundia.buntu.core.designsystem.BuntuShelfCardData
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
+import com.pcoundia.buntu.core.designsystem.i18n.rememberAppLanguage
+import com.pcoundia.buntu.core.designsystem.i18n.t
 import kotlinx.collections.immutable.toImmutableList
 
 @Composable
@@ -54,6 +56,8 @@ fun SeriesRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val pagedSeries = viewModel.pagedSeries.collectAsLazyPagingItems()
     val metrics = LocalBuntuMetrics.current
+    @Suppress("UNUSED_VARIABLE")
+    val currentLanguage = rememberAppLanguage()
     val remoteDevices by viewModel.remoteDevices.collectAsStateWithLifecycle()
     val remoteStatus by viewModel.remoteStatus.collectAsStateWithLifecycle()
     var remoteTarget by remember { mutableStateOf<Pair<Long, String>?>(null) }
@@ -86,7 +90,7 @@ fun SeriesRoute(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        text = "Séries",
+                        text = t("series.title"),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = BuntuPalette.PureWhite,
@@ -106,12 +110,12 @@ fun SeriesRoute(
                                     modifier = Modifier.size(FilterChipDefaults.IconSize),
                                 )
                             },
-                            label = { Text("Rechercher") },
+                            label = { Text(t("series.search")) },
                         )
                         FilterChip(
                             selected = state.favoritesOnly,
                             onClick = viewModel::toggleFavoritesOnly,
-                            label = { Text("★ Favoris") },
+                            label = { Text(t("series.favorites")) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = BuntuPalette.TerangaGold,
                                 selectedLabelColor = BuntuPalette.Midnight,
@@ -172,9 +176,9 @@ fun SeriesRoute(
                 contentType = "empty_state",
             ) {
                 BuntuEmptyState(
-                    title = "Aucune série trouvée",
-                    subtitle = "Synchronisez votre source IPTV ou changez de catégorie.",
-                    actionLabel = "Gérer les sources",
+                    title = t("series.empty_title"),
+                    subtitle = t("series.empty_subtitle"),
+                    actionLabel = t("series.manage_sources"),
                     onAction = onOpenSources,
                 )
             }
@@ -185,9 +189,14 @@ fun SeriesRoute(
                 contentType = { "series_poster_card" },
             ) { index ->
                 val series = pagedSeries[index] ?: return@items
+                val seasonLabel = if (series.seasonCount == 1) {
+                    t("series.season_one", series.seasonCount)
+                } else {
+                    t("series.season_many", series.seasonCount)
+                }
                 val subtitle = buildString {
                     series.year?.let { append(it).append(" · ") }
-                    append("${series.seasonCount} saison(s)")
+                    append(seasonLabel)
                 }
                 BuntuPosterCard(
                     title = series.title,

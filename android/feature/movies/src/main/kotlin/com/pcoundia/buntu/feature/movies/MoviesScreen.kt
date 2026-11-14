@@ -43,6 +43,8 @@ import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.BuntuPosterCard
 import com.pcoundia.buntu.core.designsystem.BuntuShelfCardData
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
+import com.pcoundia.buntu.core.designsystem.i18n.rememberAppLanguage
+import com.pcoundia.buntu.core.designsystem.i18n.t
 import com.pcoundia.buntu.core.domain.model.CatalogSort
 import kotlinx.collections.immutable.toImmutableList
 
@@ -56,6 +58,8 @@ fun MoviesRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val pagedMovies = viewModel.pagedMovies.collectAsLazyPagingItems()
     val metrics = LocalBuntuMetrics.current
+    @Suppress("UNUSED_VARIABLE")
+    val currentLanguage = rememberAppLanguage()
     val remoteDevices by viewModel.remoteDevices.collectAsStateWithLifecycle()
     val remoteStatus by viewModel.remoteStatus.collectAsStateWithLifecycle()
     var remoteTarget by remember { mutableStateOf<Pair<Long, String>?>(null) }
@@ -88,7 +92,7 @@ fun MoviesRoute(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        text = "Films",
+                        text = t("movies.title"),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = BuntuPalette.PureWhite,
@@ -108,12 +112,12 @@ fun MoviesRoute(
                                     modifier = Modifier.size(FilterChipDefaults.IconSize),
                                 )
                             },
-                            label = { Text("Rechercher") },
+                            label = { Text(t("movies.search")) },
                         )
                         FilterChip(
                             selected = state.favoritesOnly,
                             onClick = viewModel::toggleFavoritesOnly,
-                            label = { Text("★ Favoris") },
+                            label = { Text(t("movies.favorites")) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = BuntuPalette.TerangaGold,
                                 selectedLabelColor = BuntuPalette.Midnight,
@@ -129,7 +133,7 @@ fun MoviesRoute(
                                 }
                                 viewModel.selectSort(next)
                             },
-                            label = { Text("Récents") },
+                            label = { Text(t("movies.recent")) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = BuntuPalette.TerangaGold,
                                 selectedLabelColor = BuntuPalette.Midnight,
@@ -186,9 +190,9 @@ fun MoviesRoute(
                 contentType = "empty_state",
             ) {
                 BuntuEmptyState(
-                    title = "Aucun film trouvé",
-                    subtitle = "Synchronisez votre source IPTV ou changez de catégorie.",
-                    actionLabel = "Gérer les sources",
+                    title = t("movies.empty_title"),
+                    subtitle = t("movies.empty_subtitle"),
+                    actionLabel = t("movies.manage_sources"),
                     onAction = onOpenSources,
                 )
             }

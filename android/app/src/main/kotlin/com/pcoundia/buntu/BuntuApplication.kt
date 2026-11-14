@@ -10,6 +10,7 @@ import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import coil3.disk.directory
 import coil3.memory.MemoryCache
+import com.pcoundia.buntu.core.designsystem.i18n.AppLanguageState
 import com.pcoundia.buntu.core.platform.device.DeviceCapabilities
 import com.pcoundia.buntu.core.platform.work.EpgRefreshWorker
 import dagger.hilt.android.HiltAndroidApp
@@ -38,6 +39,7 @@ class BuntuApplication : Application(), Configuration.Provider, SingletonImageLo
 
     override fun onCreate() {
         super.onCreate()
+        AppLanguageState.init(this)
         if (BuildConfig.DEBUG) {
             enableDebugStrictMode()
         }

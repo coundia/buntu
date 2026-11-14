@@ -46,6 +46,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.pcoundia.buntu.core.designsystem.BuntuBrandMark
 import com.pcoundia.buntu.core.designsystem.BuntuPalette
+import com.pcoundia.buntu.core.designsystem.i18n.t
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
 import com.pcoundia.buntu.navigation.BuntuNavHost
 import com.pcoundia.buntu.navigation.BuntuRoutes
@@ -229,7 +230,7 @@ private fun TvNavPill(
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = destination.label,
+            text = t(destination.labelKey),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = contentColor,
