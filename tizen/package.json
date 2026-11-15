@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@vitejs/plugin-legacy": "^6.0.0",
+    "@vitejs/plugin-legacy": "^8.2.4",
     "jsdom": "^31.0.0",
     "terser": "^5.39.0",
     "typescript": "^5.7.0",
