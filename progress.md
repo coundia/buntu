@@ -48,6 +48,14 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-15 — Claude, release macOS 1.2.0 (build 3)
+
+- ✅ Build terminé (exit 0, 102 s de compilation Swift) : `./scripts/prepare-releases.sh --macos --skip-core`. `build/release/v1.2.0/Buntu-1.2.0-macOS.zip` (10,8 Mo) et `.dmg` (12,0 Mo) ; `SHA256SUMS.txt` couvre maintenant les 8 fichiers (8/8 OK).
+- ✅ Contrôlé : app 1.2.0 build 3, `com.pcoundia.buntu.macos`, macOS 14 minimum, **arm64 seulement** (pas d'Intel), signature ad-hoc valide (`codesign --verify`), image disque valide (`hdiutil verify`). Gatekeeper : refusée, comme prévu (non notariée, pas de Developer ID).
+- ✅ Contrôle des clés : `.env` ne contient aucune clé d'API réelle (0 valeur longue) ; aucune clé trouvée dans le binaire macOS, ni dans l'APK universel, ni dans le `.wgt`.
+- ✅ `build/release/v1.2.0/RELEASE_NOTES.md` rédigé (fichier local, ignoré par git) pour la publication manuelle : `gh release create v1.2.0 build/release/v1.2.0/* --repo coundia/buntu --target main --prerelease --draft --title "Buntu 1.2.0" --notes-file build/release/v1.2.0/RELEASE_NOTES.md`.
+- ❌ Non lancé : l'app macOS n'a pas été ouverte (ni aucun paquet essayé sur appareil).
+
 ## 2026-11-15 — Claude, Dependabot arrêté (mises à jour de versions)
 
 - ✅ `.github/dependabot.yml` supprimé (plus de PR de mise à jour de versions) ; les alertes de sécurité GitHub (réglage du dépôt) ne sont pas touchées. Les PR ouvertes par Dependabot sont fermées une à une (branches supprimées). Les dépendances se mettent à jour à la main, avec les tests locaux.
