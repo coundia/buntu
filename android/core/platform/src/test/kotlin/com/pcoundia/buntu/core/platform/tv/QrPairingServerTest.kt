@@ -129,7 +129,7 @@ class QrPairingServerTest {
         }
         Thread.sleep(300)
         assertEquals(listOf(PairingClosedReason.Closed), closed.toList())
-        assertTrue("the port is closed", runCatching { Socket("127.0.0.1", session.port).close() }.isFailure)
+        assertTrue("the port is closed", awaitPortClosed(session.port))
     }
 
     @Test
@@ -143,6 +143,19 @@ class QrPairingServerTest {
     fun `stopping closes the port`() {
         val session = startServer()
         server.stop()
-        assertTrue(runCatching { Socket("127.0.0.1", session.port).close() }.isFailure)
+        assertTrue("the port is closed", awaitPortClosed(session.port))
+    }
+
+    /**
+     * `stop()` closes the listening socket while the accept thread is still blocked on it: on Linux the kernel
+     * can accept one more connection before the thread wakes up, so the port is polled instead of probed once.
+     */
+    private fun awaitPortClosed(port: Int, timeoutMs: Long = 3_000): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (runCatching { Socket("127.0.0.1", port).close() }.isFailure) return true
+            Thread.sleep(25)
+        }
+        return false
     }
 }

@@ -76,7 +76,7 @@ jobs:
       - name: Build cnd-domain-wasm bindings for Tizen tests
         run: |
           RUSTFLAGS="-C target-cpu=mvp -C link-arg=--no-check-features -C link-arg=--features=" \
-            wasm-pack build crates/cnd-domain-wasm --target web --release --no-opt --out-dir tizen/src/wasm/pkg
+            wasm-pack build crates/cnd-domain-wasm --target web --release --no-opt --out-dir "${GITHUB_WORKSPACE}/tizen/src/wasm/pkg"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
