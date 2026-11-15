@@ -48,6 +48,13 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-15 — Claude, release Android 1.2.0 (build 3)
+
+- ✅ Build terminé (exit 0, `assembleRelease` en 2 min 31 s, R8 actif) : `./scripts/prepare-releases.sh --android --skip-core` sur demande explicite de l'utilisateur (exception à la règle « pas de builds »). Sortie dans `build/release/v1.2.0/` (ignoré par git) : `Buntu-1.2.0-android-{arm64-v8a 12,1 Mo ; armeabi-v7a 9,7 Mo ; x86_64 13,3 Mo ; universal 26,9 Mo}.apk` + `SHA256SUMS.txt` (vérifié : 4/4 OK).
+- ✅ Contrôlé sur les APK : `com.pcoundia.buntu`, versionCode 3, versionName 1.2.0, targetSdk 35 ; `libcnd_core.so` présent dans chaque APK pour son ABI (3 dans l'universel) et `libjnidispatch.so` (JNA) ; aucun fichier sensible (`.env`, keystore, clé) ; signature valide (schéma v2).
+- ⚠️ Signés avec la clé de **debug** (`CN=Android Debug`) : pas de keystore de release configuré. À publier comme pré-version ; changer de clé plus tard obligera à désinstaller avant de mettre à jour.
+- ❌ Non essayé : aucun APK installé ni lancé (ni téléphone, ni émulateur) ; la version minifiée R8 n'a donc jamais tourné. À faire par l'utilisateur : installer l'APK arm64 sur un téléphone et ouvrir Direct, Films, Appareils, le lecteur.
+
 ## 2026-11-15 — Claude, version de la release : 1.2.0 (build 3)
 
 - ✅ Choix (délégué par l'utilisateur) : **1.2.0, build 3**. Raison : la 1.1.0 est déjà publiée (tag `v1.1.0`, plist Apple 1.1.0 build 2, zip macOS 1.1.0 dans `build/release`) ; la 1.0.1 aurait été une version plus ancienne, et le lot (UX, tri, actualisation du foyer, localisation, reprise réseau) est un ensemble de fonctions, donc une version mineure. Le build passe de 2 à 3 pour rester supérieur à celui de la 1.1.0.
