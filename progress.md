@@ -48,6 +48,10 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-15 — Claude, Dependabot arrêté (mises à jour de versions)
+
+- ✅ `.github/dependabot.yml` supprimé (plus de PR de mise à jour de versions) ; les alertes de sécurité GitHub (réglage du dépôt) ne sont pas touchées. Les PR ouvertes par Dependabot sont fermées une à une (branches supprimées). Les dépendances se mettent à jour à la main, avec les tests locaux.
+
 ## 2026-11-15 — Claude, correction des trois échecs du premier CI
 
 - ✅ Rust : `hiding_adult_groups_stays_fast_on_a_large_catalog` ([`catalog_repo.rs`](crates/cnd-core/src/db/catalog_repo.rs)) : la limite de temps ne s'applique plus qu'en build release (`#[cfg(not(debug_assertions))]`, même règle que le test SLA des recommandations) ; les vérifications de contenu restent en debug. Vérifié : `cargo test -p cnd-core hiding_adult_groups` (debug) et `cargo test --release …` (release, 2,4 s) passent ; `cargo clippy -p cnd-core --all-targets -- -D warnings` propre. Conséquence : le CI (debug) ne contrôle plus ce temps ; `cargo test --workspace --release` le fait en local.
