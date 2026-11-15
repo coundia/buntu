@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Buntu — Lecteur IPTV et média neutre</title>
   <meta name="description" content="Buntu : lecteur de flux et de médias neutre et open source pour Android, Android TV, macOS et Samsung Smart TV. Aucun contenu fourni : ajoutez vos propres sources.">
-  <meta name="theme-color" content="#0B0E14">
+  <meta name="theme-color" content="#FFD60A">
   <meta property="og:title" content="Buntu — Sa bunt ci lépp">
   <meta property="og:description" content="Lecteur IPTV et média neutre, open source, pour Android, macOS et Samsung Smart TV.">
   <meta property="og:type" content="website">
@@ -39,7 +39,8 @@
   </header>
 
   <main id="main">
-    <section class="hero wrap" id="top">
+    <section class="hero" id="top">
+      <div class="wrap hero-in">
       <div class="hero-text">
       <p class="eyebrow">Sa bunt ci lépp</p>
       <h1><span lang="fr">La porte d'entrée de tous vos médias.</span><span lang="en">The front door to all your media.</span></h1>
@@ -57,41 +58,44 @@
         <li><span lang="fr">Français et anglais</span><span lang="en">French and English</span></li>
       </ul>
       </div>
-      <img class="hero-icon" src="assets/icon-256.png" alt="" width="220" height="220">
+      <img class="hero-icon" src="assets/icon-256.png" alt="" width="200" height="200">
+      </div>
     </section>
 
-    <section class="wrap notice" aria-labelledby="neutre">
+    <section class="band" aria-labelledby="neutre">
+      <div class="wrap notice">
       <h2 id="neutre"><span lang="fr">Un lecteur neutre</span><span lang="en">A neutral player</span></h2>
       <p>
         <span lang="fr">Buntu ne fournit <strong>aucune chaîne, aucune playlist et aucun contenu</strong>. Il lit les sources que vous ajoutez, avec vos propres droits d'accès, et respecte la limite d'une connexion à la fois de la plupart des abonnements : un flux est arrêté avant d'en ouvrir un autre.</span>
         <span lang="en">Buntu provides <strong>no channel, no playlist and no content</strong>. It plays the sources you add, under your own access rights, and respects the one-connection-at-a-time limit of most subscriptions: a stream is stopped before another one opens.</span>
       </p>
+      </div>
     </section>
 
     <section class="wrap" id="fonctions" aria-labelledby="fonctions-t">
       <h2 id="fonctions-t"><span lang="fr">Ce que fait Buntu</span><span lang="en">What Buntu does</span></h2>
-      <div class="grid">
-        <article class="card">
+      <div class="features">
+        <article class="feature">
           <h3><span lang="fr">TV en direct et guide</span><span lang="en">Live TV and guide</span></h3>
           <p><span lang="fr">Zapping rapide, guide des programmes (XMLTV), favoris, recherche et catégories.</span><span lang="en">Fast zapping, programme guide (XMLTV), favorites, search and categories.</span></p>
         </article>
-        <article class="card">
+        <article class="feature">
           <h3><span lang="fr">Films et séries</span><span lang="en">Movies and series</span></h3>
           <p><span lang="fr">Fiches, reprise de lecture, favoris, tri et recherche, avec des suggestions « À suivre » calculées sur votre appareil (assistant IA optionnel, avec votre propre clé).</span><span lang="en">Detail pages, resume playback, favorites, sorting and search, with “Up next” suggestions computed on your device (optional AI assistant, with your own key).</span></p>
         </article>
-        <article class="card">
+        <article class="feature">
           <h3><span lang="fr">Votre foyer, sans serveur</span><span lang="en">Your household, no server</span></h3>
           <p><span lang="fr">Favoris, reprises et comptes se synchronisent entre vos appareils sur le réseau local, chiffrés de bout en bout. Ajout d'un appareil par QR code.</span><span lang="en">Favorites, resume points and accounts sync between your devices on the local network, end-to-end encrypted. Add a device with a QR code.</span></p>
         </article>
-        <article class="card">
+        <article class="feature">
           <h3><span lang="fr">Lire sur un autre appareil</span><span lang="en">Play on another device</span></h3>
           <p><span lang="fr">Lancez un film depuis le téléphone sur la TV, ou reprenez-le là où vous l'avez laissé. Un seul flux à la fois chez votre fournisseur.</span><span lang="en">Start a movie from the phone on the TV, or pick it up where you left off. One stream at a time with your provider.</span></p>
         </article>
-        <article class="card">
+        <article class="feature">
           <h3><span lang="fr">Vie privée</span><span lang="en">Privacy</span></h3>
           <p><span lang="fr">Pas de compte Buntu : aucun serveur Buntu ne reçoit vos sources, vos favoris ou votre historique. Les mots de passe restent dans le Trousseau (Apple), le Keystore (Android) ou le stockage chiffré de la TV.</span><span lang="en">No Buntu account: no Buntu server receives your sources, favorites or history. Passwords stay in the Keychain (Apple), the Keystore (Android) or the TV's encrypted storage.</span></p>
         </article>
-        <article class="card">
+        <article class="feature">
           <h3><span lang="fr">Un seul cœur, partout</span><span lang="en">One core, everywhere</span></h3>
           <p><span lang="fr">Les règles métier sont écrites une fois en Rust, puis utilisées par Swift, Kotlin et WebAssembly : le même comportement sur chaque plateforme.</span><span lang="en">The business rules are written once in Rust, then used by Swift, Kotlin and WebAssembly: the same behavior on every platform.</span></p>
         </article>

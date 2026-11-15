@@ -48,6 +48,12 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-15 — Claude, page du projet : design plat jaune, noir, blanc
+
+- ✅ Sur retour de l'utilisateur (« sent trop l'IA : enlevez dégradés et bordures, couleur bizarre, mettez du jaune ») : `docs/site.css` réécrit et `docs/index.html` ajusté. Aplats uniquement : bandeau jaune `#FFD60A` (en-tête et accueil), bandeau noir « Un lecteur neutre » (titre jaune), contenu blanc, tableau noir/gris clair, encadré « À savoir » jaune pâle, pied de page noir. Plus de dégradé, d'ombre, de bordure, de flou ni de bleu/cyan ; liens soulignés en noir ; cartes à filet doré remplacées par des blocs de texte ; thème sombre automatique retiré. Contenu et textes inchangés.
+- ℹ️ L'icône de l'app (reprise telle quelle) garde son léger halo orange : c'est le dessin du logo, pas du CSS.
+- ✅ Rendu contrôlé avec Chrome sans interface (bureau FR, mobile 500 px EN).
+
 ## 2026-11-15 — Claude, page GitHub Pages du projet
 
 - ✅ Page statique ajoutée dans `docs/` : `index.html`, `site.css`, `site.js`, `assets/` (icône 256 px et favicon tirés de `assets/AppIcon-1024.png`), `.nojekyll`. Français par défaut dans le HTML, anglais par un bouton (choix gardé dans `localStorage`, `try/catch`) ; aucune police, image ni script externe (aucune requête vers un tiers) ; clair/sombre selon le système ; mobile ; liens clavier visibles. Contenu repris de `README.md`, `SECURITY.md` et `docs/RELEASE.md` ; aucune fausse capture d'écran. Rendu contrôlé avec Chrome sans interface (bureau FR et EN, 500 px) ; liens locaux présents, 9 liens GitHub sur 12 répondent 200 (3 expirés : réseau).
