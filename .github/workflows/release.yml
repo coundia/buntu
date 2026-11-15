@@ -94,7 +94,7 @@ jobs:
         run: ./scripts/prepare-releases.sh --macos
 
       - name: Upload macOS release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-macos
           path: |
@@ -169,7 +169,7 @@ jobs:
         run: rm -f "${RUNNER_TEMP}/buntu-release.keystore"
 
       - name: Upload Android release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-android
           path: build/release/v*/Buntu-*-android-*.apk
@@ -226,7 +226,7 @@ jobs:
           fi
 
       - name: Upload Tizen release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-tizen
           path: |
@@ -256,7 +256,7 @@ jobs:
           )
 
       - name: Upload combined release bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: buntu-${{ needs.preflight.outputs.version }}-release-bundle
           path: release-assets/*
