@@ -48,6 +48,14 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-15 — Claude, release Samsung TV 1.2.0 (build 3)
+
+- ✅ Build terminé (exit 0) : `./scripts/prepare-releases.sh --tizen` (`build-tizen.sh --prod`). Sortie dans `build/release/v1.2.0/` : `Buntu_1.2.0_Tizen.wgt` et `Buntu-1.2.0-tizen.wgt` (identiques, 2,98 Mo) + `SHA256SUMS.txt` (6 fichiers avec les APK, 6/6 OK).
+- ✅ Contrôlé dans le paquet : `config.xml` en version 1.2.0, aucune mention `devel.mode`, `author-signature.xml` et `signature1.xml` présents, aucun fichier parasite (`.map`, `.ts`, `.env`, clé).
+- ⚠️ Signature : auteur = `Tizen Developers CA` (expire le 2027-01-01) ; distributeur = `VD DEVELOPER Public CA Class` de Samsung. D'après ce nom, c'est un certificat de **niveau développeur** (déduit, non confirmé par la documentation Samsung) : paquet pour des TV en mode développeur, **pas** pour le Seller Office. Pour la boutique, refaire le paquet avec un profil de distribution Public (`TIZEN_PROFILE=<profil> task release:tizen`, voir `docs/DEPLOY_TIZEN_STORE.md`).
+- ℹ️ Le `.wasm` (2,5 Mo) est présent deux fois dans `assets/` (noms avec `-` et avec `.`) : vérifier la config Vite si la taille compte (non corrigé).
+- ❌ Non installé ni lancé sur la TV : à faire par l'utilisateur (`./scripts/install-tizen.sh <IP>`, IP à confirmer).
+
 ## 2026-11-15 — Claude, release Android 1.2.0 (build 3)
 
 - ✅ Build terminé (exit 0, `assembleRelease` en 2 min 31 s, R8 actif) : `./scripts/prepare-releases.sh --android --skip-core` sur demande explicite de l'utilisateur (exception à la règle « pas de builds »). Sortie dans `build/release/v1.2.0/` (ignoré par git) : `Buntu-1.2.0-android-{arm64-v8a 12,1 Mo ; armeabi-v7a 9,7 Mo ; x86_64 13,3 Mo ; universal 26,9 Mo}.apk` + `SHA256SUMS.txt` (vérifié : 4/4 OK).
