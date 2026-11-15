@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.1
+
+Ouverture Open Source du dépôt (`MIT OR Apache-2.0`), préparation des releases multiplateformes unifiées (`1.0.1`, `build 2`), localisation bilingue **Français / English**, continuité du foyer chiffrée, « Commande TV » et refonte du lecteur Live TV (`PRD-46`).
+
+### Open Source & Gouvernance
+- **Double licence `MIT OR Apache-2.0`** : ajout de [`LICENSE`](LICENSE), [`LICENSE-MIT`](LICENSE-MIT) et [`LICENSE-APACHE`](LICENSE-APACHE) ainsi que des métadonnées `Cargo.toml`.
+- **Guides et modèles communautaires** : ajout de [`CONTRIBUTING.md`](CONTRIBUTING.md), [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md), [`SECURITY.md`](SECURITY.md) et des modèles GitHub Issues / Pull Requests (`.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md`).
+- **CI/CD GitHub Actions & hygiène** : workflows [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (`secrets-and-keys`, `rust`, `tizen`, `android`) et [`.github/workflows/release.yml`](.github/workflows/release.yml) ; mises à jour hebdomadaires de dépendances ([`.github/dependabot.yml`](.github/dependabot.yml)) ; renforcement de [`scripts/check-secrets.sh`](scripts/check-secrets.sh) (fichiers neufs non encore suivis inclus) et assainissement des identifiants/chemins locaux dans la documentation et les scripts.
+- **Version cohérente** : [`scripts/check-version.sh`](scripts/check-version.sh) refuse un arbre où une plateforme (Android, Apple, Tizen, Cargo) porte une autre version ou un autre numéro de build ; `prepare-releases.sh` et le workflow de release en dépendent, et un tag `vX.Y.Z` doit correspondre à `Cargo.toml`.
+- **Licences tierces** : [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) (MPVKit LGPL-3.0 lié aux apps Apple, composant propriétaire Google Play services sur Android).
+
+### Releases multiplateformes unifiées (`1.0.1`, build `2`)
+- **Alignement des versions (`1.0.1` / `build 2`)** sur Rust (`Cargo.toml`), Apple (`AppBrand.swift`, `Info-macOS.plist`, `Info-iOS.plist`, `Info-tvOS.plist`, `Info-visionOS.plist`, `scripts/run-macos.sh`), Android (`android/app/build.gradle.kts`, `SettingsScreen.kt`) et Samsung Smart TV (`tizen/src/core/appInfo.ts`, `tizen/config.xml`, `tizen/package.json`).
+- **Automatisation & documentation de release** : nouveau script [`scripts/prepare-releases.sh`](scripts/prepare-releases.sh) et tâches `Taskfile.yml` (`task release`, `task release:tizen`, `task release:macos`, `task release:android`, `task release:dry-run`) produisant `Buntu_1.0.1_Tizen.wgt`, `Buntu-1.0.1-macOS.zip` / `.dmg`, les APK Android par ABI et universel (`Buntu-1.0.1-android-*.apk`) et `SHA256SUMS.txt` dans `build/release/v1.0.1/`.
+- **Guides de distribution** : ajout de [`docs/RELEASE.md`](docs/RELEASE.md) et mise à jour de [`docs/DEPLOY_TIZEN_STORE.md`](docs/DEPLOY_TIZEN_STORE.md) pour la soumission Samsung Apps TV Seller Office (`--prod` sans `devel.mode`, signatures `TIZEN_PROFILE`), la signature macOS (`DEVELOPMENT_TEAM`) et la signature Android (`BUNTU_KEYSTORE_*` avec repli `debug` en local).
+
+### Nouveautés produit & multiplateforme
+- **Localisation bilingue Français / English à chaud** sur **Tizen** (`tizen/src/core/i18n/`), **Apple** (`AppLanguage`, `AppStringsFR` / `AppStringsEN`) et **Android** (`AppLocalization`, `AppStringsFr` / `AppStringsEn`) avec persistance du choix sans redémarrage.
+- **Continuité du foyer & « Lire sur un autre appareil » sans Cast (`PRD-41` à `PRD-45`)** : synchronisation chiffrée de bout en bout sur le réseau local (`AES-256-GCM`, identité déterministe en Rust `cnd-domain`), transfert de lecture mono-connexion avec arrêt préalable et `release_stream`, et réception sur Samsung Smart TV via le canal MSF.
+- **Appairage par QR code & découverte locale (`PRD-39` & `PRD-43`)** : échange de clés éphémères `X25519` + `HKDF-SHA256` et confirmation à l'écran, avec QR code directement scannable sur TV Samsung pour rejoindre le foyer.
+- **Écran « Commande TV »** : dictée vocale et saisie texte ciblée (`remote_text`) depuis l'application Apple ou Android vers un appareil précis du foyer ou l'ensemble du foyer.
+- **Lecteur Live TV amélioré (`PRD-46`)** : zapping débouclé à **250 ms** anti-`429`, touche **Recall** (dernière chaîne), saisie numérique directe **`0–9`**, barre **EPG temps réel** et bouton **Start-Over** (« Revoir depuis le début »), sélecteur **Qualité / Miroirs** avec bascule automatique (max 2 par session), **Mini-Guide** latéral transparent, choix du **format vidéo** (`Ajuster / Remplir / Étirer`) et **minuteur de veille** (`15 / 30 / 60 / 90 min`).
+- **Design System solide & ergonomie TV ([`DESIGN.md`](DESIGN.md))** : charte sombre opaque « anti-IA » sans dégradé ni flou de transparence, boutons 100 % solides WCAG AA/AAA, bouton accueil cliquable sur le logo Buntu, collage presse-papiers dans le clavier TV et les formulaires de sources, écran « À propos » unifié et préférences d'accessibilité/sous-titres.
+
 ## 1.1.0
 
 Identité **Buntu** (`com.pcoundia.buntu`), bibliothèque locale, recherche par prompt et recommandations IA séparées par type.

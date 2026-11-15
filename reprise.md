@@ -42,7 +42,7 @@ Pièges connus :
 - Après tout changement d'API UniFFI : reconstruire le XCFramework (`./scripts/build-xcframework.sh`, ~6 min) **et** les liaisons Kotlin (`./scripts/build-android.sh --bindings-only`, ou sans option pour les `.so`, NDK présent).
 - Disque presque plein sur le Mac : supprimer les dossiers `/private/tmp/claude-501/dd-*` après chaque `xcodebuild`.
 - Pas de `timeout` ni de `sleep` long sur macOS dans cet environnement (utiliser des boucles `until`).
-- Les 4 schémas Xcode : `CndIPTV-iOS`, `CndIPTV-tvOS`, `CndIPTV-macOS`, `CndIPTV-visionOS` (`xcodebuild -project apple/CndIPTV.xcodeproj -scheme … CODE_SIGNING_ALLOWED=NO build`). Après de nouveaux fichiers Swift : `DEVELOPMENT_TEAM=<TEAM_ID> xcodegen generate` dans `apple/`.
+- Les 4 schémas Xcode : `CndIPTV-iOS`, `CndIPTV-tvOS`, `CndIPTV-macOS`, `CndIPTV-visionOS` (`xcodebuild -project apple/CndIPTV.xcodeproj -scheme … CODE_SIGNING_ALLOWED=NO build`). Après de nouveaux fichiers Swift : `DEVELOPMENT_TEAM=<DEVELOPMENT_TEAM> xcodegen generate` dans `apple/`.
 
 ## 4. Travaux de cette session
 
@@ -67,7 +67,7 @@ Spécification : `PRD/39_QR_PAIRING_PHONE_TO_TV.md` (statut à jour en § 12). G
 | Plateforme | Fichiers | Statut |
 | :--- | :--- | :--- |
 | **Samsung (réception)** | `tizen/src/core/pairing/{PairingService,MsfChannel,ShareImport}.ts`, `tizen/src/features/pairing/PairingQr.tsx`, `tizen/src/features/onboarding/{OnboardingView,ManualSourceForm}.tsx` | Code + 9 tests ; **installé sur la TV, QR NON confirmé à l'écran** (voir § 5) |
-| **iPhone (envoi)** | `apple/Sources/CndIptvKit/Features/Sharing/{PairToTV,PairToTVSheet}.swift`, `Sources/SourcesListView.swift`, `AppShellView.swift` (`buntu://pair`) | Code + 8 tests, installé sur l'iPhone « My iPhone » ; **aucun envoi réel essayé** |
+| **iPhone (envoi)** | `apple/Sources/CndIptvKit/Features/Sharing/{PairToTV,PairToTVSheet}.swift`, `Sources/SourcesListView.swift`, `AppShellView.swift` (`buntu://pair`) | Code + 8 tests, installé sur l'iPhone « <NOM_IPHONE> » ; **aucun envoi réel essayé** |
 | **Android TV (réception)** | `android/core/platform/.../tv/{QrPairingServer,TvPairingCoordinator,SharedSources}.kt`, onboarding + sources | Réécrit (plus de formulaire en clair) ; tests JVM OK |
 | **Android téléphone (envoi)** | `android/core/platform/.../phone/PairingSender.kt` | Client seulement : **pas de scanner, pas d'écran, pas de filtre d'intent `buntu://pair`** |
 | **Apple TV (réception)** | — | **Non fait** (le téléphone refuse un QR `tls` avec un message clair) |
@@ -87,7 +87,7 @@ Alternatives déjà ajoutées côté TV : bouton **« Saisir avec la télécomma
 ## 6. Installer sur la TV Samsung (cette machine)
 
 - TV : **UN43AU8000BXZA**, adresse **192.168.1.9** (elle a changé de `.15` à `.9` : la vérifier avec `sdb devices`). Mode développeur activé, « Host PC IP » = Mac (`192.168.1.13`).
-- Tizen Studio (version ligne de commande) installé dans `~/tizen-studio` ; certificat Samsung : profil **Buntu** (auteur `~/tizen-studio-data/keystore/author/buntu_author.p12`, mot de passe dans `~/.buntu-tizen-author-password`, **ne jamais l'afficher**). Distributeur Samsung créé par l'utilisateur dans le Certificate Manager (DUID de la TV `41bd6199-12c9-46c6-9c77-f2e382e28cc2`).
+- Tizen Studio (version ligne de commande) installé dans `~/tizen-studio` ; certificat Samsung : profil **Buntu** (auteur `~/tizen-studio-data/keystore/author/buntu_author.p12`, mot de passe dans `~/.buntu-tizen-author-password`, **ne jamais l'afficher**). Distributeur Samsung créé par l'utilisateur dans le Certificate Manager (DUID de la TV `<DUID_TV>`).
 - **Toujours** avoir l'outil dans le `PATH` avant de construire, sinon le paquet n'est **pas signé** et la TV répond `Check certificate error` (le script affiche maintenant un avertissement) :
 
 ```bash
@@ -104,8 +104,8 @@ tizen run -p cnd001iptv.CndIptv -t UN43AU8000BXZA
 ## 7. Installer sur l'iPhone
 
 ```bash
-./scripts/run-iphone.sh --device "My iPhone" [--no-launch] [--rebuild-core]
-xcrun devicectl device process launch --device 00008120-00064CA63698201E --terminate-existing --console com.pcoundia.buntu   # console de l'app
+./scripts/run-iphone.sh --device "<NOM_IPHONE>" [--no-launch] [--rebuild-core]
+xcrun devicectl device process launch --device <UDID_IPHONE> --terminate-existing --console com.pcoundia.buntu   # console de l'app
 ```
 Appareil verrouillé = erreur sans gravité à la fin du script. Les journaux de l'app (catégories `PLAYER`, `MPV`, `RECO`…) s'affichent dans la console.
 

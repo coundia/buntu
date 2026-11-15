@@ -27,12 +27,14 @@
 3. [Architecture Unifiée (Monorepo)](#architecture-unifiée-monorepo)
 4. [Démarrage Rapide & Initialisation](#démarrage-rapide--initialisation)
 5. [Compilation et Lancement par Plateforme](#compilation-et-lancement-par-plateforme)
-6. [Commandes Rapides (`Taskfile.yml`)](#commandes-rapides-taskfileyml)
-7. [Structure du Dépôt](#structure-du-dépôt)
-8. [Guides Détaillés par Plateforme](#guides-détaillés-par-plateforme)
-9. [Emplacement des Données](#emplacement-des-données)
-10. [Tests et Qualité](#tests-et-qualité)
-11. [Licence](#licence)
+6. [Releases & Paquets Précompilés](#releases--paquets-précompilés)
+7. [Commandes Rapides (`Taskfile.yml`)](#commandes-rapides-taskfileyml)
+8. [Structure du Dépôt](#structure-du-dépôt)
+9. [Guides Détaillés par Plateforme](#guides-détaillés-par-plateforme)
+10. [Emplacement des Données](#emplacement-des-données)
+11. [Tests et Qualité](#tests-et-qualité)
+12. [Contribuer & Sécurité](#contribuer--sécurité)
+13. [Licence](#licence)
 
 ---
 
@@ -275,6 +277,31 @@ task cli -- download <URL_FLUX> [DOSSIER_CIBLE]
 
 ---
 
+## Releases & Paquets Précompilés
+
+Les paquets précompilés multiplateformes sont publiés sur **[GitHub Releases](https://github.com/coundia/buntu/releases)** (version alignée **`1.0.1`**, build `2`) avec leurs empreintes de vérification [`SHA256SUMS.txt`](docs/RELEASE.md#61-empreintes-sha-256-sha256sumstxt).
+
+Pour générer les artefacts localement dans `build/release/v1.0.1/` via [`scripts/prepare-releases.sh`](scripts/prepare-releases.sh) :
+
+```bash
+# Prévisualiser les étapes et fichiers de sortie sans lancer de compilation
+task release:dry-run
+
+# Générer toutes les releases (Tizen + macOS + Android) + SHA256SUMS.txt
+task release
+
+# Cibler une plateforme spécifique
+task release:macos     # Buntu-1.0.1-macOS.zip et Buntu-1.0.1-macOS.dmg
+task release:android   # Buntu-1.0.1-android-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk
+task release:tizen     # Buntu_1.0.1_Tizen.wgt (Samsung Seller Office) et Buntu-1.0.1-tizen.wgt
+```
+
+Consultez les guides détaillés :
+- 📦 **Procédure complète de release (pré-contrôles, signatures, `SHA256SUMS.txt`, GitHub Releases)** : [`docs/RELEASE.md`](docs/RELEASE.md)
+- 📺 **Soumission Samsung Apps TV Seller Office (`TIZEN_PROFILE`, `--prod`)** : [`docs/DEPLOY_TIZEN_STORE.md`](docs/DEPLOY_TIZEN_STORE.md)
+
+---
+
 ## Commandes Rapides (`Taskfile.yml`)
 
 Tableau récapitulatif des commandes courantes :
@@ -290,6 +317,8 @@ Tableau récapitulatif des commandes courantes :
 | `task run:android:tv` | Lance Buntu en mode Salon 10-foot sur Android TV. |
 | `task run:web` | Lance l'application Tizen dans le navigateur web avec rechargement à chaud. |
 | `task tizen:install` | Déploie et lance le paquet `.wgt` sur une TV Samsung (`TV_IP="..."`). |
+| `task release:dry-run` | Simule la génération des paquets de release sans lancer de build. |
+| `task release` | Génère l'ensemble des paquets de release (`build/release/v1.0.1/`) et `SHA256SUMS.txt`. |
 | `task lint` | Exécute `cargo clippy` en traitant les avertissements comme des erreurs. |
 | `task test` | Exécute l'ensemble des tests rapides (Rust, bridge Swift, app). |
 | `task check` | Validation complète de release (secrets, clés, clippy, tests SLA, xcodebuild). |
@@ -300,10 +329,17 @@ Tableau récapitulatif des commandes courantes :
 
 ```text
 cnd-iptv-native/
+├── .github/                    # Workflows GitHub Actions (ci.yml, release.yml) & modèles Issues/PR
 ├── Taskfile.yml                # Lanceur de tâches automatisées multiplateforme
 ├── Cargo.toml                  # Espace de travail Rust monorepo
+├── CHANGELOG.md                # Journal des versions multiplateforme
+├── DESIGN.md                   # Charte visuelle solide (« anti-IA »), tokens CSS et règles TV
+├── CONTRIBUTING.md             # Guide de contribution, règles d'architecture et tests
+├── CODE_OF_CONDUCT.md          # Code de conduite (Contributor Covenant v2.1)
+├── SECURITY.md                 # Politique de sécurité et signalement des vulnérabilités
+├── LICENSE                     # Résumé double licence MIT / Apache-2.0 (+ LICENSE-MIT, LICENSE-APACHE)
 ├── crates/
-│   ├── cnd-domain/             # Cœur métier pur, zéro I/O (M3U, XMLTV, sagas, recherche, profils)
+│   ├── cnd-domain/             # Cœur métier pur, zéro I/O (M3U, XMLTV, sagas, recherche, profils, appairage)
 │   ├── cnd-domain-wasm/        # Bindings WebAssembly légers pour environnements Web/Tizen
 │   ├── cnd-core/               # Moteur natif (SQLite WAL, Tokio, client HTTP, PVR, FFI)
 │   └── cnd-cli/                # Outil CLI de diagnostic et d'ingestion locale
@@ -313,21 +349,23 @@ cnd-iptv-native/
 │   └── Sources/CndIptvKit/     # Composants d'interface, lecteurs AVPlayer/libmpv, synchronisation
 ├── android/                    # Application Android & Android TV modulaire en SRP
 │   ├── app/                    # Module hôte (MobileShell & TvShell Leanback)
-│   ├── core/                   # :engine (FFI), :domain, :data, :player (ExoPlayer), :designsystem
-│   └── feature/                # 13 modules d'écrans indépendants (onboarding, live, vod, pvr...)
+│   ├── core/                   # :engine (FFI), :domain, :data, :player (ExoPlayer), :designsystem, :platform
+│   └── feature/                # 14 modules d'écrans indépendants (onboarding, live, vod, devices, pvr...)
 ├── tizen/                      # Application Samsung Smart TV (Tizen 3.0+)
 │   ├── config.xml              # Manifeste de l'application Tizen (résolution 1080p, AVPlay)
 │   ├── src/core/               # AVPlayerService, HttpClient mono-connexion, RemoteKeyHandler, Database
 │   ├── src/worker/             # Web Worker exécutant cnd-domain-wasm et IndexedDB
-│   └── src/features/           # 12 écrans TV en SolidJS optimisés sans Virtual DOM
-├── scripts/                    # Scripts de compilation (build-xcframework, build-android, build-tizen)
-├── docs/                       # Guides détaillés de build, déploiement et design
+│   └── src/features/           # 15 modules d'écrans TV en SolidJS optimisés sans Virtual DOM
+├── scripts/                    # Scripts de compilation, installation, secrets et prepare-releases.sh
+├── docs/                       # Guides de build, release, déploiement, appairage et design
 │   ├── BUILD_IPHONE.md         # Guide complet iOS (signature, provisionnement, appareils physiques)
 │   ├── BUILD_ANDROID.md        # Guide complet Android (NDK, téléphones, Google TV, benchmarks)
 │   ├── BUILD_TIZEN.md          # Guide complet Samsung TV (Developer Mode, certificats, sdb)
+│   ├── DEPLOY_TIZEN_STORE.md   # Guide de soumission sur Samsung Apps TV Seller Office
+│   ├── RELEASE.md              # Guide de release multiplateforme & publication GitHub Releases
 │   └── BRANDING_BUNTU.md       # Charte graphique (palette Buntu, contraste WCAG AA, design 10-foot)
 ├── assets/                     # Icônes de l'application (PNG 1024x1024 et ICNS)
-└── PRD/                        # 38 Spécifications techniques et index de roadmap (00_INDEX_ROADMAP.md)
+└── PRD/                        # 46 Spécifications techniques et index de roadmap (00_INDEX_ROADMAP.md)
 ```
 
 ---
@@ -339,7 +377,9 @@ Pour les instructions complètes de configuration d'environnement, d'installatio
 - 🍏 **Apple (iPhone, iPad, Mac, Apple TV)** : [`docs/BUILD_IPHONE.md`](docs/BUILD_IPHONE.md)
 - 🤖 **Android (Téléphone, Tablette, Android TV)** : [`docs/BUILD_ANDROID.md`](docs/BUILD_ANDROID.md)
 - 📺 **Samsung Smart TV (Tizen 3.0 à 8.0+)** : [`docs/BUILD_TIZEN.md`](docs/BUILD_TIZEN.md)
-- 🎨 **Identité Visuelle & Design System** : [`docs/BRANDING_BUNTU.md`](docs/BRANDING_BUNTU.md)
+- 🏪 **Soumission Samsung Apps TV Store** : [`docs/DEPLOY_TIZEN_STORE.md`](docs/DEPLOY_TIZEN_STORE.md)
+- 📦 **Guide de Release Multiplateforme** : [`docs/RELEASE.md`](docs/RELEASE.md)
+- 🎨 **Identité Visuelle & Design System** : [`docs/BRANDING_BUNTU.md`](docs/BRANDING_BUNTU.md) · [`DESIGN.md`](DESIGN.md)
 
 ---
 
@@ -383,6 +423,18 @@ task check
 
 ---
 
+## Contribuer & Sécurité
+
+Les contributions sont les bienvenues ! Avant d'ouvrir une Pull Request :
+
+- **Guide de contribution** : consultez [`CONTRIBUTING.md`](CONTRIBUTING.md) pour les règles d'architecture (`crates/cnd-domain` en Rust pur sans I/O, streaming anti-OOM, mono-connexion fournisseur, séparation SRP Android, compatibilité Chromium 56–76 sur Tizen), les commandes de tests et le format Conventional Commits.
+- **Code de conduite** : ce projet applique le [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) (Contributor Covenant v2.1).
+- **Sécurité & confidentialité** : pour signaler une vulnérabilité de manière responsable ou vérifier la politique de stockage chiffré des secrets (Trousseau Apple, Android Keystore, WebCrypto), consultez [`SECURITY.md`](SECURITY.md). Pensez toujours à exécuter `./scripts/check-secrets.sh` avant tout commit.
+
+---
+
 ## Licence
 
-Ce projet est distribué sous double licence **MIT OR Apache-2.0** (voir [`Cargo.toml`](Cargo.toml)).
+Ce projet est distribué sous double licence **MIT OR Apache-2.0** : consultez [`LICENSE`](LICENSE), [`LICENSE-MIT`](LICENSE-MIT), [`LICENSE-APACHE`](LICENSE-APACHE) et [`Cargo.toml`](Cargo.toml).
+
+Buntu utilise des composants tiers qui gardent leur licence, dont **MPVKit (LGPL-3.0)** dans les apps Apple : voir [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

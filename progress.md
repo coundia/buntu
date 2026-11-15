@@ -21,6 +21,175 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-15 — Claude, Android : tri croissant/décroissant (Live, Films, Séries) et reprise réseau mpv (Apple)
+
+- ✅ Android : `CatalogSort` gagne `NAME_DESC`, `NUMBER_DESC`, `OLDEST_ADDED`, `RATING_ASC` ; correspondance moteur dans `EngineMappers.kt` ; puces de tri Live et Films étendues ; **puce de tri ajoutée à l'écran Séries** ; textes FR/EN.
+- ✅ Vérifié : test `:core:designsystem` (textes), compilation `:core:data`, `:feature:live`, `:feature:movies`, `:feature:series`. Non vu à l'écran.
+- ✅ Apple : `MpvVideoToolboxBackend.swift` reconnecte plus longtemps (`reconnect_delay_max=30`, `network-timeout=15`) et relance le chargement jusqu'à 20 fois après abandon de mpv. Ni compilé ni essayé.
+- ✅ Apple, 2e passage (mpv resté à 0 Mbit/s / tampon 0 s après coupure) : surveillance du flux (vide + aucun téléchargement pendant 8 s → réouverture à la dernière position) et `NWPathMonitor` (réseau rétabli → réouverture immédiate), jusqu'à 100 essais. Syntaxe vérifiée seulement ; ni compilé ni essayé. ⏸️ build Apple à faire par l'utilisateur.
+- ℹ️ Apple a déjà le choix croissant/décroissant (`SearchFilterToolbar`). Tizen : Live et Films ont `default → A–Z → Z–A` ; pas de tri sur les Séries (limite de `Database.ts`), non modifié.
+- ⏸️ À faire par l'utilisateur : build Apple (reprise réseau mpv) et build Android (tri) puis essai à l'écran ; coupure réseau de 30 à 60 s en lecture.
+
+---
+
+## 2026-11-14 — Antigravity, Tizen : récupération du son sur le direct après coupure / reprise réseau
+
+- ✅ **Correctif moteur hardware (`tizen/src/core/player/AVPlayerService.ts`)** :
+  - Détection des coupures et reprises réseau pendant un flux direct (`window` `offline` / `online`, rebuffer mi-lecture `>= 1500 ms` suivi de `onbufferingcomplete`, ou gel des ticks `oncurrentplaytime >= 3000 ms`) pour déclencher une réouverture propre (`recoverLiveStreamAudio()` → `reopenAndPlay()`) réinitialisant les décodeurs vidéo **et** audio AVPlay au lieu de laisser la vidéo reprendre seule sans audio.
+  - Mémorisation de la piste audio choisie (`selectedAudioTrackIndex`, réinitialisée au changement d'URL ou sur `stop()`) et ré-application via `ensureAudioTrackActive()` (`getTotalTrackInfo()` → `selectTrack('AUDIO', index)`) au démarrage et après reprise du buffer.
+  - Auto-récupération en mini-lecteur (`LiveView`) via `recoverLiveStreamAudio('watchdog-stall')` lorsque le watchdog détecte un gel de 8 s sans listener `onStallDetected` attaché.
+- ✅ **Correctif lecteur plein écran (`tizen/src/features/player/PlayerView.tsx`)** :
+  - `reconnectDispatchPending` empêche un vieux `onBufferingComplete` ou `onCurrentPlayTime` résiduel (pendant le délai de 1 s avant `CndEngine.play(..., { force: true })`) d'annuler la reconnexion propre du flux.
+  - Rafraîchissement des pistes audio/sous-titres et appel à `ensureAudioTrackActive()` dans `refreshPlayerTracks()` à chaque fin de buffering, plus nettoyage `player.setListener({})` dans `onCleanup`.
+- ✅ **Vérifications** :
+  - `./scripts/check-secrets.sh` : `secrets check: clean`.
+  - `cd tizen && npx tsc --noEmit && npm test` : **0 erreur TS, 66/66 fichiers, 381/381 tests passés** (dont les nouveaux tests dans `tizen/tests/AVPlayerService.test.ts` et `tizen/tests/LiveReconnect.test.ts`). Non testé sur la TV Samsung à l'écran (aucun build/installation lancé par l'agent).
+- ⏸️ **À faire par l'utilisateur** : rebuilder et installer le `.wgt` sur la TV (`./scripts/build-tizen.sh` puis `./scripts/run-tizen.sh <IP>`) et vérifier le retour du son en direct après une coupure réseau.
+
+---
+
+## 2026-11-15 — Claude, audit et finition « open source + releases »
+
+- ✅ Audit (le chantier existait déjà, non commité : licences, CI, release, docs) : `check-secrets` propre ; historique (171 commits) scanné par motifs de clés et noms de fichiers sensibles : rien de réel (reste `docs/.DEPLOY_TIZEN_STORE.md.swp`, sans secret) ; versions alignées `1.0.1` / build `2`.
+- ✅ Corrigé : `release.yml` utilisait `secrets` dans un `if` d'étape (invalide) et injectait `inputs.version` dans le shell ; le script de release figeait `1.0.1` même pour un autre tag ; le `.wgt` Tizen non signé du CI portait le nom du paquet Seller Office (renommé `-unsigned`).
+- ✅ Ajouté : [`scripts/check-version.sh`](scripts/check-version.sh) (branché sur CI, release et `prepare-releases.sh`), job CI `android`, [`.github/dependabot.yml`](.github/dependabot.yml), [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), section 7 de [`docs/RELEASE.md`](docs/RELEASE.md) ; `check-secrets.sh` couvre aussi les fichiers neufs non suivis.
+- ✅ Vérifié : syntaxe bash des 3 scripts, YAML des 3 fichiers, `check-secrets`, `check-version` (cas tag différent refusé), `test-gen-default-keys`, `prepare-releases.sh --all --dry-run`, résolution du graphe Gradle (`--dry-run`).
+- ❌ Non vérifié : aucun workflow n'a tourné sur GitHub ; aucun build de release (Android, macOS, Tizen) lancé ; job CI `android` jamais exécuté.
+- ⚠️ À décider : MPVKit (LGPL-3.0) lié statiquement aux apps Apple, en particulier pour l'App Store ; Google Play services (propriétaire) sur Android ; APK signés en debug sans keystore.
+- ⏸️ À faire par l'utilisateur : commiter (dont `BuntuCategoryDrawer.kt` et `BuntuItemMenu.kt`, nécessaires à la compilation Android), réglages GitHub, secrets de signature, premier `Release` en brouillon, puis les builds de release.
+
+## 2026-11-14 — Claude, Android : catégories des films vides
+
+- ✅ Cause : [`MoviesViewModel.kt`](android/feature/movies/src/main/kotlin/com/pcoundia/buntu/feature/movies/MoviesViewModel.kt) demandait `getGroups(kind = "vod")` alors que le moteur range les films sous le type `"movie"` (requête `WHERE kind = ?2`, `catalog_repo.rs` ; la grille Android et Apple utilisent `"movie"`). Résultat : liste vide, donc ni puces ni drawer. Corrigé en `"movie"`.
+- ✅ Compilation `:feature:movies` réussie. Pas de test (aucun test du ViewModel Films). Non vu à l'écran.
+- ✅ Corrigé aussi : [`DetailsViewModel.kt`](android/feature/details/src/main/kotlin/com/pcoundia/buntu/feature/details/DetailsViewModel.kt) enregistrait le favori d'un film avec le type `"vod"` ; c'est maintenant `"movie"`. Impact réel limité : le moteur lit les favoris par le type de l'article (`i.kind`), pas par ce libellé ; il ne sert qu'au stockage et à la synchronisation du foyer. Les favoris déjà enregistrés gardent `"vod"`. Compilation `:feature:details` réussie ; aucun test (pas de dossier de test).
+- ⏸️ À faire par l'utilisateur : recompiler et installer l'app Android, ouvrir Films → Catégories.
+
+## 2026-11-14 — Claude, Android : écran Films (téléphone), bouton Catégories
+
+- ✅ Code : [`MoviesScreen.kt`](android/feature/movies/src/main/kotlin/com/pcoundia/buntu/feature/movies/MoviesScreen.kt) : `MoviesPhoneHeader` = titre + bouton « Catégories » (ouvre le drawer de gauche), barre de recherche pleine largeur (ouvre la recherche), puces Favoris / Récents, et la catégorie choisie en puce qu'on efface d'un tap. Tablette et TV gardent l'ancien en-tête. 1 clé i18n FR/EN `movies.search_hint`.
+- ✅ Tests ciblés : compilation `:feature:movies` et `:app:testDebugUnitTest` réussis, `:core:designsystem` réussi. Aucun test de l'écran Films. Non testé à l'écran.
+- ⏸️ À faire par l'utilisateur : recompiler et installer l'app Android, vérifier l'écran Films sur téléphone.
+
+## 2026-11-14 — Claude, bouton « Actualiser » pour réveiller les apps du foyer (Tizen + Android)
+
+- ✅ Tizen : [`LocalSyncService.ts`](tizen/src/core/sync/LocalSyncService.ts) `refresh()` (rouvre le canal Samsung, la TV s'annonce de nouveau et demande les données) ; bouton « Actualiser » en tête des actions du foyer dans [`SettingsView.tsx`](tizen/src/features/settings/SettingsView.tsx) ; 4 clés i18n FR/EN.
+- ✅ Android : le bouton « Actualiser » existait déjà (écran Appareils) ; [`LocalSyncService.kt`](android/core/platform/src/main/kotlin/com/pcoundia/buntu/core/platform/sync/LocalSyncService.kt) `refreshPeers()` rouvre maintenant aussi le lien vers la TV (`recoverSamsungLink()`) avant le heartbeat.
+- ✅ Tests : Tizen `tsc --noEmit` OK, `npm test` 384/384 (3 nouveaux : `LocalSyncConnection` ×2, `SettingsHouseholdTransfer` ×1) ; Android `:core:platform` et `:feature:devices` réussis. Non essayé sur la TV ni le téléphone.
+- ⏸️ À faire par l'utilisateur : `./scripts/build-tizen.sh` puis réinstaller sur la TV (le code Tizen a changé) ; recompiler et installer l'app Android ; tester « Actualiser » des deux côtés.
+
+## 2026-11-14 — Claude, Android : lien « Lire sur » vers la TV coupé après un long moment
+
+- ✅ Cause (déduite du code) : la connexion Android → relais de la TV ([`SamsungChannelTransport.kt`](android/core/platform/src/main/kotlin/com/pcoundia/buntu/core/platform/sync/SamsungChannelTransport.kt)) ne détectait pas une coupure silencieuse (pas de délai de lecture, pas de ping) ; `isConnected` restait vrai, la redécouverte de la TV était bloquée, et le play finissait en « Délai dépassé ».
+- ✅ Correctif : `silentForMs()` / `drop()` dans le transport, écriture en échec = lien fermé, rappel `onRepeatedFailure` après 3 échecs. [`LocalSyncService.kt`](android/core/platform/src/main/kotlin/com/pcoundia/buntu/core/platform/sync/LocalSyncService.kt) : `recoverSamsungLink()` (ferme le lien, relance la recherche de la TV, rouvre) appelé par le heartbeat (silence > 90 s), avant un play (silence > 45 s) et après un « Délai dépassé » ; la TV est aussi recherchée de nouveau à chaque coupure (IP changée).
+- ✅ Tests ciblés : `:core:platform` 19/19 dont `SamsungChannelTransportTest` 6/6 (nouveau test sur un faux relais muet) ; `:app` et `:feature:devices` réussis. Non essayé sur le téléphone ni la TV.
+- ⏸️ À faire par l'utilisateur : recompiler et installer l'app Android, laisser le lien dormir plusieurs minutes, puis lancer « Lire sur » vers la TV. Si l'appli Tizen est suspendue sur la TV (écran de veille), le lien se rouvre mais la TV peut rester muette : à vérifier côté Tizen.
+
+## 2026-11-14 — Claude, Android : lecteur intégré de l'écran Direct, boutons en icônes
+
+- ✅ Code : [`LiveScreen.kt`](android/feature/live/src/main/kotlin/com/pcoundia/buntu/feature/live/LiveScreen.kt) : les boutons texte « Pause » / « Plein écran » deviennent des icônes ; barre de contrôles = chaîne précédente, lecture/pause (bouton doré), chaîne suivante, son coupé/rétabli, favori, « Lire sur un autre appareil », plein écran ; format d'image et fermer à côté du titre. Nouveau `VideoEngine.setMuted` + `PlayerEngineState.isMuted` ([`VideoEngine.kt`](android/core/player/src/main/kotlin/com/pcoundia/buntu/core/player/VideoEngine.kt), [`ExoPlayerVideoEngine.kt`](android/core/player/src/main/kotlin/com/pcoundia/buntu/core/player/ExoPlayerVideoEngine.kt)) ; `BuntuItemMenu.startOnDevices`. 5 clés i18n FR/EN.
+- ✅ Tests ciblés : `:core:player`, `:core:designsystem`, `:feature:live`, `:feature:player` réussis ; compilation `:feature:movies/series/recommendations` réussie. Aucun test ne couvre les nouveaux boutons ni le son coupé. Non testé à l'écran.
+- ⏸️ À faire par l'utilisateur : recompiler et installer l'app Android, essayer le lecteur de l'écran Direct (téléphone et TV).
+
+## 2026-11-14 — Claude, Android : Direct (téléphone), favoris/catégories en haut, puis Récents, Favoris, le reste
+
+- ✅ Code : [`LiveScreen.kt`](android/feature/live/src/main/kotlin/com/pcoundia/buntu/feature/live/LiveScreen.kt) : en-tête fixe = recherche, puis bouton « Favorites » + bouton Catégories (drawer). La liste affiche ensuite « Récents » (10 max), « Favoris » (20 max), les suggestions, puis « Toutes les chaînes ». Ces sections n'apparaissent que sans recherche, sans catégorie et sans filtre favoris. [`LiveViewModel.kt`](android/feature/live/src/main/kotlin/com/pcoundia/buntu/feature/live/LiveViewModel.kt) : `refreshQuickLists()` (au démarrage, après lancement d'une chaîne, après un changement de favori). 3 clés i18n FR/EN.
+- ✅ Tests ciblés : `:feature:live` 3/3, `:core:designsystem` 10/10, compilation `:feature:movies/series/guide` réussie. Aucun test ne couvre les nouvelles sections. Non testé à l'écran.
+- ⏸️ À faire par l'utilisateur : recompiler et installer l'app Android, vérifier l'écran Direct sur téléphone.
+
+## 2026-11-14 — Claude, Android : recherche en haut de l'écran Direct (téléphone)
+
+- ✅ Code : [`LiveScreen.kt`](android/feature/live/src/main/kotlin/com/pcoundia/buntu/feature/live/LiveScreen.kt) : `LiveSearchBar` fixe au-dessus du lecteur et des listes (champ de filtre + bouton doré « Rechercher » qui ouvre la recherche complète). La barre de filtres du bas ne garde que « Favorites » et les catégories. Tablette/TV inchangées.
+- ✅ Tests ciblés : `:feature:live:testDebugUnitTest` réussi (compile incluse). Non testé à l'écran.
+- ⏸️ À faire par l'utilisateur : recompiler et installer l'app Android, vérifier l'écran Direct sur téléphone.
+
+## 2026-11-14 — Claude, Android : catégories en drawer à gauche (téléphone)
+
+- ✅ Code : nouveau [`BuntuCategoryDrawer.kt`](android/core/designsystem/src/main/kotlin/com/pcoundia/buntu/core/designsystem/BuntuCategoryDrawer.kt) ; `BuntuCategoryChips` affiche, sur téléphone (largeur compacte, hors TV), un bouton qui ouvre le drawer (recherche + « Toutes » + liste). Tablettes et TV gardent les chips. S'applique à Direct, Films, Séries et Guide. Clé i18n `categories.title` FR/EN.
+- ✅ Tests ciblés : `:core:designsystem:testDebugUnitTest` réussi ; compilation `:feature:live/movies/series/guide` réussie. Non testé à l'écran.
+- ⏸️ À faire par l'utilisateur : recompiler et installer l'app Android, puis vérifier le drawer sur téléphone.
+
+## 2026-11-14 — Claude, Android : actions dans le menu contextuel (appui long)
+
+- ✅ Code : nouveau [`BuntuItemMenu.kt`](android/core/designsystem/src/main/kotlin/com/pcoundia/buntu/core/designsystem/BuntuItemMenu.kt) (« Ajouter / Retirer des favoris » + « Lire sur un autre appareil »), branché sur Direct, Films, Séries (grille : favori seul) et Recommandations ; 3 clés i18n FR/EN `item_menu.*`.
+- ✅ Tests ciblés : `:core:designsystem:testDebugUnitTest :feature:live:testDebugUnitTest` réussis, compilation `:feature:movies/series/recommendations` réussie (exit 0). Aucun test unitaire n'exerce le nouveau menu.
+- ⏸️ À faire par l'utilisateur : recompiler et installer l'app Android, puis essayer l'appui long (non testé à l'écran).
+
+## 2026-11-14 — Antigravity, Correction du crash à la lecture Android & affichage clair des erreurs
+
+- ✅ **Crash Paging 3 au démarrage de la lecture (`RustCatalogRepository.kt`, `LiveChannelsPagingSource.kt`, `LiveViewModel.kt`, `LiveScreen.kt`)** :
+  - Cause identifiée dans `adb logcat -b crash` : `IllegalStateException: Attempt to collect twice from pageEventFlow` provoquée par `.combine(playbackHealth.brokenChannels)` appliqué sur `Pager(...).flow` avant `.cachedIn(viewModelScope)` dès que `ExoPlayerVideoEngine` publiait `broken = false` après la 1ère seconde de lecture.
+  - Suppression de `.combine(playbackHealth.brokenChannels)` sur le `Flow<PagingData<ChannelItem>>` ; lecture de l'instantané initial dans `LiveChannelsPagingSource` et exposition réactive de `brokenChannels` dans `LiveUiState` (`LiveViewModel`) consommée directement par `ChannelRowWithStatusBadge` (`LiveScreen`).
+- ✅ **Stabilité de `BuntuNavHost` dans les shells (`MobileShell.kt`, `TvShell.kt`)** :
+  - Conservation d'un point d'appel unique de `BuntuNavHost` lors des transitions vers le lecteur plein écran ou l'onboarding (et lors des changements `COMPACT` / `MEDIUM` / `EXPANDED` sur mobile/pliable/tablette) afin de ne jamais recréer de collecteurs Paging 3.
+- ✅ **Diagnostics et capture complète des erreurs en clair (`PlaybackAndPlatformModels.kt`, `StallWatchdog.kt`, `ExoPlayerVideoEngine.kt`, `PlayerViewModel.kt`, `PlayerScreen.kt`, `LiveViewModel.kt`, `LiveScreen.kt`, `MainActivity.kt`, `BuntuComponents.kt`)** :
+  - Ajout de `StreamDiagnosis.UnsupportedFormat`, `StreamDiagnosis.Generic`, `redactStreamUrls(...)` et `formatPlaybackErrorMessage(...)` pour afficher des messages français lisibles tout en masquant systématiquement URLs et identifiants Xtream.
+  - Classification explicite des erreurs de décodeur / format MediaCodec, HTTP cleartext et flux malformés dans `StallWatchdog.classifyFailure`.
+  - Ajout d'un `CoroutineExceptionHandler` sur `mainScope`/`ioScope` et encadrement `try/catch` / `runCatching` de `openInternal`, `applyTvPreferences`, la boucle ticker/watchdog et la gestion des téléchargements dans `ExoPlayerVideoEngine`.
+  - Encadrement des coroutines de `PlayerViewModel` (`startRequestedStream`, `persistCurrentProgress`, `openUpNext`, `switchVersion`, zapping, failover…), `LiveViewModel` et `MainActivity` avec `runCatching` + messages clairs et boutons **Réessayer** / **Retour** ou **Fermer le lecteur** (`BuntuErrorBanner`, `PlayerScreen`, `InlineLivePlayerCard`).
+- ✅ **Vérifications** :
+  - `./scripts/check-secrets.sh` : `secrets check: clean`.
+  - Tests unitaires Android ciblés (`cd android && ./gradlew --offline :core:domain:test :core:data:testDebugUnitTest :core:player:testDebugUnitTest :core:designsystem:testDebugUnitTest :feature:live:testDebugUnitTest :feature:player:testDebugUnitTest :app:testDebugUnitTest --console=plain`) : **75/75 réussis** (`:core:domain` 10/10, `:core:data` 20/20, `:core:player` 8/8 dont `StallWatchdogAndBufferTest` 5/5, `:core:designsystem` 10/10, `:feature:live` `LiveViewModelTest` 3/3, `:feature:player` `PlayerViewModelTest` 15/15, `:app` 9/9 dont `ModuleArchitectureTest` 2/2). Non testé à l'écran sur l'appareil (aucun build/install lancé par l'agent).
+- ⏸️ **À faire par l'utilisateur** : recompiler et installer l'app sur le téléphone / Android TV (`cd android && ./gradlew :app:installDebug` ou `task run:android`) puis vérifier la lecture vidéo sur l'appareil.
+
+---
+
+## 2026-11-14 — Antigravity, Amélioration UI/UX & corrections de bugs Android
+
+- ✅ **Navigation & Shell (`MobileShell.kt`, `TvShell.kt`, `BuntuNavHost.kt`)** :
+  - `BuntuNavHost.kt` + `TvShell.kt` : correction de la destination post-onboarding sur Android TV (`BuntuRoutes.HOME` au lieu de `BuntuRoutes.LIVE`).
+  - `MobileShell.kt` (`COMPACT`) : remplacement de la barre supérieure surchargée de 6 `FilterChip` par un en-tête compact (`BuntuBrandMark`, badge de section active, bouton **Recherche** directe et menu **Explorer** en `ModalBottomSheet` donnant accès à toutes les sections secondaires, y compris **Profils**).
+  - `MobileShell.kt` (`MEDIUM` & `EXPANDED`) : ajout de `.verticalScroll(rememberScrollState())` sur `NavigationRail` et le tiroir latéral pour éviter la troncature des entrées sur petits écrans ou mode paysage.
+- ✅ **États de chargement & d'erreur des catalogues (`BuntuComponents.kt`, `LiveScreen.kt`, `MoviesScreen.kt`, `SeriesScreen.kt`, i18n FR/EN)** :
+  - Ajout de `BuntuLoadingState` dans `BuntuComponents.kt` et des clés `common.retry`, `common.loading`, `common.search`, `nav.more_menu`, `nav.shortcuts_title` dans `AppStringsFr.kt` / `AppStringsEn.kt`.
+  - Correction du flash d'état vide pendant `LoadState.Loading` et ajout d'un bandeau d'erreur avec bouton **Réessayer** (`retry()`) lors d'un `LoadState.Error` sur `LiveScreen`, `MoviesScreen` et `SeriesScreen`.
+- ✅ **Lecteur vidéo (`PlayerScreen.kt`)** :
+  - `TopBar` : protection du titre contre l'écrasement (`widthIn(min = 100.dp)`) et défilement horizontal de la barre d'actions pour éviter la coupure des icônes en paysage sur téléphone.
+- ✅ **Recherche de catégorie & masquage du lecteur tant qu'aucun média n'est cliqué (`BuntuComponents.kt`, `LiveViewModel.kt`, `LiveScreen.kt`, i18n FR/EN)** :
+  - `BuntuCategoryChips` (`Live`, `Movies`, `Series`, `Guide`) : ajout d'un bouton/chip **Catégories…** ouvrant un champ de recherche (`OutlinedTextField`, filtrage insensible à la casse via `filterCategories(...)` + message si aucune correspondance) et clés `categories.*` / `live.close_player` dans `AppStringsFr.kt` et `AppStringsEn.kt`.
+  - `LiveViewModel` : suppression de la pré-sélection automatique `restoreLastWatchedChannelIfIdle()` au démarrage, ajout de `isInlinePlayerVisible = false` par défaut (activé uniquement lors d'un clic sur une chaîne / d'un zap) et ajout de `closeInlinePlayer()`.
+  - `LiveScreen` : `InlineLivePlayerCard` n'est plus affiché tant qu'un média n'a pas été cliqué (`state.isInlinePlayerVisible && playerState.activeStream != null`) ; sur tablette/TV (`ExpandedOrTvLiveLayout`), la liste occupe toute la largeur tant que le lecteur est masqué, et un bouton fermer (`Icons.Default.Close`) permet de fermer/arrêter le lecteur intégré.
+- ✅ **Vérifications** :
+  - `./scripts/check-secrets.sh` : `secrets check: clean`.
+  - `cd android && ./gradlew --offline :core:designsystem:testDebugUnitTest :feature:live:testDebugUnitTest :feature:movies:testDebugUnitTest :feature:series:testDebugUnitTest :feature:guide:testDebugUnitTest :app:testDebugUnitTest --console=plain` : `BUILD SUCCESSFUL` (`:core:designsystem` 10/10 dont `AppLocalizationTest` 8/8 et `BuntuPaletteTest` 2/2 ; `:feature:live` `LiveViewModelTest` 2/2 ; `:app` 9/9 dont `ModuleArchitectureTest` 2/2, `TvUiSoundsTest` 4/4, `TvHomeModelTest` 3/3 ; `:feature:movies`, `:feature:series`, `:feature:guide` compilés sans erreur, pas de sources de test unitaire). Non essayé à l'écran / sur appareil.
+- ⏸️ **À faire par l'utilisateur** : compiler et installer l'APK sur téléphone / Android TV (`cd android && ./gradlew assembleDebug` ou `task run:android`) pour valider visuellement les écrans et la navigation.
+
+---
+
+## 2026-11-14 — Antigravity (Swarm), Nettoyage Open Source GitHub & Préparation des Releases 1.0.1 (Tizen, macOS, Android)
+
+- ✅ **Ouverture Open Source & hygiène sécurité (`oss-clean-gov`)** :
+  - Suppression du fichier swap suivi [`docs/.DEPLOY_TIZEN_STORE.md.swp`](docs/.DEPLOY_TIZEN_STORE.md.swp) (`git rm -f`) et enrichissement de [`.gitignore`](.gitignore) (`*.swp`, `*.swo`, `*~`, `**/.DS_Store`, `.claude/`, `*.keystore`, `*.jks`, `*.p12`, `*.mobileprovision`).
+  - Double licence `MIT OR Apache-2.0` (`Copyright (c) 2026 Papa COUNDIA`) : [`LICENSE`](LICENSE), [`LICENSE-MIT`](LICENSE-MIT), [`LICENSE-APACHE`](LICENSE-APACHE).
+  - Gouvernance & modèles GitHub : [`CONTRIBUTING.md`](CONTRIBUTING.md), [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md), [`SECURITY.md`](SECURITY.md), [`.github/ISSUE_TEMPLATE/bug_report.yml`](.github/ISSUE_TEMPLATE/bug_report.yml), [`.github/ISSUE_TEMPLATE/feature_request.yml`](.github/ISSUE_TEMPLATE/feature_request.yml), [`.github/ISSUE_TEMPLATE/config.yml`](.github/ISSUE_TEMPLATE/config.yml), [`.github/pull_request_template.md`](.github/pull_request_template.md).
+  - Workflows GitHub Actions : [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (`secrets-and-keys`, `rust`, `tizen`) et [`.github/workflows/release.yml`](.github/workflows/release.yml) (`build-macos`, `build-android`, `build-tizen`, `publish-release` + `SHA256SUMS.txt`).
+  - Assainissement & contrôle automatisé : liens `file:///Users/...` remplacés par des liens relatifs dans [`docs/TIZEN_PERFORMANCE_PAGINATION.md`](docs/TIZEN_PERFORMANCE_PAGINATION.md) et [`progress/continuity_suivi.md`](progress/continuity_suivi.md) ; [`scripts/run-iphone.sh`](scripts/run-iphone.sh) exige `DEVELOPMENT_TEAM` hors `--list` et remplace `"My iPhone"` par `"My iPhone"` ; [`reprise.md`](reprise.md) remplace les identifiants personnels par des placeholders (`<DEVELOPMENT_TEAM>`, `<DUID_TV>`, `<UDID_IPHONE>`, `<NOM_IPHONE>`) ; [`scripts/check-secrets.sh`](scripts/check-secrets.sh) vérifie aussi les fichiers suivis `.p12`/`.keystore`/`.jks`/`.mobileprovision`/`.swp` et les chemins `/Users/` dans `crates/`, `apple/`, `android/`, `tizen/`, `scripts/`, `docs/`.
+- ✅ **Release & tests Tizen `1.0.1` / `build 2` (`release-tizen`)** :
+  - Mise à jour de [`tizen/tests/TizenNiceToHave.test.ts`](tizen/tests/TizenNiceToHave.test.ts) (`'1.0.1'`, `'2'`, `'1.0.1 (build 2)'`) et [`tizen/tests/HomeNavigation.test.ts`](tizen/tests/HomeNavigation.test.ts) (`BACK` depuis `settings` revient à `home`, puis un second `BACK` depuis `home` appelle `PlatformService.exitApp()` et `engine.stopPlayback()` sans dialogue).
+  - Stabilisation de [`tizen/tests/HttpClient.test.ts`](tizen/tests/HttpClient.test.ts) via `vi.stubGlobal('fetch', fakeFetch)` + nettoyage `afterEach`.
+  - Mise à jour de [`docs/DEPLOY_TIZEN_STORE.md`](docs/DEPLOY_TIZEN_STORE.md) (`1.0.1` / `2`, `task release:tizen` / `./scripts/prepare-releases.sh --tizen`).
+- ✅ **Alignement versions `1.0.1` (`build 2`) & outillage de release (`release-macos-android`)** :
+  - Rust [`Cargo.toml`](Cargo.toml) (`version = "1.0.1"`, `authors`, `repository`), Apple ([`AppBrand.swift`](apple/Sources/CndIptvKit/Shared/Design/AppBrand.swift), [`AppBrandTests.swift`](apple/Tests/CndIptvAppTests/AppBrandTests.swift), [`Info-macOS.plist`](apple/Resources/Info-macOS.plist), [`Info-iOS.plist`](apple/Resources/Info-iOS.plist), [`Info-tvOS.plist`](apple/Resources/Info-tvOS.plist), [`Info-visionOS.plist`](apple/Resources/Info-visionOS.plist), [`scripts/run-macos.sh`](scripts/run-macos.sh) avec schémas `cndiptv` et `buntu`), Android ([`android/app/build.gradle.kts`](android/app/build.gradle.kts) avec `versionCode = 2`, `versionName = "1.0.1"` et `signingConfigs` `release` optionnel replié sur `debug`, [`SettingsScreen.kt`](android/feature/settings/src/main/kotlin/com/pcoundia/buntu/feature/settings/SettingsScreen.kt), [`SettingsViewModelTest.kt`](android/feature/settings/src/test/kotlin/com/pcoundia/buntu/feature/settings/SettingsViewModelTest.kt)).
+  - Création de [`scripts/prepare-releases.sh`](scripts/prepare-releases.sh) (`chmod +x`) et ajout des tâches `release`, `release:tizen`, `release:macos`, `release:android`, `release:dry-run` dans [`Taskfile.yml`](Taskfile.yml).
+- ✅ **Documentation publique & release (`oss-docs-release`)** :
+  - Création de [`docs/RELEASE.md`](docs/RELEASE.md) et mise à jour de [`CHANGELOG.md`](CHANGELOG.md) (`## 1.0.1`) et [`README.md`](README.md) (sections *Releases & Paquets Précompilés*, *Contribuer & Sécurité*, arborescence et liens).
+- ✅ **Vérifications (`verifier`)** :
+  - `git status --short` : aucun fichier `.swp` ni `.env`, `docs/.DEPLOY_TIZEN_STORE.md.swp` supprimé (`D`), tous les fichiers attendus présents.
+  - `./scripts/check-secrets.sh` → `secrets check: clean` (exit 0).
+  - `./scripts/test-gen-default-keys.sh` → 16/16 checks `ok`, `all generator tests passed` (exit 0).
+  - `bash -n scripts/prepare-releases.sh scripts/check-secrets.sh scripts/run-iphone.sh scripts/run-macos.sh scripts/build-tizen.sh` → exit 0 ; contrôle YAML Ruby sur les 5 fichiers `.github/**/*.yml` → 5/5 OK.
+  - `./scripts/prepare-releases.sh --dry-run` → exit 0 (plan `build/release/v1.0.1/` affiché sans lancer de build).
+  - `cargo clippy -p cnd-domain --all-targets -- -D warnings && cargo test -p cnd-domain` → 0 warning, **88/88 tests passés** (0 échec, 0 ignoré).
+  - `cd tizen && npx tsc --noEmit && npm test` → `tsc --noEmit` 0 erreur, **66/66 fichiers, 378/378 tests passés** en 10.15s.
+  - `cd apple && swift test --filter "AppBrandTests|AppLocalizationTests"` → **13/13 tests passés** (`AppBrandTests` 7/7, `AppLocalizationTests` 6/6, 0 échec).
+  - `cd android && ./gradlew --offline :feature:settings:testDebugUnitTest :app:testDebugUnitTest --console=plain` → **BUILD SUCCESSFUL in 8s** (`:feature:settings:testDebugUnitTest` `UP-TO-DATE` — `SettingsViewModelTest` 8/8 après la dernière édition ; `:app:testDebugUnitTest` exécuté — 9/9 : `ModuleArchitectureTest` 2/2, `TvHomeModelTest` 3/3, `TvUiSoundsTest` 4/4 ; 0 échec, 0 ignoré).
+  - Note hors périmètre (non modifiés) : [`docs/BUILD_IPHONE.md`](docs/BUILD_IPHONE.md#L48) et [`PRD/35_UNIVERSAL_MKV_MPV_ENGINE_ALL_PLATFORMS.md`](PRD/35_UNIVERSAL_MKV_MPV_ENGINE_ALL_PLATFORMS.md#L186) mentionnent encore l'ancien exemple `"My iPhone"`.
+- ⏸️ **À faire par l'utilisateur** :
+  - Générer les binaires de release dans `build/release/v1.0.1/` (non compilés ni testés à l'écran par les agents) : `task release:tizen` (avec `TIZEN_PROFILE`), `task release:macos`, `task release:android` (ou `./scripts/prepare-releases.sh --all`).
+  - Vérifier `git status` puis exécuter `git commit` et `git push` quand il le souhaite.
+
+---
+
 ## 2026-11-14 — Claude, QR de la TV Tizen illisible depuis Android (Appareils)
 
 - ✅ **Cause** : dans Réglages → Appareils, [`SettingsView.tsx`](tizen/src/features/settings/SettingsView.tsx) dessinait le QR « ajouter cette TV au foyer » à la main (4 px par module, **sans marge blanche**, sur la carte sombre). Un scanner (Google code scanner sur Android) ne retrouve pas les coins sans 4 modules blancs autour. Les écrans Sources et accueil utilisaient déjà [`PairingQr`](tizen/src/features/pairing/PairingQr.tsx) (marge + 320 px). Déduit du code ; non reproduit sur la TV ni le téléphone.
@@ -584,3 +753,34 @@ Rien n'est commité. Rien n'est essayé sur un téléphone ni sur une Android TV
 - ✅ Nom du manifeste Tizen aligné sur Buntu IPTV. À faire par l’utilisateur : vérifier le WGT envoyé, puis reconstruire et signer un paquet de production si son nom diffère.
 
 - ✅ Version Tizen 1.0.1 (build 2) synchronisée après le refus de la version déjà enregistrée. WGT de production signé à reconstruire par l’utilisateur, puis pré-test à relancer.
+
+- ✅ Skill Codex agents-paralleles créé dans skills/ et en-tête YAML validé. Découverte par Codex et exécution à vérifier après installation.
+
+- ✅ Tampon du direct Apple : analyse syntaxique Swift et diff vérifiés. À faire par l’utilisateur : compiler le schéma Apple ciblé et essayer sur appareil.
+- ✅ Tampon du direct Tizen : TypeScript et 21 tests ciblés réussis. À faire par l’utilisateur : reconstruire le WGT et essayer sur la TV.
+- ✅ Tampon du direct Android : 6 tests ciblés réussis via Kotlin/JUnit locaux. Gradle hors ligne bloqué par le verrou du cache utilisateur. À faire par l’utilisateur : compiler Android et essayer sur appareil.
+- ✅ Tampon configurable du direct sur Android, Apple et Tizen : Auto, 25 s ou 30 s. Validation sur appareils et mesures de résistance aux microcoupures à faire par l’utilisateur.
+
+- ✅ Défilement des catégories de films restauré au retour de la fiche et du plein écran sur Android, Apple et Tizen. Tizen : TypeScript et 6 tests réussis. Apple : analyse syntaxique Swift réussie, XCTest ajouté mais non exécuté. Android : tests bloqués par le verrou du cache Gradle. Builds et essais sur appareils à faire par l’utilisateur.
+
+- ✅ Tris TV en direct et Films : ajoutés sur Android et Tizen, déjà disponibles sur Apple. Android : diff et traductions vérifiés, tests bloqués par le verrou du cache Gradle. Tizen : TypeScript et 17 tests ciblés réussis. À faire par l’utilisateur : builds Android et WGT Samsung, essais à l’écran et vérification de la migration du catalogue Tizen.
+
+- ✅ Skill Codex renommé en para, avec invocation mise à jour.
+
+- ✅ Lecteur plein écran étendu sur Android, Apple et Tizen. Diff vérifié, analyse syntaxique Swift réussie, TypeScript et 15 tests ciblés Tizen réussis. À faire par l’utilisateur : builds Android, schémas Apple ciblés et WGT Tizen, puis essais sur les appareils.
+
+- ✅ Mode expert ajouté au lecteur plein écran sur Android, Apple et Tizen. Apple : syntaxe vérifiée. Android : diff et traductions vérifiés, tests bloqués par le cache Gradle. Tizen : TypeScript et 16 tests ciblés réussis. À faire par l’utilisateur : builds et essais sur appareils.
+
+- ✅ Mode expert : progression et commandes visibles sur Android, Apple et Tizen. Swift : syntaxe vérifiée. Tizen : TypeScript et 26 tests ciblés réussis. Android : diff vérifié, test bloqué par le verrou du cache Gradle. Builds et essais sur appareils à faire par l’utilisateur.
+
+- ✅ Étude du débit faible sur Apple : distinguer débit et réserve, rendre le bandeau progressif et réutiliser les options de reprise existantes.
+
+- ✅ Lecture Apple en débit faible : avertissement progressif, reprise sur la même session mpv et options de secours. Syntaxe Swift et quatre scénarios isolés vérifiés. Build Apple, XCTest complet et essai à l’écran à faire par l’utilisateur.
+
+- ✅ Tampon VOD en cyan dans la progression sur Apple et Android, indicateur cyan de remplissage sur Tizen. Syntaxe Swift, diff, TypeScript et 16 tests Tizen vérifiés. Builds et essais sur appareils à faire par l’utilisateur.
+
+- ✅ Changement de sous-titres : position et pause préservées sur Apple et Tizen ; Android sélectionnait déjà la piste sans rouvrir le lecteur. Syntaxe Swift, TypeScript et 18 tests Tizen vérifiés. Builds Apple et Tizen, puis essais sur appareils à faire par l’utilisateur.
+
+- ✅ CTA de recherche rétabli sur Apple dans Direct, Films, Séries et Guide. Syntaxe Swift et diff vérifiés. Recherche existante en haut sur Android et Tizen. Build Apple et essais à l’écran à faire par l’utilisateur.
+
+- ✅ Réception et tampon rétablis après retour du réseau sur Apple, Android et Tizen. Apple : analyse syntaxique réussie, XCTest ajouté à exécuter. Android : diff vérifié. Tizen : TypeScript et 18 tests ciblés réussis. Builds et essais sur appareils à faire par l’utilisateur.

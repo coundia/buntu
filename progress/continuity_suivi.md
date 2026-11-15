@@ -110,31 +110,31 @@ cd tizen && npx tsc --noEmit && npm test
 ## 6. Inventaire des Fichiers Créés / Modifiés
 
 ### Cœur Partagé & Protocoles
-- [`crates/cnd-domain/src/identity.rs`](file:///Users/<user>/projects/cnd-iptv-native/crates/cnd-domain/src/identity.rs) : Normalisation d'URL et calcul déterministe blake3 de `source_key` et `content_key`.
-- [`crates/cnd-domain/src/sync/`](file:///Users/<user>/projects/cnd-iptv-native/crates/cnd-domain/src/sync/) : Enregistrements de delta, horloge HLC, fusion LWW, enveloppe AES-256-GCM et vecteurs de test.
-- [`crates/cnd-core/src/lib.rs`](file:///Users/<user>/projects/cnd-iptv-native/crates/cnd-core/src/lib.rs) : Primitives UniFFI exportées vers Swift et Kotlin.
-- [`crates/cnd-domain-wasm/src/lib.rs`](file:///Users/<user>/projects/cnd-iptv-native/crates/cnd-domain-wasm/src/lib.rs) : Exports WebAssembly 1.0 MVP pour Tizen.
+- [`crates/cnd-domain/src/identity.rs`](../crates/cnd-domain/src/identity.rs) : Normalisation d'URL et calcul déterministe blake3 de `source_key` et `content_key`.
+- [`crates/cnd-domain/src/sync/`](../crates/cnd-domain/src/sync/) : Enregistrements de delta, horloge HLC, fusion LWW, enveloppe AES-256-GCM et vecteurs de test.
+- [`crates/cnd-core/src/lib.rs`](../crates/cnd-core/src/lib.rs) : Primitives UniFFI exportées vers Swift et Kotlin.
+- [`crates/cnd-domain-wasm/src/lib.rs`](../crates/cnd-domain-wasm/src/lib.rs) : Exports WebAssembly 1.0 MVP pour Tizen.
 
 ### Apple (iOS, macOS, tvOS, visionOS)
-- [`apple/Sources/CndIptvKit/Sync/HouseholdStore.swift`](file:///Users/<user>/projects/cnd-iptv-native/apple/Sources/CndIptvKit/Sync/HouseholdStore.swift) : Gestion du Trousseau (Keychain), identifiant d'appareil et compteur anti-rejeu.
-- [`apple/Sources/CndIptvKit/Sync/LocalSyncService.swift`](file:///Users/<user>/projects/cnd-iptv-native/apple/Sources/CndIptvKit/Sync/LocalSyncService.swift) : Découverte et annonce Bonjour, framing TCP et synchronisation bidirectionnelle.
-- [`apple/Sources/CndIptvKit/Features/Settings/SettingsView.swift`](file:///Users/<user>/projects/cnd-iptv-native/apple/Sources/CndIptvKit/Features/Settings/SettingsView.swift) : Section UI Continuité du foyer.
-- [`apple/Tests/CndIptvAppTests/SyncParityTests.swift`](file:///Users/<user>/projects/cnd-iptv-native/apple/Tests/CndIptvAppTests/SyncParityTests.swift) : Tests de parité inter-plateformes en Swift.
+- [`apple/Sources/CndIptvKit/Sync/HouseholdStore.swift`](../apple/Sources/CndIptvKit/Sync/HouseholdStore.swift) : Gestion du Trousseau (Keychain), identifiant d'appareil et compteur anti-rejeu.
+- [`apple/Sources/CndIptvKit/Sync/LocalSyncService.swift`](../apple/Sources/CndIptvKit/Sync/LocalSyncService.swift) : Découverte et annonce Bonjour, framing TCP et synchronisation bidirectionnelle.
+- [`apple/Sources/CndIptvKit/Features/Settings/SettingsView.swift`](../apple/Sources/CndIptvKit/Features/Settings/SettingsView.swift) : Section UI Continuité du foyer.
+- [`apple/Tests/CndIptvAppTests/SyncParityTests.swift`](../apple/Tests/CndIptvAppTests/SyncParityTests.swift) : Tests de parité inter-plateformes en Swift.
 - `apple/Resources/Info-*.plist` : Déclaration de `_buntu-sync._tcp` dans `NSBonjourServices`.
 
 ### Android
-- [`android/core/domain/.../HouseholdSyncRepository.kt`](file:///Users/<user>/projects/cnd-iptv-native/android/core/domain/src/main/kotlin/com/pcoundia/buntu/core/domain/repository/HouseholdSyncRepository.kt) : Contrat d'interface SRP dans `:core:domain`.
-- [`android/core/data/.../RustHouseholdSyncRepository.kt`](file:///Users/<user>/projects/cnd-iptv-native/android/core/data/src/main/kotlin/com/pcoundia/buntu/core/data/repository/RustHouseholdSyncRepository.kt) : Implémentation Rust UniFFI dans `:core:data`.
-- [`android/core/platform/.../HouseholdStore.kt`](file:///Users/<user>/projects/cnd-iptv-native/android/core/platform/src/main/kotlin/com/pcoundia/buntu/core/platform/sync/HouseholdStore.kt) : Stockage dans le Keystore matériel Android.
-- [`android/core/platform/.../LocalSyncService.kt`](file:///Users/<user>/projects/cnd-iptv-native/android/core/platform/src/main/kotlin/com/pcoundia/buntu/core/platform/sync/LocalSyncService.kt) : Découverte `NsdManager`, `MulticastLock`, serveur/client TCP.
-- [`android/core/data/src/test/.../SyncParityTest.kt`](file:///Users/<user>/projects/cnd-iptv-native/android/core/data/src/test/kotlin/com/pcoundia/buntu/core/data/sync/SyncParityTest.kt) : Tests de parité en Kotlin.
+- [`android/core/domain/.../HouseholdSyncRepository.kt`](../android/core/domain/src/main/kotlin/com/pcoundia/buntu/core/domain/repository/HouseholdSyncRepository.kt) : Contrat d'interface SRP dans `:core:domain`.
+- [`android/core/data/.../RustHouseholdSyncRepository.kt`](../android/core/data/src/main/kotlin/com/pcoundia/buntu/core/data/repository/RustHouseholdSyncRepository.kt) : Implémentation Rust UniFFI dans `:core:data`.
+- [`android/core/platform/.../HouseholdStore.kt`](../android/core/platform/src/main/kotlin/com/pcoundia/buntu/core/platform/sync/HouseholdStore.kt) : Stockage dans le Keystore matériel Android.
+- [`android/core/platform/.../LocalSyncService.kt`](../android/core/platform/src/main/kotlin/com/pcoundia/buntu/core/platform/sync/LocalSyncService.kt) : Découverte `NsdManager`, `MulticastLock`, serveur/client TCP.
+- [`android/core/data/src/test/.../SyncParityTest.kt`](../android/core/data/src/test/kotlin/com/pcoundia/buntu/core/data/sync/SyncParityTest.kt) : Tests de parité en Kotlin.
 - `android/app/src/main/AndroidManifest.xml` : Permission `CHANGE_WIFI_MULTICAST_STATE`.
 
 ### Samsung TV (Tizen)
-- [`tizen/src/core/sync/HouseholdStore.ts`](file:///Users/<user>/projects/cnd-iptv-native/tizen/src/core/sync/HouseholdStore.ts) : Stockage IndexedDB chiffré en WebCrypto.
-- [`tizen/src/core/sync/LocalSyncService.ts`](file:///Users/<user>/projects/cnd-iptv-native/tizen/src/core/sync/LocalSyncService.ts) : Client WebSocket du canal Samsung TV (`buntu.sync.<household_id>`).
-- [`tizen/src/features/settings/SettingsView.tsx`](file:///Users/<user>/projects/cnd-iptv-native/tizen/src/features/settings/SettingsView.tsx) : Interface de gestion du foyer et QR Code.
-- [`tizen/tests/SyncVectors.test.ts`](file:///Users/<user>/projects/cnd-iptv-native/tizen/tests/SyncVectors.test.ts) : Tests de validation des vecteurs en TypeScript.
+- [`tizen/src/core/sync/HouseholdStore.ts`](../tizen/src/core/sync/HouseholdStore.ts) : Stockage IndexedDB chiffré en WebCrypto.
+- [`tizen/src/core/sync/LocalSyncService.ts`](../tizen/src/core/sync/LocalSyncService.ts) : Client WebSocket du canal Samsung TV (`buntu.sync.<household_id>`).
+- [`tizen/src/features/settings/SettingsView.tsx`](../tizen/src/features/settings/SettingsView.tsx) : Interface de gestion du foyer et QR Code.
+- [`tizen/tests/SyncVectors.test.ts`](../tizen/tests/SyncVectors.test.ts) : Tests de validation des vecteurs en TypeScript.
 
 ---
 
