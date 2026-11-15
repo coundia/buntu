@@ -333,6 +333,25 @@ class LiveViewModelTest {
         assertNull(vm.uiState.value.errorMessage)
         assertEquals(42L, fakeEngine.state.value.activeStream?.itemId)
     }
+
+    @Test
+    fun `recent and favorite channels are loaded for the quick sections and follow a favorite toggle`() = runTest {
+        val catalogRepo = FakeLiveCatalogRepository()
+        val vm = newQuickListsViewModel(catalogRepo)
+        backgroundScope.launch(testDispatcher) { vm.uiState.collect {} }
+
+        assertEquals(listOf(42L), vm.uiState.value.recentChannels.map { it.id })
+        assertTrue(vm.uiState.value.favoriteChannels.isEmpty())
+
+        assertEquals(true, vm.toggleItemFavorite(42L))
+        assertEquals(listOf(42L), vm.uiState.value.favoriteChannels.map { it.id })
+    }
+
+    @Test
+    fun `item favorite state is read from the repository`() = runTest {
+        val vm = newQuickListsViewModel(FakeLiveCatalogRepository())
+        assertEquals(false, vm.isItemFavorite(42L))
+    }
 }
 
 private class FakeLivePlaybackHealthRepository : PlaybackHealthRepository {
@@ -402,7 +421,8 @@ private class FakeLiveCatalogRepository : CatalogRepository {
     override suspend fun getChannelById(itemId: Long): ChannelItem? = channel.takeIf { it.id == itemId }
     override suspend fun getAdjacentChannel(currentItemId: Long, delta: Int, groupName: String?): ChannelItem = channel
     override suspend fun getChannelByNumber(number: Int): ChannelItem? = channel.takeIf { number == 12 }
-    override suspend fun listFavoriteChannels(): ImmutableList<ChannelItem> = persistentListOf()
+    var favoriteChannels: ImmutableList<ChannelItem> = persistentListOf()
+    override suspend fun listFavoriteChannels(): ImmutableList<ChannelItem> = favoriteChannels
     override suspend fun listRecentChannels(limit: Int): ImmutableList<ChannelItem> = persistentListOf(channel)
     override suspend fun getMovieDetail(itemId: Long, metadataApiKey: String?): MediaDetail? = null
     override suspend fun getSeriesDetail(
@@ -414,7 +434,10 @@ private class FakeLiveCatalogRepository : CatalogRepository {
     override suspend fun getEpisodeById(episodeId: Long): EpisodeItem? = null
     override suspend fun toggleFavorite(stableHash: String, kind: String): Boolean = true
     override suspend fun isFavoriteForPlayback(itemId: Long): Boolean = false
-    override suspend fun toggleFavoriteForPlayback(itemId: Long): Boolean = true
+    override suspend fun toggleFavoriteForPlayback(itemId: Long): Boolean {
+        favoriteChannels = persistentListOf(channel)
+        return true
+    }
     override suspend fun recordWatchProgress(stableHash: String, positionMs: Long, durationMs: Long) = Unit
     override suspend fun resolvePlayableStream(itemId: Long, startPositionMs: Long): PlayableStream {
         failResolveWith?.let { throw it }
@@ -475,4 +498,65 @@ private object NoRemotePlayback : RemotePlaybackRepository {
     override suspend fun sendPlaybackControl(targetPeerId: String, action: String, value: Long?) = Unit
     override fun setLocalPlaybackActive(contentKey: String?, title: String?, sourceKey: String?) = Unit
     override fun onLocalPlaybackStopped() = Unit
+}
+
+/** A [LiveViewModel] on fakes, for tests that only look at lists (no playback). */
+private fun newQuickListsViewModel(catalogRepo: FakeLiveCatalogRepository): LiveViewModel {
+    val settingsRepo = FakeLiveSettingsRepository()
+    val downloadsRepo = object : DownloadsRepository {
+        override val downloadsFlow: Flow<ImmutableList<DownloadItem>> = flowOf(persistentListOf())
+        override suspend fun refreshDownloads(): ImmutableList<DownloadItem> = persistentListOf()
+        override suspend fun enqueueDownload(itemId: Long): Long = 1L
+        override suspend fun pauseDownload(taskId: Long) = Unit
+        override suspend fun resumeDownload(taskId: Long) = Unit
+        override suspend fun removeDownload(taskId: Long, deleteFiles: Boolean) = Unit
+        override suspend fun pauseAllForPlayback() = Unit
+        override suspend fun resumeAfterPlayback() = Unit
+    }
+    val recoRepo = object : RecommendationsRepository {
+        override suspend fun loadLocalShelves(
+            kind: RecoDomainKind,
+            limitPerShelf: Int,
+            utcOffsetMinutes: Int,
+        ): ImmutableList<RecoShelfGroup> = persistentListOf()
+        override suspend fun refineShelvesWithAi(
+            kind: RecoDomainKind,
+            aiConfig: com.pcoundia.buntu.core.domain.model.AiSettingsConfig,
+            apiKey: String,
+            limitPerShelf: Int,
+            locale: String,
+            utcOffsetMinutes: Int,
+        ): ImmutableList<RecoShelfGroup> = persistentListOf()
+        override suspend fun markLessLikeThis(kind: RecoDomainKind, stableHash: String) = Unit
+        override suspend fun resetTaste(kind: RecoDomainKind) = Unit
+        override suspend fun upNextFor(itemId: Long, context: com.pcoundia.buntu.core.domain.model.UpNextContext, limit: Int) =
+            persistentListOf<com.pcoundia.buntu.core.domain.model.UpNextItem>()
+        override suspend fun nextUpAfter(itemId: Long): com.pcoundia.buntu.core.domain.model.UpNextItem? = null
+        override suspend fun dismissUpNext(stableHash: String) = Unit
+    }
+    val profilesRepo = object : ProfilesRepository {
+        override val profilesFlow: Flow<ImmutableList<ProfileSummary>> = flowOf(persistentListOf())
+        override suspend fun refreshProfiles(): ImmutableList<ProfileSummary> = persistentListOf()
+        override suspend fun activeProfile(): ProfileSummary =
+            ProfileSummary(1L, "Principal", "🦁", isKids = false, isActive = true)
+        override suspend fun selectProfile(profileId: Long) = Unit
+        override suspend fun createProfile(name: String, avatar: String, isKids: Boolean) = activeProfile()
+        override suspend fun deleteProfile(profileId: Long) = Unit
+        override suspend fun setAdultContentVisible(visible: Boolean) = Unit
+        override suspend fun setGroupAllowedForKids(profileId: Long, kind: String, groupName: String, allowed: Boolean) = Unit
+    }
+    val secretStore = object : SecretStore {
+        override suspend fun putSecret(alias: String, plaintext: String) = Unit
+        override suspend fun getSecret(alias: String): String? = null
+        override suspend fun deleteSecret(alias: String) = Unit
+    }
+    return LiveViewModel(
+        catalogRepository = catalogRepo,
+        settingsRepository = settingsRepo,
+        zapToChannelUseCase = ZapToChannelUseCase(catalogRepo, settingsRepo, downloadsRepo),
+        loadShelvesUseCase = LoadShelvesUseCase(recoRepo, profilesRepo, settingsRepo, secretStore),
+        videoEngine = FakeVideoEngine(),
+        playOnAnotherDevice = PlayOnAnotherDeviceUseCase(NoRemotePlayback),
+        playbackHealth = FakeLivePlaybackHealthRepository(),
+    )
 }
