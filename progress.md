@@ -48,6 +48,12 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-15 — Claude, page GitHub Pages du projet
+
+- ✅ Page statique ajoutée dans `docs/` : `index.html`, `site.css`, `site.js`, `assets/` (icône 256 px et favicon tirés de `assets/AppIcon-1024.png`), `.nojekyll`. Français par défaut dans le HTML, anglais par un bouton (choix gardé dans `localStorage`, `try/catch`) ; aucune police, image ni script externe (aucune requête vers un tiers) ; clair/sombre selon le système ; mobile ; liens clavier visibles. Contenu repris de `README.md`, `SECURITY.md` et `docs/RELEASE.md` ; aucune fausse capture d'écran. Rendu contrôlé avec Chrome sans interface (bureau FR et EN, 500 px) ; liens locaux présents, 9 liens GitHub sur 12 répondent 200 (3 expirés : réseau).
+- ✅ `README.md` : lien « Site du projet ». Adresse prévue : https://coundia.github.io/buntu/ (source : dossier `/docs` de `main`, sans Actions).
+- ℹ️ Les `.md` de `docs/` restent dans le dossier publié mais sont servis bruts (`.nojekyll`) : les liens de la page pointent vers leur version GitHub.
+
 ## 2026-11-15 — Claude, brouillon de release GitHub 1.2.0
 
 - ✅ Brouillon créé sur `coundia/buntu` (accord de l'utilisateur) : « Buntu 1.2.0 », **brouillon + pré-version**, cible `main`, notes = `RELEASE_NOTES.md`. 9 fichiers joints : 4 APK, `.dmg`, `.zip`, 2 `.wgt` (identiques), `SHA256SUMS.txt`. Vérifié via l'API : tailles et SHA-256 identiques aux fichiers locaux, 0 écart.

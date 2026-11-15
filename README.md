@@ -18,6 +18,11 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT%20%2F%20Apache--2.0-lightgrey" alt="License"></a>
 </p>
 
+<p align="center">
+  <a href="https://coundia.github.io/buntu/">Site du projet</a> ·
+  <a href="https://github.com/coundia/buntu/releases/latest">Télécharger</a>
+</p>
+
 ---
 
 ## Sommaire
