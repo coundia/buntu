@@ -99,8 +99,8 @@ cat > "${BUNDLE_DIR}/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>${PRODUCT}</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>1.0.1</string>
+  <key>CFBundleVersion</key><string>2</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
@@ -108,7 +108,7 @@ cat > "${BUNDLE_DIR}/Contents/Info.plist" <<PLIST
   <array>
     <dict>
       <key>CFBundleURLName</key><string>${BUNDLE_ID}.share</string>
-      <key>CFBundleURLSchemes</key><array><string>cndiptv</string></array>
+      <key>CFBundleURLSchemes</key><array><string>cndiptv</string><string>buntu</string></array>
     </dict>
   </array>
   <key>UTExportedTypeDeclarations</key>

@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  secrets-and-keys:
+    name: Secrets & Default Keys
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for tracked secrets, keystores and local paths
+        run: ./scripts/check-secrets.sh
+
+      - name: Test default API key generator
+        run: ./scripts/test-gen-default-keys.sh
+
+      - name: Check that every platform carries the same version
+        run: ./scripts/check-version.sh
+
+  rust:
+    name: Rust (Clippy & Tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Clippy across workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run cnd-domain and cnd-core tests
+        run: cargo test -p cnd-domain -p cnd-core
+
+  tizen:
+    name: Samsung TV Tizen (TypeScript & Vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain with wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Build cnd-domain-wasm bindings for Tizen tests
+        run: |
+          RUSTFLAGS="-C target-cpu=mvp -C link-arg=--no-check-features -C link-arg=--features=" \
+            wasm-pack build crates/cnd-domain-wasm --target web --release --no-opt --out-dir tizen/src/wasm/pkg
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tizen/package-lock.json
+
+      - name: Install Tizen web dependencies
+        working-directory: tizen
+        run: npm ci
+
+      - name: TypeScript check
+        working-directory: tizen
+        run: npx tsc --noEmit
+
+      - name: Run Vitest unit tests
+        working-directory: tizen
+        run: npm test
+
+  android:
+    name: Android (JVM unit tests & module architecture)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      # `:core:engine` tests load the UniFFI library from target/release through JNA.
+      - name: Build the host Rust core used by the JVM tests
+        run: cargo build --release -p cnd-core
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run Android unit tests and the module architecture test
+        working-directory: android
+        run: ./gradlew testDebugUnitTest :core:domain:test --console=plain

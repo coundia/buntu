@@ -1,0 +1,283 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version de release sans préfixe v (ex. 1.0.1 ; vide = Cargo.toml / tag)"
+        required: false
+        default: ""
+      draft:
+        description: "Créer la GitHub Release en mode brouillon"
+        type: boolean
+        required: false
+        default: true
+      publish_release:
+        description: "Publier une GitHub Release même sur exécution manuelle"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  preflight:
+    name: Pre-flight & Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify secrets and key generator
+        run: |
+          ./scripts/check-secrets.sh
+          ./scripts/test-gen-default-keys.sh
+
+      - name: Resolve release version and check every platform
+        id: meta
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          # The workflow input goes through the environment, never into the script text.
+          requested="${INPUT_VERSION}"
+          if [[ -z "${requested}" && "${GITHUB_REF}" == refs/tags/v* ]]; then
+            requested="${GITHUB_REF_NAME#v}"
+          fi
+          # Fails when the tag (or the requested version) differs from Cargo.toml, or when a platform
+          # (Android, Apple, Tizen) still carries another version: the artifacts would be mislabeled.
+          ./scripts/check-version.sh ${requested:+"${requested}"}
+          read -r version _ < <(./scripts/check-version.sh --print)
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=v${version}" >> "${GITHUB_OUTPUT}"
+          echo "Resolved release version: ${version} (tag v${version})"
+
+  build-macos:
+    name: Build macOS (.zip & .dmg)
+    needs: preflight
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain and Apple targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: >-
+            aarch64-apple-darwin
+            x86_64-apple-darwin
+            aarch64-apple-ios
+            aarch64-apple-ios-sim
+            x86_64-apple-ios
+            aarch64-apple-tvos
+            aarch64-apple-tvos-sim
+            aarch64-apple-visionos
+            aarch64-apple-visionos-sim
+
+      - name: Cache Cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Package macOS release artifacts
+        run: ./scripts/prepare-releases.sh --macos
+
+      - name: Upload macOS release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: |
+            build/release/v*/Buntu-*-macOS.zip
+            build/release/v*/Buntu-*-macOS.dmg
+          if-no-files-found: error
+
+  build-android:
+    name: Build Android & Android TV (.apk)
+    needs: preflight
+    runs-on: ubuntu-latest
+    env:
+      # The `secrets` context is not available in a step `if`: the job exposes a flag instead.
+      HAS_RELEASE_KEYSTORE: ${{ secrets.BUNTU_KEYSTORE_BASE64 != '' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK & NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          NDK_VERSION="27.2.12479018"
+          sdkmanager --install "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}" >> "${GITHUB_ENV}"
+
+      - name: Install Rust toolchain and Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: >-
+            aarch64-linux-android
+            armv7-linux-androideabi
+            x86_64-linux-android
+
+      - name: Cache Cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode optional Android release keystore
+        id: keystore
+        if: env.HAS_RELEASE_KEYSTORE == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.BUNTU_KEYSTORE_BASE64 }}
+        run: |
+          KEYSTORE_PATH="${RUNNER_TEMP}/buntu-release.keystore"
+          printf '%s' "${KEYSTORE_BASE64}" | base64 --decode > "${KEYSTORE_PATH}"
+          echo "BUNTU_KEYSTORE_FILE=${KEYSTORE_PATH}" >> "${GITHUB_ENV}"
+
+      - name: Package Android release APKs
+        env:
+          BUNTU_KEYSTORE_PASSWORD: ${{ secrets.BUNTU_KEYSTORE_PASSWORD }}
+          BUNTU_KEY_ALIAS: ${{ secrets.BUNTU_KEY_ALIAS }}
+          BUNTU_KEY_PASSWORD: ${{ secrets.BUNTU_KEY_PASSWORD }}
+        run: ./scripts/prepare-releases.sh --android
+
+      - name: Clean temporary keystore
+        if: always() && steps.keystore.outcome == 'success'
+        run: rm -f "${RUNNER_TEMP}/buntu-release.keystore"
+
+      - name: Upload Android release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: build/release/v*/Buntu-*-android-*.apk
+          if-no-files-found: error
+
+  build-tizen:
+    name: Build Samsung TV Tizen (.wgt)
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain with wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Install Binaryen (wasm-opt) and zip
+        run: sudo apt-get update && sudo apt-get install -y binaryen zip
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tizen/package-lock.json
+
+      - name: Install Tizen web dependencies
+        working-directory: tizen
+        run: npm ci
+
+      - name: Package Tizen .wgt release artifact
+        env:
+          TIZEN_PROFILE: ${{ secrets.TIZEN_PROFILE }}
+        run: |
+          VERSION="${{ needs.preflight.outputs.version }}"
+          RELEASE_DIR="build/release/v${VERSION}"
+          mkdir -p "${RELEASE_DIR}"
+          if command -v tizen >/dev/null 2>&1; then
+            ./scripts/prepare-releases.sh --tizen
+          else
+            echo "::warning::Tizen Studio CLI ('tizen') is not installed on this runner: the .wgt is NOT signed and a TV refuses it. It is published as '-unsigned' for inspection; sign it with your own Samsung certificate ('task release:tizen' locally)."
+            ./scripts/build-tizen.sh
+            cp build/tizen/cnd-iptv-tizen.wgt "${RELEASE_DIR}/Buntu-${VERSION}-tizen-unsigned.wgt"
+          fi
+
+      - name: Upload Tizen release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-tizen
+          path: |
+            build/release/v*/Buntu_*_Tizen.wgt
+            build/release/v*/Buntu-*-tizen.wgt
+            build/release/v*/Buntu-*-tizen-unsigned.wgt
+          if-no-files-found: error
+
+  publish-release:
+    name: Generate Checksums & Publish Release
+    needs: [preflight, build-macos, build-android, build-tizen]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-staging
+
+      - name: Collect artifacts and generate SHA256SUMS.txt
+        run: |
+          mkdir -p release-assets
+          find release-staging -type f \( -name '*.zip' -o -name '*.dmg' -o -name '*.apk' -o -name '*.wgt' \) -exec cp {} release-assets/ \;
+          (
+            cd release-assets
+            LC_ALL=C shasum -a 256 Buntu* > SHA256SUMS.txt
+            cat SHA256SUMS.txt
+          )
+
+      - name: Upload combined release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: buntu-${{ needs.preflight.outputs.version }}-release-bundle
+          path: release-assets/*
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.publish_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || needs.preflight.outputs.tag }}
+          name: "Buntu ${{ needs.preflight.outputs.version }}"
+          draft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}
+          generate_release_notes: true
+          body: |
+            ## Before you install
+
+            - **Android:** without the maintainer's release keystore the APKs are signed with a debug key
+              (installable, but an update signed with another key needs an uninstall first).
+            - **macOS:** the build is ad-hoc signed and not notarized. On first launch, right-click the app and choose
+              *Open*, or run `xattr -dr com.apple.quarantine Buntu.app`.
+            - **Samsung TV:** a file named `-unsigned.wgt` is **not signed** and a TV refuses it. Sign it with your own
+              Samsung certificate, or build it yourself with `./scripts/run-tizen.sh` (see `docs/BUILD_TIZEN.md`).
+            - Buntu ships no channel, playlist or content: add your own sources.
+            - Check your download against `SHA256SUMS.txt`.
+          files: release-assets/*

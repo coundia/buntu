@@ -341,6 +341,33 @@ tasks:
         {{if .DEVELOPMENT_TEAM}}DEVELOPMENT_TEAM={{.DEVELOPMENT_TEAM}} -allowProvisioningUpdates{{else}}CODE_SIGNING_ALLOWED=NO{{end}}
         -quiet archive
 
+  # ------------------------------------------------------------ release
+  release:
+    desc: Prepare all release artifacts for v1.0.1 (Tizen .wgt, macOS .zip/.dmg, Android .apk) + SHA256SUMS.txt
+    aliases: [release:all]
+    cmds:
+      - ./scripts/prepare-releases.sh --all
+
+  release:tizen:
+    desc: Prepare the Samsung Smart TV release package (Buntu_1.0.1_Tizen.wgt) + checksums
+    cmds:
+      - ./scripts/prepare-releases.sh --tizen
+
+  release:macos:
+    desc: Prepare the macOS release packages (Buntu-1.0.1-macOS.zip and .dmg) + checksums
+    cmds:
+      - ./scripts/prepare-releases.sh --macos
+
+  release:android:
+    desc: Prepare the Android & Android TV release APKs (per-ABI and universal) + checksums
+    cmds:
+      - ./scripts/prepare-releases.sh --android
+
+  release:dry-run:
+    desc: Preview all release steps, commands and output paths without building
+    cmds:
+      - ./scripts/prepare-releases.sh --all --dry-run
+
   # ------------------------------------------------------------ groups
   test:
     desc: All fast tests (Rust, bridge, app)
