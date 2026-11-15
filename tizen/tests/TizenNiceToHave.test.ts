@@ -286,8 +286,8 @@ describe('Samsung IME <input> and Phone-to-TV RemoteText behavior', () => {
 
   it('exposes APP_VERSION, APP_BUILD and APP_VERSION_LABEL constants', async () => {
     const { APP_VERSION, APP_BUILD, APP_VERSION_LABEL } = await import('../src/core/appInfo');
-    expect(APP_VERSION).toBe('1.0.1');
-    expect(APP_BUILD).toBe('2');
-    expect(APP_VERSION_LABEL).toBe('1.0.1 (build 2)');
+    expect(APP_VERSION).toBe('1.2.0');
+    expect(APP_BUILD).toBe('3');
+    expect(APP_VERSION_LABEL).toBe('1.2.0 (build 3)');
   });
 });

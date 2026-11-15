@@ -63,8 +63,8 @@ import com.pcoundia.buntu.core.domain.model.UpNextPreferences
 
 internal object BuntuAboutInfo {
     const val APP_NAME = "Buntu"
-    const val APP_VERSION = "1.0.1"
-    const val APP_BUILD = "2"
+    const val APP_VERSION = "1.2.0"
+    const val APP_BUILD = "3"
     const val SLOGAN = "Sa bunt ci lépp — La porte d'entrée de tous vos médias."
     const val AUTHOR_NAME = "Papa COUNDIA"
     const val AUTHOR_EMAIL = "papacoundia@gmail.com"

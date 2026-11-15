@@ -27,8 +27,8 @@ body:
     id: version
     attributes:
       label: Version de Buntu et appareil / OS
-      description: "Exemple : Buntu 1.0.1 (build 2), Samsung UN43AU8000 (Tizen 6.0), macOS 15.1, Android 14"
-      placeholder: "1.0.1 (build 2) — ..."
+      description: "Exemple : Buntu 1.2.0 (build 3), Samsung UN43AU8000 (Tizen 6.0), macOS 15.1, Android 14"
+      placeholder: "1.2.0 (build 3) — ..."
     validations:
       required: true
   - type: textarea

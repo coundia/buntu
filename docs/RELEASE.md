@@ -1,6 +1,6 @@
 # Guide de Release Multiplateforme — Buntu
 
-Ce guide décrit la procédure complète pour vérifier, compiler, signer et publier une release unifiée de **Buntu** (`1.0.1`, build `2`) pour **Samsung Smart TV (Tizen)**, **macOS** et **Android / Android TV** sur [`https://github.com/coundia/buntu`](https://github.com/coundia/buntu).
+Ce guide décrit la procédure complète pour vérifier, compiler, signer et publier une release unifiée de **Buntu** (`1.2.0`, build `3`) pour **Samsung Smart TV (Tizen)**, **macOS** et **Android / Android TV** sur [`https://github.com/coundia/buntu`](https://github.com/coundia/buntu).
 
 > [!IMPORTANT]
 > Les builds d'application complets et la génération des paquets de release sont déclenchés manuellement par le mainteneur (ou via le workflow GitHub Actions dédié). Vérifiez systématiquement les secrets et les tests unitaires avant de générer les binaires finaux.
@@ -9,7 +9,7 @@ Ce guide décrit la procédure complète pour vérifier, compiler, signer et pub
 
 ## 1. Vérifications pré-release
 
-Avant de produire les paquets dans `build/release/v1.0.1/`, exécutez les contrôles suivants depuis la racine du dépôt :
+Avant de produire les paquets dans `build/release/v1.2.0/`, exécutez les contrôles suivants depuis la racine du dépôt :
 
 ### 1.1 Contrôle des secrets et fichiers sensibles
 
@@ -74,11 +74,11 @@ Options prises en charge par [`scripts/prepare-releases.sh`](../scripts/prepare-
 - `--dry-run` : affiche toutes les commandes et chemins cibles sans exécuter les builds.
 - `-h`, `--help` : affiche l'aide du script.
 
-Tous les artefacts sont regroupés dans `build/release/v1.0.1/`.
+Tous les artefacts sont regroupés dans `build/release/v1.2.0/`.
 
 ---
 
-## 3. Release Samsung Smart TV (`Buntu_1.0.1_Tizen.wgt`)
+## 3. Release Samsung Smart TV (`Buntu_1.2.0_Tizen.wgt`)
 
 ### Prérequis
 - **Tizen Studio** installé avec **TV Extensions** et **Samsung Certificate Extension** (`tizen` dans le `PATH`, par exemple `$HOME/tizen-studio/tools/ide/bin`).
@@ -102,24 +102,24 @@ TIZEN_PROFILE="<NOM_DU_PROFIL_SAMSUNG>" ./scripts/build-tizen.sh --prod
 
 Le mode `--prod` compile `crates/cnd-domain-wasm` en **WebAssembly 1.0 MVP strict** (`wasm-opt --mvp-features`), assemble le bundle Vite compatible Chromium 56+, supprime la métadonnée `devel.mode` du `config.xml` empaqueté et signe le paquet via `tizen package -t wgt`.
 
-`prepare-releases.sh` copie le résultat dans `build/release/v1.0.1/` sous deux noms :
-- `Buntu_1.0.1_Tizen.wgt` (format attendu par le pré-test du Samsung Apps TV Seller Office) ;
-- `Buntu-1.0.1-tizen.wgt` (nommage homogène pour GitHub Releases).
+`prepare-releases.sh` copie le résultat dans `build/release/v1.2.0/` sous deux noms :
+- `Buntu_1.2.0_Tizen.wgt` (format attendu par le pré-test du Samsung Apps TV Seller Office) ;
+- `Buntu-1.2.0-tizen.wgt` (nommage homogène pour GitHub Releases).
 
 ### Contrôle obligatoire de l'archive `.wgt`
 
 Vérifiez impérativement l'absence de `devel.mode` et la présence des fichiers de signature dans l'archive générée :
 
 ```bash
-unzip -p build/release/v1.0.1/Buntu_1.0.1_Tizen.wgt config.xml | grep -i "devel.mode" || echo "OK: devel.mode absent"
-unzip -l build/release/v1.0.1/Buntu_1.0.1_Tizen.wgt | grep -E "author-signature.xml|signature1.xml|config.xml"
+unzip -p build/release/v1.2.0/Buntu_1.2.0_Tizen.wgt config.xml | grep -i "devel.mode" || echo "OK: devel.mode absent"
+unzip -l build/release/v1.2.0/Buntu_1.2.0_Tizen.wgt | grep -E "author-signature.xml|signature1.xml|config.xml"
 ```
 
 Les deux fichiers `author-signature.xml` et `signature1.xml` doivent apparaître dans la sortie, et `devel.mode` ne doit renvoyer aucune correspondance. Pour le détail complet de la soumission sur le Seller Office, consultez [`docs/DEPLOY_TIZEN_STORE.md`](DEPLOY_TIZEN_STORE.md).
 
 ---
 
-## 4. Release macOS (`Buntu-1.0.1-macOS.dmg` et `.zip`)
+## 4. Release macOS (`Buntu-1.2.0-macOS.dmg` et `.zip`)
 
 ### Génération standard (signature locale ad-hoc)
 
@@ -130,10 +130,10 @@ task release:macos
 ```
 
 Ce pipeline effectue les opérations suivantes :
-1. Exécute `./scripts/run-macos.sh --release --build-only` (avec `--rebuild-core` sauf si `--skip-core` est passé) pour assembler `build/CndIPTV.app` (`CFBundleShortVersionString = 1.0.1`, `CFBundleVersion = 2`).
+1. Exécute `./scripts/run-macos.sh --release --build-only` (avec `--rebuild-core` sauf si `--skip-core` est passé) pour assembler `build/CndIPTV.app` (`CFBundleShortVersionString = 1.2.0`, `CFBundleVersion = 2`).
 2. Copie et renomme le bundle en `Buntu.app` dans un dossier de staging temporaire.
-3. Crée `build/release/v1.0.1/Buntu-1.0.1-macOS.zip` via `ditto -c -k --sequesterRsrc --keepParent`.
-4. Crée `build/release/v1.0.1/Buntu-1.0.1-macOS.dmg` via `hdiutil create -volname "Buntu" -srcfolder ... -ov -format UDZO`.
+3. Crée `build/release/v1.2.0/Buntu-1.2.0-macOS.zip` via `ditto -c -k --sequesterRsrc --keepParent`.
+4. Crée `build/release/v1.2.0/Buntu-1.2.0-macOS.dmg` via `hdiutil create -volname "Buntu" -srcfolder ... -ov -format UDZO`.
 
 ### Signature Developer ID & archives Apple (`DEVELOPMENT_TEAM`)
 
@@ -149,15 +149,15 @@ task app:ios DEVELOPMENT_TEAM="<YOUR_APPLE_TEAM_ID>"
 ```
 
 - Pour diffuser publiquement un `.dmg` / `.zip` macOS en dehors du Mac App Store sans avertissement Gatekeeper sur d'autres Mac, signez `Buntu.app` avec un certificat **Developer ID Application** puis soumettez le paquet à la notarisation Apple (`xcrun notarytool submit` / `xcrun stapler staple`) avant d'assembler les archives finales.
-- Les versions `1.0.1` (`build 2`) sont également alignées dans [`apple/Resources/Info-macOS.plist`](../apple/Resources/Info-macOS.plist), [`Info-iOS.plist`](../apple/Resources/Info-iOS.plist), [`Info-tvOS.plist`](../apple/Resources/Info-tvOS.plist), [`Info-visionOS.plist`](../apple/Resources/Info-visionOS.plist) et [`AppBrand.swift`](../apple/Sources/CndIptvKit/Shared/Design/AppBrand.swift).
+- Les versions `1.2.0` (`build 3`) sont également alignées dans [`apple/Resources/Info-macOS.plist`](../apple/Resources/Info-macOS.plist), [`Info-iOS.plist`](../apple/Resources/Info-iOS.plist), [`Info-tvOS.plist`](../apple/Resources/Info-tvOS.plist), [`Info-visionOS.plist`](../apple/Resources/Info-visionOS.plist) et [`AppBrand.swift`](../apple/Sources/CndIptvKit/Shared/Design/AppBrand.swift).
 
 ---
 
-## 5. Release Android & Android TV (`Buntu-1.0.1-android-*.apk`)
+## 5. Release Android & Android TV (`Buntu-1.2.0-android-*.apk`)
 
 ### Variables de signature (optionnelles en local)
 
-[`android/app/build.gradle.kts`](../android/app/build.gradle.kts) lit automatiquement les 4 variables suivantes (via variables d'environnement ou propriétés Gradle) pour signer le build `release` (`versionCode = 2`, `versionName = "1.0.1"`) :
+[`android/app/build.gradle.kts`](../android/app/build.gradle.kts) lit automatiquement les 4 variables suivantes (via variables d'environnement ou propriétés Gradle) pour signer le build `release` (`versionCode = 3`, `versionName = "1.2.0"`) :
 
 | Variable | Rôle |
 | :--- | :--- |
@@ -182,11 +182,11 @@ task release:android
 ./scripts/prepare-releases.sh --android --skip-core
 ```
 
-Le script exécute `./scripts/build-android.sh` (sauf `--skip-core`), lance `(cd android && ./gradlew assembleRelease)` et copie les 4 APK générés dans `build/release/v1.0.1/` :
-- `Buntu-1.0.1-android-arm64-v8a.apk` (smartphones, tablettes et Android TV 64 bits modernes)
-- `Buntu-1.0.1-android-armeabi-v7a.apk` (appareils et boîtiers Android 32 bits)
-- `Buntu-1.0.1-android-x86_64.apk` (émulateurs, ChromeOS, PC x86_64)
-- `Buntu-1.0.1-android-universal.apk` (APK universel multi-ABI)
+Le script exécute `./scripts/build-android.sh` (sauf `--skip-core`), lance `(cd android && ./gradlew assembleRelease)` et copie les 4 APK générés dans `build/release/v1.2.0/` :
+- `Buntu-1.2.0-android-arm64-v8a.apk` (smartphones, tablettes et Android TV 64 bits modernes)
+- `Buntu-1.2.0-android-armeabi-v7a.apk` (appareils et boîtiers Android 32 bits)
+- `Buntu-1.2.0-android-x86_64.apk` (émulateurs, ChromeOS, PC x86_64)
+- `Buntu-1.2.0-android-universal.apk` (APK universel multi-ABI)
 
 ---
 
@@ -194,25 +194,25 @@ Le script exécute `./scripts/build-android.sh` (sauf `--skip-core`), lance `(cd
 
 ### 6.1 Empreintes SHA-256 (`SHA256SUMS.txt`)
 
-À la fin de l'exécution, `scripts/prepare-releases.sh` génère `build/release/v1.0.1/SHA256SUMS.txt` via `shasum -a 256` et affiche un récapitulatif des artefacts produits :
+À la fin de l'exécution, `scripts/prepare-releases.sh` génère `build/release/v1.2.0/SHA256SUMS.txt` via `shasum -a 256` et affiche un récapitulatif des artefacts produits :
 
 ```text
-build/release/v1.0.1/
-├── Buntu_1.0.1_Tizen.wgt
-├── Buntu-1.0.1-tizen.wgt
-├── Buntu-1.0.1-macOS.zip
-├── Buntu-1.0.1-macOS.dmg
-├── Buntu-1.0.1-android-arm64-v8a.apk
-├── Buntu-1.0.1-android-armeabi-v7a.apk
-├── Buntu-1.0.1-android-x86_64.apk
-├── Buntu-1.0.1-android-universal.apk
+build/release/v1.2.0/
+├── Buntu_1.2.0_Tizen.wgt
+├── Buntu-1.2.0-tizen.wgt
+├── Buntu-1.2.0-macOS.zip
+├── Buntu-1.2.0-macOS.dmg
+├── Buntu-1.2.0-android-arm64-v8a.apk
+├── Buntu-1.2.0-android-armeabi-v7a.apk
+├── Buntu-1.2.0-android-x86_64.apk
+├── Buntu-1.2.0-android-universal.apk
 └── SHA256SUMS.txt
 ```
 
 Vérifiez l'intégrité des fichiers avant téléversement :
 
 ```bash
-(cd build/release/v1.0.1 && shasum -a 256 -c SHA256SUMS.txt)
+(cd build/release/v1.2.0 && shasum -a 256 -c SHA256SUMS.txt)
 ```
 
 ### 6.2 Publication automatisée via GitHub Actions
@@ -221,18 +221,18 @@ Le dépôt inclut le workflow [`.github/workflows/release.yml`](../.github/workf
 
 1. **Poussée d'un tag de version (`v*`)** :
    ```bash
-   git tag -a v1.0.1 -m "Release v1.0.1"
-   git push origin v1.0.1
+   git tag -a v1.2.0 -m "Release v1.2.0"
+   git push origin v1.2.0
    ```
 2. **Déclenchement manuel (`workflow_dispatch`)** depuis l'onglet **Actions** de GitHub.
 
 ### 6.3 Publication ou complément manuel (`gh release`)
 
-Si vous signez les paquets localement (notamment `Buntu_1.0.1_Tizen.wgt` avec votre profil Samsung privé, ou des binaires macOS/Android signés avec vos certificats locaux), vous pouvez créer ou compléter la release avec GitHub CLI :
+Si vous signez les paquets localement (notamment `Buntu_1.2.0_Tizen.wgt` avec votre profil Samsung privé, ou des binaires macOS/Android signés avec vos certificats locaux), vous pouvez créer ou compléter la release avec GitHub CLI :
 
 ```bash
-gh release create v1.0.1 build/release/v1.0.1/* \
-  --title "Buntu v1.0.1" \
+gh release create v1.2.0 build/release/v1.2.0/* \
+  --title "Buntu v1.2.0" \
   --notes-file CHANGELOG.md
 ```
 
@@ -251,8 +251,10 @@ Ces étapes se font sur GitHub, hors du dépôt : elles ne sont pas automatisée
 ```
 
 Pour une nouvelle version : modifier **tous** les emplacements que `check-version.sh` lit (`Cargo.toml`,
-`android/app/build.gradle.kts`, les quatre `apple/Resources/Info-*.plist`, `AppBrand.swift`, `scripts/run-macos.sh`,
-`tizen/config.xml`, `tizen/package.json`), puis relancer le script jusqu'à `version check: … on every platform`.
+`android/app/build.gradle.kts`, `SettingsScreen.kt` (Android, page « À propos »), les quatre `apple/Resources/Info-*.plist`,
+`AppBrand.swift`, `scripts/run-macos.sh`, `tizen/config.xml`, `tizen/package.json` et `package-lock.json`,
+`tizen/src/core/appInfo.ts`) ; les tests qui citent la version suivent (`AppBrandTests`, `SettingsViewModelTest`,
+`TizenNiceToHave.test.ts`), puis relancer le script jusqu'à `version check: … on every platform`.
 
 ### 7.2 Historique Git
 
@@ -296,6 +298,6 @@ MPVKit (LGPL-3.0) est lié statiquement aux apps Apple, ce qui demande une déci
 ### 7.6 Publier
 
 ```bash
-git tag -a v1.0.1 -m "Release v1.0.1"
-git push origin v1.0.1      # déclenche .github/workflows/release.yml (échoue si le tag ≠ Cargo.toml)
+git tag -a v1.2.0 -m "Release v1.2.0"
+git push origin v1.2.0      # déclenche .github/workflows/release.yml (échoue si le tag ≠ Cargo.toml)
 ```

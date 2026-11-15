@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version de release sans préfixe v (ex. 1.0.1 ; vide = Cargo.toml / tag)"
+        description: "Version de release sans préfixe v (ex. 1.2.0 ; vide = Cargo.toml / tag)"
         required: false
         default: ""
       draft:

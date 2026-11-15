@@ -1,8 +1,10 @@
 # Changelog
 
-## 1.0.1
+## 1.2.0
 
-Ouverture Open Source du dépôt (`MIT OR Apache-2.0`), préparation des releases multiplateformes unifiées (`1.0.1`, `build 2`), localisation bilingue **Français / English**, continuité du foyer chiffrée, « Commande TV » et refonte du lecteur Live TV (`PRD-46`).
+Ouverture Open Source du dépôt (`MIT OR Apache-2.0`), préparation des releases multiplateformes unifiées (`1.2.0`, `build 3`), localisation bilingue **Français / English**, continuité du foyer chiffrée, « Commande TV » et refonte du lecteur Live TV (`PRD-46`).
+
+> **Numérotation :** cette version prolonge la `1.1.0` déjà publiée (tag `v1.1.0`). Une `1.0.1` n'a jamais été publiée : le numéro de build passe de `2` à `3` pour rester supérieur à celui de la `1.1.0`.
 
 ### Open Source & Gouvernance
 - **Double licence `MIT OR Apache-2.0`** : ajout de [`LICENSE`](LICENSE), [`LICENSE-MIT`](LICENSE-MIT) et [`LICENSE-APACHE`](LICENSE-APACHE) ainsi que des métadonnées `Cargo.toml`.
@@ -11,9 +13,9 @@ Ouverture Open Source du dépôt (`MIT OR Apache-2.0`), préparation des release
 - **Version cohérente** : [`scripts/check-version.sh`](scripts/check-version.sh) refuse un arbre où une plateforme (Android, Apple, Tizen, Cargo) porte une autre version ou un autre numéro de build ; `prepare-releases.sh` et le workflow de release en dépendent, et un tag `vX.Y.Z` doit correspondre à `Cargo.toml`.
 - **Licences tierces** : [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) (MPVKit LGPL-3.0 lié aux apps Apple, composant propriétaire Google Play services sur Android).
 
-### Releases multiplateformes unifiées (`1.0.1`, build `2`)
-- **Alignement des versions (`1.0.1` / `build 2`)** sur Rust (`Cargo.toml`), Apple (`AppBrand.swift`, `Info-macOS.plist`, `Info-iOS.plist`, `Info-tvOS.plist`, `Info-visionOS.plist`, `scripts/run-macos.sh`), Android (`android/app/build.gradle.kts`, `SettingsScreen.kt`) et Samsung Smart TV (`tizen/src/core/appInfo.ts`, `tizen/config.xml`, `tizen/package.json`).
-- **Automatisation & documentation de release** : nouveau script [`scripts/prepare-releases.sh`](scripts/prepare-releases.sh) et tâches `Taskfile.yml` (`task release`, `task release:tizen`, `task release:macos`, `task release:android`, `task release:dry-run`) produisant `Buntu_1.0.1_Tizen.wgt`, `Buntu-1.0.1-macOS.zip` / `.dmg`, les APK Android par ABI et universel (`Buntu-1.0.1-android-*.apk`) et `SHA256SUMS.txt` dans `build/release/v1.0.1/`.
+### Releases multiplateformes unifiées (`1.2.0`, build `3`)
+- **Alignement des versions (`1.2.0` / `build 3`)** sur Rust (`Cargo.toml`), Apple (`AppBrand.swift`, `Info-macOS.plist`, `Info-iOS.plist`, `Info-tvOS.plist`, `Info-visionOS.plist`, `scripts/run-macos.sh`), Android (`android/app/build.gradle.kts`, `SettingsScreen.kt`) et Samsung Smart TV (`tizen/src/core/appInfo.ts`, `tizen/config.xml`, `tizen/package.json`).
+- **Automatisation & documentation de release** : nouveau script [`scripts/prepare-releases.sh`](scripts/prepare-releases.sh) et tâches `Taskfile.yml` (`task release`, `task release:tizen`, `task release:macos`, `task release:android`, `task release:dry-run`) produisant `Buntu_1.2.0_Tizen.wgt`, `Buntu-1.2.0-macOS.zip` / `.dmg`, les APK Android par ABI et universel (`Buntu-1.2.0-android-*.apk`) et `SHA256SUMS.txt` dans `build/release/v1.2.0/`.
 - **Guides de distribution** : ajout de [`docs/RELEASE.md`](docs/RELEASE.md) et mise à jour de [`docs/DEPLOY_TIZEN_STORE.md`](docs/DEPLOY_TIZEN_STORE.md) pour la soumission Samsung Apps TV Seller Office (`--prod` sans `devel.mode`, signatures `TIZEN_PROFILE`), la signature macOS (`DEVELOPMENT_TEAM`) et la signature Android (`BUNTU_KEYSTORE_*` avec repli `debug` en local).
 
 ### Nouveautés produit & multiplateforme

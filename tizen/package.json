@@ -1,6 +1,6 @@
 {
   "name": "cnd-iptv-tizen",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "description": "Buntu Samsung Smart TV Native Web App (Tizen 3.0+)",
   "private": true,
   "type": "module",

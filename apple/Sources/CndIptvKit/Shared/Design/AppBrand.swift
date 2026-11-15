@@ -6,8 +6,8 @@ import SwiftUI
 /// existing users their data.
 enum AppBrand {
     static let name = "Buntu"
-    static let appVersion = "1.0.1"
-    static let appBuild = "2"
+    static let appVersion = "1.2.0"
+    static let appBuild = "3"
     /// « Buntu : sa bunt ci lépp. » (Wolof, to be validated by native speakers.)
     static let sloganWolof = "Sa bunt ci lépp."
     static let sloganFrench = "La porte d'entrée de tous vos médias."

@@ -5,8 +5,9 @@
 #   scripts/check-version.sh 1.0.2     also checks that Cargo.toml says 1.0.2 (a tag v1.0.2 must match)
 #   scripts/check-version.sh --print   prints "<version> <build number>" and nothing else
 #
-# Version sources: Cargo.toml (workspace), Android (versionName / versionCode), the four Apple Info.plist,
-# the macOS bundle written by scripts/run-macos.sh, AppBrand.swift, Tizen config.xml and package.json.
+# Version sources: Cargo.toml (workspace), Android (versionName / versionCode and the About page constants), the four
+# Apple Info.plist, the macOS bundle written by scripts/run-macos.sh, AppBrand.swift, Tizen config.xml, package.json,
+# package-lock.json and appInfo.ts.
 # The build number (Android versionCode, CFBundleVersion) must be the same everywhere.
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -44,6 +45,13 @@ fi
 expect "android versionName" "$(sed -nE 's/^ *versionName = "([^"]+)".*/\1/p' android/app/build.gradle.kts | head -n 1)" "${version}"
 expect "tizen/config.xml version" "$(sed -nE 's/^ *version="([^"]+)">?.*/\1/p' tizen/config.xml | head -n 1)" "${version}"
 expect "tizen/package.json version" "$(sed -nE 's/^ *"version": "([^"]+)".*/\1/p' tizen/package.json | head -n 1)" "${version}"
+expect "tizen/package-lock.json version" "$(sed -nE 's/^ *"version": "([^"]+)".*/\1/p' tizen/package-lock.json | head -n 1)" "${version}"
+expect "tizen appInfo APP_VERSION" "$(sed -nE "s/.*APP_VERSION = '([^']+)'.*/\1/p" tizen/src/core/appInfo.ts | head -n 1)" "${version}"
+expect "tizen appInfo APP_BUILD" "$(sed -nE "s/.*APP_BUILD = '([^']+)'.*/\1/p" tizen/src/core/appInfo.ts | head -n 1)" "${build}"
+about=android/feature/settings/src/main/kotlin/com/pcoundia/buntu/feature/settings/SettingsScreen.kt
+expect "android About APP_VERSION" "$(sed -nE 's/.*const val APP_VERSION = "([^"]+)".*/\1/p' "${about}" | head -n 1)" "${version}"
+expect "android About APP_BUILD" "$(sed -nE 's/.*const val APP_BUILD = "([^"]+)".*/\1/p' "${about}" | head -n 1)" "${build}"
+expect "AppBrand.appBuild" "$(sed -nE 's/.*appBuild = "([^"]+)".*/\1/p' apple/Sources/CndIptvKit/Shared/Design/AppBrand.swift | head -n 1)" "${build}"
 expect "AppBrand.appVersion" "$(sed -nE 's/.*appVersion = "([^"]+)".*/\1/p' apple/Sources/CndIptvKit/Shared/Design/AppBrand.swift | head -n 1)" "${version}"
 expect "run-macos.sh bundle version" "$(sed -nE 's/.*CFBundleShortVersionString<\/key><string>([^<]+)<.*/\1/p' scripts/run-macos.sh | head -n 1)" "${version}"
 expect "run-macos.sh bundle build" "$(sed -nE 's/.*CFBundleVersion<\/key><string>([^<]+)<.*/\1/p' scripts/run-macos.sh | head -n 1)" "${build}"

@@ -48,6 +48,14 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-15 — Claude, version de la release : 1.2.0 (build 3)
+
+- ✅ Choix (délégué par l'utilisateur) : **1.2.0, build 3**. Raison : la 1.1.0 est déjà publiée (tag `v1.1.0`, plist Apple 1.1.0 build 2, zip macOS 1.1.0 dans `build/release`) ; la 1.0.1 aurait été une version plus ancienne, et le lot (UX, tri, actualisation du foyer, localisation, reprise réseau) est un ensemble de fonctions, donc une version mineure. Le build passe de 2 à 3 pour rester supérieur à celui de la 1.1.0.
+- ✅ Propagé : `Cargo.toml` et `Cargo.lock` (4 crates), Android (`build.gradle.kts`, page « À propos »), 4 `Info-*.plist`, `AppBrand.swift`, `run-macos.sh`, Tizen (`config.xml`, `package.json`, `package-lock.json`, `appInfo.ts`), les tests qui citent la version, la doc (`README`, `RELEASE.md`, `DEPLOY_TIZEN_STORE.md`, `Taskfile.yml`, `CHANGELOG.md` avec une note de numérotation, modèle d'issue, exemple du workflow). Les anciennes sections de ce fichier gardent « 1.0.1 » : c'est l'historique.
+- ✅ `scripts/check-version.sh` couvre maintenant aussi la page « À propos » Android, `appInfo.ts`, `package-lock.json` et `AppBrand.appBuild` (qui n'étaient pas contrôlés) ; vérifié par mutation.
+- ✅ Vérifié : `check-version` (1.2.0 / 3 partout ; tag `v1.0.1` refusé, `v1.2.0` accepté), `check-secrets`, `Cargo.lock` cohérent (`--locked --offline`), `tsc` + `npm test` Tizen 396/396, `:feature:settings` Android, `swift test --filter AppBrandTests` 7/7, `prepare-releases.sh --macos --dry-run` (sortie `build/release/v1.2.0/`).
+- ❌ Non lancé (règle du projet) : le build macOS. À faire par l'utilisateur : `task release:macos` ou `./scripts/prepare-releases.sh --macos --skip-core`.
+
 ## 2026-11-15 — Claude, suite : « fix all » (Apple, tests manquants, historique)
 
 - ❌→✅ `cd apple && swift test` (1re passe) : 573 tests, **1 échec** : `CndPlayerTests.testOfflineStallWaitsForNetworkAndResumesVodAtLastPosition` (6800 au lieu de 6500), 3/3 reproductible. Cause : `MockBackend` avale l'annulation de son `sleep` et ajoute encore 300 ms après `cancel()`, donc le test lisait la position 300 ms trop tôt ; le contrôleur reprend bien à la dernière position observée. Test corrigé (attente de 60 ms avant la lecture) : 3/3 réussis en ciblé.

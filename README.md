@@ -279,9 +279,9 @@ task cli -- download <URL_FLUX> [DOSSIER_CIBLE]
 
 ## Releases & Paquets Précompilés
 
-Les paquets précompilés multiplateformes sont publiés sur **[GitHub Releases](https://github.com/coundia/buntu/releases)** (version alignée **`1.0.1`**, build `2`) avec leurs empreintes de vérification [`SHA256SUMS.txt`](docs/RELEASE.md#61-empreintes-sha-256-sha256sumstxt).
+Les paquets précompilés multiplateformes sont publiés sur **[GitHub Releases](https://github.com/coundia/buntu/releases)** (version alignée **`1.2.0`**, build `3`) avec leurs empreintes de vérification [`SHA256SUMS.txt`](docs/RELEASE.md#61-empreintes-sha-256-sha256sumstxt).
 
-Pour générer les artefacts localement dans `build/release/v1.0.1/` via [`scripts/prepare-releases.sh`](scripts/prepare-releases.sh) :
+Pour générer les artefacts localement dans `build/release/v1.2.0/` via [`scripts/prepare-releases.sh`](scripts/prepare-releases.sh) :
 
 ```bash
 # Prévisualiser les étapes et fichiers de sortie sans lancer de compilation
@@ -291,9 +291,9 @@ task release:dry-run
 task release
 
 # Cibler une plateforme spécifique
-task release:macos     # Buntu-1.0.1-macOS.zip et Buntu-1.0.1-macOS.dmg
-task release:android   # Buntu-1.0.1-android-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk
-task release:tizen     # Buntu_1.0.1_Tizen.wgt (Samsung Seller Office) et Buntu-1.0.1-tizen.wgt
+task release:macos     # Buntu-1.2.0-macOS.zip et Buntu-1.2.0-macOS.dmg
+task release:android   # Buntu-1.2.0-android-{arm64-v8a,armeabi-v7a,x86_64,universal}.apk
+task release:tizen     # Buntu_1.2.0_Tizen.wgt (Samsung Seller Office) et Buntu-1.2.0-tizen.wgt
 ```
 
 Consultez les guides détaillés :
@@ -318,7 +318,7 @@ Tableau récapitulatif des commandes courantes :
 | `task run:web` | Lance l'application Tizen dans le navigateur web avec rechargement à chaud. |
 | `task tizen:install` | Déploie et lance le paquet `.wgt` sur une TV Samsung (`TV_IP="..."`). |
 | `task release:dry-run` | Simule la génération des paquets de release sans lancer de build. |
-| `task release` | Génère l'ensemble des paquets de release (`build/release/v1.0.1/`) et `SHA256SUMS.txt`. |
+| `task release` | Génère l'ensemble des paquets de release (`build/release/v1.2.0/`) et `SHA256SUMS.txt`. |
 | `task lint` | Exécute `cargo clippy` en traitant les avertissements comme des erreurs. |
 | `task test` | Exécute l'ensemble des tests rapides (Rust, bridge Swift, app). |
 | `task check` | Validation complète de release (secrets, clés, clippy, tests SLA, xcodebuild). |

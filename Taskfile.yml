@@ -343,18 +343,18 @@ tasks:
 
   # ------------------------------------------------------------ release
   release:
-    desc: Prepare all release artifacts for v1.0.1 (Tizen .wgt, macOS .zip/.dmg, Android .apk) + SHA256SUMS.txt
+    desc: Prepare all release artifacts for v1.2.0 (Tizen .wgt, macOS .zip/.dmg, Android .apk) + SHA256SUMS.txt
     aliases: [release:all]
     cmds:
       - ./scripts/prepare-releases.sh --all
 
   release:tizen:
-    desc: Prepare the Samsung Smart TV release package (Buntu_1.0.1_Tizen.wgt) + checksums
+    desc: Prepare the Samsung Smart TV release package (Buntu_1.2.0_Tizen.wgt) + checksums
     cmds:
       - ./scripts/prepare-releases.sh --tizen
 
   release:macos:
-    desc: Prepare the macOS release packages (Buntu-1.0.1-macOS.zip and .dmg) + checksums
+    desc: Prepare the macOS release packages (Buntu-1.2.0-macOS.zip and .dmg) + checksums
     cmds:
       - ./scripts/prepare-releases.sh --macos
 

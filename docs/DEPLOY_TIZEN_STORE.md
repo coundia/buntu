@@ -20,10 +20,10 @@ Pour le build et l'installation locale sur votre propre TV en mode développeur,
 
 ## 2. Vérifications avant le build
 
-1. **Synchroniser la version et le build** (actuellement `1.0.1` / `2`) :
+1. **Synchroniser la version et le build** (actuellement `1.2.0` / `3`) :
    - [`tizen/src/core/appInfo.ts`](../tizen/src/core/appInfo.ts) (`APP_VERSION`, `APP_BUILD`)
-   - [`tizen/config.xml`](../tizen/config.xml) (`<widget ... version="1.0.1">`)
-   - [`tizen/package.json`](../tizen/package.json) (`"version": "1.0.1"`)
+   - [`tizen/config.xml`](../tizen/config.xml) (`<widget ... version="1.2.0">`)
+   - [`tizen/package.json`](../tizen/package.json) (`"version": "1.2.0"`)
 2. **Lancer la vérification TypeScript et les tests** :
    ```bash
    (cd tizen && npx tsc --noEmit && npm test)
@@ -44,7 +44,7 @@ Utilisez le mode `--prod` (ou `TIZEN_PROD=1`) du script [`scripts/build-tizen.sh
 export PATH="$PATH:$HOME/tizen-studio/tools:$HOME/tizen-studio/tools/ide/bin"
 TIZEN_PROFILE="<NOM_DE_VOTRE_PROFIL_STORE>" ./scripts/build-tizen.sh --prod
 
-# Ou pour préparer directement le paquet Store nommé + SHA256SUMS.txt dans build/release/v1.0.1/ :
+# Ou pour préparer directement le paquet Store nommé + SHA256SUMS.txt dans build/release/v1.2.0/ :
 TIZEN_PROFILE="<NOM_DE_VOTRE_PROFIL_STORE>" task release:tizen
 # équivalent à : TIZEN_PROFILE="<NOM_DE_VOTRE_PROFIL_STORE>" ./scripts/prepare-releases.sh --tizen
 ```
