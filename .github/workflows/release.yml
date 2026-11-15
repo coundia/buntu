@@ -200,7 +200,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y binaryen zip
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm

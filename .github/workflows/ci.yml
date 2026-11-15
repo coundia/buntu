@@ -79,7 +79,7 @@ jobs:
             wasm-pack build crates/cnd-domain-wasm --target web --release --no-opt --out-dir "${GITHUB_WORKSPACE}/tizen/src/wasm/pkg"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
