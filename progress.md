@@ -52,7 +52,8 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 - ✅ Brouillon créé sur `coundia/buntu` (accord de l'utilisateur) : « Buntu 1.2.0 », **brouillon + pré-version**, cible `main`, notes = `RELEASE_NOTES.md`. 9 fichiers joints : 4 APK, `.dmg`, `.zip`, 2 `.wgt` (identiques), `SHA256SUMS.txt`. Vérifié via l'API : tailles et SHA-256 identiques aux fichiers locaux, 0 écart.
 - ✅ Rien n'est publié : la seule release publique reste « Buntu 1.1.0 » ; le tag `v1.2.0` n'existe pas encore (créé à la publication, sur la tête de `main` à ce moment-là). Depuis les builds, seuls des tests, des workflows et des docs ont changé : aucun code de production.
-- ⏸️ À faire par l'utilisateur : relire le brouillon (Releases → brouillon « Buntu 1.2.0 ») puis *Publish release*, ou `gh release edit` ; essayer au moins l'APK sur un téléphone et le `.dmg` sur un Mac avant de publier.
+- ✅ **Publiée** à la demande de l'utilisateur (« push les release ») : https://github.com/coundia/buntu/releases/tag/v1.2.0 — **pré-version** (non « Latest »), tag `v1.2.0` créé sur `7a79abf` (tête de `main` à ce moment), 9 fichiers. Contrôle public sans authentification : l'APK armeabi-v7a téléchargé a le SHA-256 attendu.
+- ⚠️ Publiée **sans essai sur appareil** (APK, `.dmg`, `.wgt` jamais installés) ; APK signés en debug ; app macOS non notariée. Pour la retirer : `gh release delete v1.2.0 --cleanup-tag` ; pour enlever la mention « pré-version » : `gh release edit v1.2.0 --prerelease=false`.
 
 ## 2026-11-15 — Claude, release macOS 1.2.0 (build 3)
 
