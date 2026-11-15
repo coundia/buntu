@@ -1,3 +1,4 @@
+import type { CatalogSort } from '../../core/storage/Database';
 import { aiSuggestions, mergeSuggestions, searchMode, searchModeLabel, toggleSearchMode } from '../../core/search/searchMode';
 import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
 import { registerYellowFavorite } from '../../ui/design/yellowFavorite';
@@ -48,6 +49,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   // False until the first load is over: the counts would read 0 and the lists look empty.
   const [loaded, setLoaded] = createSignal(false);
   const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
+  const [sort, setSort] = createSignal<CatalogSort>('default');
   // Bumped when a favorite flag changes (the records are mutated in place).
   const [brokenStates, setBrokenStates] = createSignal<Record<number, boolean>>({});
   const isChannelBroken = (item: ItemRecord) => brokenStates()[item.id] !== undefined ? brokenStates()[item.id] : item.is_broken === 1;
@@ -95,6 +97,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
   });
 
   let gridRef: HTMLDivElement | undefined;
+  let contentScrollRef: HTMLElement | undefined;
   let resizeHandler: (() => void) | null = null;
 
   const isSearchMode = () => searchQuery().trim().length > 0;
@@ -115,7 +118,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     fetchBatch: async (offset, limit) => {
       const cat = selectedCategory() || undefined;
       const [list, count] = await Promise.all([
-        engine.getCatalog('live', cat, offset, limit),
+        engine.getCatalog('live', cat, offset, limit, sort()),
         engine.countCatalog('live', cat),
       ]);
       return { items: list, total: count };
@@ -200,6 +203,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       // Instant return: show what was on screen, then refresh counts and shelves behind.
       setSelectedCategory(restored.category);
       setViewMode(restored.viewMode);
+      setSort(restored.sort ?? 'default');
       setCategories(snap.categories);
       setCatCounts(snap.catCounts);
       setFavCount(snap.favCount);
@@ -227,6 +231,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     if (restored) {
       setSelectedCategory(restored.category);
       setViewMode(restored.viewMode);
+      setSort(restored.sort ?? 'default');
     } else if (favCount() > 0) {
       // Favorites are the default view; fall back to all channels when there are none yet.
       setSelectedCategory(FAVORITES_CATEGORY);
@@ -299,6 +304,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
     screenState.save('live', {
       category: selectedCategory(),
       viewMode: viewMode(),
+      sort: sort(),
       focusId: lastContentFocus,
       snapshot: {
         categories: categories(),
@@ -340,6 +346,15 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
   const toggleInspector = () => {
     mini.toggleVisible();
+    scheduleRebuildGrid(true);
+  };
+
+  const canSort = () => !isSearchMode() && selectedCategory() !== RECENT_CATEGORY;
+  const cycleSort = async () => {
+    lastScrollTop = 0;
+    if (contentScrollRef) contentScrollRef.scrollTop = 0;
+    setSort(sort() === 'default' ? 'nameAsc' : sort() === 'nameAsc' ? 'nameDesc' : 'default');
+    await scroller.reset();
     scheduleRebuildGrid(true);
   };
 
@@ -468,6 +483,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
       { id: 'live-search-input', onSelect: () => focusDomInput('live-search-input') },
       { id: 'live-search-mode', onSelect: switchSearchEngine },
     ];
+    if (canSort()) toolbarRow.push({ id: 'live-sort', onSelect: () => void cycleSort() });
     grid.push(toolbarRow);
 
     // Build Left Category Column items
@@ -706,6 +722,17 @@ export const LiveView: Component<LiveViewProps> = (props) => {
           >
             {searchModeLabel(searchMode())}
           </button>
+          <Show when={canSort()}>
+            <button
+              id="live-sort"
+              type="button"
+              tabindex="-1"
+              class={`buntu-mode-btn ${focusId() === 'live-sort' ? 'focused' : ''}`}
+              onClick={() => void cycleSort()}
+            >
+              {t('catalog.sort', { value: t(`catalog.sort.${sort()}`) })}
+            </button>
+          </Show>
         </div>
       </header>
 
@@ -797,6 +824,7 @@ export const LiveView: Component<LiveViewProps> = (props) => {
 
         {/* Column 2: Main Scrollable Content (Shelves + Responsive Multi-Column Grid) */}
         <section
+          ref={contentScrollRef}
           class="buntu-content-scroll"
           onScroll={(e) => {
             lastScrollTop = (e.currentTarget as HTMLElement).scrollTop;

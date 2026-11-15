@@ -1,3 +1,4 @@
+import type { CatalogSort } from '../../core/storage/Database';
 import { aiSuggestions, mergeSuggestions, searchMode, searchModeLabel, toggleSearchMode } from '../../core/search/searchMode';
 import { RemoteKeyHandler } from '../../core/input/RemoteKeyHandler';
 import { registerYellowFavorite } from '../../ui/design/yellowFavorite';
@@ -24,6 +25,11 @@ export interface MoviesViewProps {
   onHome?: () => void;
 }
 
+interface MoviesSnapshot extends BrowseSnapshot<ItemRecord> {
+  categoryScrollTop: number;
+  categoryFilter: string;
+}
+
 export const MoviesView: Component<MoviesViewProps> = (props) => {
   const goHome = () => {
     if (props.onHome) props.onHome();
@@ -45,6 +51,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
   // False until the first load is over: the counts would read 0 and the lists look empty.
   const [loaded, setLoaded] = createSignal(false);
   const [viewMode, setViewMode] = createSignal<'grid' | 'list'>('grid');
+  const [sort, setSort] = createSignal<CatalogSort>('default');
   // Bumped when a favorite flag changes (the records are mutated in place).
   const [favTick, setFavTick] = createSignal(0);
   // Shared mini player (same experience as Live TV): play in the panel, details of the hovered film below.
@@ -76,14 +83,16 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
 
   // Last card focused in the content area: restored when BACK returns here from details/player.
   let lastContentFocus = '';
-  let lastScrollTop = 0;
   createEffect(() => {
     const f = focusId();
-    if (isContentFocusId(f)) lastContentFocus = f;
+    if (isContentFocusId(f) && /^(movie|recent-mv|fav-mv)-/.test(f)) lastContentFocus = f;
   });
 
   let gridRef: HTMLDivElement | undefined;
+  let contentScrollRef: HTMLElement | undefined;
+  let categoryScrollRef: HTMLDivElement | undefined;
   let resizeHandler: (() => void) | null = null;
+  let disposed = false;
 
   const isSearchMode = () => searchQuery().trim().length > 0;
   const activeMovies = () => (isSearchMode() ? searchResults() : scroller.items());
@@ -103,7 +112,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     fetchBatch: async (offset, limit) => {
       const cat = selectedCat() || undefined;
       const [list, count] = await Promise.all([
-        engine.getCatalog('movie', cat, offset, limit),
+        engine.getCatalog('movie', cat, offset, limit, sort()),
         engine.countCatalog('movie', cat),
       ]);
       return { items: list, total: count };
@@ -170,11 +179,13 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
 
     // BACK from the player/details: same category, view mode and focused card as before.
     const restored = screenState.restore('movies');
-    const snap = restored?.snapshot as BrowseSnapshot<ItemRecord> | undefined;
+    const snap = restored?.snapshot as MoviesSnapshot | undefined;
     if (restored && snap) {
       // Instant return: show what was on screen, then refresh counts and shelves behind.
       setSelectedCat(restored.category);
       setViewMode(restored.viewMode);
+      setSort(restored.sort ?? 'default');
+      setCatFilter(snap.categoryFilter);
       setCategories(snap.categories);
       setCatCounts(snap.catCounts);
       setFavCount(snap.favCount);
@@ -182,14 +193,24 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       setFavMovies(snap.favs);
       setTotalCount(snap.totalCount);
       scroller.setItems(snap.items, snap.total);
-      rebuildGrid(false);
-      if (restored.focusId && document.getElementById(restored.focusId)) {
-        spatialNav.setFocusById(restored.focusId);
-      }
-      const scrollArea = document.querySelector('.buntu-content-scroll') as HTMLElement | null;
-      if (scrollArea) scrollArea.scrollTop = snap.scrollTop;
-      document.querySelector('.buntu-cat-row.active')?.scrollIntoView({ block: 'nearest' });
-      void refreshShelvesAndCounts().then(() => scheduleRebuildGrid(true));
+      // Wait until Solid has inserted the saved cards and the loader is gone.
+      nextFrame(() => {
+        if (disposed) return;
+        rebuildGrid(false);
+        if (restored.focusId && document.getElementById(restored.focusId)) {
+          spatialNav.setFocusById(restored.focusId);
+        }
+        const restoredFocus = spatialNav.getCurrentFocusId();
+        // SpatialNav reveals its focused card on the next frame. Apply exact offsets after it.
+        nextFrame(() => {
+          if (disposed || spatialNav.getCurrentFocusId() !== restoredFocus) return;
+          if (contentScrollRef) contentScrollRef.scrollTop = snap.scrollTop;
+          if (categoryScrollRef) categoryScrollRef.scrollTop = snap.categoryScrollTop;
+        });
+      });
+      void refreshShelvesAndCounts().then(() => {
+        if (!disposed && showsShelves()) scheduleRebuildGrid(true);
+      });
       return;
     }
 
@@ -201,6 +222,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     if (restored) {
       setSelectedCat(restored.category);
       setViewMode(restored.viewMode);
+      setSort(restored.sort ?? 'default');
     }
 
     await scroller.reset();
@@ -237,21 +259,26 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
   });
 
   onCleanup(() => {
+    disposed = true;
+    const snapshot: MoviesSnapshot = {
+      categories: categories(),
+      catCounts: catCounts(),
+      totalCount: totalCount(),
+      favCount: favCount(),
+      recent: recentMovies(),
+      favs: favMovies(),
+      items: scroller.items(),
+      total: scroller.total(),
+      scrollTop: contentScrollRef?.scrollTop ?? 0,
+      categoryScrollTop: categoryScrollRef?.scrollTop ?? 0,
+      categoryFilter: catFilter(),
+    };
     screenState.save('movies', {
       category: selectedCat(),
       viewMode: viewMode(),
+      sort: sort(),
       focusId: lastContentFocus,
-      snapshot: {
-        categories: categories(),
-        catCounts: catCounts(),
-        totalCount: totalCount(),
-        favCount: favCount(),
-        recent: recentMovies(),
-        favs: favMovies(),
-        items: scroller.items(),
-        total: scroller.total(),
-        scrollTop: lastScrollTop,
-      },
+      snapshot,
     });
     unsubPanelKeys?.();
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
@@ -261,6 +288,14 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
 
   const toggleInspector = () => {
     mini.toggleVisible();
+    scheduleRebuildGrid(true);
+  };
+
+  const canSort = () => !isSearchMode() && selectedCat() !== RECENT_CATEGORY;
+  const cycleSort = async () => {
+    if (contentScrollRef) contentScrollRef.scrollTop = 0;
+    setSort(sort() === 'default' ? 'nameAsc' : sort() === 'nameAsc' ? 'nameDesc' : 'default');
+    await scroller.reset();
     scheduleRebuildGrid(true);
   };
 
@@ -284,7 +319,8 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
 
   // OK on a film: the first press plays it in the mini player, a second press on the one already
   // playing goes full screen (shared mini player controller). The "Fiche" button opens the details page.
-  const handleCardActivate = (mv: ItemRecord) => {
+  const handleCardActivate = (mv: ItemRecord, cardId: string) => {
+    lastContentFocus = cardId;
     mini.activate(mv);
   };
 
@@ -362,13 +398,17 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
     return 5;
   };
 
-  const scheduleRebuildGrid = (preserveFocus: boolean) => {
+  const nextFrame = (callback: () => void) => {
     if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => rebuildGrid(preserveFocus));
+      requestAnimationFrame(callback);
     } else {
-      rebuildGrid(preserveFocus);
+      callback();
     }
   };
+
+  const scheduleRebuildGrid = (preserveFocus: boolean) => nextFrame(() => {
+    if (!disposed) rebuildGrid(preserveFocus);
+  });
 
   const rebuildGrid = (preserveFocus = false) => {
     const list = activeMovies();
@@ -382,6 +422,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
       { id: 'mv-search-input', onSelect: () => focusDomInput('mv-search-input') },
       { id: 'mv-search-mode', onSelect: switchSearchEngine },
     ];
+    if (canSort()) toolbarRow.push({ id: 'mv-sort', onSelect: () => void cycleSort() });
     grid.push(toolbarRow);
 
     // Left Category Column
@@ -421,7 +462,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
           recents.slice(0, 7).map((mv) => ({
             id: `recent-mv-${mv.id}`,
             onFocus: () => setPreviewMovie(mv),
-            onSelect: () => handleCardActivate(mv),
+            onSelect: () => handleCardActivate(mv, `recent-mv-${mv.id}`),
           }))
         );
       }
@@ -431,7 +472,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
           favs.slice(0, 7).map((mv) => ({
             id: `fav-mv-${mv.id}`,
             onFocus: () => setPreviewMovie(mv),
-            onSelect: () => handleCardActivate(mv),
+            onSelect: () => handleCardActivate(mv, `fav-mv-${mv.id}`),
           }))
         );
       }
@@ -449,7 +490,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
               void scroller.checkTrigger(i + idx);
             }
           },
-          onSelect: () => handleCardActivate(mv),
+          onSelect: () => handleCardActivate(mv, `movie-${mv.id}`),
         }))
       );
     }
@@ -496,7 +537,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
         tabindex="-1"
         aria-label={title()}
         class={`buntu-vod-card ${focusId() === cardId ? 'focused' : ''}`}
-        onClick={() => handleCardActivate(mv)}
+        onClick={() => handleCardActivate(mv, cardId)}
       >
         <div class="buntu-vod-poster">
           <Show
@@ -606,6 +647,17 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
           >
             {searchModeLabel(searchMode())}
           </button>
+          <Show when={canSort()}>
+            <button
+              id="mv-sort"
+              type="button"
+              tabindex="-1"
+              class={`buntu-mode-btn ${focusId() === 'mv-sort' ? 'focused' : ''}`}
+              onClick={() => void cycleSort()}
+            >
+              {t('catalog.sort', { value: t(`catalog.sort.${sort()}`) })}
+            </button>
+          </Show>
         </div>
       </header>
 
@@ -627,7 +679,7 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
               />
             </div>
 
-            <div class="buntu-cat-list">
+            <div ref={categoryScrollRef} class="buntu-cat-list">
               {/* Récemment vus */}
               <div
                 id="movie-cat-recent"
@@ -692,11 +744,11 @@ export const MoviesView: Component<MoviesViewProps> = (props) => {
         </Show>
 
         <section
+          ref={contentScrollRef}
           class="buntu-content-scroll"
           onScroll={(e) => {
-            lastScrollTop = (e.currentTarget as HTMLElement).scrollTop;
             if (isSearchMode()) return;
-            const el = e.currentTarget as HTMLElement;
+            const el = e.currentTarget;
             if (el.scrollTop + el.clientHeight >= el.scrollHeight - 360) {
               void scroller.loadMore();
             }

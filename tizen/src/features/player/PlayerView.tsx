@@ -1,4 +1,5 @@
 import { Component, createSignal, createEffect, onMount, onCleanup, Show, For, untrack } from 'solid-js';
+import { getLiveBufferSeconds, liveBufferTimeoutSeconds, liveBufferWatchdogMs } from '../../core/player/bufferPolicy';
 import { aspectModeLabel, AVPlayerService, FULL_SCREEN, TrackInfo, VideoAspectMode } from '../../core/player/AVPlayerService';
 import { HttpClient } from '../../core/net/HttpClient';
 import { EpgProgramRecord, ItemRecord } from '../../core/storage/Database';
@@ -59,6 +60,35 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   const [activeSubIndex, setActiveSubIndex] = createSignal(-1);
   const [showChannelHud, setShowChannelHud] = createSignal(true);
   const [showAssistant, setShowAssistant] = createSignal(false);
+  const [showExpert, setShowExpert] = createSignal(false);
+  const [expertStats, setExpertStats] = createSignal<{
+    bandwidth: number | null;
+    online: boolean;
+    stream: ReturnType<AVPlayerService['getStreamSummary']>;
+  }>({ bandwidth: null, online: navigator.onLine, stream: null });
+  const expertVideoFormat = () => {
+    const stream = expertStats().stream;
+    if (!stream) return '';
+    const resolution = stream.width > 0 && stream.height > 0 ? `${stream.width}×${stream.height}` : '';
+    return [resolution, stream.quality, stream.videoCodec].filter(Boolean).join(' · ');
+  };
+  createEffect(() => {
+    if (!showExpert()) return;
+    const refresh = () => setExpertStats({
+      bandwidth: player.getBandwidthEstimateBps(),
+      online: navigator.onLine,
+      stream: player.getStreamSummary(),
+    });
+    refresh();
+    const timer = setInterval(refresh, 1000);
+    onCleanup(() => clearInterval(timer));
+  });
+
+  const toggleExpert = () => {
+    setShowExpert((visible) => !visible);
+    resetOsdTimer();
+  };
+
   const [focusId] = spatialNav.getFocusSignal();
   const [seekToast, setSeekToast] = createSignal('');
   const [channelDigits, setChannelDigits] = createSignal('');
@@ -177,6 +207,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   const [reconnectAttempt, setReconnectAttempt] = createSignal(0);
   let reconnectTimer: any = null;
   let reconnectWatch: any = null;
+  let reconnectDispatchPending = false;
 
   const clearDigitTimer = () => {
     if (digitTimer) clearTimeout(digitTimer);
@@ -191,6 +222,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   };
 
   const clearTimers = () => {
+    reconnectDispatchPending = false;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -226,7 +258,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         console.warn(`[PlayerView] Stream connection timeout (attempt ${retryCount()}/${MAX_RETRIES})`);
         handleStreamError('Délai d’attente du serveur IPTV dépassé');
       }
-    }, 12000);
+    }, liveBufferWatchdogMs(liveBufferTimeoutSeconds(getLiveBufferSeconds()), 12000));
   };
 
   const giveUpReconnecting = () => {
@@ -247,8 +279,10 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     setReconnectAttempt(attempt);
     setIsBuffering(true);
     announce(`Connexion perdue… reconnexion ${attempt} sur ${RECONNECT_DELAYS_MS.length}`);
+    reconnectDispatchPending = true;
     reconnectTimer = setTimeout(async () => {
       reconnectTimer = null;
+      reconnectDispatchPending = false;
       if (props.item.id !== expectedItemId) return;
       try {
         // Through the engine: it closes the old connection first (one connection at the provider), keeps the
@@ -259,11 +293,11 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         return;
       }
       if (props.item.id !== expectedItemId) return;
-      // Playing again is detected by `finishBuffering`; if nothing moves within 10 s, the next attempt.
+      // Playing again is detected by `finishBuffering`; otherwise allow the configured buffer time.
       reconnectWatch = setTimeout(() => {
         reconnectWatch = null;
         if (props.item.id === expectedItemId && reconnectAttempt() > 0) scheduleReconnect(expectedItemId);
-      }, 10000);
+      }, liveBufferWatchdogMs(liveBufferTimeoutSeconds(getLiveBufferSeconds()), 10000));
     }, RECONNECT_DELAYS_MS[attempt - 1]);
   };
 
@@ -409,6 +443,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       ...(!liveReturnChannel()
         ? [{ id: 'btn-osd-fav', onSelect: () => void toggleFavorite() }]
         : []),
+      { id: 'btn-osd-expert', onSelect: toggleExpert },
       { id: 'btn-osd-aspect', onSelect: () => toggleAspectMode() },
       { id: 'btn-osd-sleep', onSelect: () => cycleSleepTimer() },
       { id: 'btn-osd-audio-only', onSelect: () => toggleAudioOnly() },
@@ -459,6 +494,25 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       .catch(() => {});
   });
 
+  const refreshPlayerTracks = () => {
+    player.ensureAudioTrackActive?.();
+    const all = player.getTracks?.() ?? [];
+    const a = all.filter((tr) => tr.type === 'AUDIO');
+    const s = all.filter((tr) => tr.type === 'TEXT');
+    if (a.length > 0 || all.length > 0) {
+      setAudioTracks(a);
+      setSubtitleTracks(s);
+      const currentIdx = activeAudioIndex();
+      if (a.length > 0) {
+        const safeIdx = currentIdx >= 0 && currentIdx < a.length ? currentIdx : 0;
+        if (safeIdx !== currentIdx) setActiveAudioIndex(safeIdx);
+        if (safeIdx > 0) {
+          player.selectTrack?.('AUDIO', a[safeIdx].index);
+        }
+      }
+    }
+  };
+
   // Some Samsung firmwares omit buffering-complete, especially when the view attaches after
   // playback starts. Advancing play time is also proof that the stream has recovered.
   const finishBuffering = () => {
@@ -484,6 +538,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         player.seekTo(props.item.playback_position_ms);
       }
     }
+    refreshPlayerTracks();
     if (hadError) updateGrid();
   };
 
@@ -585,6 +640,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       onBufferingStart: () => {
         if (userPaused || player.getState() === 'PAUSED') return;
         setIsBuffering(true);
+        setBufferingPercent(0);
         setPlayerError(null);
         if (props.item.kind !== 'live' && hasPlayedOnce && Date.now() - lastSeekAt > 8000) setRebuffers((n) => n + 1);
       },
@@ -592,11 +648,14 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
         if (userPaused || player.getState() === 'PAUSED') return;
         setBufferingPercent(pct);
       },
-      onBufferingComplete: finishBuffering,
+      onBufferingComplete: () => {
+        if (reconnectDispatchPending) return;
+        finishBuffering();
+      },
       onCurrentPlayTime: (ms) => {
         if (userPaused || player.getState() === 'PAUSED') return;
         const advancing = ms > currentTimeMs();
-        if (advancing && (isBuffering() || playerError() || retryTimer || connectionTimeoutTimer)) {
+        if (!reconnectDispatchPending && advancing && (isBuffering() || playerError() || retryTimer || connectionTimeoutTimer)) {
           finishBuffering();
         }
         setCurrentTimeMs(ms);
@@ -721,6 +780,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     if (subtitleTimer()) clearTimeout(subtitleTimer());
     clearDigitTimer();
     stopSleepTimer();
+    player.setListener({});
     player.stop();
   });
 
@@ -728,7 +788,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     setShowOsd(true);
     if (osdTimer) clearTimeout(osdTimer);
     osdTimer = null;
-    if (isPlaying()) {
+    if (isPlaying() && !showExpert()) {
       osdTimer = setTimeout(() => {
         setShowOsd(false);
       }, 5000);
@@ -870,10 +930,12 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
     }
     // -1 = Disabled, 0..N = Track index
     const nextIdx = activeSubIndex() + 1 >= tracks.length ? -1 : activeSubIndex() + 1;
+    if (subtitleTimer()) clearTimeout(subtitleTimer());
+    setSubtitleTimer(null);
+    setActiveSubtitle('');
     setActiveSubIndex(nextIdx);
     if (nextIdx === -1) {
       player.setSubtitlesEnabled(false);
-      setActiveSubtitle('');
       announce('Sous-titres désactivés');
     } else {
       player.setSubtitlesEnabled(true);
@@ -1121,6 +1183,10 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
       void commitChannelDigits();
       return true;
     }
+    if (showExpert() && key === 'BACK') {
+      toggleExpert();
+      return true;
+    }
     // BACK during the countdown only cancels it; the next BACK leaves the player as usual.
     if (key === 'BACK' && countdown() !== null) {
       stopCountdown();
@@ -1272,10 +1338,11 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
   return (
     <div
       style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
+        position: "fixed",
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
         background: "transparent",
         overflow: "hidden",
       }}
@@ -1298,6 +1365,7 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
           </div>
         </div>
       </Show>
+
 
       {/* 1b. Direct 0-9 channel entry badge */}
       <Show when={channelDigits()}>
@@ -1445,7 +1513,30 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
           <Show when={sleepRemainingSecs() > 0}>
             <div class="tv-sleep-pill" role="status">🌙 {formatSleepRemaining()}</div>
           </Show>
-          <Show when={info.stream()}>
+          <Show when={showExpert()}>
+            <aside class="tv-player-expert" aria-label={t('player.expert')}>
+              <h2>{t('player.expert')}</h2>
+              <dl>
+                <dt>{t('player.expertNetwork')}</dt>
+                <dd>{t(expertStats().online ? 'player.expertOnline' : 'player.expertOffline')}</dd>
+                <dt>{t('player.expertDownload')}</dt>
+                <dd>
+                  <Show when={expertStats().bandwidth} fallback={t('player.expertUnavailable')}>
+                    {(bandwidth) => t('player.expertMbps', { value: (bandwidth() / 1_000_000).toFixed(2) })}
+                  </Show>
+                </dd>
+                <dt>{t('player.expertUpload')}</dt>
+                <dd>{t('player.expertUnavailable')}</dd>
+                <dt>{t('player.expertBuffer')}</dt>
+                <dd>{isBuffering() ? (bufferingPercent() > 0 ? `${bufferingPercent()} %` : t('player.expertBuffering')) : t('player.expertBufferIdle')}</dd>
+                <dt>{t('player.expertVideo')}</dt>
+                <dd>{expertVideoFormat() || t('player.expertUnavailable')}</dd>
+                <dt>{t('player.audio')}</dt>
+                <dd>{[expertStats().stream?.audioCodec, expertStats().stream?.audioChannels].filter(Boolean).join(' · ') || t('player.expertUnavailable')}</dd>
+              </dl>
+            </aside>
+          </Show>
+          <Show when={!showExpert() && info.stream()}>
             <div class="tv-osd-tech">
               <Show when={info.stream()!.height > 0}>
                 <span>
@@ -1554,6 +1645,21 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
           {/* Film / episode: progress, end time and synopsis */}
           <Show when={!isLive()}>
             {InteractiveProgressBar('Barre de progression de la lecture')}
+            <Show when={isBuffering() && !playerError() && bufferingPercent() > 0}>
+              <div class="tv-osd-buffer">
+                <span>{t('player.expertBuffering')} · {Math.min(100, bufferingPercent())} %</span>
+                <div
+                  class="tv-osd-buffer-track"
+                  role="progressbar"
+                  aria-label={t('player.expertBuffering')}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.min(100, bufferingPercent())}
+                >
+                  <div style={{ width: `${Math.min(100, bufferingPercent())}%` }} />
+                </div>
+              </div>
+            </Show>
             <Show when={durationMs() > 0}>
               <div class="tv-osd-note">
                 Il reste {formatRuntime(Math.max(0, durationMs() - effectivePositionMs()))} · se termine à {endsAt()}
@@ -1685,6 +1791,15 @@ export const PlayerView: Component<PlayerViewProps> = (props) => {
                 {info.isFavorite() ? `★ ${t('player.favorite')}` : `☆ ${t('player.favorite')}`}
               </button>
             </Show>
+
+            <button
+              id="btn-osd-expert"
+              class={`tv-btn ${focusId() === 'btn-osd-expert' ? 'focused' : ''}`}
+              onClick={toggleExpert}
+              aria-pressed={showExpert()}
+            >
+              {t('player.expert')}
+            </button>
 
             <button
               id="btn-osd-aspect"

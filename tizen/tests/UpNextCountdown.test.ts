@@ -92,6 +92,29 @@ describe('Player: countdown to the next film', () => {
     return onExit;
   };
 
+  it('keeps the timeline and remote controls active while expert mode is open', async () => {
+    const player = AVPlayerService.getInstance();
+    vi.spyOn(player, 'getState').mockReturnValue('PLAYING');
+    const pause = vi.spyOn(player, 'pause').mockImplementation(() => {});
+    const onExit = await mount();
+    listener.onCurrentPlayTime(1_000);
+
+    spatialNav.setFocusById('btn-osd-expert');
+    key(13);
+    await vi.advanceTimersByTimeAsync(6_000);
+
+    expect(document.querySelector('.tv-player-expert')).not.toBeNull();
+    expect(document.getElementById('osd-progress-bar')).not.toBeNull();
+    spatialNav.setFocusById('btn-osd-play-pause');
+    key(13);
+    expect(pause).toHaveBeenCalled();
+
+    key(10009);
+    expect(document.querySelector('.tv-player-expert')).toBeNull();
+    expect(document.getElementById('osd-progress-bar')).not.toBeNull();
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
   it('at the end of the film it counts down, then plays the first suggestion by itself', async () => {
     const onExit = await mount();
     listener.onStreamCompleted();

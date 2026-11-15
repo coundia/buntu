@@ -1,3 +1,4 @@
+import type { CatalogSort } from '../storage/Database';
 import { LocalSourceVault, SourceConnectionEdit } from '../storage/LocalSourceVault';
 /**
  * CND IPTV Tizen - Unified Engine Facade (PRD 38 § 2.2 & § 7)
@@ -499,16 +500,18 @@ export class CndEngine {
     kind: 'live' | 'movie' | 'series',
     groupTitle?: string,
     offset = 0,
-    limit = 30
+    limit = 30,
+    sort: CatalogSort = 'default'
   ): Promise<ItemRecord[]> {
-    return this.db.withProgress(await this.getCatalogRaw(kind, groupTitle, offset, limit));
+    return this.db.withProgress(await this.getCatalogRaw(kind, groupTitle, offset, limit, sort));
   }
 
   private async getCatalogRaw(
     kind: 'live' | 'movie' | 'series',
     groupTitle?: string,
     offset = 0,
-    limit = 30
+    limit = 30,
+    sort: CatalogSort = 'default'
   ): Promise<ItemRecord[]> {
     if (groupTitle === RECENT_CATEGORY) {
       const recents = await this.visibleRecents(kind);
@@ -521,10 +524,10 @@ export class CndEngine {
           return [];
         }
       }
-      return this.db.getItemsByKindAndGroup(kind, groupTitle, offset, limit);
+      return this.db.getItemsByKindAndGroup(kind, groupTitle, offset, limit, sort);
     }
 
-    const items = await this.db.getItemsByKindAndGroup(kind, undefined, offset, limit);
+    const items = await this.db.getItemsByKindAndGroup(kind, undefined, offset, limit, sort);
     const filtered: ItemRecord[] = [];
     for (const item of items) {
       if (this.activeProfile.isKids || !this.isAdultUnlocked) {

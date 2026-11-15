@@ -1,3 +1,4 @@
+import type { CatalogSort } from '../storage/Database';
 /**
  * Remembers where the viewer was on a browsing screen (category, view mode, focused card) so that
  * BACK from a details page or the player lands on the very same spot instead of a fresh screen.
@@ -25,6 +26,7 @@ export interface BrowseState {
   /** Selected category ('' = all items). */
   category: string;
   viewMode: 'grid' | 'list';
+  sort?: CatalogSort;
   /** DOM id of the card that had the focus (e.g. `channel-42`). */
   focusId: string;
   snapshot?: BrowseSnapshot;

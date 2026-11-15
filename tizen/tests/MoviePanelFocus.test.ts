@@ -4,6 +4,7 @@ import { MoviesView } from '../src/features/movies/MoviesView';
 import { CndEngine } from '../src/core/engine/CndEngine';
 import { spatialNav } from '../src/ui/design/SpatialNav';
 import { RemoteKeyHandler } from '../src/core/input/RemoteKeyHandler';
+import { screenState } from '../src/core/navigation/ScreenState';
 
 const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); await new Promise((r) => setTimeout(r, 250)); };
 const key = (keyCode: number) => window.dispatchEvent(new KeyboardEvent('keydown', { keyCode }));
@@ -27,7 +28,7 @@ beforeEach(() => {
   vi.spyOn(engine, 'stopPlayback').mockImplementation(() => {});
   vi.spyOn(engine, 'recordRecent').mockImplementation(() => {});
 });
-afterEach(() => { dispose(); document.body.innerHTML = ''; RemoteKeyHandler.getInstance().destroy(); vi.restoreAllMocks(); });
+afterEach(() => { dispose(); screenState.clear(); document.body.innerHTML = ''; RemoteKeyHandler.getInstance().destroy(); vi.restoreAllMocks(); });
 
 describe('Films: OK on a film plays it in the mini player and moves the cursor to it', () => {
   it('does not open full screen; the cursor lands on the mini player so the text can be read', async () => {
@@ -94,6 +95,47 @@ describe('Films: OK on a film plays it in the mini player and moves the cursor t
     await settle();
     const row = document.querySelector('.mini-panel .buntu-inspector-actions')!;
     expect([...row.querySelectorAll('button')].map((b) => b.id)).toEqual(['mv-insp-play', 'mv-insp-fav', 'mv-insp-full', 'mv-insp-details']);
+  });
+
+  it('queries the selected category in the selected sort order from the remote', async () => {
+    const engine = CndEngine.getInstance();
+    dispose = render(() => MoviesView({ onSelectMovie: vi.fn(), onPlayMovie: vi.fn() }), document.body);
+    await settle();
+    document.getElementById('movie-cat-0')!.click();
+    await settle();
+    spatialNav.setFocusById('mv-sort');
+    key(13);
+    await settle();
+    expect(engine.getCatalog).toHaveBeenLastCalledWith('movie', 'Action', 0, expect.any(Number), 'nameAsc');
+    key(13);
+    await settle();
+    expect(engine.getCatalog).toHaveBeenLastCalledWith('movie', 'Action', 0, expect.any(Number), 'nameDesc');
+  });
+
+  it.each(['details', 'full'])('restores the category scroll and clicked film after leaving via %s', async (action) => {
+    const onSelectMovie = vi.fn();
+    const onPlayMovie = vi.fn();
+    const mountMovies = () => render(() => MoviesView({ onSelectMovie, onPlayMovie }), document.body);
+    const content = () => document.querySelector<HTMLElement>('.buntu-content-scroll')!;
+    const categories = () => document.querySelector<HTMLElement>('.buntu-cat-list')!;
+    dispose = mountMovies();
+    await settle();
+    document.getElementById('movie-cat-0')!.click();
+    await settle();
+    document.getElementById('movie-2')!.click();
+    await settle();
+    content().scrollTop = 480;
+    categories().scrollTop = 120;
+    document.getElementById(`mv-insp-${action}`)!.click();
+    expect(action === 'details' ? onSelectMovie : onPlayMovie).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }));
+    dispose();
+    screenState.arm('movies');
+    dispose = mountMovies();
+    await settle();
+    expect(document.querySelector('.buntu-cat-row.active')?.id).toBe('movie-cat-0');
+    expect(spatialNav.getCurrentFocusId()).toBe('movie-2');
+    expect(content().scrollTop).toBe(480);
+    expect(categories().scrollTop).toBe(120);
   });
 });
 

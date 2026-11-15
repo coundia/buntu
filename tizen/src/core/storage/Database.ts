@@ -34,6 +34,8 @@ export const RECENT_CATEGORY = '🕒 Récemment vus';
 /** How many recently watched items are remembered per kind. */
 export const RECENT_LIMIT = 50;
 
+export type CatalogSort = 'default' | 'nameAsc' | 'nameDesc';
+
 export interface ItemRecord {
   id: number;
   source_id: number;
@@ -64,6 +66,10 @@ export interface ItemRecord {
   plot?: string;
 }
 
+function nameIndexKey(item: Pick<ItemRecord, 'name' | 'name_clean'>): string {
+  return (item.name_clean || item.name).toLowerCase();
+}
+
 export interface SeriesRecord {
   id: number;
   source_id: number;
@@ -92,7 +98,7 @@ export class Database {
   private static instance: Database;
   private db: IDBDatabase | null = null;
   private readonly DB_NAME = 'cnd_iptv_db';
-  private readonly DB_VERSION = 1;
+  private readonly DB_VERSION = 2;
 
   public static getInstance(): Database {
     if (!Database.instance) {
@@ -126,6 +132,24 @@ export class Database {
           iStore.createIndex('stable_hash', 'stable_hash', { unique: true });
           iStore.createIndex('is_favorite', 'is_favorite', { unique: false });
           iStore.createIndex('kind_group', ['kind', 'group_title'], { unique: false });
+        }
+
+        if (event.oldVersion < 2) {
+          const items = request.transaction!.objectStore('items');
+          items.createIndex('kind_name', ['kind', 'name_index_key']);
+          items.createIndex('kind_group_name', ['kind', 'group_title', 'name_index_key']);
+          items.createIndex('kind_favorite_name', ['kind', 'is_favorite', 'name_index_key']);
+
+          if (event.oldVersion === 1) {
+            const migration = items.openCursor();
+            migration.onsuccess = () => {
+              const cursor = migration.result;
+              if (!cursor) return;
+              const item = cursor.value as ItemRecord;
+              cursor.update({ ...item, name_index_key: nameIndexKey(item) });
+              cursor.continue();
+            };
+          }
         }
 
         // Series store
@@ -273,7 +297,7 @@ export class Database {
         hash = `${hash}_dup_${idx}`;
       }
       seenHashes.add(hash);
-      return { ...item, stable_hash: hash };
+      return { ...item, stable_hash: hash, name_index_key: nameIndexKey(item) };
     });
 
     const CHUNK_SIZE = 2500;
@@ -328,9 +352,13 @@ export class Database {
     kind: 'live' | 'movie' | 'series',
     groupTitle?: string,
     offset = 0,
-    limit = 30
+    limit = 30,
+    sort: CatalogSort = 'default'
   ): Promise<ItemRecord[]> {
     if (!this.db) return [];
+    if (sort !== 'default' && kind !== 'series') {
+      return this.getItemsByName(kind, groupTitle, offset, limit, sort);
+    }
     const targetKinds = this.kindsFor(kind);
     const results: ItemRecord[] = [];
 
@@ -392,6 +420,40 @@ export class Database {
     }
 
     return results;
+  }
+
+  private getItemsByName(
+    kind: 'live' | 'movie',
+    groupTitle: string | undefined,
+    offset: number,
+    limit: number,
+    sort: Exclude<CatalogSort, 'default'>,
+  ): Promise<ItemRecord[]> {
+    const favorite = groupTitle === FAVORITES_CATEGORY || groupTitle === 'Favoris';
+    const index = favorite ? 'kind_favorite_name' : groupTitle ? 'kind_group_name' : 'kind_name';
+    const prefix = favorite ? [kind, 1] : groupTitle ? [kind, groupTitle] : [kind];
+    const range = IDBKeyRange.bound(prefix, [...prefix, []], false, true);
+    return new Promise((resolve, reject) => {
+      const items: ItemRecord[] = [];
+      const store = this.db!.transaction('items', 'readonly').objectStore('items');
+      const request = store.index(index).openCursor(range, sort === 'nameAsc' ? 'next' : 'prev');
+      let skip = offset;
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor || items.length >= limit) {
+          resolve(items);
+          return;
+        }
+        if (skip > 0) {
+          cursor.advance(skip);
+          skip = 0;
+          return;
+        }
+        items.push(cursor.value as ItemRecord);
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+    });
   }
 
   /**

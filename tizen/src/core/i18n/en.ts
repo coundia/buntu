@@ -1,6 +1,11 @@
 import type { TranslationKey } from './fr';
 
 export const en: Record<TranslationKey, string> = {
+  'catalog.sort': 'Sort : {value}',
+  'catalog.sort.default': 'Default',
+  'catalog.sort.nameAsc': 'A–Z',
+  'catalog.sort.nameDesc': 'Z–A',
+
   // Common
   'common.back': 'Back',
   'common.close': 'Close',
@@ -70,6 +75,9 @@ export const en: Record<TranslationKey, string> = {
   // Settings: Connection
   'settings.connTitle': 'Provider Connection',
   'settings.connDesc': 'Enable this mode if your subscription allows only one connection at a time.',
+  'settings.liveBuffer': 'Live buffer: {value}',
+  'settings.liveBufferAuto': 'Automatic',
+  'settings.liveBufferDesc': 'A longer buffer can reduce brief interruptions and delay startup. Applies the next time you open a channel.',
   'settings.singleConn': 'Single connection: {state}',
   'settings.singleConnOn': 'enabled',
   'settings.singleConnOff': 'disabled',
@@ -143,6 +151,10 @@ export const en: Record<TranslationKey, string> = {
   'settings.hhActiveDevices': 'Active devices on the network:',
   'settings.hhOnline': '🟢 Online',
   'settings.hhRecent': 'Seen recently',
+  'settings.hhRefresh': 'Refresh',
+  'settings.hhRefreshing': 'Waking up the household devices…',
+  'settings.hhRefreshed': 'Household devices refreshed. Open Buntu on the ones that do not answer.',
+  'settings.hhRefreshFailed': 'Refresh failed. Try again.',
   'settings.hhReceive': 'Receive data',
   'settings.hhSend': 'Send my data',
   'settings.hhInvite': '📱 Invite a device (QR)',
@@ -268,6 +280,18 @@ export const en: Record<TranslationKey, string> = {
   'player.audio': 'Audio',
   'player.subtitlesOff': 'Subtitles: Off',
   'player.subtitlesLabel': 'Subtitles: {lang}',
+  'player.expert': 'Expert mode',
+  'player.expertNetwork': 'Network',
+  'player.expertOnline': 'Online',
+  'player.expertOffline': 'Offline',
+  'player.expertDownload': 'Estimated download',
+  'player.expertUpload': 'Upload',
+  'player.expertUnavailable': 'Unavailable',
+  'player.expertMbps': '{value} Mbps',
+  'player.expertBuffer': 'Buffer',
+  'player.expertBuffering': 'Buffering',
+  'player.expertBufferIdle': 'Idle',
+  'player.expertVideo': 'Video',
   'player.assistant': '✨ Assistant',
   'player.upNextHeader': 'UP NEXT · SIMILAR MOVIES',
   'player.stillWatching': 'Still watching? Choose a movie to continue.',

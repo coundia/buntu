@@ -37,6 +37,7 @@ export function createInfiniteScroller<T>(options: InfiniteScrollOptions<T>): In
   const threshold = options.threshold ?? 8;
   const maxItems = options.maxItems ?? 300;
 
+  let generation = 0;
   const hasMore = () => items().length < total();
 
   const loadMore = async (): Promise<boolean> => {
@@ -44,11 +45,13 @@ export function createInfiniteScroller<T>(options: InfiniteScrollOptions<T>): In
       return false;
     }
 
+    const requestGeneration = generation;
     setIsLoading(true);
     try {
       const currentOffset = items().length;
       const result = await options.fetchBatch(currentOffset, options.pageSize);
 
+      if (requestGeneration !== generation) return false;
       setTotal(result.total);
 
       const combined = [...items(), ...result.items];
@@ -58,10 +61,10 @@ export function createInfiniteScroller<T>(options: InfiniteScrollOptions<T>): In
       options.onBatchLoaded?.(bounded, result.total);
       return true;
     } catch (err) {
-      console.error('[InfiniteScroller] Failed to fetch batch:', err);
+      if (requestGeneration === generation) console.error('[InfiniteScroller] Failed to fetch batch:', err);
       return false;
     } finally {
-      setIsLoading(false);
+      if (requestGeneration === generation) setIsLoading(false);
     }
   };
 
@@ -78,23 +81,27 @@ export function createInfiniteScroller<T>(options: InfiniteScrollOptions<T>): In
   };
 
   const reset = async (): Promise<void> => {
+    const requestGeneration = ++generation;
     setIsLoading(true);
     setItemsSignal([]);
     setTotal(0);
 
     try {
       const result = await options.fetchBatch(0, options.pageSize);
+      if (requestGeneration !== generation) return;
       setItemsSignal(result.items);
       setTotal(result.total);
       options.onBatchLoaded?.(result.items, result.total);
     } catch (err) {
-      console.error('[InfiniteScroller] Failed to reset and load initial batch:', err);
+      if (requestGeneration === generation) console.error('[InfiniteScroller] Failed to reset and load initial batch:', err);
     } finally {
-      setIsLoading(false);
+      if (requestGeneration === generation) setIsLoading(false);
     }
   };
 
   const setItems = (newItems: T[], newTotal: number) => {
+    generation++;
+    setIsLoading(false);
     setItemsSignal(newItems);
     setTotal(newTotal);
   };

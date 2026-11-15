@@ -2,15 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createComponent } from 'solid-js';
 import { render } from 'solid-js/web';
 import { App } from '../src/app/App';
+import { PlatformService } from '../src/core/platform/PlatformService';
 import { spatialNav } from '../src/ui/design/SpatialNav';
 import { readFileSync } from 'node:fs';
 
 const state = vi.hoisted(() => ({
   init: vi.fn(async () => {}), getSources: vi.fn(async () => [{ id: 1 }]),
-  counts: vi.fn(), mounts: vi.fn(),
+  counts: vi.fn(), mounts: vi.fn(), stopPlayback: vi.fn(),
 }));
 vi.mock('../src/core/engine/CndEngine', () => ({ CndEngine: { getInstance: () => ({
-  init: state.init, getGlobalCounts: state.counts, stopPlayback: vi.fn(),
+  init: state.init, getGlobalCounts: state.counts, stopPlayback: state.stopPlayback,
 }) } }));
 vi.mock('../src/core/storage/Database', () => ({ Database: { getInstance: () => ({ getSources: state.getSources }) } }));
 vi.mock('../src/core/player/AVPlayerService', () => ({ AVPlayerService: { getInstance: () => ({}) } }));
@@ -101,15 +102,19 @@ describe('Tizen lightweight home', () => {
   });
 
   it('navigates secondary actions with the remote and confirms exit only from home', async () => {
+    const exitSpy = vi.spyOn(PlatformService, 'exitApp').mockImplementation(() => {});
     mount(); await settle(); key(39); key(39);
     expect(spatialNav.getCurrentFocusId()).toBe('home-series');
     key(40); expect(spatialNav.getCurrentFocusId()).toBe('home-settings');
     key(13); await settle(); expect(document.body.textContent).toContain('Settings');
     expect(document.querySelector('.buntu-sidebar')).toBeNull();
     key(10009); await settle(); expect(document.querySelector('.buntu-home')).not.toBeNull();
-    key(10009); await settle(); expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(spatialNav.getCurrentFocusId()).toBe('btn-exit-cancel');
-    key(10009); await settle(); expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(state.stopPlayback).not.toHaveBeenCalled();
+    key(10009); await settle();
+    expect(exitSpy).toHaveBeenCalledTimes(1);
+    expect(state.stopPlayback).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(state.mounts).not.toHaveBeenCalled();
   });
 

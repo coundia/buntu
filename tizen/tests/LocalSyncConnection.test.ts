@@ -75,4 +75,32 @@ describe('Samsung household connection and TV discovery', () => {
     await Promise.all([service.start(), service.start()]);
     expect(Socket.instances).toHaveLength(1);
   });
+
+  it('refresh reopens the channel once and announces again when Samsung confirms it', async () => {
+    await service.start();
+    const first = Socket.instances[0];
+    first.onmessage!({ data: JSON.stringify({ event: 'ms.channel.connect' }) });
+    await flush();
+
+    await service.refresh();
+    expect(first.close).toHaveBeenCalled();
+    expect(first.onclose).toBeNull();
+    expect(Socket.instances).toHaveLength(2);
+
+    // The old socket closing late must not open a third one.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(Socket.instances).toHaveLength(2);
+
+    const second = Socket.instances[1];
+    second.onmessage!({ data: JSON.stringify({ event: 'ms.channel.connect' }) });
+    await flush();
+    const messages = second.send.mock.calls.map(([frame]) => JSON.parse(frame).params.data.message);
+    expect(messages).toContainEqual(expect.objectContaining({ type: 'device_announce', device_id: 'test-tv' }));
+    expect(messages).toContainEqual({ type: 'sync_request' });
+  });
+
+  it('refresh starts the service when it is not running', async () => {
+    await service.refresh();
+    expect(Socket.instances).toHaveLength(1);
+  });
 });

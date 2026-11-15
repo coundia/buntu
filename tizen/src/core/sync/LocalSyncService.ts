@@ -208,6 +208,47 @@ export class LocalSyncService {
     this.notifyStatus();
   }
 
+  /**
+   * « Actualiser » (household screen): wakes the other apps of the household up. The channel to the
+   * TV's own relay may be dead without any close event (standby, Wi-Fi change), so it is reopened from
+   * scratch; once Samsung confirms the new membership the TV announces itself again and asks the others
+   * for their data, which makes every app that is awake answer.
+   */
+  public async refresh(): Promise<void> {
+    this.log('Actualisation : réveil des appareils du foyer…');
+    if (!this.isRunning) {
+      await this.start();
+      return;
+    }
+    const info = this.store.getHouseholdInfo();
+    if (!info) return;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    const old = this.ws;
+    this.ws = null;
+    if (old) {
+      // Detach first: its close event must not schedule a second reconnection.
+      old.onmessage = null;
+      old.onclose = null;
+      old.onerror = null;
+      try {
+        old.close();
+      } catch {
+        // already closed
+      }
+    }
+    this.isConnected = false;
+    this.seenPeersOnConnection.clear();
+    this.notifyStatus();
+    this.connectWs(info.household_id);
+  }
+
   private startHeartbeat(): void {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = setInterval(() => {

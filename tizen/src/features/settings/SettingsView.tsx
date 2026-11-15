@@ -19,6 +19,7 @@ import { describeKeyShape, normalizeApiKey } from '../../core/ai/keyInput';
 import { AiClient } from '../../core/ai/AiClient';
 import { createTvKeyboard } from '../../ui/components/TvKeyboard';
 import { UiSounds } from '../../core/audio/UiSounds';
+import { getLiveBufferSeconds, LIVE_BUFFER_CHOICES, setLiveBufferSeconds } from '../../core/player/bufferPolicy';
 import { getUpNextPrefs, nextCountdownChoice, setUpNextPrefs } from '../../core/player/upNext';
 import {
   getSubtitlePrefs,
@@ -259,6 +260,23 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     }
   };
 
+  /** « Actualiser »: reopens the TV's channel and wakes the other apps of the household (they answer in a few seconds). */
+  const refreshHousehold = async () => {
+    if (transferBusy()) return;
+    setTransferBusy(true);
+    setSyncStatusMsg(t('settings.hhRefreshing'));
+    try {
+      await LocalSyncService.getInstance().refresh();
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await refreshHouseholdState();
+      setSyncStatusMsg(t('settings.hhRefreshed'));
+    } catch {
+      setSyncStatusMsg(t('settings.hhRefreshFailed'));
+    } finally {
+      setTransferBusy(false);
+    }
+  };
+
   const showInviteDeviceQr = async () => {
     const store = HouseholdStore.getInstance();
     const info = store.getHouseholdInfo();
@@ -356,6 +374,12 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
   const cycleSubColor = () => setSubPrefs(setSubtitlePrefs({ color: nextSubtitleColor(subPrefs().color) }));
   const toggleSubOpaque = () => setSubPrefs(setSubtitlePrefs({ opaqueBox: !subPrefs().opaqueBox }));
 
+  const [liveBufferSeconds, setLiveBuffer] = createSignal(getLiveBufferSeconds());
+  const cycleLiveBuffer = () => {
+    const index = LIVE_BUFFER_CHOICES.indexOf(liveBufferSeconds());
+    setLiveBuffer(setLiveBufferSeconds(LIVE_BUFFER_CHOICES[(index + 1) % LIVE_BUFFER_CHOICES.length]));
+  };
+
   const toggleSingleConnection = () => {
     const next = !singleConn();
     net.setSingleConnectionMode(next);
@@ -429,6 +453,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     // Household & Multi-Device Sync (PRD-41)
     if (householdOnly() && householdInfo()) {
       grid.push([
+        { id: 'btn-hh-refresh', onSelect: () => void refreshHousehold() },
         { id: 'btn-hh-receive', onSelect: () => void transferHouseholdData('receive') },
         { id: 'btn-hh-send', onSelect: () => void transferHouseholdData('send') },
         { id: 'btn-hh-invite', onSelect: showInviteDeviceQr },
@@ -444,6 +469,7 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
     // Diagnostics & maintenance
     if (!householdOnly() && panel() === 'connection') {
       grid.push([{ id: 'btn-single-conn', onSelect: toggleSingleConnection }]);
+      grid.push([{ id: 'btn-live-buffer', onSelect: cycleLiveBuffer }]);
     }
     if (!householdOnly() && panel() === 'system') {
       grid.push([
@@ -914,6 +940,15 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
               {/* Household action buttons */}
               <div style={{ display: 'flex', gap: '12px', 'flex-wrap': 'wrap' }}>
                 <button
+                  id="btn-hh-refresh"
+                  tabindex="-1"
+                  disabled={transferBusy()}
+                  class={`tv-btn ${focusId() === 'btn-hh-refresh' ? 'focused' : ''}`}
+                  onClick={() => void refreshHousehold()}
+                >
+                  {t('settings.hhRefresh')}
+                </button>
+                <button
                   id="btn-hh-receive"
                   tabindex="-1"
                   disabled={transferBusy()}
@@ -1014,6 +1049,22 @@ export const SettingsView: Component<SettingsViewProps> = (props) => {
           >
             {t('settings.singleConn', { state: singleConn() ? t('settings.singleConnOn') : t('settings.singleConnOff') })}
           </button>
+          <div style={{ 'margin-top': '12px' }}>
+            <button
+              id="btn-live-buffer"
+              tabindex="-1"
+              class={`tv-btn ${focusId() === 'btn-live-buffer' ? 'focused' : ''}`}
+              aria-describedby="live-buffer-desc"
+              onClick={cycleLiveBuffer}
+            >
+              {t('settings.liveBuffer', {
+                value: liveBufferSeconds() ? `${liveBufferSeconds()} s` : t('settings.liveBufferAuto'),
+              })}
+            </button>
+            <p id="live-buffer-desc" style={{ color: 'var(--buntu-text-muted)', 'margin-top': '8px' }}>
+              {t('settings.liveBufferDesc')}
+            </p>
+          </div>
         </div>
 
         </Show>

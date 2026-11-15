@@ -110,6 +110,27 @@ describe('Tizen receive and send household data', () => {
     expect(document.body.textContent).toContain('Comptes et favoris envoyés');
   });
 
+  it('refreshes the household: reopens the channel, then reports', async () => {
+    vi.useFakeTimers();
+    try {
+      const refresh = vi.spyOn(LocalSyncService.getInstance(), 'refresh').mockResolvedValue();
+      await mount();
+      const button = document.querySelector('#btn-hh-refresh') as HTMLButtonElement;
+      expect(button.textContent).toBe('Actualiser');
+      button.click();
+      await settle();
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(document.body.textContent).toContain('Réveil des appareils du foyer');
+      expect(button.disabled).toBe(true);
+      await vi.advanceTimersByTimeAsync(2600);
+      await settle();
+      expect(document.body.textContent).toContain('Appareils du foyer actualisés');
+      expect(button.disabled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not report a transfer while disconnected', async () => {
     connected = false;
     await mount();

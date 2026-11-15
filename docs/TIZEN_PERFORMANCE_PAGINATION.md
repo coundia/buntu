@@ -51,31 +51,31 @@ Pour éviter de rescanner l'intégralité de la base de données locale à chaqu
 
 ## 3. Fichiers Modifiés & Architecture
 
-* [`tizen/src/core/storage/Database.ts`](file:///Users/<user>/projects/cnd-iptv-native/tizen/src/core/storage/Database.ts) :
+* [`tizen/src/core/storage/Database.ts`](../tizen/src/core/storage/Database.ts) :
   - `saveCategoriesCache` / extraction automatique à l'importation par lot.
   - `getCategories` avec cache `localStorage` prioritaire.
   - `getItemsByKindAndGroup` avec `cursor.advance(offset)`.
   - `countItemsByKindAndGroup` avec comptage natif C++ `index.count()`.
-* [`tizen/src/core/engine/CndEngine.ts`](file:///Users/<user>/projects/cnd-iptv-native/tizen/src/core/engine/CndEngine.ts) :
+* [`tizen/src/core/engine/CndEngine.ts`](../tizen/src/core/engine/CndEngine.ts) :
   - `categoriesMemCache` en mémoire vive.
   - `countCatalog(kind, category)`.
   - Contrôle parental factorisé par catégorie au lieu d'une boucle par élément.
-* [`tizen/src/core/pagination/InfiniteScrollController.ts`](file:///Users/<user>/projects/cnd-iptv-native/tizen/src/core/pagination/InfiniteScrollController.ts) :
+* [`tizen/src/core/pagination/InfiniteScrollController.ts`](../tizen/src/core/pagination/InfiniteScrollController.ts) :
   - Contrôleur modulaire SRP (Single Responsibility Principle) pour le défilement infini.
   - Déclenchement automatique par seuil de focus D-Pad (`threshold`) et écouteur de défilement conteneur.
   - Plafond de protection RAM Smart TV (`maxItems = 300`) évitant toute fuite mémoire sur TV 1 Go.
   - Protection contre les requêtes concurrentes (`isLoading` debounce guard).
-* [`tizen/src/ui/design/SpatialNav.ts`](file:///Users/<user>/projects/cnd-iptv-native/tizen/src/ui/design/SpatialNav.ts) :
+* [`tizen/src/ui/design/SpatialNav.ts`](../tizen/src/ui/design/SpatialNav.ts) :
   - Support de `preserveFocus = true` dans `setGrid` pour maintenir la position exacte du focus lors de l'arrivée transparente de nouveaux éléments.
-* [`tizen/src/features/movies/MoviesView.tsx`](file:///Users/<user>/projects/cnd-iptv-native/tizen/src/features/movies/MoviesView.tsx) :
+* [`tizen/src/features/movies/MoviesView.tsx`](../tizen/src/features/movies/MoviesView.tsx) :
   - Infinite scroll automatique sur la grille 5 colonnes avec loader et badge dynamique `X / Total films`.
-* [`tizen/src/features/series/SeriesView.tsx`](file:///Users/<user>/projects/cnd-iptv-native/tizen/src/features/series/SeriesView.tsx) :
+* [`tizen/src/features/series/SeriesView.tsx`](../tizen/src/features/series/SeriesView.tsx) :
   - Infinite scroll automatique sur la grille 5 colonnes avec loader et badge dynamique `X / Total séries`.
-* [`tizen/src/features/live/LiveView.tsx`](file:///Users/<user>/projects/cnd-iptv-native/tizen/src/features/live/LiveView.tsx) :
+* [`tizen/src/features/live/LiveView.tsx`](../tizen/src/features/live/LiveView.tsx) :
   - Infinite scroll sur la liste des chaînes Direct TV avec badge `X / Total chaînes`.
-* [`tizen/src/features/guide/GuideView.tsx`](file:///Users/<user>/projects/cnd-iptv-native/tizen/src/features/guide/GuideView.tsx) :
+* [`tizen/src/features/guide/GuideView.tsx`](../tizen/src/features/guide/GuideView.tsx) :
   - Infinite scroll sur le guide des programmes EPG avec chargement asynchrone par lot des métadonnées Now/Next.
-* [`tizen/src/ui/design/theme.css`](file:///Users/<user>/projects/cnd-iptv-native/tizen/src/ui/design/theme.css) :
+* [`tizen/src/ui/design/theme.css`](../tizen/src/ui/design/theme.css) :
   - Classes `.tv-infinite-loader`, `.tv-spinner-small` et `.tv-infinite-end`.
 
 ---

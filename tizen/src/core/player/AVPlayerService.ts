@@ -13,7 +13,7 @@
  * `setDisplayRect` set to that area. Without them the sound plays and the screen stays black.
  */
 
-import { BufferHint, bufferPolicy } from './bufferPolicy';
+import { BufferHint, bufferPolicy, getLiveBufferSeconds, liveBufferTimeoutSeconds, liveBufferWatchdogMs } from './bufferPolicy';
 import { StreamSummary, summarizeStream } from './streamInfo';
 
 export type PlayerState = 'NONE' | 'IDLE' | 'READY' | 'PLAYING' | 'PAUSED' | 'BUFFERING';
@@ -80,6 +80,10 @@ export interface AVPlayerListener {
 }
 
 export const FULL_SCREEN: DisplayArea = { x: 0, y: 0, width: 1920, height: 1080 };
+/** Live rebuffer longer than this indicates a network drop where AVPlay audio decoder may desync from video. */
+const LIVE_REBUFFER_REOPEN_MS = 1500;
+/** Silence between playhead ticks on live TV that indicates packets stalled across a network drop. */
+const LIVE_TICK_GAP_REOPEN_MS = 3000;
 
 /** AVPlay error codes, in words a viewer understands. */
 const ERROR_MESSAGES: Record<string, string> = {
@@ -129,6 +133,7 @@ export class AVPlayerService {
   private listener: AVPlayerListener = {};
   private stallWatchdogTimer: any = null;
   private bufferHint: BufferHint = {};
+  private liveBufferTimeoutSeconds = 0;
   private lastPlayTimeTick = 0;
   private lastTickTimestamp = 0;
   private isSuspended = false;
@@ -139,6 +144,51 @@ export class AVPlayerService {
   private openToken = 0;
   private pausedByStop = false;
   private mockTimer: any = null;
+  private lastOpenedUrl = '';
+  private selectedAudioTrackIndex: number | null = null;
+  private hasLivePlaybackStarted = false;
+  private liveBufferingStartedAt = 0;
+  private networkLostWhileActive = false;
+  private recoveringLiveAudio = false;
+
+  private constructor() {
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('offline', this.handleNetworkOffline);
+      window.addEventListener('online', this.handleNetworkOnline);
+    }
+  }
+
+  private handleNetworkOffline = (): void => {
+    if (
+      this.currentUrl &&
+      !this.pausedByStop &&
+      (this.state === 'PLAYING' || this.state === 'BUFFERING' ||
+        (this.isLive ? this.state === 'READY' : this.state === 'PAUSED'))
+    ) {
+      this.networkLostWhileActive = true;
+      if (this.isLive && this.liveBufferingStartedAt === 0) {
+        this.liveBufferingStartedAt = Date.now();
+      }
+      if (this.state !== 'PAUSED') this.reportFailure();
+    }
+  };
+
+  private handleNetworkOnline = (): void => {
+    if (!this.isLive && this.currentUrl && this.networkLostWhileActive) {
+      // Keep a paused film paused; play() will reopen it at the same point.
+      if (this.state !== 'PAUSED') void this.reopenAndPlay(this.currentTimeMs);
+      return;
+    }
+    if (
+      this.currentUrl &&
+      this.isLive &&
+      !this.pausedByStop &&
+      this.state !== 'PAUSED' &&
+      (this.networkLostWhileActive || this.state === 'BUFFERING' || this.state === 'PLAYING')
+    ) {
+      void this.recoverLiveStreamAudio('network-online');
+    }
+  };
 
   public static getInstance(): AVPlayerService {
     if (!AVPlayerService.instance) {
@@ -196,6 +246,17 @@ export class AVPlayerService {
     if (!this.avplay) return null;
     try {
       return summarizeStream(this.avplay.getCurrentStreamInfo?.());
+    } catch {
+      return null;
+    }
+  }
+
+  /** Current bandwidth estimate reported by AVPlay, where supported by the stream. */
+  public getBandwidthEstimateBps(): number | null {
+    if (!this.isActive()) return null;
+    try {
+      const value = Number(this.avplay?.getStreamingProperty?.('CURRENT_BANDWIDTH'));
+      return Number.isFinite(value) && value > 0 ? value : null;
     } catch {
       return null;
     }
@@ -358,14 +419,23 @@ export class AVPlayerService {
    */
   public async open(url: string, isLive: boolean, hint: BufferHint = {}): Promise<void> {
     this.closeCurrent();
+    if (url !== this.lastOpenedUrl) {
+      this.selectedAudioTrackIndex = null;
+      this.lastOpenedUrl = url;
+    }
     this.bufferHint = hint;
     const token = ++this.openToken;
     this.currentUrl = url;
     this.videoAspect = 0;
     this.isLive = isLive;
+    const liveSeconds = isLive ? getLiveBufferSeconds() : 0;
+    this.liveBufferTimeoutSeconds = liveBufferTimeoutSeconds(liveSeconds);
     this.durationMs = 0;
     this.currentTimeMs = 0;
     this.healthTimeMs = 0;
+    this.hasLivePlaybackStarted = false;
+    this.liveBufferingStartedAt = 0;
+    this.networkLostWhileActive = false;
 
     if (!this.avplay) {
       console.log(`[AVPlayer Mock] Open: ${url} (isLive=${isLive})`);
@@ -380,9 +450,15 @@ export class AVPlayerService {
       this.setState('IDLE');
       this.applyDisplayArea(); // window + display mode (see applyDisplayArea)
 
-      // Direct: rapid startup (small buffer). Films: larger, and larger still in 4K (see bufferPolicy).
+      if (this.liveBufferTimeoutSeconds) {
+        try {
+          this.avplay.setTimeoutForBuffering(this.liveBufferTimeoutSeconds);
+        } catch {
+          /* Availability depends on the device and stream type. */
+        }
+      }
       try {
-        const buffer = bufferPolicy(isLive, hint);
+        const buffer = bufferPolicy(isLive, hint, liveSeconds);
         this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', buffer.play);
         this.avplay.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', buffer.resume);
       } catch {
@@ -422,19 +498,53 @@ export class AVPlayerService {
     }
   }
 
-  private async reopenAndPlay() {
+  private async reopenAndPlay(resumeAt = 0) {
     const expectedToken = this.openToken + 1;
     try {
       await this.open(this.currentUrl, this.isLive, this.bufferHint);
       if (this.openToken === expectedToken) {
-        this.play();
+        if (resumeAt === 0) {
+          this.play();
+        } else {
+          this.seekTo(resumeAt, (restored) => {
+            if (this.openToken !== expectedToken || this.state === 'PAUSED') return;
+            if (restored) this.play();
+            else this.listener.onError?.(describePlayerError('PLAYER_ERROR_SEEK_FAILED'));
+          });
+        }
       }
     } catch {
       /* error already reported via listener.onError inside open() */
     }
   }
 
+  /**
+   * Reopens a live stream after a network cut or prolonged stall so AVPlay re-initializes both
+   * hardware video and audio decoders cleanly, then re-applies the active audio track.
+   */
+  public async recoverLiveStreamAudio(_reason: string = 'recovery'): Promise<void> {
+    if (!this.isLive || !this.currentUrl || this.pausedByStop || this.state === 'PAUSED' || this.recoveringLiveAudio) {
+      return;
+    }
+    this.recoveringLiveAudio = true;
+    this.networkLostWhileActive = false;
+    this.liveBufferingStartedAt = 0;
+    try {
+      await this.reopenAndPlay();
+      this.ensureAudioTrackActive();
+    } catch (e) {
+      console.warn('[AVPlay] Live audio recovery failed:', e);
+    } finally {
+      this.recoveringLiveAudio = false;
+    }
+  }
+
   public play() {
+    if (!this.isLive && this.currentUrl && this.networkLostWhileActive) {
+      if (navigator.onLine === false) return;
+      void this.reopenAndPlay(this.currentTimeMs);
+      return;
+    }
     if (this.pausedByStop && this.currentUrl) {
       this.pausedByStop = false;
       void this.reopenAndPlay();
@@ -449,8 +559,10 @@ export class AVPlayerService {
       // A restored stream can already be marked as playing.
       if (this.state === 'PLAYING' || this.state === 'BUFFERING') this.updateScreenSaver(false);
       this.setState('PLAYING');
+      this.lastTickTimestamp = Date.now();
       // Some firmwares only honor a window smaller than the screen once the stream is running.
       this.applyDisplayArea();
+      this.ensureAudioTrackActive();
       this.startStallWatchdog();
     } catch (err: any) {
       if (this.isLive && this.currentUrl && this.state === 'PAUSED') {
@@ -491,37 +603,49 @@ export class AVPlayerService {
     this.setState('PAUSED');
   }
 
-  public seekTo(ms: number) {
+  public seekTo(ms: number, completion?: (restored: boolean) => void) {
+    const token = this.openToken;
     const clamped = Math.max(0, ms);
     const target = this.durationMs > 0 ? Math.min(clamped, Math.max(0, this.durationMs - 1000)) : clamped;
     this.currentTimeMs = target;
     if (!this.avplay) {
       this.listener.onCurrentPlayTime?.(target);
+      completion?.(true);
       return;
     }
     try {
       this.avplay.seekTo(
         target,
         () => {
+          if (token !== this.openToken) return;
           this.listener.onCurrentPlayTime?.(target);
+          completion?.(true);
         },
         (err: any) => {
+          if (token !== this.openToken) return;
           console.warn('AVPlay seekTo failed:', err);
+          completion?.(false);
         }
       );
     } catch (err: any) {
       console.warn('AVPlay seek error:', err);
+      completion?.(false);
     }
   }
 
   /** Stops and closes the current stream; pending callbacks of that stream are ignored. */
   public stop() {
     this.openToken++;
+    this.lastOpenedUrl = '';
+    this.selectedAudioTrackIndex = null;
     this.closeCurrent();
   }
 
   private closeCurrent() {
     this.pausedByStop = false;
+    this.hasLivePlaybackStarted = false;
+    this.liveBufferingStartedAt = 0;
+    this.networkLostWhileActive = false;
     this.stopStallWatchdog();
     if (this.mockTimer) {
       clearInterval(this.mockTimer);
@@ -558,11 +682,39 @@ export class AVPlayerService {
   }
 
   public selectTrack(type: 'AUDIO' | 'TEXT', index: number) {
+    if (type === 'AUDIO') {
+      this.selectedAudioTrackIndex = index;
+    }
     if (!this.avplay) return;
     try {
       this.avplay.selectTrack(type, index);
     } catch (err) {
       console.warn('AVPlay selectTrack error:', err);
+    }
+  }
+
+  /**
+   * Ensures an audio track (preferring the user-selected track when available) is bound in AVPlay,
+   * working around firmware decoders that drop audio after buffering or stream reopen.
+   */
+  public ensureAudioTrackActive(): void {
+    if (!this.avplay) return;
+    try {
+      const avState = this.avplay.getState?.();
+      if (avState && avState !== 'READY' && avState !== 'PLAYING' && avState !== 'PAUSED') return;
+      const rawTracks = this.avplay.getTotalTrackInfo?.();
+      const audioTracks = Array.isArray(rawTracks) ? rawTracks.filter((t: any) => t && t.type === 'AUDIO') : [];
+      if (audioTracks.length === 0) return;
+      const chosen =
+        this.selectedAudioTrackIndex !== null
+          ? audioTracks.find((t: any) => Number(t.index) === this.selectedAudioTrackIndex)
+          : undefined;
+      const targetIndex = chosen ? Number(chosen.index) : Number(audioTracks[0].index);
+      if (Number.isFinite(targetIndex) && typeof this.avplay.selectTrack === 'function') {
+        this.avplay.selectTrack('AUDIO', targetIndex);
+      }
+    } catch {
+      /* track info or selectTrack may not be ready yet on some firmware */
     }
   }
 
@@ -641,6 +793,9 @@ export class AVPlayerService {
     const listenerObj = {
       onbufferingstart: () => {
         if (!current() || this.state === 'PAUSED') return;
+        if (this.isLive && this.hasLivePlaybackStarted && !this.pausedByStop) {
+          this.liveBufferingStartedAt = Date.now();
+        }
         this.setState('BUFFERING');
         this.listener.onBufferingStart?.();
       },
@@ -650,20 +805,52 @@ export class AVPlayerService {
       },
       onbufferingcomplete: () => {
         if (!current() || this.state === 'PAUSED') return;
+        const outageMs =
+          this.isLive && this.hasLivePlaybackStarted && this.liveBufferingStartedAt > 0
+            ? Date.now() - this.liveBufferingStartedAt
+            : 0;
+        this.liveBufferingStartedAt = 0;
+        if (
+          this.isLive &&
+          this.hasLivePlaybackStarted &&
+          !this.recoveringLiveAudio &&
+          (this.networkLostWhileActive || (!this.liveBufferTimeoutSeconds && outageMs >= LIVE_REBUFFER_REOPEN_MS))
+        ) {
+          void this.recoverLiveStreamAudio('live-rebuffer-complete');
+          return;
+        }
+        this.hasLivePlaybackStarted = true;
         this.setState('PLAYING');
         this.lastTickTimestamp = Date.now();
+        this.ensureAudioTrackActive();
         this.listener.onBufferingComplete?.();
       },
       oncurrentplaytime: (timeMs: number) => {
         if (!current() || this.state === 'PAUSED') return;
+        const now = Date.now();
+        const fillingConfiguredBuffer = this.liveBufferTimeoutSeconds > 0 && this.state === 'BUFFERING';
+        const tickGapMs =
+          this.isLive && this.hasLivePlaybackStarted && this.lastTickTimestamp > 0
+            ? now - this.lastTickTimestamp
+            : 0;
         this.currentTimeMs = timeMs;
         this.lastPlayTimeTick = timeMs;
-        this.lastTickTimestamp = Date.now();
+        this.lastTickTimestamp = now;
         this.reportPlayback(timeMs);
+        if (
+          this.isLive &&
+          this.hasLivePlaybackStarted &&
+          !this.recoveringLiveAudio &&
+          (this.networkLostWhileActive || (!fillingConfiguredBuffer && tickGapMs >= LIVE_TICK_GAP_REOPEN_MS))
+        ) {
+          void this.recoverLiveStreamAudio('live-tick-gap');
+          return;
+        }
+        if (timeMs > 0) this.hasLivePlaybackStarted = true;
         this.listener.onCurrentPlayTime?.(timeMs);
       },
       onerror: (eventType: string) => {
-        if (!current()) return;
+        if (!current() || (!this.isLive && this.networkLostWhileActive)) return;
         this.stopStallWatchdog();
         this.reportFailure();
         this.listener.onError?.(describePlayerError(eventType));
@@ -693,13 +880,21 @@ export class AVPlayerService {
     this.stopStallWatchdog();
     this.lastTickTimestamp = Date.now();
     this.stallWatchdogTimer = setInterval(() => {
+      if (!this.isLive && this.networkLostWhileActive) return;
       if (this.state === 'PLAYING' || this.state === 'BUFFERING') {
-        const gap = Date.now() - this.lastTickTimestamp;
-        if (gap > 8000) {
-          // Playhead stalled for 8s
-          this.lastTickTimestamp = Date.now();
+        const now = Date.now();
+        const bufferingTimeout = this.state === 'BUFFERING' ? this.liveBufferTimeoutSeconds : 0;
+        const lastActivity = bufferingTimeout
+          ? Math.max(this.liveBufferingStartedAt, this.lastTickTimestamp)
+          : this.lastTickTimestamp;
+        if (now - lastActivity > liveBufferWatchdogMs(bufferingTimeout, 8000)) {
+          this.lastTickTimestamp = now;
           this.reportFailure();
-          this.listener.onStallDetected?.();
+          if (this.listener.onStallDetected) {
+            this.listener.onStallDetected();
+          } else if (this.isLive && !this.pausedByStop) {
+            void this.recoverLiveStreamAudio('watchdog-stall');
+          }
         }
       }
     }, 2000);

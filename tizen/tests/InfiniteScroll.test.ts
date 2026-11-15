@@ -64,6 +64,27 @@ describe('InfiniteScrollController (SRP Architecture)', () => {
     expect(scroller.items().length).toBe(10);
   });
 
+  it('ignores a page from the previous sort after resetting the list', async () => {
+    let finishOldPage!: (batch: { items: string[]; total: number }) => void;
+    const oldPage = new Promise<{ items: string[]; total: number }>((resolve) => {
+      finishOldPage = resolve;
+    });
+    const scroller = createInfiniteScroller<string>({
+      pageSize: 2,
+      fetchBatch: (offset) => offset === 0
+        ? Promise.resolve({ items: ['Zulu', 'Bravo'], total: 3 })
+        : oldPage,
+    });
+    scroller.setItems(['Alpha', 'Bravo'], 3);
+
+    const pending = scroller.loadMore();
+    await scroller.reset();
+    finishOldPage({ items: ['Zulu'], total: 3 });
+
+    expect(await pending).toBe(false);
+    expect(scroller.items()).toEqual(['Zulu', 'Bravo']);
+  });
+
   it('prevents concurrent duplicate fetches while loading', async () => {
     let resolvePromise: (val: any) => void;
     const pendingPromise = new Promise((resolve) => {

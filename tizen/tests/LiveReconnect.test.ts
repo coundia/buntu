@@ -101,4 +101,30 @@ describe('Live stream that stops answering: the player reconnects by itself', ()
     expect(text()).not.toContain('Connexion perdue');
     expect(play).not.toHaveBeenCalled();
   });
+
+  it('ignores stale pre-reconnect buffering/time callbacks until the forced reopen runs, then restores audio track', async () => {
+    const ensureAudio = vi.spyOn(AVPlayerService.getInstance() as any, 'ensureAudioTrackActive').mockImplementation(() => {});
+    await mount();
+    listener.onStallDetected();
+    await settle();
+    expect(text()).toContain('Connexion perdue… reconnexion (1/5)');
+
+    // Stale events from the silent pre-drop AVPlay session right before the 1s reconnect timer fires
+    await vi.advanceTimersByTimeAsync(400);
+    listener.onBufferingComplete();
+    listener.onCurrentPlayTime(5000);
+    await settle();
+    expect(text()).toContain('reconnexion (1/5)');
+
+    await vi.advanceTimersByTimeAsync(600);
+    await settle();
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(play).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }), { force: true });
+
+    ensureAudio.mockClear();
+    listener.onBufferingComplete();
+    await settle();
+    expect(ensureAudio).toHaveBeenCalledTimes(1);
+    expect(text()).not.toContain('Connexion perdue');
+  });
 });
