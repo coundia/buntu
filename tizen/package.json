@@ -15,7 +15,7 @@
     "solid-js": "^1.9.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.6",
     "@vitejs/plugin-legacy": "^6.0.0",
     "jsdom": "^31.0.0",
     "terser": "^5.39.0",
