@@ -51,7 +51,7 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 ## 2026-11-15 — Claude, push de `main` (historique réécrit)
 
 - ✅ `git push --force-with-lease=main:<ancien sha> origin main` : `origin/main` = `c4f1b7f` (identique au local au moment du push). Le dépôt `coundia/buntu` est **public** (vérifié avec `gh repo view`). Tags **non** poussés.
-- ⚠️ Les tags distants `v1.0.0` et `v1.1.0` pointent toujours vers l'**ancien** historique (commits `a52c831` et `2110e0a`, absents du nouveau `main`) : l'ancienne adresse e-mail professionnelle et l'ancien identifiant d'équipe Apple y restent donc accessibles publiquement. La release GitHub « Buntu 1.1.0 » est attachée à `v1.1.0`. Mettre les tags à jour (force) relancerait le workflow Release, qui échouerait au contrôle de version.
+- ✅ Tags `v1.0.0` et `v1.1.0` mis à jour sur `origin` (force, avec contrôle de l'ancienne valeur) : ils pointent maintenant vers `cfe149b` et `f9ebbdd`, tous deux dans le nouveau `main` ; objets de tag identiques au local (taggers en `papacoundia@gmail.com`). La release GitHub « Buntu 1.1.0 » reste publiée, attachée au tag `v1.1.0`. Aucun run du workflow Release détecté juste après (à surveiller : un échec au contrôle de version serait attendu).
 - ℹ️ Même après un push forcé, GitHub garde les anciens commits accessibles par leur identifiant, et les forks/clones éventuels les gardent : seule une demande de purge à GitHub Support les retire.
 - ⏳ Premier passage du CI (`CI`, push sur `main`) en cours ; Dependabot a démarré ses mises à jour (PR à venir).
 
