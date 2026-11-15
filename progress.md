@@ -48,6 +48,13 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-15 — Claude, suite : « fix all » (Apple, tests manquants, historique)
+
+- ❌→✅ `cd apple && swift test` (1re passe) : 573 tests, **1 échec** : `CndPlayerTests.testOfflineStallWaitsForNetworkAndResumesVodAtLastPosition` (6800 au lieu de 6500), 3/3 reproductible. Cause : `MockBackend` avale l'annulation de son `sleep` et ajoute encore 300 ms après `cancel()`, donc le test lisait la position 300 ms trop tôt ; le contrôleur reprend bien à la dernière position observée. Test corrigé (attente de 60 ms avant la lecture) : 3/3 réussis en ciblé.
+- ✅ `swift test` complet relancé après la correction : **573 tests, 0 échec, 2 ignorés** (exit 0) + 15 tests Swift Testing réussis. Les messages CoreData `AddressBook` du journal viennent du bac à sable macOS, pas du code. `xcodebuild` (schémas iOS, tvOS, macOS, visionOS) non lancé : à faire par l'utilisateur.
+- ✅ Tests ajoutés (Android) : `MoviesViewModelTest` (catégories demandées avec le type `"movie"` ; vérifié par mutation : échoue avec `"vod"`), et 2 tests dans `LiveViewModelTest` (listes Récents/Favoris, état favori). `:feature:live` 5/5, `:feature:movies` 1/1.
+- ⏸️ Historique Git (identifiant d'équipe Apple dans d'anciens commits, fichier `.swp`) : réécriture irréversible, en attente de confirmation de l'utilisateur.
+
 ## 2026-11-15 — Claude, audit et finition « open source + releases »
 
 - ✅ Audit (le chantier existait déjà, non commité : licences, CI, release, docs) : `check-secrets` propre ; historique (171 commits) scanné par motifs de clés et noms de fichiers sensibles : rien de réel (reste `docs/.DEPLOY_TIZEN_STORE.md.swp`, sans secret) ; versions alignées `1.0.1` / build `2`.
