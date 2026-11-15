@@ -40,7 +40,7 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Verify secrets and key generator
         run: |
@@ -71,7 +71,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain and Apple targets
         uses: dtolnay/rust-toolchain@stable
@@ -111,7 +111,7 @@ jobs:
       HAS_RELEASE_KEYSTORE: ${{ secrets.BUNTU_KEYSTORE_BASE64 != '' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -181,7 +181,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain with wasm32 target
         uses: dtolnay/rust-toolchain@stable
