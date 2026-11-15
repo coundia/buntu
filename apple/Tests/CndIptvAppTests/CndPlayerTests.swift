@@ -395,6 +395,9 @@ final class CndPlayerTests: XCTestCase {
         guard let first = backends.first else { return XCTFail("No initial backend") }
         try? await Task.sleep(nanoseconds: 120_000_000)
         first.advanceTask?.cancel()
+        // MockBackend swallows the cancellation of its sleep and still adds one last step: let it land, or
+        // `resume` would be read 300 ms before the position the controller really observes.
+        try? await Task.sleep(nanoseconds: 60_000_000)
         let resume = first.positionMs
 
         reachability.isConnected = false
