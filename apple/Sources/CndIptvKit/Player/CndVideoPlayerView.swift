@@ -235,16 +235,6 @@ public struct CndVideoPlayerView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            if let notice = controller.slowSourceNotice {
-                VStack {
-                    SlowSourceBanner(notice: notice, controller: controller)
-                        .padding(.top, 50)
-                        .padding(.horizontal, 16)
-                    Spacer()
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
             if case .failed(let message) = controller.state {
                 errorOverlay(message)
             } else if controller.state == .loading {
@@ -267,15 +257,34 @@ public struct CndVideoPlayerView: View {
 
             VStack(spacing: 0) {
                 topBar
-                Spacer()
+                    .opacity(hudVisible ? 1 : 0)
+                    .layoutPriority(1)
+                if let notice = controller.slowSourceNotice {
+                    SlowSourceBanner(notice: notice, controller: controller)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                        .layoutPriority(1)
+                        .transition(.opacity)
+                }
+                if controller.showsExpertDetails, !compactWindow {
+                    ViewThatFits(in: .vertical) {
+                        expertPanel.fixedSize(horizontal: false, vertical: true)
+                        ScrollView { expertPanel }
+                    }
+                    .frame(maxWidth: 320)
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    Spacer()
+                }
                 if hudVisible {
                     if showShelf, !controller.isLive, let upNext, upNext.isUpNextShelfEnabled, !upNext.recommendations.isEmpty {
                         shelfOverlay(upNext)
                     }
                     bottomBar
+                        .layoutPriority(1)
                 }
             }
-            .opacity(hudVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.2), value: hudVisible)
 
             if !channelNumberBuffer.isEmpty {
@@ -324,6 +333,7 @@ public struct CndVideoPlayerView: View {
             }
         }
         .onAppear { showHUD() }
+        .onChange(of: controller.showsExpertDetails) { _, _ in showHUD() }
         .onDisappear {
             hideTask?.cancel()
             channelNumberTask?.cancel()
@@ -364,6 +374,10 @@ public struct CndVideoPlayerView: View {
             return .handled
         }
         .onKeyPress(.escape) {
+            if controller.showsExpertDetails {
+                controller.showsExpertDetails = false
+                return .handled
+            }
             if showChannelDrawer {
                 withAnimation(.easeInOut(duration: 0.2)) { showChannelDrawer = false }
                 return .handled
@@ -383,7 +397,9 @@ public struct CndVideoPlayerView: View {
         #elseif os(tvOS)
         .onPlayPauseCommand { controller.togglePlayPause(); showHUD() }
         .onExitCommand {
-            if showShelf {
+            if controller.showsExpertDetails {
+                controller.showsExpertDetails = false
+            } else if showShelf {
                 withAnimation { showShelf = false }
             } else if hudVisible {
                 hudVisible = false
@@ -515,6 +531,12 @@ public struct CndVideoPlayerView: View {
                         .font(.caption2.monospaced())
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(.white.opacity(0.15), in: Capsule())
+                }
+                if controller.media != nil {
+                    let title = AppLanguageStore.shared.t("player.expert.title")
+                    hudButton("waveform.path.ecg", title) { controller.showsExpertDetails.toggle() }
+                        .help(title)
+                        .accessibilityAddTraits(controller.showsExpertDetails ? [.isSelected] : [])
                 }
                 if let sleepSeconds = controller.sleepTimerRemainingSeconds {
                     Label(Self.formatSeconds(Int64(sleepSeconds)), systemImage: "moon.zzz.fill")
@@ -975,6 +997,7 @@ public struct CndVideoPlayerView: View {
                 #if os(tvOS)
                 ProgressView(value: Double(controller.positionMs), total: Double(max(controller.durationMs, 1)))
                     .progressViewStyle(.linear)
+                    .overlay { bufferedProgressTrack(thumbInset: 0) }
                 #else
                 Slider(
                     value: Binding(
@@ -996,12 +1019,33 @@ public struct CndVideoPlayerView: View {
                     }
                 )
                 .disabled(controller.durationMs == 0)
+                .overlay { bufferedProgressTrack(thumbInset: 10) }
                 .accessibilityLabel("Position de lecture")
                 .accessibilityValue(A11yText.position(milliseconds: controller.positionMs, durationMs: controller.durationMs))
                 #endif
                 Text(Self.format(controller.durationMs)).monospacedDigit()
             }
             .font(.caption)
+        }
+    }
+
+    @ViewBuilder
+    private func bufferedProgressTrack(thumbInset: CGFloat) -> some View {
+        if controller.durationMs > 0, let buffered = controller.bufferedAheadSeconds,
+           buffered.isFinite, buffered > 0, !isScrubbing {
+            let duration = Double(controller.durationMs)
+            let position = min(max(0, Double(controller.positionMs)), duration)
+            let start = position / duration
+            let end = min(position + buffered * 1_000, duration) / duration
+            GeometryReader { geometry in
+                let trackWidth = max(0, geometry.size.width - 2 * thumbInset)
+                Capsule()
+                    .fill(.cyan)
+                    .frame(width: trackWidth * (end - start), height: 4)
+                    .offset(x: thumbInset + trackWidth * start, y: (geometry.size.height - 4) / 2)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
     }
 
@@ -1045,6 +1089,61 @@ public struct CndVideoPlayerView: View {
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.35)
         .accessibilityLabel(label)
+    }
+
+    private var expertPanel: some View {
+        let lang = AppLanguageStore.shared
+        return TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let sample = controller.expertReading()
+            let unavailable = lang.t("player.expert.unavailable")
+            let network = sample.network
+            let download = network.flatMap { reading in
+                reading.isDownloading ? expertBitrate(reading.downloadBytesPerSecond * 8) : nil
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(lang.t("player.expert.title")).fontWeight(.semibold)
+                    Spacer(minLength: 12)
+                    Button {
+                        controller.showsExpertDetails = false
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(lang.t("player.expert.close"))
+                }
+                expertRow(lang.t("player.expert.network"), lang.t(sample.connected ? "player.expert.connected" : "player.expert.disconnected"))
+                expertRow(lang.t("player.expert.download"), download ?? unavailable)
+                expertRow(lang.t("player.expert.upload"), unavailable)
+                expertRow(lang.t("player.expert.stream"), network?.fileBitsPerSecond.flatMap(expertBitrate) ?? unavailable)
+                expertRow(lang.t("player.expert.buffer"), sample.buffer.map { $0.formatted(.number.precision(.fractionLength(1))) + " s" } ?? unavailable)
+                if let engine = controller.activeEngine {
+                    expertRow(lang.t("player.expert.engine"), engine == .mpv ? "mpv" : "AVPlayer")
+                }
+                if let format = DisplayRateMatcher.shared.currentFormat {
+                    expertRow(lang.t("player.expert.format"), format.summary)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.white)
+            .padding(12)
+            .frame(maxWidth: 320)
+            .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    private func expertRow(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+            Spacer(minLength: 12)
+            Text(value).monospacedDigit()
+        }
+    }
+
+    private func expertBitrate(_ bitsPerSecond: Double) -> String? {
+        guard bitsPerSecond.isFinite, bitsPerSecond > 0 else { return nil }
+        let value = (bitsPerSecond / 1_000_000).formatted(.number.precision(.fractionLength(2)))
+        return value + " Mbit/s"
     }
 
     private func errorOverlay(_ message: String) -> some View {
@@ -1216,10 +1315,10 @@ public struct CndVideoPlayerView: View {
     private func scheduleHide() {
         hideTask?.cancel()
         // With a screen reader the controls stay: they must not vanish under the user's focus (PRD 31).
-        guard !isScrubbing, !showChannelDrawer, !ScreenReader.isRunning else { return }
+        guard !controller.showsExpertDetails, !isScrubbing, !showChannelDrawer, !ScreenReader.isRunning else { return }
         hideTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            if !Task.isCancelled, controller.state == .playing { hudVisible = false }
+            if !Task.isCancelled, !controller.showsExpertDetails, controller.state == .playing { hudVisible = false }
         }
     }
 
@@ -1270,43 +1369,58 @@ private struct CinemaCursorHider: NSViewRepresentable {
 #endif
 
 
-/// « Ce film demande 5,9 Mbit/s, la connexion au serveur en donne 2,8 » with what can be done about it.
 struct SlowSourceBanner: View {
     let notice: SlowSourceNotice
     let controller: CndPlayerController
 
     static func message(_ notice: SlowSourceNotice) -> String {
-        let needed = notice.neededMbps.formatted(.number.precision(.fractionLength(1)))
-        let available = notice.availableMbps.formatted(.number.precision(.fractionLength(1)))
-        return "Ce fichier demande \(needed) Mbit/s, la connexion au serveur n'en donne que \(available) : la lecture va s'arrêter souvent."
+        let lang = AppLanguageStore.shared
+        switch notice.stage {
+        case .continuing:
+            return lang.t("player.slowSource.continuing")
+        case .atRisk:
+            return lang.t("player.slowSource.atRisk")
+        case .refilling:
+            return lang.t("player.slowSource.refilling")
+        }
     }
 
     var body: some View {
+        let lang = AppLanguageStore.shared
         VStack(alignment: .leading, spacing: 8) {
             Label(Self.message(notice), systemImage: "speedometer")
-                .font(.callout)
+                .font(notice.stage == .continuing ? .caption : .callout)
                 .foregroundStyle(.white)
-            HStack(spacing: 8) {
-                if !controller.otherVersions.isEmpty {
-                    Menu("Autre version") {
-                        ForEach(controller.otherVersions, id: \.id) { version in
-                            Button(version.name) { controller.playVersion(version) }
-                        }
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
+                .fixedSize(horizontal: false, vertical: true)
+            if notice.stage != .continuing {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { actions(lang) }
+                        .fixedSize(horizontal: true, vertical: false)
+                    VStack(alignment: .leading, spacing: 8) { actions(lang) }
                 }
-                if controller.downloadHandler != nil, controller.media?.itemId != nil {
-                    Button("Télécharger puis regarder") { controller.downloadInstead() }
-                        .buttonStyle(.borderedProminent)
-                }
-                Button("Continuer") { controller.dismissSlowSourceNotice() }
-                    .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-            .controlSize(.small)
         }
-        .padding(12)
+        .padding(notice.stage == .continuing ? 8 : 12)
         .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 10))
         .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func actions(_ lang: AppLanguageStore) -> some View {
+        if !controller.otherVersions.isEmpty {
+            Menu(lang.t("player.slowSource.otherVersion")) {
+                ForEach(controller.otherVersions, id: \.id) { version in
+                    Button(version.name) { controller.playVersion(version) }
+                }
+            }
+            .menuStyle(.borderlessButton)
+        }
+        if notice.showsDownload, controller.downloadHandler != nil, controller.media?.itemId != nil {
+            Button(lang.t("player.slowSource.download")) { controller.downloadInstead() }
+                .buttonStyle(.borderedProminent)
+        }
+        Button(lang.t("player.slowSource.dismiss")) { controller.dismissSlowSourceNotice() }
+            .buttonStyle(.bordered)
     }
 }

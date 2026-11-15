@@ -75,19 +75,48 @@ struct SearchFilterToolbarModifier: ViewModifier {
     var sortOptions: [SortField]
     var prompt: String
 
-    /// On iPhone the field stays visible under the title instead of hiding until the list is pulled down.
-    @ViewBuilder
-    private func searchField(_ content: Content) -> some View {
-        #if os(iOS)
-        content.searchable(text: $state.text, placement: .navigationBarDrawer(displayMode: .always), prompt: Text(prompt))
-        #else
-        content.searchable(text: $state.text, prompt: Text(prompt))
-        #endif
+    @State private var showsSearch = false
+    @FocusState private var searchFocused: Bool
+
+    private var catalogSearchHeader: some View {
+        let language = AppLanguageStore.shared
+        return VStack(alignment: .leading, spacing: 8) {
+            Button {
+                showsSearch = true
+                searchFocused = true
+            } label: {
+                Label(language.t("common.search"), systemImage: "magnifyingglass")
+            }
+            .buttonStyle(.borderedProminent)
+
+            if showsSearch || !state.text.isEmpty {
+                HStack {
+                    TextField(prompt, text: $state.text)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($searchFocused)
+                        .submitLabel(.search)
+                        .onSubmit { state.commit() }
+                    Button {
+                        state.text = ""
+                        state.commit()
+                        showsSearch = false
+                        searchFocused = false
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .accessibilityLabel(language.t("common.clear"))
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial)
     }
 
     func body(content: Content) -> some View {
-        searchField(content)
-            .onSubmit(of: .search) { state.commit() }
+        content
+            .safeAreaInset(edge: .top, spacing: 0) { catalogSearchHeader }
             .toolbar {
                 ToolbarItem(placement: .automatic) {
                     Menu {

@@ -8,6 +8,7 @@ import CndCoreBridge
 @MainActor
 final class MovieDetailsModel {
     let vod: VodContext
+    private let catalog: VodCatalogModel<IptvItemRecord>?
     private(set) var item: IptvItemRecord
     private(set) var metadata: MediaMetadata?
     private(set) var recommendations: [Recommendation] = []
@@ -15,9 +16,10 @@ final class MovieDetailsModel {
     private(set) var isLoadingMetadata = false
     private(set) var metadataMessage: String?
 
-    init(item: IptvItemRecord, vod: VodContext) {
+    init(item: IptvItemRecord, vod: VodContext, catalog: VodCatalogModel<IptvItemRecord>? = nil) {
         self.item = item
         self.vod = vod
+        self.catalog = catalog
     }
 
     var resumePosition: Int64? { VodContext.resumePosition(for: item) }
@@ -86,12 +88,14 @@ final class MovieDetailsModel {
     func toggleFavorite() async {
         if let value = await vod.toggleFavorite(stableHash: item.stableHash, kind: item.kind) {
             item.isFavorite = value
+            catalog?.applyFavorite(value, to: item)
         }
     }
 
     func toggleBroken() async {
         if let value = await vod.toggleBroken(stableHash: item.stableHash, kind: item.kind) {
             item.isBroken = value
+            catalog?.applyBroken(value, to: item)
         }
     }
 }
@@ -104,8 +108,14 @@ struct MovieDetailsView: View {
     let compact: Bool
     let onClose: (() -> Void)?
 
-    init(item: IptvItemRecord, vod: VodContext, compact: Bool = false, onClose: (() -> Void)? = nil) {
-        _model = State(initialValue: MovieDetailsModel(item: item, vod: vod))
+    init(
+        item: IptvItemRecord,
+        vod: VodContext,
+        catalog: VodCatalogModel<IptvItemRecord>? = nil,
+        compact: Bool = false,
+        onClose: (() -> Void)? = nil
+    ) {
+        _model = State(initialValue: MovieDetailsModel(item: item, vod: vod, catalog: catalog))
         self.compact = compact
         self.onClose = onClose
     }

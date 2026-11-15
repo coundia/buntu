@@ -1,5 +1,20 @@
 import Foundation
 
+enum LiveBufferDuration: Int, CaseIterable {
+    case automatic = 0
+    case twentyFiveSeconds = 25
+    case thirtySeconds = 30
+
+    static let settingsKey = "playback.liveBufferDuration"
+
+    static var current: Self {
+        Self(rawValue: UserDefaults.standard.integer(forKey: settingsKey)) ?? .automatic
+    }
+
+    // Preserve fast startup and the existing buffering target in automatic mode.
+    var targetSeconds: Int { self == .automatic ? 3 : rawValue }
+}
+
 public enum TimeshiftDuration: String, CaseIterable, Identifiable, Sendable {
     case disabled
     case halfHour

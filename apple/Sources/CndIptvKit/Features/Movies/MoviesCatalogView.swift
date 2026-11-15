@@ -2,20 +2,12 @@ import SwiftUI
 import CndCoreBridge
 
 struct MoviesCatalogView: View {
-    @State private var model: VodCatalogModel<IptvItemRecord>
+    let model: VodCatalogModel<IptvItemRecord>
     let revision: Int
     let totalMovies: Int
-    var onOpenAssistant: ((String) -> Void)?
     var forYou: ForYouModel?
+    var onOpenAssistant: ((String) -> Void)?
     @Environment(VodContext.self) private var vod
-
-    init(engine: CndEngine, revision: Int, totalMovies: Int, forYou: ForYouModel? = nil, onOpenAssistant: ((String) -> Void)? = nil) {
-        self.onOpenAssistant = onOpenAssistant
-        self.forYou = forYou
-        _model = State(initialValue: VodCatalogModel(kind: "movie", source: .movies(engine: engine)))
-        self.revision = revision
-        self.totalMovies = totalMovies
-    }
 
     var body: some View {
         let lang = AppLanguageStore.shared
@@ -25,6 +17,7 @@ struct MoviesCatalogView: View {
             totalCount: totalMovies,
             revision: revision,
             viewModeKey: "movies.viewMode",
+            preservesCategoryScroll: true,
             titles: VodSectionTitles(resume: lang.t("movies.section.resume"), resumeIcon: "play.circle", all: lang.t("movies.section.all")),
             sortOptions: [.name, .rating, .recentlyAdded, .group, .host],
             searchPrompt: lang.t("movies.searchPrompt"),

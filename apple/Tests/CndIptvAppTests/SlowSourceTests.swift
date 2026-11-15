@@ -1,58 +1,67 @@
 import XCTest
 @testable import CndIptvKit
 
-/// "Ce fichier demande X Mbit/s, la connexion en donne Y" (one reading per second).
 final class SlowSourceTests: XCTestCase {
     private func reading(_ mbps: Double, file fileMbps: Double = 6, downloading: Bool = true) -> NetworkReading {
         NetworkReading(downloadBytesPerSecond: mbps * 1_000_000 / 8, fileBitsPerSecond: fileMbps * 1_000_000, isDownloading: downloading)
     }
 
-    func testAFileHeavierThanTheConnectionIsReportedOnce() {
+    func testWarningEscalatesAsReserveFallsAndPlaybackStops() throws {
         var detector = SlowSourceDetector()
-        var notices: [SlowSourceNotice] = []
+        var notice: SlowSourceNotice?
         for _ in 0..<12 {
-            if let n = detector.add(reading(2.8), isBuffering: true, interval: 1) { notices.append(n) }
+            notice = detector.add(reading(4.5), bufferedAhead: 92, isBuffering: false, interval: 1)
         }
-        XCTAssertEqual(notices.count, 1)
-        XCTAssertEqual(notices[0].neededMbps, 6, accuracy: 0.01)
-        XCTAssertEqual(notices[0].availableMbps, 2.8, accuracy: 0.01)
+        let initial = try XCTUnwrap(notice)
+        XCTAssertEqual(initial.stage, .continuing)
+        XCTAssertEqual(initial.availableMbps, 4.5, accuracy: 0.01)
+        XCTAssertFalse(initial.showsDownload)
+
+        for reserve in [14.0, 13, 12, 11] {
+            notice = detector.add(reading(4.5), bufferedAhead: reserve, isBuffering: false, interval: 1)
+        }
+        XCTAssertEqual(notice?.stage, .atRisk)
+        for _ in 0..<8 {
+            notice = detector.add(reading(4.5), bufferedAhead: 2, isBuffering: true, interval: 1)
+        }
+        XCTAssertEqual(notice?.stage, .refilling)
+        XCTAssertEqual(notice?.showsDownload, true)
     }
 
-    func testAFastEnoughConnectionIsNeverReported() {
+    func testSustainedThroughputRecoveryClearsWarning() {
         var detector = SlowSourceDetector()
-        for _ in 0..<30 {
-            XCTAssertNil(detector.add(reading(9), isBuffering: true, interval: 1))
+        var notice: SlowSourceNotice?
+        for _ in 0..<15 {
+            notice = detector.add(reading(4), bufferedAhead: 20, isBuffering: false, interval: 1)
         }
+        XCTAssertEqual(notice?.stage, .continuing)
+        for _ in 0..<25 {
+            notice = detector.add(reading(7), bufferedAhead: 35, isBuffering: false, interval: 1)
+        }
+        XCTAssertNil(notice)
     }
 
-    func testNoReportWithoutBufferingOrWithTooFewReadings() {
+    func testFullCacheClearsExistingWarningWithoutTreatingIdleSpeedAsLow() {
         var detector = SlowSourceDetector()
-        for _ in 0..<30 {
-            XCTAssertNil(detector.add(reading(2), isBuffering: false, interval: 1), "it plays without stopping: no notice")
+        var notice: SlowSourceNotice?
+        for _ in 0..<15 {
+            notice = detector.add(reading(5), bufferedAhead: 80, isBuffering: false, interval: 1)
         }
-        var early = SlowSourceDetector()
+        XCTAssertEqual(notice?.stage, .continuing)
         for _ in 0..<5 {
-            XCTAssertNil(early.add(reading(2), isBuffering: true, interval: 1), "too early to judge")
+            notice = detector.add(reading(0, downloading: false), bufferedAhead: 120, isBuffering: false, interval: 1)
         }
+        XCTAssertNil(notice)
     }
 
-    func testAFullCacheIsNotASlowNetwork() {
-        var detector = SlowSourceDetector()
-        // The cache is full: the engine stops reading and its speed falls to 0. That says nothing.
-        for _ in 0..<30 {
-            XCTAssertNil(detector.add(reading(0.1, downloading: false), isBuffering: true, interval: 1))
-        }
-    }
-
-    func testUnknownBitrateNeverReports() {
+    func testFastConnectionAndUnknownBitrateDoNotWarn() {
         var detector = SlowSourceDetector()
         let unknown = NetworkReading(downloadBytesPerSecond: 100_000, fileBitsPerSecond: nil, isDownloading: true)
-        for _ in 0..<30 { XCTAssertNil(detector.add(unknown, isBuffering: true, interval: 1)) }
-    }
-
-    func testTheMessageGivesBothRates() {
-        let text = SlowSourceBanner.message(SlowSourceNotice(neededMbps: 5.94, availableMbps: 2.81))
-        XCTAssertTrue(text.contains("5") && text.contains("2"), text)
-        XCTAssertTrue(text.contains("Mbit/s"))
+        for _ in 0..<30 {
+            XCTAssertNil(detector.add(reading(9), bufferedAhead: 2, isBuffering: true, interval: 1))
+        }
+        for _ in 0..<30 {
+            XCTAssertNil(detector.add(unknown, bufferedAhead: 2, isBuffering: true, interval: 1))
+        }
     }
 }

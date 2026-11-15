@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var isTestingAi = false
     @AppStorage("autoFailoverEnabled") private var autoFailoverEnabled = true
     @AppStorage("healthChecksEnabled") private var healthChecksEnabled = true
+    @AppStorage(LiveBufferDuration.settingsKey) private var liveBufferDuration: LiveBufferDuration = .automatic
     @AppStorage("timeshiftDuration") private var timeshiftDurationRaw: String = TimeshiftDuration.oneHour.rawValue
     @AppStorage("openSubtitlesLanguages") private var openSubtitlesLanguages: String = "fr,en"
     @AppStorage("openSubtitlesAutoSearch") private var openSubtitlesAutoSearch = false
@@ -82,6 +83,14 @@ struct SettingsView: View {
         Section(t("settings.playback.section")) {
             Toggle(t("settings.playback.autoFailover"), isOn: $autoFailoverEnabled)
             Toggle(t("settings.playback.healthChecks"), isOn: $healthChecksEnabled)
+            Picker(t("settings.playback.liveBuffer"), selection: $liveBufferDuration) {
+                ForEach(LiveBufferDuration.allCases, id: \.self) { duration in
+                    Text(duration == .automatic
+                         ? t("settings.playback.liveBuffer.automatic")
+                         : t("settings.playback.liveBuffer.seconds", duration.rawValue))
+                        .tag(duration)
+                }
+            }
             Picker(t("settings.playback.timeshift"), selection: $timeshiftDurationRaw) {
                 ForEach(TimeshiftDuration.allCases) { item in
                     Text(item.title).tag(item.rawValue)

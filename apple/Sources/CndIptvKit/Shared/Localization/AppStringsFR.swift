@@ -3,6 +3,28 @@ import Foundation
 /// French localization dictionary (default language for Buntu Apple apps).
 public enum AppStringsFR {
     public static let strings: [String: String] = [
+        // MARK: - Slow Playback Source
+        "player.slowSource.continuing": "Débit faible · La lecture continue",
+        "player.slowSource.atRisk": "Le tampon se vide. La lecture risque de s’interrompre.",
+        "player.slowSource.refilling": "Remplissage du tampon… Reprise dès que le tampon est prêt.",
+        "player.slowSource.otherVersion": "Autre version",
+        "player.slowSource.download": "Télécharger puis regarder",
+        "player.slowSource.dismiss": "Masquer",
+
+        // MARK: - Player Expert Mode
+        "player.expert.title": "Mode expert",
+        "player.expert.close": "Fermer le mode expert",
+        "player.expert.unavailable": "Indisponible",
+        "player.expert.network": "Réseau",
+        "player.expert.connected": "Connecté",
+        "player.expert.disconnected": "Hors ligne",
+        "player.expert.download": "Réception",
+        "player.expert.upload": "Envoi",
+        "player.expert.stream": "Débit du flux",
+        "player.expert.buffer": "Tampon disponible",
+        "player.expert.engine": "Moteur",
+        "player.expert.format": "Format vidéo",
+
         // MARK: - Tabs & Shell
         "tab.live": "Live TV",
         "tab.guide": "Guide TV",
@@ -36,6 +58,7 @@ public enum AppStringsFR {
         "common.error": "Erreur",
         "common.none": "aucune",
         "common.refresh": "Actualiser",
+        "common.search": "Rechercher",
         "common.clear": "Effacer",
         "common.send": "Envoyer",
 
@@ -52,6 +75,9 @@ public enum AppStringsFR {
         "settings.playback.section": "Lecture & Santé des Flux",
         "settings.playback.autoFailover": "Bascule automatique vers un miroir",
         "settings.playback.healthChecks": "Vérification périodique de santé",
+        "settings.playback.liveBuffer": "Tampon de lecture du direct",
+        "settings.playback.liveBuffer.automatic": "Automatique",
+        "settings.playback.liveBuffer.seconds": "%d secondes",
         "settings.playback.timeshift": "Tampon du direct (Timeshift)",
 
         "settings.recommendations.section": "Recommandations & Sagas",

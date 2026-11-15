@@ -2,6 +2,7 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 import Foundation
+import Network
 import QuartzCore
 // Not on macOS: linking libmpv statically there duplicates a Rust runtime symbol with the core
 // (libdovi); the Mac finds libmpv through dlopen (Homebrew or the embedded framework) instead.
@@ -436,6 +437,7 @@ public final class MpvVideoToolboxBackend: VideoBackend {
     public var onStateChange: ((PlaybackState) -> Void)?
     public var onTracksChange: (() -> Void)?
     public var timeshiftDuration: TimeshiftDuration = .oneHour
+    var liveBufferDuration: LiveBufferDuration = .automatic
 
     private let library: MpvLibrary?
     private let renderer: MpvRenderer?
@@ -448,6 +450,16 @@ public final class MpvVideoToolboxBackend: VideoBackend {
     private var cachedPositionMs: Int64 = 0
     private var cachedDurationMs: Int64 = 0
     private var isTornDown = false
+    /// Last media asked, to restart it when mpv gives up after a long network cut.
+    private var lastMedia: PlayableMedia?
+    private var recoveryAttempts = 0
+    private var recoveryTask: Task<Void, Never>?
+    private static let maxRecoveryAttempts = 100
+    /// Seconds without any data (empty cache, no download) before the stream is reopened.
+    private static let stallLimitSeconds: TimeInterval = 8
+    private var stallSince: Date?
+    private var pathMonitor: NWPathMonitor?
+    private var networkIsUp = true
 
     public init() {
         library = MpvLibrary.shared
@@ -503,6 +515,12 @@ public final class MpvVideoToolboxBackend: VideoBackend {
         // `demuxer-cache-idle` is "yes" once the cache is full: the speed then drops for no network reason.
         let downloading = property("demuxer-cache-idle") != "yes"
         return NetworkReading(downloadBytesPerSecond: speed, fileBitsPerSecond: bitrate, isDownloading: downloading)
+    }
+
+    public func bufferedAheadSeconds() -> Double? {
+        guard loaded, let value = property("demuxer-cache-duration"),
+              let seconds = Double(value), seconds.isFinite, seconds >= 0 else { return nil }
+        return seconds
     }
 
     private func property(_ name: String) -> String? {
@@ -562,6 +580,8 @@ public final class MpvVideoToolboxBackend: VideoBackend {
             startPolling()
         }
 
+        lastMedia = media
+        if recoveryTask == nil { recoveryAttempts = 0 }
         loaded = false
         cachedPositionMs = max(0, startPositionMs)
         cachedDurationMs = 0
@@ -612,6 +632,8 @@ public final class MpvVideoToolboxBackend: VideoBackend {
         }
         #endif
         option("cache", "yes")
+        // A dead connection is noticed after 15 s (not mpv's 60 s) so the reconnection starts early.
+        option("network-timeout", "15")
         option("demuxer-max-bytes", "64MiB")
         if media.kind != .live {
             // A film on a slow single connection: read far ahead, and once the cache runs dry, resume
@@ -624,14 +646,20 @@ public final class MpvVideoToolboxBackend: VideoBackend {
             option("demuxer-max-back-bytes", "32MiB")
             option("demuxer-readahead-secs", "120")
             option("cache-secs", "120")
+            option("cache-pause", "yes")
             option("cache-pause-wait", "6")
             option("cache-pause-initial", "yes")
             // A dropped connection resumes where it stopped (through the relay: same provider session).
-            option("stream-lavf-o", "reconnect=1,reconnect_on_network_error=1,reconnect_delay_max=4")
+            option("stream-lavf-o", "reconnect=1,reconnect_on_network_error=1,reconnect_at_eof=1,reconnect_delay_max=30")
         }
         if media.kind == .live {
-            option("cache-secs", "3")
-            option("stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=2")
+            let target = String(liveBufferDuration.targetSeconds)
+            option("cache-secs", target)
+            if liveBufferDuration != .automatic {
+                option("cache-pause-initial", "yes")
+                option("cache-pause-wait", target)
+            }
+            option("stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_at_eof=1,reconnect_delay_max=30")
             if timeshiftDuration.isEnabled {
                 let cacheDir = TimeshiftCacheManager.ensureCacheDirectory()
                 option("demuxer-seekable-cache", "yes")
@@ -647,6 +675,7 @@ public final class MpvVideoToolboxBackend: VideoBackend {
     }
 
     private func startPolling() {
+        startPathMonitor()
         pollTask?.cancel()
         pollTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -664,12 +693,16 @@ public final class MpvVideoToolboxBackend: VideoBackend {
             switch id {
             case 8: // MPV_EVENT_FILE_LOADED
                 loaded = true
+                recoveryAttempts = 0
                 onTracksChange?()
             case 7: // MPV_EVENT_END_FILE
                 if let data = event.load(fromByteOffset: 16, as: UnsafeMutableRawPointer?.self) {
                     let reason = data.load(as: Int32.self)
                     let error = data.load(fromByteOffset: 4, as: Int32.self)
-                    if reason == 4 {
+                    if reason == 4, lastMedia != nil, recoveryAttempts < Self.maxRecoveryAttempts {
+                        // The network stayed cut longer than mpv's own reconnection: retry from where it stopped.
+                        scheduleRecovery(reason: "connexion perdue")
+                    } else if reason == 4 {
                         let text = library.errorString?(error).map { String(cString: $0) } ?? "error \(error)"
                         state = .failed("mpv: \(text)")
                     } else if reason == 0 {
@@ -715,6 +748,57 @@ public final class MpvVideoToolboxBackend: VideoBackend {
         let paused = property("pause") == "yes"
         let buffering = property("paused-for-cache") == "yes" || property("core-idle") == "yes"
         state = paused ? .paused : (buffering ? .buffering : .playing)
+
+        // Watchdog: a connection that died silently leaves mpv waiting forever (empty cache, no download).
+        let speed = Double(property("cache-speed") ?? "") ?? 0
+        let cached = Double(property("demuxer-cache-duration") ?? "") ?? 0
+        if !paused, buffering, speed < 1, cached < 0.5 {
+            let since = stallSince ?? Date()
+            stallSince = since
+            if networkIsUp, recoveryTask == nil, Date().timeIntervalSince(since) > Self.stallLimitSeconds,
+               recoveryAttempts < Self.maxRecoveryAttempts {
+                scheduleRecovery(reason: "flux bloqué")
+            }
+        } else {
+            stallSince = nil
+        }
+    }
+
+    /// Reopens the current media at the last position (live: at the live edge). Waits for the network to be back.
+    private func scheduleRecovery(reason: String, immediate: Bool = false) {
+        guard let media = lastMedia, !isTornDown, recoveryTask == nil else { return }
+        recoveryAttempts += 1
+        let resumeMs = media.kind == .live ? 0 : cachedPositionMs
+        let delay = immediate ? UInt64(500_000_000) : UInt64(min(recoveryAttempts, 5)) * 1_000_000_000
+        state = .buffering
+        stallSince = nil
+        AppLog.shared.warn("PLAYER", "\(reason) : nouvelle tentative \(recoveryAttempts)")
+        recoveryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard let self, !Task.isCancelled, !self.isTornDown else { return }
+            self.load(media, startPositionMs: resumeMs)
+            self.recoveryTask = nil
+        }
+    }
+
+    /// Network path changes: when the connection comes back, reopen a stalled stream at once.
+    private func startPathMonitor() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let up = path.status == .satisfied
+            Task { @MainActor [weak self] in
+                guard let self, !self.isTornDown else { return }
+                let wasDown = !self.networkIsUp
+                self.networkIsUp = up
+                guard up, wasDown, self.lastMedia != nil, self.state != .paused, !self.isFailed, self.state != .ended else { return }
+                self.recoveryTask?.cancel()
+                self.recoveryTask = nil
+                self.scheduleRecovery(reason: "réseau rétabli", immediate: true)
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "buntu.mpv.path"))
+        pathMonitor = monitor
     }
 
     private var isFailed: Bool {
@@ -816,6 +900,10 @@ public final class MpvVideoToolboxBackend: VideoBackend {
     public func teardown() {
         guard !isTornDown else { return }
         isTornDown = true
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        pathMonitor?.cancel()
+        pathMonitor = nil
         pollTask?.cancel()
         pollTask = nil
         onStateChange = nil

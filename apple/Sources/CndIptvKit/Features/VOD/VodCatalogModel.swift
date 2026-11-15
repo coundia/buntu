@@ -98,6 +98,9 @@ final class VodCatalogModel<Entry: CatalogEntry> {
     private(set) var hasMore = false
     private(set) var isLoading = false
     private(set) var errorMessage: String?
+    private(set) var categoryScrollAnchor: Int64?
+
+    private var loadedFilterSignature: String?
 
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var loadedFacetsRevision: Int?
@@ -136,7 +139,20 @@ final class VodCatalogModel<Entry: CatalogEntry> {
         var hosts: [FacetCount]?
     }
 
-    func reload(revision: Int = 0) async {
+    func rememberCategoryScrollAnchor(_ anchor: Int64?, for signature: String) {
+        guard let anchor, !isLoading, signature == filter.signature, signature == loadedFilterSignature else { return }
+        categoryScrollAnchor = anchor
+    }
+
+    func reload(revision: Int = 0, preservingCategoryScroll: Bool = false) async {
+        let signature = filter.signature
+        if preservingCategoryScroll, filter.group != nil, filter.query.isEmpty,
+           !isLoading, loadedFilterSignature == signature, loadedFacetsRevision == revision {
+            // Returning from a detail or player keeps the pages containing the scroll anchor.
+            return
+        }
+        categoryScrollAnchor = nil
+        loadedFilterSignature = nil
         generation += 1
         let gen = generation
         entries = []
@@ -161,6 +177,7 @@ final class VodCatalogModel<Entry: CatalogEntry> {
             }.value
             guard gen == generation else { return }
             entries = snapshot.page
+            loadedFilterSignature = signature
             hasMore = snapshot.page.count >= Self.pageSize
             resume = snapshot.resume
             favorites = snapshot.favorites

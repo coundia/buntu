@@ -44,6 +44,28 @@ public final class AVPlayerBackend: VideoBackend {
         return nil
     }
 
+    public func networkReading() -> NetworkReading? {
+        guard let event = player.currentItem?.accessLog()?.events.last,
+              event.observedBitrate.isFinite, event.observedBitrate > 0 else { return nil }
+        let bitrate = event.indicatedBitrate
+        return NetworkReading(
+            downloadBytesPerSecond: event.observedBitrate / 8,
+            fileBitsPerSecond: bitrate.isFinite && bitrate > 0 ? bitrate : nil,
+            isDownloading: true
+        )
+    }
+
+    public func bufferedAheadSeconds() -> Double? {
+        guard let item = player.currentItem else { return nil }
+        let position = item.currentTime()
+        guard position.isNumeric else { return nil }
+        for range in item.loadedTimeRanges.map(\.timeRangeValue) where range.containsTime(position) {
+            let ahead = (range.end - position).seconds
+            if ahead.isFinite { return max(0, ahead) }
+        }
+        return nil
+    }
+
     private let player = AVPlayer()
     private let playerLayer: AVPlayerLayer
     private var itemObservation: NSKeyValueObservation?
@@ -77,6 +99,8 @@ public final class AVPlayerBackend: VideoBackend {
         return Int64(seconds * 1000)
     }
 
+    var liveBufferDuration: LiveBufferDuration = .automatic
+
     public func load(_ media: PlayableMedia, startPositionMs: Int64) {
         guard !isTornDown else { return }
         clearItem()
@@ -90,7 +114,7 @@ public final class AVPlayerBackend: VideoBackend {
         }
         let asset = AVURLAsset(url: media.url, options: options.isEmpty ? nil : options)
         let item = AVPlayerItem(asset: asset)
-        item.preferredForwardBufferDuration = media.kind == .live ? 3 : 0
+        item.preferredForwardBufferDuration = media.kind == .live ? Double(liveBufferDuration.targetSeconds) : 0
 
         itemObservation = item.observe(\.status, options: [.new]) { [weak self, weak item] _, _ in
             Task { @MainActor [weak self] in
@@ -123,7 +147,7 @@ public final class AVPlayerBackend: VideoBackend {
                 pendingStartMs = 0
                 player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
             }
-            if wantsPlayback { player.playImmediately(atRate: rate) }
+            if wantsPlayback { startPlayback() }
             loadTracks(for: item.asset)
         case .failed:
             state = .failed(item.error?.localizedDescription ?? "AVPlayer cannot decode this stream")
@@ -168,7 +192,16 @@ public final class AVPlayerBackend: VideoBackend {
 
     public func play() {
         wantsPlayback = true
-        player.playImmediately(atRate: rate)
+        startPlayback()
+    }
+
+    private func startPlayback() {
+        if liveBufferDuration == .automatic {
+            player.playImmediately(atRate: rate)
+        } else {
+            // Allow AVPlayer to wait for its estimate of sufficient buffered data.
+            player.rate = rate
+        }
     }
 
     public func pause() {

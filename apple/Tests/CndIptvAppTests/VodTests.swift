@@ -128,6 +128,31 @@ final class MoviesVodTests: VodTestCase {
         XCTAssertTrue(model.entries.allSatisfy { $0.groupTitle == "Action" })
     }
 
+    func testReturningToMovieCategoryKeepsLoadedPagesAndScrollAnchor() async throws {
+        try await TestFixtures.importVod(into: engine, directory: directory, movies: 130)
+        let model = VodCatalogModel<IptvItemRecord>(kind: "movie", source: .movies(engine: engine))
+        model.filter.group = "Action"
+        await model.reload(preservingCategoryScroll: true)
+        await model.loadNextPage()
+        XCTAssertEqual(model.entries.count, 65)
+        let anchor = try XCTUnwrap(model.entries.last?.entryId)
+        let actionSignature = model.filter.signature
+        model.rememberCategoryScrollAnchor(anchor, for: actionSignature)
+
+        await model.reload(preservingCategoryScroll: true)
+
+        XCTAssertEqual(model.entries.count, 65)
+        XCTAssertEqual(model.categoryScrollAnchor, anchor)
+
+        model.filter.group = "Drame"
+        await model.reload(preservingCategoryScroll: true)
+        model.rememberCategoryScrollAnchor(anchor, for: actionSignature)
+
+        XCTAssertEqual(model.entries.count, 60)
+        XCTAssertNil(model.categoryScrollAnchor)
+        XCTAssertTrue(model.entries.allSatisfy { $0.groupTitle == "Drame" })
+    }
+
     func testSortByRatingAndSearch() async throws {
         try await TestFixtures.importVod(into: engine, directory: directory, movies: 12)
         let model = VodCatalogModel<IptvItemRecord>(kind: "movie", source: .movies(engine: engine))

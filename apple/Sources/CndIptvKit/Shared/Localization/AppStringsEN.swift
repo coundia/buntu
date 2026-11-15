@@ -3,6 +3,28 @@ import Foundation
 /// English localization dictionary.
 public enum AppStringsEN {
     public static let strings: [String: String] = [
+        // MARK: - Slow Playback Source
+        "player.slowSource.continuing": "Low speed · Playback continues",
+        "player.slowSource.atRisk": "The buffer is running low. Playback may pause.",
+        "player.slowSource.refilling": "Refilling the buffer… Playback resumes when ready.",
+        "player.slowSource.otherVersion": "Other version",
+        "player.slowSource.download": "Download and watch later",
+        "player.slowSource.dismiss": "Hide",
+
+        // MARK: - Player Expert Mode
+        "player.expert.title": "Expert mode",
+        "player.expert.close": "Close expert mode",
+        "player.expert.unavailable": "Unavailable",
+        "player.expert.network": "Network",
+        "player.expert.connected": "Connected",
+        "player.expert.disconnected": "Offline",
+        "player.expert.download": "Download",
+        "player.expert.upload": "Upload",
+        "player.expert.stream": "Stream bitrate",
+        "player.expert.buffer": "Buffered ahead",
+        "player.expert.engine": "Engine",
+        "player.expert.format": "Video format",
+
         // MARK: - Tabs & Shell
         "tab.live": "Live TV",
         "tab.guide": "TV Guide",
@@ -36,6 +58,7 @@ public enum AppStringsEN {
         "common.error": "Error",
         "common.none": "none",
         "common.refresh": "Refresh",
+        "common.search": "Search",
         "common.clear": "Clear",
         "common.send": "Send",
 
@@ -52,6 +75,9 @@ public enum AppStringsEN {
         "settings.playback.section": "Playback & Stream Health",
         "settings.playback.autoFailover": "Automatic mirror failover",
         "settings.playback.healthChecks": "Periodic health checks",
+        "settings.playback.liveBuffer": "Live playback buffer",
+        "settings.playback.liveBuffer.automatic": "Automatic",
+        "settings.playback.liveBuffer.seconds": "%d seconds",
         "settings.playback.timeshift": "Live buffer (Timeshift)",
 
         "settings.recommendations.section": "Recommendations & Sagas",

@@ -70,7 +70,10 @@ final class MockBackend: VideoBackend {
 
 final class FakeReachability: NetworkReachability, @unchecked Sendable {
     var isConnected = true
-    func waitUntilConnected(timeout: TimeInterval) async -> Bool { true }
+    func waitUntilConnected(timeout: TimeInterval) async -> Bool {
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        return isConnected
+    }
 }
 
 final class FakeRecorder: WatchProgressRecording, @unchecked Sendable {
@@ -227,13 +230,14 @@ final class CndPlayerTests: XCTestCase {
     @MainActor
     private func makeController(
         recorder: WatchProgressRecording? = nil,
+        reachability: FakeReachability = FakeReachability(),
         timings: PlayerTimings = PlayerTimings(),
         behaviors: [PlayerEngineKind: MockBackend.Behavior] = [:],
         created: @escaping (MockBackend) -> Void = { _ in }
     ) -> CndPlayerController {
         CndPlayerController(
             recorder: recorder,
-            reachability: FakeReachability(),
+            reachability: reachability,
             timings: timings,
             backendFactory: { kind in
                 let backend = MockBackend(kind)
@@ -374,6 +378,42 @@ final class CndPlayerTests: XCTestCase {
         XCTAssertNil(controller.reconnectBanner)
         XCTAssertEqual(controller.state, .playing)
         controller.close()
+    }
+
+    @MainActor
+    func testOfflineStallWaitsForNetworkAndResumesVodAtLastPosition() async {
+        var backends: [MockBackend] = []
+        let reachability = FakeReachability()
+        var timings = PlayerTimings()
+        timings.tick = 0.02
+        timings.watchdogInterval = 0.05
+        timings.stallThreshold = 0.1
+        timings.reconnectBackoff = [0.01]
+        let controller = makeController(reachability: reachability, timings: timings) { backends.append($0) }
+        defer { controller.close() }
+        controller.open(media("film.mkv", start: 5_000))
+        guard let first = backends.first else { return XCTFail("No initial backend") }
+        try? await Task.sleep(nanoseconds: 120_000_000)
+        first.advanceTask?.cancel()
+        let resume = first.positionMs
+
+        reachability.isConnected = false
+        for _ in 0..<50 where controller.reconnectBanner == nil {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertNotNil(controller.reconnectBanner)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(backends.count, 1)
+        XCTAssertFalse(first.torndown)
+
+        reachability.isConnected = true
+        for _ in 0..<100 where controller.reconnectBanner != nil {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(backends.count, 2)
+        XCTAssertTrue(first.torndown)
+        XCTAssertEqual(backends.last?.loads.first?.start, resume)
+        XCTAssertEqual(controller.state, .playing)
     }
 
     @MainActor

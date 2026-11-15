@@ -112,7 +112,9 @@ public final class CndPlayerController {
     }
     public private(set) var positionMs: Int64 = 0
     public private(set) var durationMs: Int64 = 0
+    private(set) var bufferedAheadSeconds: Double?
     public private(set) var activeEngine: PlayerEngineKind?
+    var showsExpertDetails = false
     public private(set) var surfaceLayer: CALayer?
     public private(set) var audioTracks: [MediaTrack] = []
     public private(set) var subtitleTracks: [MediaTrack] = []
@@ -144,6 +146,8 @@ public final class CndPlayerController {
     /// « Télécharger puis regarder »: starts the download of what is playing.
     public var downloadHandler: ((PlayableMedia) -> Void)?
     @ObservationIgnored private var slowDetector = SlowSourceDetector()
+    @ObservationIgnored private var dismissedSlowStage: SlowSourceStage?
+    @ObservationIgnored private var requestedSlowSourceVersions = false
     @ObservationIgnored private var lastNetworkReadingAt: Date?
     @ObservationIgnored public private(set) var failoverCount = 0
     /// Explains why a stream failed (HTTP status, DNS, timeout…). Set by the app; `nil` skips the check.
@@ -211,6 +215,7 @@ public final class CndPlayerController {
 
     // MARK: - Local Timeshift Pause Live (PRD-24)
     public var timeshiftDuration: TimeshiftDuration = .oneHour
+    @ObservationIgnored private var liveBufferDuration: LiveBufferDuration = .automatic
     public var liveDelaySeconds: Double = 0
     @ObservationIgnored public var livePauseStartTime: Date?
 
@@ -231,8 +236,11 @@ public final class CndPlayerController {
     @ObservationIgnored private let timings: PlayerTimings
     @ObservationIgnored private var monitorTask: Task<Void, Never>?
     @ObservationIgnored private var recoveryTask: Task<Void, Never>?
+    @ObservationIgnored private var wantsPlayback = true
+    @ObservationIgnored private var networkWasInterrupted = false
     @ObservationIgnored private var fallbackUsed = false
     @ObservationIgnored private var lastAdvanceAt = Date()
+    @ObservationIgnored private var subtitleChangeDeadline: Date?
     @ObservationIgnored private var lastWatchdogCheck = Date()
     @ObservationIgnored private var lastSavedAt = Date()
     @ObservationIgnored private var stallReferenceMs: Int64 = 0
@@ -326,7 +334,10 @@ public final class CndPlayerController {
         slowSourceNotice = nil
         otherVersions = []
         slowDetector.reset()
+        dismissedSlowStage = nil
+        requestedSlowSourceVersions = false
         lastNetworkReadingAt = nil
+        wantsPlayback = true
         healthSourceId = nil
         healthReported = nil
         self.media = media
@@ -334,6 +345,7 @@ public final class CndPlayerController {
         self.isBroken = media.isBroken
         positionMs = resumeAt
         durationMs = 0
+        bufferedAheadSeconds = nil
         liveDelaySeconds = 0
         livePauseStartTime = nil
         liveNowProgram = nil
@@ -398,6 +410,8 @@ public final class CndPlayerController {
         }
         AppLog.shared.info("PLAYER", "Moteur \(Self.engineName(chosen)) chargé")
         generation += 1
+        subtitleChangeDeadline = nil
+        networkWasInterrupted = false
         let token = generation
         backend = newBackend
         activeEngine = chosen
@@ -415,8 +429,13 @@ public final class CndPlayerController {
             guard let self, self.generation == token else { return }
             self.refreshTracks()
         }
+        liveBufferDuration = media.kind == .live ? .current : .automatic
         if let mpv = newBackend as? MpvVideoToolboxBackend {
             mpv.timeshiftDuration = timeshiftDuration
+            mpv.liveBufferDuration = liveBufferDuration
+        }
+        if let avPlayer = newBackend as? AVPlayerBackend {
+            avPlayer.liveBufferDuration = liveBufferDuration
         }
         newBackend.setRate(rate)
         newBackend.setVolume(volume)
@@ -425,6 +444,7 @@ public final class CndPlayerController {
         newBackend.setSubtitleDelay(seconds: subtitleDelaySeconds)
         newBackend.setAspectRatio(aspectRatioMode)
         newBackend.load(playable, startPositionMs: resumeAt)
+        if !wantsPlayback { newBackend.pause() }
 
         if chosen == .avPlayer, media.isHls, audioEnhancement.isActive {
             showHlsAudioEnhancementNotice = true
@@ -453,6 +473,7 @@ public final class CndPlayerController {
     // MARK: Transport
 
     public func play() {
+        wantsPlayback = true
         if isLive, let pausedAt = livePauseStartTime {
             liveDelaySeconds += Date().timeIntervalSince(pausedAt)
             livePauseStartTime = nil
@@ -461,6 +482,7 @@ public final class CndPlayerController {
     }
 
     public func pause() {
+        wantsPlayback = false
         if isLive && timeshiftDuration.isEnabled && livePauseStartTime == nil {
             livePauseStartTime = Date()
         }
@@ -519,8 +541,13 @@ public final class CndPlayerController {
         let upper = durationMs > 0 ? durationMs : Int64.max
         let clamped = min(max(0, target), upper)
         positionMs = clamped
+        bufferedAheadSeconds = nil
+        subtitleChangeDeadline = nil
         stallReferenceMs = clamped
         lastAdvanceAt = Date()
+        slowDetector.reset()
+        slowSourceNotice = nil
+        dismissedSlowStage = nil
         backend?.seek(toMs: clamped)
     }
 
@@ -552,7 +579,22 @@ public final class CndPlayerController {
     }
 
     public func selectAudioTrack(id: String) { backend?.selectAudioTrack(id: id) }
-    public func selectSubtitleTrack(id: String?) { backend?.selectSubtitleTrack(id: id) }
+    public func selectSubtitleTrack(id: String?) {
+        guard let backend else { return }
+        let tracks = backend.subtitleTracks()
+        if let id, !tracks.contains(where: { $0.id == id && !$0.isSelected }) { return }
+        if id == nil, !tracks.contains(where: \.isSelected) { return }
+        allowSubtitleSwitchToSettle()
+        subtitleOverlay.clear()
+        backend.selectSubtitleTrack(id: id)
+    }
+
+    private func allowSubtitleSwitchToSettle() {
+        guard !isLive else { return }
+        // The demuxer may briefly refill at the current playback point for an embedded track.
+        // Give it time before the watchdog tears down an otherwise healthy session.
+        subtitleChangeDeadline = Date().addingTimeInterval(timings.loadTimeout)
+    }
 
     /// mpv does not read the system's caption and audio-description settings: turn on the matching
     /// accessible track once per media, never overriding a choice the user already made.
@@ -602,10 +644,20 @@ public final class CndPlayerController {
             reportLiveHealth(broken: true)
             AppLog.shared.error("PLAYER", "Échec de lecture (\(activeEngine.map(Self.engineName) ?? "?")) : \(reason)")
             if diagnosis?.isFinal == true { return }
+            if media?.url.isFileURL == false, !reachability.isConnected {
+                beginRecovery()
+                return
+            }
             diagnoseFailure()
             handleFailure(reason)
         case .ended:
-            handleEnded()
+            if media?.url.isFileURL == false, !isLive,
+               networkWasInterrupted || !reachability.isConnected,
+               durationMs == 0 || positionMs < durationMs - 1_000 {
+                beginRecovery()
+            } else {
+                handleEnded()
+            }
         case .playing where previous != .playing:
             if previous == .loading { AppLog.shared.info("PLAYER", "Lecture démarrée") }
             refreshTracks()
@@ -695,7 +747,18 @@ public final class CndPlayerController {
     private func monitorTick() {
         guard let backend else { return }
         let now = Date()
-        let position = backend.positionMs
+        if media?.url.isFileURL == false, !reachability.isConnected {
+            networkWasInterrupted = true
+        }
+        let observedPosition = backend.positionMs
+        if let subtitleChangeDeadline, now >= subtitleChangeDeadline, observedPosition > 0 {
+            self.subtitleChangeDeadline = nil
+        }
+        // A temporarily unavailable media clock must not become the recovery position.
+        let clockMayBeUnavailable = subtitleChangeDeadline != nil || state == .loading
+            || state == .buffering || recoveryTask != nil
+        let position = clockMayBeUnavailable && observedPosition == 0 && positionMs > 0
+            ? positionMs : observedPosition
         if position > healthPositionMs && (state == .playing || state == .buffering) {
             if isLive { cancelRecovery() }
             reportLiveHealth(broken: false)
@@ -713,6 +776,7 @@ public final class CndPlayerController {
 
         if now.timeIntervalSince(lastWatchdogCheck) >= timings.watchdogInterval {
             lastWatchdogCheck = now
+            bufferedAheadSeconds = isLive ? nil : backend.bufferedAheadSeconds()
             evaluateNetwork(now: now)
             evaluateStall(now: now)
         }
@@ -726,6 +790,11 @@ public final class CndPlayerController {
     /// A film read by mpv: whether data is still arriving, and whether the file is too heavy for the connection.
     private var isVodOnMpv: Bool { !isLive && activeEngine == .mpv }
 
+    func expertReading() -> (connected: Bool, network: NetworkReading?, buffer: Double?) {
+        (reachability.isConnected, media?.url.isFileURL == false ? backend?.networkReading() : nil,
+         backend?.bufferedAheadSeconds())
+    }
+
     private func evaluateNetwork(now: Date) {
         guard isVodOnMpv, let backend else { return }
         let reading = backend.networkReading()
@@ -735,30 +804,49 @@ public final class CndPlayerController {
         if let reading, reading.isDownloading, reading.downloadBytesPerSecond > 0, state == .buffering || state == .loading {
             lastAdvanceAt = now
         }
-        let buffering = state == .buffering || state == .loading
-        if let notice = slowDetector.add(reading, isBuffering: buffering, interval: interval) {
-            slowSourceNotice = notice
+        guard media?.url.isFileURL == false, state == .playing || state == .buffering else { return }
+        let previousStage = slowSourceNotice?.stage
+        guard let notice = slowDetector.add(
+            reading, bufferedAhead: backend.bufferedAheadSeconds(),
+            isBuffering: state == .buffering, interval: interval
+        ) else {
+            slowSourceNotice = nil
+            dismissedSlowStage = nil
+            return
+        }
+        if notice.stage == dismissedSlowStage { return }
+        dismissedSlowStage = nil
+        if slowSourceNotice != notice { slowSourceNotice = notice }
+        if previousStage == nil {
             AppLog.shared.warn("PLAYER", String(
                 format: "Débit insuffisant : le fichier demande %.1f Mbit/s, la connexion au serveur en donne %.1f",
                 notice.neededMbps, notice.availableMbps
             ))
-            if let itemId = media?.itemId, let versionsFinder {
-                Task { @MainActor [weak self] in
-                    let versions = (try? await versionsFinder(itemId)) ?? []
-                    self?.otherVersions = versions
-                }
+        }
+        if notice.stage != .continuing, !requestedSlowSourceVersions,
+           let itemId = media?.itemId, let versionsFinder {
+            requestedSlowSourceVersions = true
+            let openedGeneration = generation
+            Task { @MainActor [weak self] in
+                let versions = (try? await versionsFinder(itemId)) ?? []
+                guard let self, self.generation == openedGeneration, self.media?.itemId == itemId else { return }
+                self.otherVersions = versions
             }
         }
     }
 
     private func evaluateStall(now: Date) {
         guard recoveryTask == nil else { return }
+        if let subtitleChangeDeadline, now < subtitleChangeDeadline { return }
         let idle = now.timeIntervalSince(lastAdvanceAt)
-        let stallLimit = timings.stallThreshold
-        let loadLimit = isVodOnMpv ? timings.vodLoadTimeout : timings.loadTimeout
+        // Deliberate buffering can hold the picture still while the stream is healthy.
+        let bufferWait = TimeInterval(liveBufferDuration.rawValue)
+        let loadLimit = isVodOnMpv ? timings.vodLoadTimeout : timings.loadTimeout + bufferWait
         switch state {
-        case .playing, .buffering:
-            if idle >= stallLimit { beginRecovery() }
+        case .playing:
+            if idle >= timings.stallThreshold { beginRecovery() }
+        case .buffering:
+            if idle >= timings.stallThreshold + bufferWait { beginRecovery() }
         case .loading:
             if idle >= loadLimit { beginRecovery() }
         default:
@@ -768,7 +856,10 @@ public final class CndPlayerController {
 
     // MARK: Slow source: another copy, or download first
 
-    public func dismissSlowSourceNotice() { slowSourceNotice = nil }
+    public func dismissSlowSourceNotice() {
+        dismissedSlowStage = slowSourceNotice?.stage
+        slowSourceNotice = nil
+    }
 
     /// Plays another copy of the film from the same position.
     public func playVersion(_ item: IptvItemRecord) {
@@ -801,10 +892,13 @@ public final class CndPlayerController {
             guard let self else { return }
 
             // If 2 dropouts occurred within 60 seconds on a live stream, attempt rapid failover to a mirror
-            if rapidDropouts, self.isLive, let itemId = media.itemId, let mirrorFinder = self.mirrorFinder {
+            if rapidDropouts, self.isLive, self.reachability.isConnected,
+               let itemId = media.itemId, let mirrorFinder = self.mirrorFinder {
                 let mirrors = (try? await mirrorFinder(itemId)) ?? []
+                if Task.isCancelled { return }
                 self.availableMirrors = mirrors
-                if let best = mirrors.first, self.autoFailoverEnabled, self.failoverCount < 2 {
+                if let best = mirrors.first, self.reachability.isConnected,
+                   self.autoFailoverEnabled, self.failoverCount < 2 {
                     self.failoverToMirror(best)
                     return
                 }
@@ -815,17 +909,22 @@ public final class CndPlayerController {
                 AppLog.shared.warn("PLAYER", "Flux interrompu : reconnexion \(index + 1)/\(attempts.count)")
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 if Task.isCancelled { return }
-                _ = await self.reachability.waitUntilConnected(timeout: max(delay, 2))
-                if Task.isCancelled { return }
+                repeat {
+                    while !media.url.isFileURL && !self.reachability.isConnected {
+                        _ = await self.reachability.waitUntilConnected(timeout: 2)
+                        if Task.isCancelled { return }
+                    }
 
-                let resume = self.isLive ? 0 : max(self.positionMs, media.startPositionMs)
-                self.loadBackend(media, resumeAt: resume, engine: self.activeEngine ?? PlayerRouting.engine(for: media.url, preference: self.enginePreference))
-                if await self.waitForProgress(from: resume) {
-                    self.reconnectBanner = nil
-                    self.recoveryTask = nil
-                    return
-                }
-                if Task.isCancelled { return }
+                    let resume = self.isLive ? 0 : self.positionMs
+                    self.bufferedAheadSeconds = nil
+                    self.loadBackend(media, resumeAt: resume, engine: self.activeEngine ?? PlayerRouting.engine(for: media.url, preference: self.enginePreference))
+                    if await self.waitForProgress(from: resume) {
+                        self.reconnectBanner = nil
+                        self.recoveryTask = nil
+                        return
+                    }
+                    if Task.isCancelled { return }
+                } while !media.url.isFileURL && !self.reachability.isConnected
             }
 
             // All reconnection attempts exhausted: attempt automatic failover to mirror
@@ -847,10 +946,19 @@ public final class CndPlayerController {
     }
 
     private func waitForProgress(from startMs: Int64) async -> Bool {
-        let deadline = Date().addingTimeInterval(timings.recoveryProbe)
+        let initialWait = timings.recoveryProbe + TimeInterval(liveBufferDuration.rawValue)
+        let maximumWait = isVodOnMpv ? max(timings.vodLoadTimeout, initialWait) : initialWait
+        let maximumDeadline = Date().addingTimeInterval(maximumWait)
+        var deadline = Date().addingTimeInterval(initialWait)
         while Date() < deadline, !Task.isCancelled {
             try? await Task.sleep(nanoseconds: UInt64(timings.tick * 1_000_000_000))
-            if state == .playing, abs((backend?.positionMs ?? 0) - startMs) >= 200 { return true }
+            if media?.url.isFileURL == false, !reachability.isConnected { return false }
+            if !wantsPlayback, state == .paused { return true }
+            if state == .playing, let position = backend?.positionMs, position >= startMs + 200 { return true }
+            if isVodOnMpv, state == .buffering || state == .loading,
+               let reading = backend?.networkReading(), reading.isDownloading, reading.downloadBytesPerSecond > 0 {
+                deadline = min(maximumDeadline, Date().addingTimeInterval(initialWait))
+            }
         }
         return false
     }
@@ -947,7 +1055,12 @@ public final class CndPlayerController {
 
     public func loadExternalSubtitle(fileUrl: URL, engine: CndEngine? = nil) {
         // mpv draws the subtitle itself; the overlay is only for AVPlayer (a second layer would double it).
-        if backend?.addExternalSubtitle(fileUrl: fileUrl) == true { return }
+        if backend?.addExternalSubtitle(fileUrl: fileUrl) == true {
+            allowSubtitleSwitchToSettle()
+            subtitleOverlay.clear()
+            refreshTracks()
+            return
+        }
         if let content = try? String(contentsOf: fileUrl, encoding: .utf8) {
             let cues: [SubtitleCue]
             if let engine {
@@ -987,6 +1100,7 @@ public final class CndPlayerController {
         cancelRecovery()
         releaseBackend()
         media = nil
+        slowSourceNotice = nil
         queue = nil
         liveNowProgram = nil
         liveNextProgram = nil
@@ -997,6 +1111,7 @@ public final class CndPlayerController {
         activeEngine = nil
         positionMs = 0
         durationMs = 0
+        bufferedAheadSeconds = nil
         audioTracks = []
         subtitleTracks = []
         subtitleOverlay.clear()

@@ -46,6 +46,7 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
     let model: VodCatalogModel<Entry>
     let totalCount: Int
     let revision: Int
+    let preservesCategoryScroll: Bool
     let titles: VodSectionTitles
     let sortOptions: [SortField]
     let searchPrompt: String
@@ -66,6 +67,7 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
         totalCount: Int,
         revision: Int,
         viewModeKey: String,
+        preservesCategoryScroll: Bool = false,
         titles: VodSectionTitles,
         sortOptions: [SortField],
         searchPrompt: String,
@@ -82,6 +84,7 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
         self.model = model
         self.totalCount = totalCount
         self.revision = revision
+        self.preservesCategoryScroll = preservesCategoryScroll
         self.titles = titles
         self.sortOptions = sortOptions
         self.searchPrompt = searchPrompt
@@ -98,6 +101,19 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
 
     private var viewMode: LiveViewMode { LiveViewMode(rawValue: viewModeRaw) ?? .grid }
     private var reloadKey: String { "\(model.filter.signature)#\(revision)" }
+
+    private var tracksCategoryScroll: Bool {
+        preservesCategoryScroll && model.filter.group != nil && model.filter.query.isEmpty
+    }
+
+    private var categoryScrollPosition: Binding<Int64?> {
+        let signature = model.filter.signature
+        let tracking = tracksCategoryScroll
+        return Binding(
+            get: { tracking && model.filter.signature == signature ? model.categoryScrollAnchor : nil },
+            set: { if tracking { model.rememberCategoryScrollAnchor($0, for: signature) } }
+        )
+    }
 
     var body: some View {
         @Bindable var filter = model.filter
@@ -136,7 +152,9 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
                 .pickerStyle(.segmented)
             }
         }
-        .task(id: reloadKey) { await model.reload(revision: revision) }
+        .task(id: reloadKey) {
+            await model.reload(revision: revision, preservingCategoryScroll: preservesCategoryScroll)
+        }
         .task(id: revision) { await forYou?.reload(revision: revision) }
     }
 
@@ -179,6 +197,7 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
                 }
                 .padding(16)
             }
+            .scrollPosition(id: categoryScrollPosition, anchor: .top)
         }
     }
 
@@ -190,15 +209,19 @@ struct VodCatalogView<Entry: CatalogEntry, Card: View>: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: ui.posterGridMinWidth, maximum: ui.posterGridMaxWidth), spacing: ui.spacingL)], spacing: ui.value(20)) {
             ForEach(model.entries, id: \.entryId) { paged($0, style: .poster) }
         }
+        .scrollTargetLayout(isEnabled: tracksCategoryScroll)
     }
 
     private var list: some View {
         LazyVStack(spacing: 0) {
             ForEach(model.entries, id: \.entryId) { entry in
-                paged(entry, style: .row)
-                Divider()
+                VStack(spacing: 0) {
+                    paged(entry, style: .row)
+                    Divider()
+                }
             }
         }
+        .scrollTargetLayout(isEnabled: tracksCategoryScroll)
     }
 
     @ViewBuilder

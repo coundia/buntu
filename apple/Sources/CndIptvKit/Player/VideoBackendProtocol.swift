@@ -100,41 +100,88 @@ public struct NetworkReading: Equatable, Sendable {
     }
 }
 
-/// « Ce film demande X Mbit/s, la connexion au serveur en donne Y ».
+public enum SlowSourceStage: Equatable, Sendable {
+    case continuing
+    case atRisk
+    case refilling
+}
+
 public struct SlowSourceNotice: Equatable, Sendable {
     public var neededMbps: Double
     public var availableMbps: Double
+    public var stage: SlowSourceStage
+    public var showsDownload: Bool
 }
 
-/// Decides, from one reading per second, whether a film cannot be played in real time.
-/// Pure, so it is tested without a network.
+/// Assesses the active download and the playback reserve. Samples taken while cache is full
+/// cannot be used as measurements of the connection.
 public struct SlowSourceDetector: Sendable {
-    /// Readings while the engine was downloading, most recent last.
-    private(set) var speeds: [Double] = []
-    private(set) var bufferingSeconds: Double = 0
-    private(set) var notified = false
-    static let window = 20
-    static let minimumSamples = 8
-    /// Below 95 % of the file's bitrate the film stops again and again.
-    static let margin = 0.95
+    private var speeds: [Double] = []
+    private var weakSeconds: Double = 0
+    private var healthySeconds: Double = 0
+    private var bufferingSeconds: Double = 0
+    private var stage: SlowSourceStage?
+    private var previousReserve: Double?
+    private var drainingSeconds: Double = 0
+    private static let window = 20
+    private static let minimumSamples = 8
+    private static let margin = 0.95
 
     public init() {}
 
     public mutating func reset() { self = SlowSourceDetector() }
 
-    /// `interval` is the time since the previous reading.
-    public mutating func add(_ reading: NetworkReading?, isBuffering: Bool, interval: Double) -> SlowSourceNotice? {
-        if isBuffering { bufferingSeconds += interval }
-        guard !notified, let reading, let needed = reading.fileBitsPerSecond, needed > 0 else { return nil }
-        if reading.isDownloading, reading.downloadBytesPerSecond > 0 {
-            speeds.append(reading.downloadBytesPerSecond * 8)
-            if speeds.count > Self.window { speeds.removeFirst(speeds.count - Self.window) }
+    public mutating func add(
+        _ reading: NetworkReading?,
+        bufferedAhead: Double?,
+        isBuffering: Bool,
+        interval: Double
+    ) -> SlowSourceNotice? {
+        let elapsed = min(max(interval, 0), 2)
+        guard let reading, let needed = reading.fileBitsPerSecond, needed.isFinite, needed > 0 else {
+            reset()
+            return nil
         }
-        guard speeds.count >= Self.minimumSamples, bufferingSeconds >= 3 else { return nil }
+        if reading.isDownloading, reading.downloadBytesPerSecond.isFinite, reading.downloadBytesPerSecond > 0 {
+            speeds.append(reading.downloadBytesPerSecond * 8)
+            if speeds.count > Self.window { speeds.removeFirst() }
+        }
+        if let reserve = bufferedAhead, let previousReserve, reserve < previousReserve {
+            drainingSeconds += elapsed
+        } else {
+            drainingSeconds = max(0, drainingSeconds - elapsed)
+        }
+        previousReserve = bufferedAhead
+        guard speeds.count >= Self.minimumSamples else { return nil }
         let average = speeds.reduce(0, +) / Double(speeds.count)
-        guard average < needed * Self.margin else { return nil }
-        notified = true
-        return SlowSourceNotice(neededMbps: needed / 1_000_000, availableMbps: average / 1_000_000)
+        if reading.isDownloading, average < needed * Self.margin {
+            weakSeconds += elapsed
+            healthySeconds = 0
+        } else if !isBuffering, reading.isDownloading || (bufferedAhead ?? 0) >= 25 {
+            healthySeconds += elapsed
+        }
+        if healthySeconds >= 5 {
+            reset()
+            return nil
+        }
+        guard weakSeconds >= 3 else { return nil }
+        if isBuffering {
+            bufferingSeconds += elapsed
+            stage = .refilling
+        } else {
+            // Leave extra headroom before downgrading the alert to avoid flickering around 12 s.
+            let riskLimit: Double = stage == .atRisk || stage == .refilling ? 18 : 12
+            let lowReserve = bufferedAhead.map { $0 <= riskLimit } ?? false
+            let draining = drainingSeconds >= 3 || stage == .atRisk || stage == .refilling
+            stage = lowReserve && draining ? .atRisk : .continuing
+        }
+        guard let stage else { return nil }
+        return SlowSourceNotice(
+            neededMbps: needed / 1_000_000,
+            availableMbps: average / 1_000_000,
+            stage: stage,
+            showsDownload: weakSeconds >= 30 || bufferingSeconds >= 8
+        )
     }
 }
 
@@ -180,12 +227,14 @@ public protocol VideoBackend: AnyObject {
     func currentVideoFormat() -> VideoFormatReading?
     /// Download speed and the file's bitrate, `nil` when the engine cannot tell.
     func networkReading() -> NetworkReading?
+    func bufferedAheadSeconds() -> Double?
 }
 
 extension VideoBackend {
     public func setAspectRatio(_ mode: VideoAspectRatioMode) {}
     public func currentVideoFormat() -> VideoFormatReading? { nil }
     public func networkReading() -> NetworkReading? { nil }
+    public func bufferedAheadSeconds() -> Double? { nil }
     public func setAudioEnhancement(_ config: AudioEnhancementConfig) {}
     public func setSubtitleDelay(seconds: Double) {}
     public func addExternalSubtitle(fileUrl: URL) -> Bool { false }

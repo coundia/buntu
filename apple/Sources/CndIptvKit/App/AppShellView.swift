@@ -114,6 +114,7 @@ private struct LoadedShellView: View {
     @State private var sourcesModel: SourcesModel
     @State private var toasts: ToastCenter
     @State private var vodContext: VodContext
+    @State private var moviesModel: VodCatalogModel<IptvItemRecord>
     @State private var downloadsModel: DownloadsModel
     @State private var recordingsModel: RecordingsModel
     @State private var settingsModel: SettingsModel
@@ -177,6 +178,7 @@ private struct LoadedShellView: View {
             aiConfigProvider: { [weak state] in state?.aiSettings.providerConfig() ?? AiProviderConfig(kind: .localOnly, model: "", baseUrl: nil, apiKey: nil, timeoutMs: 8_000) },
             connections: state.downloadCoordinator
         ))
+        _moviesModel = State(initialValue: VodCatalogModel(kind: "movie", source: .movies(engine: engine)))
         _downloadsModel = State(initialValue: DownloadsModel(backend: engine))
         _recordingsModel = State(initialValue: RecordingsModel(backend: engine))
         let settings = SettingsModel(engine: engine, directory: state.downloadDirectory)
@@ -208,6 +210,13 @@ private struct LoadedShellView: View {
                 NetworkConsoleDrawer(model: consoleModel)
             }
         }
+        #if os(macOS)
+        // Cover the entire window, including the split view and any console or playback bar.
+        .overlay {
+            if isPlayerExpanded { expandedPlayer }
+        }
+        .toolbar(isPlayerExpanded && windowIsFullscreen ? .hidden : .automatic, for: .windowToolbar)
+        #endif
     }
 
     private var mainShell: some View {
@@ -854,7 +863,6 @@ private struct LoadedShellView: View {
                 #endif
             }
             .overlay {
-                if isPlayerExpanded { expandedPlayer }
                 if multiViewController.isPresented {
                     MultiViewScreen(
                         controller: multiViewController,
@@ -901,7 +909,10 @@ private struct LoadedShellView: View {
         }
         .fullScreenCover(isPresented: $isPlayerExpanded) {
             // The video fills the screen; the controls stay inside the safe area (status bar, Dynamic Island).
-            expandedPlayer.background(Color.black.ignoresSafeArea())
+            expandedPlayer
+                #if os(iOS)
+                .statusBarHidden(true)
+                #endif
         }
         .fullScreenCover(isPresented: $multiViewController.isPresented) {
             MultiViewScreen(
@@ -980,7 +991,7 @@ private struct LoadedShellView: View {
                 SourcesListView(engine: engine, sources: state.sources, model: sourcesModel)
             case .movies:
                 vodScreen(MoviesCatalogView(
-                    engine: engine, revision: state.catalogRevision, totalMovies: Int(state.stats?.totalMovies ?? 0),
+                    model: moviesModel, revision: state.catalogRevision, totalMovies: Int(state.stats?.totalMovies ?? 0),
                     forYou: state.forYou.movies,
                     onOpenAssistant: state.aiSettings.isAssistantEnabled ? { openAssistant(startingWith: $0, scope: .movies) } : nil
                 ))
@@ -1048,7 +1059,7 @@ private struct LoadedShellView: View {
     @ViewBuilder
     private func vodDestination(_ route: VodRoute) -> some View {
         switch route {
-        case .movie(let item): MovieDetailsView(item: item, vod: vodContext)
+        case .movie(let item): MovieDetailsView(item: item, vod: vodContext, catalog: moviesModel)
         case .series(let series): SeriesDetailsView(series: series, vod: vodContext)
         }
     }
@@ -1434,7 +1445,7 @@ private struct LoadedShellView: View {
     private func detailsPanel(_ route: VodRoute) -> some View {
         switch route {
         case .movie(let item):
-            MovieDetailsView(item: item, vod: vodContext, compact: true, onClose: { vodContext.selection = nil })
+            MovieDetailsView(item: item, vod: vodContext, catalog: moviesModel, compact: true, onClose: { vodContext.selection = nil })
                 .id(route)
         case .series(let series):
             SeriesDetailsView(series: series, vod: vodContext, compact: true, onClose: { vodContext.selection = nil })
@@ -1526,7 +1537,8 @@ private struct LoadedShellView: View {
             liveProgramTitle: { zapper.currentProgramTitle(for: $0) },
             onSelectOverlayChannel: { play($0) }
         )
-        .background(Color.black)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.ignoresSafeArea())
     }
 
     /// Persistent mini-player (iOS): tap to expand, controls stay one thumb away.
