@@ -48,6 +48,13 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-15 — Claude, push de `main` (historique réécrit)
+
+- ✅ `git push --force-with-lease=main:<ancien sha> origin main` : `origin/main` = `c4f1b7f` (identique au local au moment du push). Le dépôt `coundia/buntu` est **public** (vérifié avec `gh repo view`). Tags **non** poussés.
+- ⚠️ Les tags distants `v1.0.0` et `v1.1.0` pointent toujours vers l'**ancien** historique (commits `a52c831` et `2110e0a`, absents du nouveau `main`) : l'ancienne adresse e-mail professionnelle et l'ancien identifiant d'équipe Apple y restent donc accessibles publiquement. La release GitHub « Buntu 1.1.0 » est attachée à `v1.1.0`. Mettre les tags à jour (force) relancerait le workflow Release, qui échouerait au contrôle de version.
+- ℹ️ Même après un push forcé, GitHub garde les anciens commits accessibles par leur identifiant, et les forks/clones éventuels les gardent : seule une demande de purge à GitHub Support les retire.
+- ⏳ Premier passage du CI (`CI`, push sur `main`) en cours ; Dependabot a démarré ses mises à jour (PR à venir).
+
 ## 2026-11-15 — Claude, release Samsung TV 1.2.0 (build 3)
 
 - ✅ Build terminé (exit 0) : `./scripts/prepare-releases.sh --tizen` (`build-tizen.sh --prod`). Sortie dans `build/release/v1.2.0/` : `Buntu_1.2.0_Tizen.wgt` et `Buntu-1.2.0-tizen.wgt` (identiques, 2,98 Mo) + `SHA256SUMS.txt` (6 fichiers avec les APK, 6/6 OK).
