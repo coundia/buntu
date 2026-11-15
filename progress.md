@@ -48,6 +48,12 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-15 — Claude, brouillon de release GitHub 1.2.0
+
+- ✅ Brouillon créé sur `coundia/buntu` (accord de l'utilisateur) : « Buntu 1.2.0 », **brouillon + pré-version**, cible `main`, notes = `RELEASE_NOTES.md`. 9 fichiers joints : 4 APK, `.dmg`, `.zip`, 2 `.wgt` (identiques), `SHA256SUMS.txt`. Vérifié via l'API : tailles et SHA-256 identiques aux fichiers locaux, 0 écart.
+- ✅ Rien n'est publié : la seule release publique reste « Buntu 1.1.0 » ; le tag `v1.2.0` n'existe pas encore (créé à la publication, sur la tête de `main` à ce moment-là). Depuis les builds, seuls des tests, des workflows et des docs ont changé : aucun code de production.
+- ⏸️ À faire par l'utilisateur : relire le brouillon (Releases → brouillon « Buntu 1.2.0 ») puis *Publish release*, ou `gh release edit` ; essayer au moins l'APK sur un téléphone et le `.dmg` sur un Mac avant de publier.
+
 ## 2026-11-15 — Claude, release macOS 1.2.0 (build 3)
 
 - ✅ Build terminé (exit 0, 102 s de compilation Swift) : `./scripts/prepare-releases.sh --macos --skip-core`. `build/release/v1.2.0/Buntu-1.2.0-macOS.zip` (10,8 Mo) et `.dmg` (12,0 Mo) ; `SHA256SUMS.txt` couvre maintenant les 8 fichiers (8/8 OK).
