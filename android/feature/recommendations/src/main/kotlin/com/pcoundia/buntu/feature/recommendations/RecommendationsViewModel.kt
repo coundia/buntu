@@ -9,7 +9,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pcoundia.buntu.core.domain.model.RecoDomainKind
 import com.pcoundia.buntu.core.domain.model.RecoShelfGroup
+import com.pcoundia.buntu.core.domain.repository.CatalogRepository
 import com.pcoundia.buntu.core.domain.repository.RecommendationsRepository
+import kotlinx.coroutines.CancellationException
 import com.pcoundia.buntu.core.domain.usecase.LoadShelvesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
@@ -36,6 +38,7 @@ data class RecommendationsUiState(
  */
 @HiltViewModel
 class RecommendationsViewModel @Inject constructor(
+    private val catalogRepository: CatalogRepository,
     private val loadShelvesUseCase: LoadShelvesUseCase,
     private val recommendationsRepository: RecommendationsRepository,
     private val playOnAnotherDevice: PlayOnAnotherDeviceUseCase,
@@ -47,6 +50,18 @@ class RecommendationsViewModel @Inject constructor(
     val remoteStatus: StateFlow<String?> = playOnAnotherDevice.status
 
     fun openRemoteMenu() = playOnAnotherDevice.reset()
+
+    /** Favorite of the item behind a card menu (an episode reads its series, as in the player). */
+    suspend fun isItemFavorite(itemId: Long): Boolean? =
+        runCatching { catalogRepository.isFavoriteForPlayback(itemId) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
+
+    /** Flips the favorite of the item behind a card menu; returns the new state, or `null` on failure. */
+    suspend fun toggleItemFavorite(itemId: Long): Boolean? =
+        runCatching { catalogRepository.toggleFavoriteForPlayback(itemId) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
 
     fun playOnDevice(deviceId: String, itemId: Long, onSent: () -> Unit) {
         viewModelScope.launch { if (playOnAnotherDevice(deviceId, itemId)) onSent() }

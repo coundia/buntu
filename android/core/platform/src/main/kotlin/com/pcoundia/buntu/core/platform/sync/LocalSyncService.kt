@@ -71,6 +71,10 @@ class LocalSyncService @Inject constructor(
         const val SERVICE_TYPE = "_buntu-sync._tcp."
         private const val HEARTBEAT_MS = 30_000L
         private const val OFFLINE_THRESHOLD_MS = 120_000L
+        /** The TV announces itself every 30 s: silence for this long means the channel is dead (heartbeat check). */
+        private const val SAMSUNG_SILENT_MS = 90_000L
+        /** Before a playback request: a channel quiet for longer than 1.5 announce periods is reopened first. */
+        private const val SAMSUNG_QUIET_MS = 45_000L
         private const val MAX_PAYLOAD_SIZE = 10_000_000
         /** PRD-42 § 5.2: one request every 2 s per sender. */
         private const val MIN_REQUEST_INTERVAL_MS = 2_000L
@@ -112,6 +116,8 @@ class LocalSyncService @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lifecycleMutex = Mutex()
+    /** TVs that were reachable before the channel was reopened by [recoverSamsungLink]. */
+    @Volatile private var tvsToRestore: Set<String> = emptySet()
     private val resolveMutex = Mutex()
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as? NsdManager
     private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -192,11 +198,20 @@ class LocalSyncService @Inject constructor(
     init {
         samsung.onConnected = {
             channelAnsweredDevices.clear()
+            // After a reconnection the TV, already announced on its side, does not answer again right away:
+            // the TVs proven before the drop are still the ones behind this relay.
+            tvsToRestore.forEach { samsung.markTv(it) }
+            tvsToRestore = emptySet()
             scope.launch { sendAnnounceOnChannel() }
         }
         samsung.onDisconnected = { tvs ->
             tvs.forEach { log("${peerName(it)} n'est plus joignable.") }
             refreshActivePeers()
+            // The TV may come back at another address: look for it again.
+            if (running) scope.launch { lifecycleMutex.withLock { restartTvDiscovery() } }
+        }
+        samsung.onRepeatedFailure = {
+            if (running) scope.launch { lifecycleMutex.withLock { restartTvDiscovery() } }
         }
         samsung.onEnvelopeReceived = { envelope -> scope.launch { processChannelEnvelope(envelope) } }
     }
@@ -369,12 +384,39 @@ class LocalSyncService @Inject constructor(
                 },
             )
         }
-        if (tvDiscoveryListener == null) {
-            tvDiscoveryListener = discover(SamsungChannelTransport.SERVICE_TYPE,
-                onFound = { service -> scope.launch { resolveTv(service) } },
-                onLost = {},
-            )
-        }
+        if (tvDiscoveryListener == null) startTvDiscovery()
+    }
+
+    private fun startTvDiscovery() {
+        tvDiscoveryListener = discover(SamsungChannelTransport.SERVICE_TYPE,
+            onFound = { service -> scope.launch { resolveTv(service) } },
+            onLost = {},
+        )
+    }
+
+    /** Looks for the TV again (services already on the network are reported again). Call under [lifecycleMutex]. */
+    private fun restartTvDiscovery() {
+        if (!running) return
+        tvDiscoveryListener?.let { try { nsdManager?.stopServiceDiscovery(it) } catch (_: Exception) {} }
+        tvDiscoveryListener = null
+        startTvDiscovery()
+    }
+
+    /**
+     * Reopens the channel of the TV: drops the dead connection, looks for the TV again and, when
+     * [waitForTvId] is given, waits (8 s) until that TV answers. Returns `true` once it does.
+     */
+    private suspend fun recoverSamsungLink(waitForTvId: String? = null): Boolean {
+        if (!running) return false
+        log("Lien avec la TV silencieux : reconnexion…")
+        tvsToRestore = samsung.tvIds()
+        samsung.drop() // its disconnection callback restarts the TV discovery
+        store.householdId.value?.takeIf { it.isNotEmpty() }?.let { samsung.start(it) }
+        if (waitForTvId == null) return true
+        return withTimeoutOrNull(8_000) {
+            while (!samsung.isTv(waitForTvId)) delay(250)
+            true
+        } ?: false
     }
 
     private fun discover(
@@ -823,7 +865,11 @@ class LocalSyncService @Inject constructor(
         _syncStatus.value = "Données demandées à $totalTargets connexion(s)…"
     }
 
-    /** Restarts NSD discovery and sends a heartbeat to check which household devices are online. */
+    /**
+     * « Actualiser »: wakes the household up. Restarts NSD discovery, reopens the channel of the TV from
+     * scratch (it may be dead without any error, see [recoverSamsungLink]) and sends a heartbeat, so that
+     * every app that is awake announces itself again.
+     */
     override suspend fun refreshPeers() {
         lifecycleMutex.withLock {
             if (!store.isJoined.value) return
@@ -837,6 +883,8 @@ class LocalSyncService @Inject constructor(
             startDiscovery()
             store.householdId.value?.takeIf { it.isNotEmpty() }?.let { samsung.start(it) }
         }
+        // Outside the lifecycle lock: the drop restarts the TV discovery under it.
+        if (running && samsung.currentHost != null) recoverSamsungLink()
         if (running) heartbeat()
     }
 
@@ -980,6 +1028,7 @@ class LocalSyncService @Inject constructor(
 
     private suspend fun heartbeat() {
         if (!running || !store.isJoined.value) return
+        if (samsung.isConnected && samsung.silentForMs() > SAMSUNG_SILENT_MS) recoverSamsungLink()
         reachableConnections().forEach { sendAnnounce(it) }
         sendAnnounceOnChannel()
         for ((serviceName, endpoint) in peerEndpoints) {
@@ -1037,6 +1086,14 @@ class LocalSyncService @Inject constructor(
         title: String?,
         positionMs: Long,
     ): Boolean {
+        // An idle channel to the TV may be dead without any error: reopen it before sending (it answers in seconds).
+        if (samsung.isTv(targetPeerId) && samsung.silentForMs() > SAMSUNG_QUIET_MS) {
+            _activeHandoffStatus.value = "Reconnexion à ${peerName(targetPeerId)}…"
+            if (!recoverSamsungLink(targetPeerId)) {
+                _activeHandoffStatus.value = "Appareil non joignable"
+                return false
+            }
+        }
         val reachable = (deviceConnections[targetPeerId] ?: connections[targetPeerId])?.isAlive == true ||
             samsung.isTv(targetPeerId)
         if (!reachable) {
@@ -1098,6 +1155,11 @@ class LocalSyncService @Inject constructor(
         if (!ready) {
             if (_activeHandoffStatus.value?.startsWith("Refusé") != true) {
                 _activeHandoffStatus.value = "Délai dépassé : $targetName ne répond pas."
+                // A silent TV channel is probably dead: reopen it now so that the next try works.
+                if (samsung.isTv(targetPeerId) && samsung.silentForMs() > SAMSUNG_QUIET_MS) {
+                    scope.launch { recoverSamsungLink() }
+                    _activeHandoffStatus.value = "Délai dépassé : $targetName ne répond pas. Reconnexion, réessayez dans quelques secondes."
+                }
             }
             return false
         }

@@ -109,7 +109,11 @@ object EngineMappers {
     fun CatalogSort.toEngineSort(): Pair<SortField, Boolean> = when (this) {
         CatalogSort.DEFAULT -> SortField.CHANNEL_NUMBER to true
         CatalogSort.NAME_ASC -> SortField.NAME to true
+        CatalogSort.NAME_DESC -> SortField.NAME to false
+        CatalogSort.NUMBER_DESC -> SortField.CHANNEL_NUMBER to false
         CatalogSort.RECENTLY_ADDED -> SortField.RECENTLY_ADDED to false
+        CatalogSort.OLDEST_ADDED -> SortField.RECENTLY_ADDED to true
+        CatalogSort.RATING_ASC -> SortField.RATING to true
         CatalogSort.YEAR_DESC -> SortField.RECENTLY_ADDED to false
         CatalogSort.RATING_DESC -> SortField.RATING to false
     }

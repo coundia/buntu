@@ -3,7 +3,8 @@ package com.pcoundia.buntu.feature.recommendations
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.pcoundia.buntu.core.designsystem.BuntuDeviceChoice
-import com.pcoundia.buntu.core.designsystem.BuntuDevicePickerDialog
+import com.pcoundia.buntu.core.designsystem.BuntuItemMenu
+import com.pcoundia.buntu.core.designsystem.BuntuItemMenuHost
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,10 +47,14 @@ fun RecommendationsRoute(
     val metrics = LocalBuntuMetrics.current
     val remoteDevices by viewModel.remoteDevices.collectAsStateWithLifecycle()
     val remoteStatus by viewModel.remoteStatus.collectAsStateWithLifecycle()
-    var remoteTarget by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    var itemMenu by remember { mutableStateOf<BuntuItemMenu?>(null) }
     val openRemoteMenu: (Long, String) -> Unit = { itemId, title ->
-        viewModel.openRemoteMenu()
-        remoteTarget = itemId to title
+        itemMenu = BuntuItemMenu(
+            title = title,
+            itemId = itemId,
+            isFavorite = { viewModel.isItemFavorite(itemId) },
+            toggleFavorite = { viewModel.toggleItemFavorite(itemId) },
+        )
     }
 
     LazyColumn(
@@ -137,17 +142,16 @@ fun RecommendationsRoute(
         }
     }
 
-    remoteTarget?.let { (itemId, title) ->
-        BuntuDevicePickerDialog(
-            itemTitle = title,
-            devices = remember(remoteDevices) {
-                remoteDevices.map { BuntuDeviceChoice(it.id, it.name, it.deviceType) }.toImmutableList()
-            },
-            status = remoteStatus,
-            onPick = { device -> viewModel.playOnDevice(device.id, itemId) { remoteTarget = null } },
-            onDismiss = { remoteTarget = null },
-        )
-    }
+    BuntuItemMenuHost(
+        menu = itemMenu,
+        devices = remember(remoteDevices) {
+            remoteDevices.map { BuntuDeviceChoice(it.id, it.name, it.deviceType) }.toImmutableList()
+        },
+        status = remoteStatus,
+        onOpenDevices = viewModel::openRemoteMenu,
+        onPlayOnDevice = viewModel::playOnDevice,
+        onDismiss = { itemMenu = null },
+    )
 }
 
 @Composable

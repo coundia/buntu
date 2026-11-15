@@ -6,11 +6,19 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.long
 import org.junit.Assert.assertEquals
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.BufferedInputStream
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.net.InetAddress
+import java.net.ServerSocket
 
 /** Format of the Samsung channel (PRD-45 § 3.1), same as the Apple `SamsungChannelTransportTests`. */
 class SamsungChannelTransportTest {
@@ -67,5 +75,49 @@ class SamsungChannelTransportTest {
     @Test
     fun base64MatchesTheStandard() {
         assertEquals("AAECAwQ=", WebSocketFrames.base64(byteArrayOf(0, 1, 2, 3, 4)))
+    }
+
+    /** A relay that accepts the upgrade, says `ms.channel.connect`, then stays silent (a dead TV link). */
+    @Test
+    fun silentChannelIsDetectedAndCanBeDropped() {
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val relay = Thread {
+            runCatching {
+                server.accept().use { client ->
+                    val input = BufferedInputStream(client.getInputStream())
+                    while (!WebSocketFrames.readHttpLine(input).isNullOrEmpty()) { /* request headers */ }
+                    val out = client.getOutputStream()
+                    out.write("HTTP/1.1 101 Switching Protocols\r\n\r\n".toByteArray())
+                    val payload = """{"event":"ms.channel.connect"}""".toByteArray()
+                    out.write(byteArrayOf(0x81.toByte(), payload.size.toByte()))
+                    out.write(payload)
+                    out.flush()
+                    Thread.sleep(10_000) // silent from now on
+                }
+            }
+        }.apply { isDaemon = true; start() }
+        val transport = SamsungChannelTransport(scope, port = server.localPort)
+        try {
+            assertEquals(0L, transport.silentForMs())
+            transport.start("hh_1")
+            transport.connectToTv("127.0.0.1")
+            val deadline = System.currentTimeMillis() + 5_000
+            while (!transport.isConnected && System.currentTimeMillis() < deadline) Thread.sleep(25)
+            assertTrue(transport.isConnected)
+
+            assertTrue(transport.silentForMs() < 5_000)
+            assertTrue(transport.silentForMs(now = System.currentTimeMillis() + 120_000) > 90_000)
+
+            transport.drop()
+            assertFalse(transport.isConnected)
+            assertNull(transport.currentHost)
+            assertEquals(0L, transport.silentForMs())
+        } finally {
+            transport.stop()
+            scope.cancel()
+            server.close()
+            relay.interrupt()
+        }
     }
 }

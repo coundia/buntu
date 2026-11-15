@@ -12,6 +12,7 @@ import com.pcoundia.buntu.core.domain.model.EngineDbStats
 import com.pcoundia.buntu.core.domain.model.EngineRuntimeConfig
 import com.pcoundia.buntu.core.domain.model.NetworkLogItem
 import com.pcoundia.buntu.core.domain.model.RecoDomainKind
+import com.pcoundia.buntu.core.domain.model.LiveBuffer
 import com.pcoundia.buntu.core.domain.model.UpNextPreferences
 import com.pcoundia.buntu.core.domain.repository.EngineDiagnosticsRepository
 import com.pcoundia.buntu.core.domain.repository.ProfilesRepository
@@ -269,6 +270,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.setTvPlaybackOptions(autoFrameRate, audioPassthrough, tunneling)
         }
+    }
+
+    fun setLiveBuffer(buffer: LiveBuffer) {
+        viewModelScope.launch { settingsRepository.setLiveBuffer(buffer) }
     }
 
     fun setUpNextPreferences(preferences: UpNextPreferences) {

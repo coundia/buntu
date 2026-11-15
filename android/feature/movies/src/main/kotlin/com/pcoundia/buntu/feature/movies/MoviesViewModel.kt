@@ -15,6 +15,7 @@ import com.pcoundia.buntu.core.domain.model.MovieItem
 import com.pcoundia.buntu.core.domain.model.RecoDomainKind
 import com.pcoundia.buntu.core.domain.model.RecoShelfGroup
 import com.pcoundia.buntu.core.domain.repository.CatalogRepository
+import kotlinx.coroutines.CancellationException
 import com.pcoundia.buntu.core.domain.usecase.LoadShelvesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
@@ -60,6 +61,18 @@ class MoviesViewModel @Inject constructor(
 
     fun openRemoteMenu() = playOnAnotherDevice.reset()
 
+    /** Favorite of the item behind a card menu (an episode reads its series, as in the player). */
+    suspend fun isItemFavorite(itemId: Long): Boolean? =
+        runCatching { catalogRepository.isFavoriteForPlayback(itemId) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
+
+    /** Flips the favorite of the item behind a card menu; returns the new state, or `null` on failure. */
+    suspend fun toggleItemFavorite(itemId: Long): Boolean? =
+        runCatching { catalogRepository.toggleFavoriteForPlayback(itemId) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
+
     fun playOnDevice(deviceId: String, itemId: Long, onSent: () -> Unit) {
         viewModelScope.launch { if (playOnAnotherDevice(deviceId, itemId)) onSent() }
     }
@@ -81,7 +94,8 @@ class MoviesViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            runCatching { catalogRepository.getGroups(kind = "vod") }
+            // The engine stores films with kind "movie" (the paging source and Apple use it): "vod" matched no row.
+            runCatching { catalogRepository.getGroups(kind = "movie") }
                 .onSuccess { facets ->
                     _uiState.update { state ->
                         state.copy(categories = facets.map { it.name }.toImmutableList())

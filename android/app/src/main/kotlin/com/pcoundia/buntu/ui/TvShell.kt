@@ -98,27 +98,18 @@ fun TvShell(
         }
     }
 
-    if (isFullscreenRoute) {
-        BuntuNavHost(
-            navController = navController,
-            startDestination = startDestination,
-            modifier = Modifier.fillMaxSize(),
-        )
-        return
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(BuntuPalette.Midnight)
             .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown) sounds.onKeyDown(event.key.nativeKeyCode)
+                if (!isFullscreenRoute && event.type == KeyEventType.KeyDown) sounds.onKeyDown(event.key.nativeKeyCode)
                 false // never consumes the key: only listens
             },
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // 10-foot Top Navigation Bar (the home has its own header)
-            if (!isHome) Row(
+            // 10-foot Top Navigation Bar (hidden on home chooser and fullscreen player)
+            if (!isFullscreenRoute && !isHome) Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -157,17 +148,19 @@ fun TvShell(
                 }
             }
 
+            // Single BuntuNavHost kept mounted across fullscreen routes so Paging 3 flows stay intact.
             Box(modifier = Modifier.weight(1f)) {
                 BuntuNavHost(
                     navController = navController,
                     startDestination = startDestination,
+                    postOnboardingDestination = BuntuRoutes.HOME,
                     modifier = Modifier.fillMaxSize(),
                     onExitApp = onExitApp,
                 )
             }
         }
 
-        if (confirmExitPending) {
+        if (!isFullscreenRoute && confirmExitPending) {
             Surface(
                 color = BuntuPalette.SlateElevated,
                 border = BorderStroke(2.dp, BuntuPalette.TerangaGold),

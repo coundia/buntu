@@ -140,7 +140,8 @@ object BuntuRoutes {
 
     const val DETAILS_PATTERN = "details/{mediaId}?isSeries={isSeries}"
     const val PLAYER_PATTERN =
-        "player/{itemId}?startPositionMs={startPositionMs}&catchupStartEpoch={catchupStartEpoch}&catchupEndEpoch={catchupEndEpoch}"
+        "player/{itemId}?startPositionMs={startPositionMs}&catchupStartEpoch={catchupStartEpoch}&catchupEndEpoch={catchupEndEpoch}" +
+            "&startFullscreen={startFullscreen}"
 
     fun search(scope: SearchScopeKind = SearchScopeKind.ALL): String =
         "search?scope=${scope.name}"
@@ -156,7 +157,9 @@ object BuntuRoutes {
         startPositionMs: Long = 0L,
         catchupStartEpoch: Long = 0L,
         catchupEndEpoch: Long = 0L,
+        startFullscreen: Boolean = false,
     ): String =
-        "player/$itemId?startPositionMs=$startPositionMs&catchupStartEpoch=$catchupStartEpoch&catchupEndEpoch=$catchupEndEpoch"
+        "player/$itemId?startPositionMs=$startPositionMs&catchupStartEpoch=$catchupStartEpoch&catchupEndEpoch=$catchupEndEpoch" +
+            "&startFullscreen=$startFullscreen"
 }
 

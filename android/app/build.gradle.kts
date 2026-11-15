@@ -7,6 +7,19 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+fun gradleOrEnv(name: String): String? =
+    project.findProperty(name)?.toString()?.takeIf { it.isNotBlank() }
+        ?: System.getenv(name)?.takeIf { it.isNotBlank() }
+
+val releaseKeystorePath = gradleOrEnv("BUNTU_KEYSTORE_FILE")
+val releaseKeystoreFile = releaseKeystorePath?.let { rawPath ->
+    listOf(
+        file(rawPath),
+        rootProject.file(rawPath),
+        rootProject.projectDir.parentFile.resolve(rawPath),
+    ).firstOrNull { it.isFile } ?: file(rawPath)
+}
+
 android {
     namespace = "com.pcoundia.buntu"
     compileSdk = 35
@@ -15,11 +28,22 @@ android {
         applicationId = "com.pcoundia.buntu"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+    }
+
+    signingConfigs {
+        if (releaseKeystoreFile != null) {
+            create("release") {
+                storeFile = releaseKeystoreFile
+                storePassword = gradleOrEnv("BUNTU_KEYSTORE_PASSWORD")
+                keyAlias = gradleOrEnv("BUNTU_KEY_ALIAS")
+                keyPassword = gradleOrEnv("BUNTU_KEY_PASSWORD")
+            }
+        }
     }
 
     splits {
@@ -39,7 +63,11 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (releaseKeystoreFile != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

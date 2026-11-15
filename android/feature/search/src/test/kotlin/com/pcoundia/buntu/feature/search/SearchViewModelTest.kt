@@ -1,6 +1,7 @@
 package com.pcoundia.buntu.feature.search
 
 import androidx.lifecycle.SavedStateHandle
+import com.pcoundia.buntu.core.domain.model.LiveBuffer
 import com.pcoundia.buntu.core.domain.model.AiProviderType
 import com.pcoundia.buntu.core.domain.model.AiSettingsConfig
 import com.pcoundia.buntu.core.domain.model.AppPreferences
@@ -111,6 +112,7 @@ class SearchViewModelTest {
             override suspend fun setAdultCategoriesUnlocked(unlocked: Boolean) = Unit
             override suspend fun setLastChannelId(channelId: Long) = Unit
             override suspend fun updateAiConfig(config: AiSettingsConfig) = Unit
+            override suspend fun setLiveBuffer(buffer: LiveBuffer) = Unit
             override suspend fun setUpNextPreferences(preferences: com.pcoundia.buntu.core.domain.model.UpNextPreferences) = Unit
         }
         val secretStore = object : SecretStore {
@@ -224,6 +226,7 @@ class SearchViewModelTest {
             override suspend fun setAdultCategoriesUnlocked(unlocked: Boolean) = Unit
             override suspend fun setLastChannelId(channelId: Long) = Unit
             override suspend fun updateAiConfig(config: AiSettingsConfig) = Unit
+            override suspend fun setLiveBuffer(buffer: LiveBuffer) = Unit
             override suspend fun setUpNextPreferences(preferences: com.pcoundia.buntu.core.domain.model.UpNextPreferences) = Unit
         }
         val secretStore = object : SecretStore {

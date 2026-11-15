@@ -3,7 +3,8 @@ package com.pcoundia.buntu.feature.series
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.pcoundia.buntu.core.designsystem.BuntuDeviceChoice
-import com.pcoundia.buntu.core.designsystem.BuntuDevicePickerDialog
+import com.pcoundia.buntu.core.designsystem.BuntuItemMenu
+import com.pcoundia.buntu.core.designsystem.BuntuItemMenuHost
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -34,13 +35,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.pcoundia.buntu.core.designsystem.BuntuCategoryChips
 import com.pcoundia.buntu.core.designsystem.BuntuEmptyState
+import com.pcoundia.buntu.core.designsystem.BuntuErrorBanner
+import com.pcoundia.buntu.core.designsystem.BuntuLoadingState
 import com.pcoundia.buntu.core.designsystem.BuntuMediaShelf
 import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.BuntuPosterCard
 import com.pcoundia.buntu.core.designsystem.BuntuShelfCardData
+import com.pcoundia.buntu.core.designsystem.BuntuSortChip
+import com.pcoundia.buntu.core.domain.model.CatalogSort
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
 import com.pcoundia.buntu.core.designsystem.i18n.rememberAppLanguage
 import com.pcoundia.buntu.core.designsystem.i18n.t
@@ -60,10 +66,14 @@ fun SeriesRoute(
     val currentLanguage = rememberAppLanguage()
     val remoteDevices by viewModel.remoteDevices.collectAsStateWithLifecycle()
     val remoteStatus by viewModel.remoteStatus.collectAsStateWithLifecycle()
-    var remoteTarget by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    var itemMenu by remember { mutableStateOf<BuntuItemMenu?>(null) }
     val openRemoteMenu: (Long, String) -> Unit = { itemId, title ->
-        viewModel.openRemoteMenu()
-        remoteTarget = itemId to title
+        itemMenu = BuntuItemMenu(
+            title = title,
+            itemId = itemId,
+            isFavorite = { viewModel.isItemFavorite(itemId) },
+            toggleFavorite = { viewModel.toggleItemFavorite(itemId) },
+        )
     }
 
     LazyVerticalGrid(
@@ -121,6 +131,18 @@ fun SeriesRoute(
                                 selectedLabelColor = BuntuPalette.Midnight,
                             ),
                         )
+                        BuntuSortChip(
+                            selected = state.sort,
+                            options = listOf(
+                                CatalogSort.DEFAULT to t("common.sort_recently_added"),
+                                CatalogSort.OLDEST_ADDED to t("common.sort_oldest_added"),
+                                CatalogSort.NAME_ASC to t("common.sort_name_asc"),
+                                CatalogSort.NAME_DESC to t("common.sort_name_desc"),
+                                CatalogSort.RATING_DESC to t("movies.sort_rating"),
+                                CatalogSort.RATING_ASC to t("movies.sort_rating_asc"),
+                            ),
+                            onSelection = viewModel::selectSort,
+                        )
                     }
                 }
                 BuntuCategoryChips(
@@ -169,18 +191,45 @@ fun SeriesRoute(
             }
         }
 
+        val refreshState = pagedSeries.loadState.refresh
         if (pagedSeries.itemCount == 0) {
-            item(
-                key = "series_empty",
-                span = { GridItemSpan(maxLineSpan) },
-                contentType = "empty_state",
-            ) {
-                BuntuEmptyState(
-                    title = t("series.empty_title"),
-                    subtitle = t("series.empty_subtitle"),
-                    actionLabel = t("series.manage_sources"),
-                    onAction = onOpenSources,
-                )
+            when (refreshState) {
+                is LoadState.Loading -> {
+                    item(
+                        key = "series_loading",
+                        span = { GridItemSpan(maxLineSpan) },
+                        contentType = "loading_state",
+                    ) {
+                        BuntuLoadingState(label = t("common.loading"))
+                    }
+                }
+                is LoadState.Error -> {
+                    item(
+                        key = "series_error",
+                        span = { GridItemSpan(maxLineSpan) },
+                        contentType = "error_state",
+                    ) {
+                        BuntuErrorBanner(
+                            message = refreshState.error.localizedMessage ?: t("series.empty_subtitle"),
+                            actionLabel = t("common.retry"),
+                            onAction = { pagedSeries.retry() },
+                        )
+                    }
+                }
+                is LoadState.NotLoading -> {
+                    item(
+                        key = "series_empty",
+                        span = { GridItemSpan(maxLineSpan) },
+                        contentType = "empty_state",
+                    ) {
+                        BuntuEmptyState(
+                            title = t("series.empty_title"),
+                            subtitle = t("series.empty_subtitle"),
+                            actionLabel = t("series.manage_sources"),
+                            onAction = onOpenSources,
+                        )
+                    }
+                }
             }
         } else {
             items(
@@ -204,21 +253,28 @@ fun SeriesRoute(
                     subtitle = subtitle,
                     badge = series.rating?.takeIf { it > 0.0 }?.let { "★ %.1f".format(it) },
                     onClick = { onOpenSeriesDetail(series.id) },
+                    // A series is not playable by itself: its menu only offers the favorite.
+                    onLongClick = {
+                        itemMenu = BuntuItemMenu(
+                            title = series.title,
+                            isFavorite = { viewModel.isSeriesFavorite(series) },
+                            toggleFavorite = { viewModel.toggleSeriesFavorite(series) },
+                        )
+                    },
                 )
             }
         }
     }
 
-    remoteTarget?.let { (itemId, title) ->
-        BuntuDevicePickerDialog(
-            itemTitle = title,
-            devices = remember(remoteDevices) {
-                remoteDevices.map { BuntuDeviceChoice(it.id, it.name, it.deviceType) }.toImmutableList()
-            },
-            status = remoteStatus,
-            onPick = { device -> viewModel.playOnDevice(device.id, itemId) { remoteTarget = null } },
-            onDismiss = { remoteTarget = null },
-        )
-    }
+    BuntuItemMenuHost(
+        menu = itemMenu,
+        devices = remember(remoteDevices) {
+            remoteDevices.map { BuntuDeviceChoice(it.id, it.name, it.deviceType) }.toImmutableList()
+        },
+        status = remoteStatus,
+        onOpenDevices = viewModel::openRemoteMenu,
+        onPlayOnDevice = viewModel::playOnDevice,
+        onDismiss = { itemMenu = null },
+    )
 }
 

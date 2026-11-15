@@ -27,6 +27,7 @@ import com.pcoundia.buntu.core.domain.model.SourceSummary
 import com.pcoundia.buntu.core.domain.model.SyncReport
 import com.pcoundia.buntu.core.domain.model.UpNextContext
 import com.pcoundia.buntu.core.domain.model.UpNextItem
+import com.pcoundia.buntu.core.domain.model.LiveBuffer
 import com.pcoundia.buntu.core.domain.model.UpNextPreferences
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
@@ -204,6 +205,7 @@ interface SettingsRepository {
     suspend fun setAdultCategoriesUnlocked(unlocked: Boolean)
     suspend fun setLastChannelId(channelId: Long)
     suspend fun updateAiConfig(config: AiSettingsConfig)
+    suspend fun setLiveBuffer(buffer: LiveBuffer)
     suspend fun setUpNextPreferences(preferences: UpNextPreferences)
 }
 

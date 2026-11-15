@@ -1,11 +1,43 @@
 package com.pcoundia.buntu.core.designsystem.i18n
 
 val frStrings: Map<String, String> = mapOf(
+    "player.expert.title" to "Mode expert",
+    "player.expert.network" to "Réseau actif",
+    "player.expert.download" to "Réception du flux",
+    "player.expert.download_relay" to "Réception via le relais local",
+    "player.expert.upload" to "Envoi de l’application",
+    "player.expert.buffer" to "Tampon vidéo",
+    "player.expert.video" to "Résolution vidéo",
+    "player.expert.unavailable" to "Indisponible",
+    "player.expert.offline" to "Hors ligne",
+    "player.expert.connected" to "Connecté",
+    "player.expert.vpn" to "VPN",
+    "player.expert.ethernet" to "Ethernet",
+    "player.expert.wifi" to "Wi-Fi",
+    "player.expert.cellular" to "Données mobiles",
+    "player.expert.mbps" to "%.2f Mb/s",
+    "player.expert.kbps" to "%.1f kb/s",
+    "player.expert.seconds" to "%.1f s",
+
     // Common
+    "common.sort_recently_added" to "Ajouts récents",
+    "common.sort_name_asc" to "Nom (A–Z)",
+    "common.sort_name_desc" to "Nom (Z–A)",
+    "common.sort_oldest_added" to "Ajouts anciens",
+    "common.sort_selected" to "Tri actuel",
+    "common.sort" to "Tri",
     "common.back" to "Retour",
     "common.cancel" to "Annuler",
     "common.close" to "Fermer",
     "common.refresh" to "Actualiser",
+    "common.retry" to "Réessayer",
+    "common.loading" to "Chargement…",
+    "common.search" to "Rechercher",
+
+    // Menu contextuel d'un contenu (appui long)
+    "item_menu.favorite_add" to "Ajouter aux favoris",
+    "item_menu.favorite_remove" to "Retirer des favoris",
+    "item_menu.play_elsewhere" to "Lire sur un autre appareil",
 
     // Navigation
     "nav.live" to "Direct",
@@ -19,6 +51,8 @@ val frStrings: Map<String, String> = mapOf(
     "nav.remote_command" to "Commande TV",
     "nav.profiles" to "Profils",
     "nav.settings" to "Plus",
+    "nav.more_menu" to "Explorer",
+    "nav.shortcuts_title" to "Accès rapide",
 
     // Settings
     "settings.title" to "Réglages",
@@ -57,6 +91,10 @@ val frStrings: Map<String, String> = mapOf(
     "settings.ai.privacy_never_body" to "• les adresses des flux et le serveur IPTV\n• identifiants, mots de passe, en-têtes\n• l'historique complet, les favoris hors propositions, les téléchargements",
     "settings.ai.local_only_hint" to "Les commandes explicites (« France 2 », « chaîne 6 », « suivante ») et la recherche instantanée sont résolues sur l'appareil, sans aucun envoi. Choisissez un fournisseur pour les demandes plus libres.",
 
+    "settings.live_buffer.title" to "Tampon du direct",
+    "settings.live_buffer.subtitle" to "Plus de réserve pour absorber les coupures réseau. Le démarrage ou le décalage du direct peut augmenter. Appliqué à la prochaine chaîne ouverte.",
+    "settings.live_buffer.seconds" to "%d s",
+    "settings.live_buffer.auto" to "Automatique",
     "settings.reco.title" to "Recommandations, « À suivre » & « Pour vous »",
     "settings.reco.subtitle" to "Les films, les séries et la TV ont chacun leurs goûts et leurs rangées : ils ne se mélangent jamais.",
     "settings.reco.shelf_enabled" to "Afficher « À suivre » sous le lecteur",
@@ -189,6 +227,8 @@ val frStrings: Map<String, String> = mapOf(
     "remote.quick.4" to "Pause",
 
     // Live TV
+    "live.sort_number" to "Numéro de chaîne (croissant)",
+    "live.sort_number_desc" to "Numéro de chaîne (décroissant)",
     "live.numeric_zap" to "Chaîne %s ⏎",
     "live.inline_default_title" to "TV en direct",
     "live.empty_title" to "Aucune chaîne disponible",
@@ -201,16 +241,35 @@ val frStrings: Map<String, String> = mapOf(
     "live.pause" to "Pause",
     "live.play" to "Lecture",
     "live.fullscreen" to "Plein écran",
+    "live.mute" to "Couper le son",
+    "live.unmute" to "Rétablir le son",
+    "live.previous_channel" to "Chaîne précédente",
+    "live.next_channel" to "Chaîne suivante",
+    "live.aspect" to "Format de l'image",
     "live.filter_placeholder" to "Filtrer les chaînes…",
     "live.search" to "Rechercher",
+    "live.recent_title" to "Récents",
+    "live.favorites_title" to "Favoris",
+    "live.all_channels_title" to "Toutes les chaînes",
     "live.favorites" to "★ Favoris",
     "live.outage_badge" to "HS",
     "live.badge" to "DIRECT",
     "live.open_channel_error" to "Impossible d'ouvrir la chaîne sélectionnée.",
+    "live.close_player" to "Fermer le lecteur",
+
+    // Categories
+    "categories.all" to "Toutes",
+    "categories.title" to "Catégories",
+    "categories.search_chip" to "Catégories…",
+    "categories.search_placeholder" to "Rechercher une catégorie…",
+    "categories.no_match" to "Aucune catégorie correspondante",
 
     // Movies
+    "movies.sort_rating" to "Note (décroissante)",
+    "movies.sort_rating_asc" to "Note (croissante)",
     "movies.title" to "Films",
     "movies.search" to "Rechercher",
+    "movies.search_hint" to "Rechercher un film…",
     "movies.favorites" to "★ Favoris",
     "movies.recent" to "Récents",
     "movies.empty_title" to "Aucun film trouvé",

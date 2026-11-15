@@ -1,8 +1,10 @@
 package com.pcoundia.buntu.feature.live
 
 import androidx.paging.PagingData
+import com.pcoundia.buntu.core.domain.model.LiveBuffer
 import com.pcoundia.buntu.core.domain.model.AppPreferences
 import com.pcoundia.buntu.core.domain.model.CatalogQuery
+import com.pcoundia.buntu.core.domain.model.CatalogSort
 import com.pcoundia.buntu.core.domain.model.CategoryFacet
 import com.pcoundia.buntu.core.domain.model.ChannelItem
 import com.pcoundia.buntu.core.domain.model.DownloadItem
@@ -17,6 +19,7 @@ import com.pcoundia.buntu.core.domain.model.SeriesItem
 import com.pcoundia.buntu.core.domain.model.StreamKind
 import com.pcoundia.buntu.core.domain.repository.CatalogRepository
 import com.pcoundia.buntu.core.domain.repository.DownloadsRepository
+import com.pcoundia.buntu.core.domain.repository.PlaybackHealthRepository
 import com.pcoundia.buntu.core.domain.repository.ProfilesRepository
 import com.pcoundia.buntu.core.domain.repository.RecommendationsRepository
 import com.pcoundia.buntu.core.domain.repository.SecretStore
@@ -40,12 +43,17 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -118,6 +126,8 @@ class LiveViewModelTest {
             override suspend fun deleteSecret(alias: String) = Unit
         }
 
+        val playbackHealth = FakeLivePlaybackHealthRepository()
+
         val vm = LiveViewModel(
             catalogRepository = catalogRepo,
             settingsRepository = settingsRepo,
@@ -125,14 +135,211 @@ class LiveViewModelTest {
             loadShelvesUseCase = LoadShelvesUseCase(recoRepo, profilesRepo, settingsRepo, secretStore),
             videoEngine = fakeEngine,
             playOnAnotherDevice = PlayOnAnotherDeviceUseCase(NoRemotePlayback),
+            playbackHealth = playbackHealth,
         )
+
+        backgroundScope.launch(testDispatcher) { vm.uiState.collect {} }
 
         vm.appendChannelDigit('1')
         vm.appendChannelDigit('2')
         vm.confirmNumericZap()
 
         assertEquals(42L, fakeEngine.state.value.activeStream?.itemId)
+        assertTrue(vm.uiState.value.isInlinePlayerVisible)
         assertTrue(pausedDownloads)
+    }
+
+    @Test
+    fun `player stays hidden on startup even with lastChannelId until media clicked and closes on stop`() = runTest {
+        val fakeEngine = FakeVideoEngine()
+        val catalogRepo = FakeLiveCatalogRepository()
+        val settingsRepo = FakeLiveSettingsRepository(initialLastChannelId = 42L)
+        val downloadsRepo = object : DownloadsRepository {
+            override val downloadsFlow: Flow<ImmutableList<DownloadItem>> = flowOf(persistentListOf())
+            override suspend fun refreshDownloads(): ImmutableList<DownloadItem> = persistentListOf()
+            override suspend fun enqueueDownload(itemId: Long): Long = 1L
+            override suspend fun pauseDownload(taskId: Long) = Unit
+            override suspend fun resumeDownload(taskId: Long) = Unit
+            override suspend fun removeDownload(taskId: Long, deleteFiles: Boolean) = Unit
+            override suspend fun pauseAllForPlayback() = Unit
+            override suspend fun resumeAfterPlayback() = Unit
+        }
+        val recoRepo = object : RecommendationsRepository {
+            override suspend fun loadLocalShelves(
+                kind: RecoDomainKind,
+                limitPerShelf: Int,
+                utcOffsetMinutes: Int,
+            ): ImmutableList<RecoShelfGroup> = persistentListOf()
+            override suspend fun refineShelvesWithAi(
+                kind: RecoDomainKind,
+                aiConfig: com.pcoundia.buntu.core.domain.model.AiSettingsConfig,
+                apiKey: String,
+                limitPerShelf: Int,
+                locale: String,
+                utcOffsetMinutes: Int,
+            ): ImmutableList<RecoShelfGroup> = persistentListOf()
+            override suspend fun markLessLikeThis(kind: RecoDomainKind, stableHash: String) = Unit
+            override suspend fun resetTaste(kind: RecoDomainKind) = Unit
+            override suspend fun upNextFor(itemId: Long, context: com.pcoundia.buntu.core.domain.model.UpNextContext, limit: Int) =
+                persistentListOf<com.pcoundia.buntu.core.domain.model.UpNextItem>()
+            override suspend fun nextUpAfter(itemId: Long): com.pcoundia.buntu.core.domain.model.UpNextItem? = null
+            override suspend fun dismissUpNext(stableHash: String) = Unit
+        }
+        val profilesRepo = object : ProfilesRepository {
+            override val profilesFlow: Flow<ImmutableList<ProfileSummary>> = flowOf(persistentListOf())
+            override suspend fun refreshProfiles(): ImmutableList<ProfileSummary> = persistentListOf()
+            override suspend fun activeProfile(): ProfileSummary =
+                ProfileSummary(1L, "Principal", "🦁", isKids = false, isActive = true)
+            override suspend fun selectProfile(profileId: Long) = Unit
+            override suspend fun createProfile(name: String, avatar: String, isKids: Boolean) = activeProfile()
+            override suspend fun deleteProfile(profileId: Long) = Unit
+            override suspend fun setAdultContentVisible(visible: Boolean) = Unit
+            override suspend fun setGroupAllowedForKids(profileId: Long, kind: String, groupName: String, allowed: Boolean) = Unit
+        }
+        val secretStore = object : SecretStore {
+            override suspend fun putSecret(alias: String, plaintext: String) = Unit
+            override suspend fun getSecret(alias: String): String? = null
+            override suspend fun deleteSecret(alias: String) = Unit
+        }
+
+        val playbackHealth = FakeLivePlaybackHealthRepository()
+
+        val vm = LiveViewModel(
+            catalogRepository = catalogRepo,
+            settingsRepository = settingsRepo,
+            zapToChannelUseCase = ZapToChannelUseCase(catalogRepo, settingsRepo, downloadsRepo),
+            loadShelvesUseCase = LoadShelvesUseCase(recoRepo, profilesRepo, settingsRepo, secretStore),
+            videoEngine = fakeEngine,
+            playOnAnotherDevice = PlayOnAnotherDeviceUseCase(NoRemotePlayback),
+            playbackHealth = playbackHealth,
+        )
+        backgroundScope.launch(testDispatcher) { vm.uiState.collect {} }
+
+        // Initial state: no channel pre-selected, inline player hidden
+        assertFalse(vm.uiState.value.isInlinePlayerVisible)
+        assertNull(vm.uiState.value.activeChannelId)
+        assertNull(fakeEngine.state.value.activeStream)
+
+        // Health map updates expose broken statuses reactively without re-emitting PagingData
+        playbackHealth.setLiveBroken("rts1", true)
+        assertEquals(true, vm.uiState.value.brokenChannels["rts1"])
+
+        backgroundScope.launch(testDispatcher) { vm.pagedChannels.collect {} }
+        runCurrent()
+        assertEquals(CatalogSort.DEFAULT, catalogRepo.lastLiveQuery?.sort)
+        vm.selectCategory("Sénégal")
+        vm.selectSort(CatalogSort.NAME_ASC)
+        runCurrent()
+        assertEquals(CatalogSort.NAME_ASC, vm.uiState.value.sort)
+        assertEquals(CatalogSort.NAME_ASC, catalogRepo.lastLiveQuery?.sort)
+        assertEquals("Sénégal", catalogRepo.lastLiveQuery?.groupName)
+
+        // Clicking a channel starts playback and reveals the inline player
+        val channel = catalogRepo.getChannelById(42L)!!
+        vm.playChannelInline(channel)
+        assertTrue(vm.uiState.value.isInlinePlayerVisible)
+        assertEquals(42L, vm.uiState.value.activeChannelId)
+        assertEquals(42L, fakeEngine.state.value.activeStream?.itemId)
+
+        // Closing the inline player stops the stream and hides the player again
+        vm.closeInlinePlayer()
+        assertFalse(vm.uiState.value.isInlinePlayerVisible)
+        assertNull(vm.uiState.value.activeChannelId)
+        assertNull(fakeEngine.state.value.activeStream)
+    }
+
+    @Test
+    fun `stream resolution failure shows plain redacted error inside inline player and retry recovers`() = runTest {
+        val fakeEngine = FakeVideoEngine()
+        val catalogRepo = FakeLiveCatalogRepository()
+        val settingsRepo = FakeLiveSettingsRepository()
+        val downloadsRepo = object : DownloadsRepository {
+            override val downloadsFlow: Flow<ImmutableList<DownloadItem>> = flowOf(persistentListOf())
+            override suspend fun refreshDownloads(): ImmutableList<DownloadItem> = persistentListOf()
+            override suspend fun enqueueDownload(itemId: Long): Long = 1L
+            override suspend fun pauseDownload(taskId: Long) = Unit
+            override suspend fun resumeDownload(taskId: Long) = Unit
+            override suspend fun removeDownload(taskId: Long, deleteFiles: Boolean) = Unit
+            override suspend fun pauseAllForPlayback() = Unit
+            override suspend fun resumeAfterPlayback() = Unit
+        }
+        val recoRepo = object : RecommendationsRepository {
+            override suspend fun loadLocalShelves(
+                kind: RecoDomainKind,
+                limitPerShelf: Int,
+                utcOffsetMinutes: Int,
+            ): ImmutableList<RecoShelfGroup> = persistentListOf()
+            override suspend fun refineShelvesWithAi(
+                kind: RecoDomainKind,
+                aiConfig: com.pcoundia.buntu.core.domain.model.AiSettingsConfig,
+                apiKey: String,
+                limitPerShelf: Int,
+                locale: String,
+                utcOffsetMinutes: Int,
+            ): ImmutableList<RecoShelfGroup> = persistentListOf()
+            override suspend fun markLessLikeThis(kind: RecoDomainKind, stableHash: String) = Unit
+            override suspend fun resetTaste(kind: RecoDomainKind) = Unit
+            override suspend fun upNextFor(itemId: Long, context: com.pcoundia.buntu.core.domain.model.UpNextContext, limit: Int) =
+                persistentListOf<com.pcoundia.buntu.core.domain.model.UpNextItem>()
+            override suspend fun nextUpAfter(itemId: Long): com.pcoundia.buntu.core.domain.model.UpNextItem? = null
+            override suspend fun dismissUpNext(stableHash: String) = Unit
+        }
+        val profilesRepo = object : ProfilesRepository {
+            override val profilesFlow: Flow<ImmutableList<ProfileSummary>> = flowOf(persistentListOf())
+            override suspend fun refreshProfiles(): ImmutableList<ProfileSummary> = persistentListOf()
+            override suspend fun activeProfile(): ProfileSummary =
+                ProfileSummary(1L, "Principal", "🦁", isKids = false, isActive = true)
+            override suspend fun selectProfile(profileId: Long) = Unit
+            override suspend fun createProfile(name: String, avatar: String, isKids: Boolean) = activeProfile()
+            override suspend fun deleteProfile(profileId: Long) = Unit
+            override suspend fun setAdultContentVisible(visible: Boolean) = Unit
+            override suspend fun setGroupAllowedForKids(profileId: Long, kind: String, groupName: String, allowed: Boolean) = Unit
+        }
+        val secretStore = object : SecretStore {
+            override suspend fun putSecret(alias: String, plaintext: String) = Unit
+            override suspend fun getSecret(alias: String): String? = null
+            override suspend fun deleteSecret(alias: String) = Unit
+        }
+        val playbackHealth = FakeLivePlaybackHealthRepository()
+
+        catalogRepo.failResolveWith = IllegalStateException(
+            "Timeout on http://user:pass@secret-host.tv/live/42.ts",
+        )
+        val vm = LiveViewModel(
+            catalogRepository = catalogRepo,
+            settingsRepository = settingsRepo,
+            zapToChannelUseCase = ZapToChannelUseCase(catalogRepo, settingsRepo, downloadsRepo),
+            loadShelvesUseCase = LoadShelvesUseCase(recoRepo, profilesRepo, settingsRepo, secretStore),
+            videoEngine = fakeEngine,
+            playOnAnotherDevice = PlayOnAnotherDeviceUseCase(NoRemotePlayback),
+            playbackHealth = playbackHealth,
+        )
+        backgroundScope.launch(testDispatcher) { vm.uiState.collect {} }
+
+        val channel = catalogRepo.getChannelById(42L)!!
+        vm.playChannelInline(channel)
+
+        assertTrue(vm.uiState.value.isInlinePlayerVisible)
+        assertEquals(42L, vm.uiState.value.activeChannelId)
+        val err = vm.uiState.value.errorMessage
+        assertNotNull(err)
+        assertFalse(err!!.contains("secret-host.tv"))
+        assertFalse(err.contains("pass"))
+        assertTrue(err.contains("<lien masqué>"))
+
+        // Retry recovers cleanly once the provider responds
+        catalogRepo.failResolveWith = null
+        vm.retryActiveChannel()
+        assertNull(vm.uiState.value.errorMessage)
+        assertEquals(42L, fakeEngine.state.value.activeStream?.itemId)
+    }
+}
+
+private class FakeLivePlaybackHealthRepository : PlaybackHealthRepository {
+    private val _broken = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    override val brokenChannels: StateFlow<Map<String, Boolean>> = _broken
+    override suspend fun setLiveBroken(stableHash: String, broken: Boolean) {
+        _broken.value = _broken.value + (stableHash to broken)
     }
 }
 
@@ -162,6 +369,9 @@ private class FakeVideoEngine : VideoEngine {
 }
 
 private class FakeLiveCatalogRepository : CatalogRepository {
+    var failResolveWith: Throwable? = null
+    var lastLiveQuery: CatalogQuery? = null
+        private set
     private val channel = ChannelItem(
         id = 42L,
         sourceId = 1L,
@@ -181,8 +391,10 @@ private class FakeLiveCatalogRepository : CatalogRepository {
         isBroken = false,
     )
 
-    override fun pagedLiveChannels(query: CatalogQuery): Flow<PagingData<ChannelItem>> =
-        flowOf(PagingData.from(listOf(channel)))
+    override fun pagedLiveChannels(query: CatalogQuery): Flow<PagingData<ChannelItem>> {
+        lastLiveQuery = query
+        return flowOf(PagingData.from(listOf(channel)))
+    }
     override fun pagedMovies(query: CatalogQuery): Flow<PagingData<MovieItem>> = flowOf(PagingData.empty())
     override fun pagedSeries(query: CatalogQuery): Flow<PagingData<SeriesItem>> = flowOf(PagingData.empty())
     override suspend fun getGroups(kind: String, sourceId: Long?): ImmutableList<CategoryFacet> =
@@ -204,8 +416,9 @@ private class FakeLiveCatalogRepository : CatalogRepository {
     override suspend fun isFavoriteForPlayback(itemId: Long): Boolean = false
     override suspend fun toggleFavoriteForPlayback(itemId: Long): Boolean = true
     override suspend fun recordWatchProgress(stableHash: String, positionMs: Long, durationMs: Long) = Unit
-    override suspend fun resolvePlayableStream(itemId: Long, startPositionMs: Long): PlayableStream =
-        PlayableStream(
+    override suspend fun resolvePlayableStream(itemId: Long, startPositionMs: Long): PlayableStream {
+        failResolveWith?.let { throw it }
+        return PlayableStream(
             itemId = itemId,
             stableHash = "rts1",
             title = "RTS 1 HD",
@@ -215,10 +428,18 @@ private class FakeLiveCatalogRepository : CatalogRepository {
             host = "example.com",
             maxConnectionsForSource = 1,
         )
+    }
 }
 
-private class FakeLiveSettingsRepository : SettingsRepository {
-    private val prefs = MutableStateFlow(AppPreferences(assumedMaxConnections = 1))
+private class FakeLiveSettingsRepository(
+    initialLastChannelId: Long? = null,
+) : SettingsRepository {
+    private val prefs = MutableStateFlow(
+        AppPreferences(
+            assumedMaxConnections = 1,
+            lastChannelId = initialLastChannelId,
+        ),
+    )
     override val preferencesFlow: Flow<AppPreferences> = prefs
     override suspend fun currentPreferences(): AppPreferences = prefs.value
     override suspend fun setOnboardingCompleted(completed: Boolean) = Unit
@@ -231,6 +452,7 @@ private class FakeLiveSettingsRepository : SettingsRepository {
         prefs.value = prefs.value.copy(lastChannelId = channelId)
     }
     override suspend fun updateAiConfig(config: com.pcoundia.buntu.core.domain.model.AiSettingsConfig) = Unit
+    override suspend fun setLiveBuffer(buffer: LiveBuffer) = Unit
     override suspend fun setUpNextPreferences(preferences: com.pcoundia.buntu.core.domain.model.UpNextPreferences) = Unit
 }
 

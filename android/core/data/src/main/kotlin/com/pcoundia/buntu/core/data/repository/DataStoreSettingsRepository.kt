@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.pcoundia.buntu.core.domain.model.AiProviderType
 import com.pcoundia.buntu.core.domain.model.AiSettingsConfig
+import com.pcoundia.buntu.core.domain.model.LiveBuffer
 import com.pcoundia.buntu.core.domain.model.UpNextPreferences
 import com.pcoundia.buntu.core.domain.model.AppPreferences
 import com.pcoundia.buntu.core.domain.repository.SettingsRepository
@@ -53,6 +54,7 @@ class DataStoreSettingsRepository @Inject constructor(
         val UPNEXT_SHELF = booleanPreferencesKey("upnext_shelf_enabled")
         val UPNEXT_CARD = booleanPreferencesKey("upnext_card_enabled")
         val UPNEXT_AUTOPLAY = booleanPreferencesKey("upnext_autoplay_enabled")
+        val LIVE_BUFFER = stringPreferencesKey("live_buffer")
         val UPNEXT_COUNTDOWN = intPreferencesKey("upnext_countdown_seconds")
     }
 
@@ -108,6 +110,10 @@ class DataStoreSettingsRepository @Inject constructor(
         it[Keys.AI_AUTO_SEARCH] = config.autoSearch
     }
 
+    override suspend fun setLiveBuffer(buffer: LiveBuffer) = updatePref {
+        it[Keys.LIVE_BUFFER] = buffer.name
+    }
+
     override suspend fun setUpNextPreferences(preferences: UpNextPreferences) = updatePref {
         it[Keys.UPNEXT_SHELF] = preferences.shelfEnabled
         it[Keys.UPNEXT_CARD] = preferences.nextUpCardEnabled
@@ -144,6 +150,7 @@ class DataStoreSettingsRepository @Inject constructor(
                 consent = this[Keys.AI_CONSENT] ?: true,
                 autoSearch = this[Keys.AI_AUTO_SEARCH] ?: true,
             ),
+            liveBuffer = LiveBuffer.entries.firstOrNull { it.name == this[Keys.LIVE_BUFFER] } ?: LiveBuffer.AUTO,
             upNext = UpNextPreferences(
                 shelfEnabled = this[Keys.UPNEXT_SHELF] ?: true,
                 nextUpCardEnabled = this[Keys.UPNEXT_CARD] ?: true,

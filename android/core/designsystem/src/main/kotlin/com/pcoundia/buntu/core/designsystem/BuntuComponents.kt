@@ -21,12 +21,22 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,12 +59,15 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.size.Size
+import com.pcoundia.buntu.core.designsystem.i18n.t
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.toImmutableList
 
 @Immutable
 data class BuntuShelfCardData(
@@ -432,47 +445,200 @@ fun BuntuMediaShelf(
     }
 }
 
+/** Filters category names case-insensitively by [query]. */
+fun filterCategories(categories: List<String>, query: String): List<String> {
+    val trimmed = query.trim()
+    if (trimmed.isEmpty()) return categories
+    return categories.filter { it.contains(trimmed, ignoreCase = true) }
+}
+
+@Composable
+fun <T> BuntuSortChip(
+    selected: T,
+    options: List<Pair<T, String>>,
+    onSelection: (T) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        FilterChip(
+            selected = expanded,
+            onClick = { expanded = true },
+            leadingIcon = {
+                Icon(Icons.Default.Sort, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
+            },
+            label = { Text(t("common.sort")) },
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        onSelection(value)
+                    },
+                    trailingIcon = if (value == selected) {
+                        { Icon(Icons.Default.Check, contentDescription = t("common.sort_selected")) }
+                    } else null,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun BuntuCategoryChips(
     categories: ImmutableList<String>,
     selectedCategory: String?,
     onSelectCategory: (String?) -> Unit,
     modifier: Modifier = Modifier,
-    allLabel: String = "Toutes",
+    allLabel: String = t("categories.all"),
+    /** Side padding of the phone button; `null` = the screen padding. Pass `0.dp` when embedded in a row. */
+    phoneHorizontalPadding: Dp? = null,
 ) {
     val metrics = LocalBuntuMetrics.current
-    LazyRow(
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = metrics.horizontalScreenPadding),
-        horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
-    ) {
-        item(key = "__all__", contentType = "category_chip") {
-            FilterChip(
-                selected = selectedCategory == null,
-                onClick = { onSelectCategory(null) },
-                label = { Text(allLabel) },
-                modifier = Modifier.defaultMinSize(minHeight = metrics.minTouchTarget),
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = BuntuPalette.TerangaGold,
-                    selectedLabelColor = BuntuPalette.Midnight,
-                ),
+    // Phone: one button that opens a left drawer instead of a long row of chips. Tablets and TV keep the chips.
+    if (!metrics.isTv && metrics.windowWidth == BuntuWindowWidth.COMPACT) {
+        if (categories.isNotEmpty()) {
+            BuntuCategoryDrawerEntry(
+                categories = categories,
+                selectedCategory = selectedCategory,
+                onSelectCategory = onSelectCategory,
+                allLabel = allLabel,
+                horizontalPadding = phoneHorizontalPadding ?: metrics.horizontalScreenPadding,
+                modifier = modifier,
             )
         }
-        items(
-            items = categories,
-            key = { it },
-            contentType = { "category_chip" },
-        ) { category ->
-            FilterChip(
-                selected = selectedCategory == category,
-                onClick = { onSelectCategory(category) },
-                label = { Text(category, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                modifier = Modifier.defaultMinSize(minHeight = metrics.minTouchTarget),
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = BuntuPalette.TerangaGold,
-                    selectedLabelColor = BuntuPalette.Midnight,
-                ),
+        return
+    }
+    var isSearchOpen by remember { mutableStateOf(false) }
+    var categoryQuery by remember { mutableStateOf("") }
+    val filteredCategories = remember(categories, categoryQuery) {
+        filterCategories(categories, categoryQuery).toImmutableList()
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(metrics.spacingXS),
+    ) {
+        if (isSearchOpen) {
+            OutlinedTextField(
+                value = categoryQuery,
+                onValueChange = { categoryQuery = it },
+                placeholder = {
+                    Text(
+                        text = t("categories.search_placeholder"),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                    )
+                },
+                trailingIcon = {
+                    IconButton(
+                        onClick = {
+                            if (categoryQuery.isNotEmpty()) {
+                                categoryQuery = ""
+                            } else {
+                                isSearchOpen = false
+                            }
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = t("common.close"),
+                        )
+                    }
+                },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = metrics.horizontalScreenPadding),
             )
+        }
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = metrics.horizontalScreenPadding),
+            horizontalArrangement = Arrangement.spacedBy(metrics.spacingS),
+        ) {
+            if (categories.isNotEmpty()) {
+                item(key = "__search_cat__", contentType = "category_search_chip") {
+                    FilterChip(
+                        selected = isSearchOpen || categoryQuery.isNotBlank(),
+                        onClick = {
+                            if (isSearchOpen) {
+                                isSearchOpen = false
+                                categoryQuery = ""
+                            } else {
+                                isSearchOpen = true
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                modifier = Modifier.size(FilterChipDefaults.IconSize),
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = categoryQuery.takeIf { it.isNotBlank() } ?: t("categories.search_chip"),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        modifier = Modifier.defaultMinSize(minHeight = metrics.minTouchTarget),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = BuntuPalette.TerangaGold,
+                            selectedLabelColor = BuntuPalette.Midnight,
+                            selectedLeadingIconColor = BuntuPalette.Midnight,
+                        ),
+                    )
+                }
+            }
+            item(key = "__all__", contentType = "category_chip") {
+                FilterChip(
+                    selected = selectedCategory == null,
+                    onClick = { onSelectCategory(null) },
+                    label = { Text(allLabel) },
+                    modifier = Modifier.defaultMinSize(minHeight = metrics.minTouchTarget),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = BuntuPalette.TerangaGold,
+                        selectedLabelColor = BuntuPalette.Midnight,
+                    ),
+                )
+            }
+            if (filteredCategories.isEmpty() && categoryQuery.isNotBlank()) {
+                item(key = "__no_cat_match__", contentType = "category_empty_hint") {
+                    Text(
+                        text = t("categories.no_match"),
+                        color = BuntuPalette.MutedSilver,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(vertical = 12.dp, horizontal = metrics.spacingS),
+                    )
+                }
+            } else {
+                items(
+                    items = filteredCategories,
+                    key = { it },
+                    contentType = { "category_chip" },
+                ) { category ->
+                    FilterChip(
+                        selected = selectedCategory == category,
+                        onClick = { onSelectCategory(category) },
+                        label = { Text(category, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        modifier = Modifier.defaultMinSize(minHeight = metrics.minTouchTarget),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = BuntuPalette.TerangaGold,
+                            selectedLabelColor = BuntuPalette.Midnight,
+                        ),
+                    )
+                }
+            }
         }
     }
 }
@@ -483,6 +649,8 @@ fun BuntuErrorBanner(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    secondaryActionLabel: String? = null,
+    onSecondaryAction: (() -> Unit)? = null,
 ) {
     val metrics = LocalBuntuMetrics.current
     Surface(
@@ -491,23 +659,38 @@ fun BuntuErrorBanner(
         shape = RoundedCornerShape(12.dp),
         modifier = modifier.fillMaxWidth(),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.padding(metrics.spacingM),
-        ) {
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = BuntuPalette.PureWhite,
-                modifier = Modifier.weight(1f),
-            )
-            if (actionLabel != null && onAction != null) {
-                Spacer(modifier = Modifier.width(metrics.spacingM))
-                BuntuPrimaryActionButton(
-                    label = actionLabel,
-                    onClick = onAction,
+        Column(modifier = Modifier.padding(metrics.spacingM)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = BuntuPalette.PureWhite,
+                    modifier = Modifier.weight(1f),
                 )
+                if (actionLabel != null && onAction != null) {
+                    Spacer(modifier = Modifier.width(metrics.spacingM))
+                    BuntuPrimaryActionButton(
+                        label = actionLabel,
+                        onClick = onAction,
+                    )
+                }
+            }
+            if (secondaryActionLabel != null && onSecondaryAction != null) {
+                Spacer(modifier = Modifier.height(metrics.spacingS))
+                Row(
+                    horizontalArrangement = Arrangement.End,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    BuntuPrimaryActionButton(
+                        label = secondaryActionLabel,
+                        onClick = onSecondaryAction,
+                        containerColor = BuntuPalette.Slate,
+                    )
+                }
             }
         }
     }
@@ -546,6 +729,33 @@ fun BuntuEmptyState(
             BuntuPrimaryActionButton(
                 label = actionLabel,
                 onClick = onAction,
+            )
+        }
+    }
+}
+
+@Composable
+fun BuntuLoadingState(
+    label: String? = null,
+    modifier: Modifier = Modifier,
+) {
+    val metrics = LocalBuntuMetrics.current
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(metrics.spacingXL),
+    ) {
+        androidx.compose.material3.CircularProgressIndicator(
+            color = BuntuPalette.TerangaGold,
+        )
+        if (!label.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(metrics.spacingM))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = BuntuPalette.MutedSilver,
             )
         }
     }

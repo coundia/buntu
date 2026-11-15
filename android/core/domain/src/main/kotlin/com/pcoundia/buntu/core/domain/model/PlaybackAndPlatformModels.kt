@@ -147,6 +147,51 @@ sealed interface StreamDiagnosis {
         override val isFinalError: Boolean = false
         override val userMessage: String = "Connexion au serveur impossible (serveur éteint ou port fermé)."
     }
+
+    data class UnsupportedFormat(val detail: String? = null) : StreamDiagnosis {
+        override val isFinalError: Boolean = true
+        override val userMessage: String
+            get() {
+                val clean = redactStreamUrls(detail)
+                return if (clean.isNotEmpty()) {
+                    "Format audio/vidéo non pris en charge par cet appareil ($clean)."
+                } else {
+                    "Format audio/vidéo non pris en charge par cet appareil."
+                }
+            }
+    }
+
+    data class Generic(
+        override val userMessage: String,
+        override val isFinalError: Boolean = false,
+    ) : StreamDiagnosis
+}
+
+private val LOCAL_RELAY_URL_REGEX = Regex("(?i)https?://(?:127\\.0\\.0\\.1|localhost)(?::\\d+)?\\S*")
+private val STREAM_URL_REDACTION_REGEX = Regex("(?i)(?:https?|rtsp|rtmp)://\\S+")
+private val INLINE_CREDENTIALS_REGEX = Regex("[A-Za-z0-9._-]+:[^\\s@]+@\\S+")
+
+/** Removes stream URLs and embedded credentials before showing any error text in UI. */
+fun redactStreamUrls(raw: String?): String {
+    val trimmed = raw?.trim()?.takeIf(String::isNotEmpty) ?: return ""
+    return trimmed
+        .replace(LOCAL_RELAY_URL_REGEX, "<relais>")
+        .replace(STREAM_URL_REDACTION_REGEX, "<lien masqué>")
+        .replace(INLINE_CREDENTIALS_REGEX, "<identifiants masqués>")
+        .replace(Regex("\\s+"), " ")
+        .take(220)
+}
+
+/** Formats an exception chain into a plain French message with URLs/credentials redacted. */
+fun formatPlaybackErrorMessage(fallback: String, error: Throwable?): String {
+    val root = generateSequence(error) { it.cause }.lastOrNull() ?: error
+    val rawDetail = root?.localizedMessage ?: root?.message ?: error?.localizedMessage ?: error?.message
+    val detail = redactStreamUrls(rawDetail)
+    return if (detail.isNotEmpty() && !detail.equals(fallback, ignoreCase = true)) {
+        "$fallback ($detail)"
+    } else {
+        fallback
+    }
 }
 
 /**
@@ -315,7 +360,14 @@ data class AppPreferences(
     val lastChannelId: Long? = null,
     val aiConfig: AiSettingsConfig = AiSettingsConfig(),
     val upNext: UpNextPreferences = UpNextPreferences(),
+    val liveBuffer: LiveBuffer = LiveBuffer.AUTO,
 )
+
+enum class LiveBuffer(val seconds: Int?) {
+    AUTO(null),
+    SECONDS_25(25),
+    SECONDS_30(30),
+}
 
 data class NetworkLogItem(
     val seqId: Long,

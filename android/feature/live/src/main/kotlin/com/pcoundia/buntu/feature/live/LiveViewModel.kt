@@ -9,10 +9,13 @@ import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import com.pcoundia.buntu.core.domain.model.CatalogQuery
+import com.pcoundia.buntu.core.domain.model.CatalogSort
 import com.pcoundia.buntu.core.domain.model.ChannelItem
 import com.pcoundia.buntu.core.domain.model.RecoDomainKind
 import com.pcoundia.buntu.core.domain.model.RecoShelfGroup
+import com.pcoundia.buntu.core.domain.model.formatPlaybackErrorMessage
 import com.pcoundia.buntu.core.domain.repository.CatalogRepository
+import com.pcoundia.buntu.core.domain.repository.PlaybackHealthRepository
 import com.pcoundia.buntu.core.domain.repository.SettingsRepository
 import com.pcoundia.buntu.core.domain.usecase.LoadShelvesUseCase
 import com.pcoundia.buntu.core.domain.usecase.ZapToChannelUseCase
@@ -22,6 +25,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,17 +39,27 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+private const val RECENT_LIMIT = 10
+private const val FAVORITES_LIMIT = 20
+
 @Immutable
 data class LiveUiState(
     val categories: ImmutableList<String> = persistentListOf(),
     val selectedCategory: String? = null,
     val favoritesOnly: Boolean = false,
     val searchQuery: String = "",
+    val sort: CatalogSort = CatalogSort.DEFAULT,
     val activeChannelId: Long? = null,
     val activeChannelTitle: String? = null,
     val activeChannelNow: String? = null,
+    val isInlinePlayerVisible: Boolean = false,
     val numericBuffer: String = "",
     val liveShelves: ImmutableList<RecoShelfGroup> = persistentListOf(),
+    /** Most recently watched channels, shown first on the phone screen. */
+    val recentChannels: ImmutableList<ChannelItem> = persistentListOf(),
+    /** Favorite channels (capped), shown right after the recents. */
+    val favoriteChannels: ImmutableList<ChannelItem> = persistentListOf(),
+    val brokenChannels: Map<String, Boolean> = emptyMap(),
     val errorMessage: String? = null,
 )
 
@@ -66,6 +80,7 @@ class LiveViewModel @Inject constructor(
     private val loadShelvesUseCase: LoadShelvesUseCase,
     val videoEngine: VideoEngine,
     private val playOnAnotherDevice: PlayOnAnotherDeviceUseCase,
+    private val playbackHealth: PlaybackHealthRepository,
 ) : ViewModel() {
 
     // « Lire sur un autre appareil » from the context menu of a channel (PRD-44 § 2.2).
@@ -75,8 +90,30 @@ class LiveViewModel @Inject constructor(
 
     fun openRemoteMenu() = playOnAnotherDevice.reset()
 
+    /** Favorite of the item behind a card menu (an episode reads its series, as in the player). */
+    suspend fun isItemFavorite(itemId: Long): Boolean? =
+        runCatching { catalogRepository.isFavoriteForPlayback(itemId) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
+
+    /** Flips the favorite of the item behind a card menu; returns the new state, or `null` on failure. */
+    suspend fun toggleItemFavorite(itemId: Long): Boolean? =
+        runCatching { catalogRepository.toggleFavoriteForPlayback(itemId) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
+            ?.also { refreshQuickLists() }
+
     fun playOnDevice(deviceId: String, itemId: Long, onSent: () -> Unit) {
-        viewModelScope.launch { if (playOnAnotherDevice(deviceId, itemId)) onSent() }
+        viewModelScope.launch {
+            runCatching { playOnAnotherDevice(deviceId, itemId) }
+                .onSuccess { sent -> if (sent) onSent() }
+                .onFailure { err ->
+                    if (err is CancellationException) throw err
+                    localState.update {
+                        it.copy(errorMessage = formatPlaybackErrorMessage("Lecture sur l'autre appareil impossible", err))
+                    }
+                }
+        }
     }
 
     private val localState = MutableStateFlow(LiveUiState())
@@ -89,6 +126,7 @@ class LiveViewModel @Inject constructor(
                 searchQuery = state.searchQuery,
                 groupName = state.selectedCategory,
                 favoritesOnly = state.favoritesOnly,
+                sort = state.sort,
             )
         }
         .distinctUntilChanged()
@@ -98,9 +136,11 @@ class LiveViewModel @Inject constructor(
     val uiState: StateFlow<LiveUiState> = combine(
         localState,
         videoEngine.state,
-    ) { state, engineState ->
+        playbackHealth.brokenChannels,
+    ) { state, engineState, brokenMap ->
         state.copy(
             activeChannelTitle = engineState.activeStream?.title ?: state.activeChannelTitle,
+            brokenChannels = brokenMap,
             errorMessage = engineState.diagnosis?.userMessage ?: state.errorMessage,
         )
     }.stateIn(
@@ -111,7 +151,25 @@ class LiveViewModel @Inject constructor(
 
     init {
         refreshCategoriesAndShelves()
-        restoreLastWatchedChannelIfIdle()
+        refreshQuickLists()
+    }
+
+    /** Reloads the « Récents » and « Favoris » sections (cheap, capped lists; never the whole catalog). */
+    fun refreshQuickLists() {
+        viewModelScope.launch {
+            val recents = runCatching { catalogRepository.listRecentChannels(RECENT_LIMIT) }
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrNull()
+            val favorites = runCatching { catalogRepository.listFavoriteChannels() }
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrNull()
+            localState.update { state ->
+                state.copy(
+                    recentChannels = recents?.toImmutableList() ?: state.recentChannels,
+                    favoriteChannels = favorites?.take(FAVORITES_LIMIT)?.toImmutableList() ?: state.favoriteChannels,
+                )
+            }
+        }
     }
 
     fun refreshCategoriesAndShelves() {
@@ -133,21 +191,6 @@ class LiveViewModel @Inject constructor(
         }
     }
 
-    private fun restoreLastWatchedChannelIfIdle() {
-        viewModelScope.launch {
-            if (videoEngine.state.value.activeStream != null) return@launch
-            val lastId = settingsRepository.currentPreferences().lastChannelId ?: return@launch
-            val channel = catalogRepository.getChannelById(lastId) ?: return@launch
-            localState.update {
-                it.copy(
-                    activeChannelId = channel.id,
-                    activeChannelTitle = channel.name,
-                    activeChannelNow = channel.nowTitle,
-                )
-            }
-        }
-    }
-
     fun selectCategory(category: String?) {
         localState.update { it.copy(selectedCategory = category, errorMessage = null) }
     }
@@ -156,38 +199,96 @@ class LiveViewModel @Inject constructor(
         localState.update { it.copy(favoritesOnly = !it.favoritesOnly) }
     }
 
+    fun selectSort(sort: CatalogSort) {
+        localState.update { it.copy(sort = sort) }
+    }
+
     fun updateSearchQuery(query: String) {
         localState.update { it.copy(searchQuery = query) }
     }
 
+    private fun surfaceZapFailure(
+        fallback: String,
+        err: Throwable? = null,
+        channelId: Long? = null,
+        channelTitle: String? = null,
+        channelNow: String? = null,
+    ) {
+        val message = if (err != null) formatPlaybackErrorMessage(fallback, err) else fallback
+        localState.update { state ->
+            state.copy(
+                activeChannelId = channelId ?: state.activeChannelId,
+                activeChannelTitle = channelTitle ?: state.activeChannelTitle,
+                activeChannelNow = channelNow ?: state.activeChannelNow,
+                isInlinePlayerVisible = true,
+                errorMessage = message,
+            )
+        }
+    }
+
     fun playChannelInline(channel: ChannelItem) {
         viewModelScope.launch {
-            val stream = zapToChannelUseCase.byId(channel.id)
+            val stream = runCatching { zapToChannelUseCase.byId(channel.id) }
+                .getOrElse { err ->
+                    if (err is CancellationException) throw err
+                    surfaceZapFailure(
+                        fallback = AppLanguageState.translate("live.open_channel_error"),
+                        err = err,
+                        channelId = channel.id,
+                        channelTitle = channel.name,
+                        channelNow = channel.nowTitle,
+                    )
+                    return@launch
+                }
             if (stream != null) {
                 localState.update {
                     it.copy(
                         activeChannelId = channel.id,
                         activeChannelTitle = channel.name,
                         activeChannelNow = channel.nowTitle,
+                        isInlinePlayerVisible = true,
                         errorMessage = null,
                     )
                 }
                 videoEngine.zap(stream)
+                refreshQuickLists()
             } else {
-                localState.update { it.copy(errorMessage = AppLanguageState.translate("live.open_channel_error")) }
+                surfaceZapFailure(
+                    fallback = AppLanguageState.translate("live.open_channel_error"),
+                    channelId = channel.id,
+                    channelTitle = channel.name,
+                    channelNow = channel.nowTitle,
+                )
             }
         }
     }
 
     fun zapByChannelId(channelId: Long) {
         viewModelScope.launch {
-            val stream = zapToChannelUseCase.byId(channelId) ?: return@launch
-            val channel = catalogRepository.getChannelById(channelId)
+            val stream = runCatching { zapToChannelUseCase.byId(channelId) }
+                .getOrElse { err ->
+                    if (err is CancellationException) throw err
+                    surfaceZapFailure(
+                        fallback = AppLanguageState.translate("live.open_channel_error"),
+                        err = err,
+                        channelId = channelId,
+                    )
+                    return@launch
+                }
+            if (stream == null) {
+                surfaceZapFailure(
+                    fallback = AppLanguageState.translate("live.open_channel_error"),
+                    channelId = channelId,
+                )
+                return@launch
+            }
+            val channel = runCatching { catalogRepository.getChannelById(channelId) }.getOrNull()
             localState.update {
                 it.copy(
                     activeChannelId = channelId,
                     activeChannelTitle = channel?.name ?: stream.title,
                     activeChannelNow = channel?.nowTitle,
+                    isInlinePlayerVisible = true,
                     errorMessage = null,
                 )
             }
@@ -195,20 +296,35 @@ class LiveViewModel @Inject constructor(
         }
     }
 
+    fun retryActiveChannel() {
+        val channelId = localState.value.activeChannelId ?: videoEngine.state.value.activeStream?.itemId ?: return
+        zapByChannelId(channelId)
+    }
+
     fun zapAdjacent(delta: Int) {
         val currentId = localState.value.activeChannelId
             ?: videoEngine.state.value.activeStream?.itemId
             ?: return
         viewModelScope.launch {
-            val stream = zapToChannelUseCase.adjacent(
-                currentChannelId = currentId,
-                delta = delta,
-                groupName = localState.value.selectedCategory,
-            ) ?: return@launch
+            val stream = runCatching {
+                zapToChannelUseCase.adjacent(
+                    currentChannelId = currentId,
+                    delta = delta,
+                    groupName = localState.value.selectedCategory,
+                )
+            }.getOrElse { err ->
+                if (err is CancellationException) throw err
+                surfaceZapFailure(
+                    fallback = AppLanguageState.translate("live.open_channel_error"),
+                    err = err,
+                )
+                return@launch
+            } ?: return@launch
             localState.update {
                 it.copy(
                     activeChannelId = stream.itemId,
                     activeChannelTitle = stream.title,
+                    isInlinePlayerVisible = true,
                     errorMessage = null,
                 )
             }
@@ -226,23 +342,55 @@ class LiveViewModel @Inject constructor(
         val number = localState.value.numericBuffer.toIntOrNull() ?: return
         localState.update { it.copy(numericBuffer = "") }
         viewModelScope.launch {
-            val stream = zapToChannelUseCase.byNumber(number)
+            val stream = runCatching { zapToChannelUseCase.byNumber(number) }
+                .getOrElse { err ->
+                    if (err is CancellationException) throw err
+                    surfaceZapFailure(
+                        fallback = AppLanguageState.translate("live.open_channel_error"),
+                        err = err,
+                    )
+                    return@launch
+                }
             if (stream != null) {
                 localState.update {
                     it.copy(
                         activeChannelId = stream.itemId,
                         activeChannelTitle = stream.title,
+                        isInlinePlayerVisible = true,
                         errorMessage = null,
                     )
                 }
                 videoEngine.zap(stream)
+            } else {
+                localState.update {
+                    it.copy(errorMessage = "Chaîne $number introuvable")
+                }
             }
+        }
+    }
+
+    fun closeInlinePlayer() {
+        videoEngine.stop()
+        localState.update {
+            it.copy(
+                isInlinePlayerVisible = false,
+                activeChannelId = null,
+                activeChannelTitle = null,
+                activeChannelNow = null,
+                errorMessage = null,
+            )
         }
     }
 
     fun toggleFavorite(channel: ChannelItem) {
         viewModelScope.launch {
-            catalogRepository.toggleFavorite(channel.stableHash, "live")
+            runCatching { catalogRepository.toggleFavorite(channel.stableHash, "live") }
+                .onFailure { err ->
+                    if (err is CancellationException) throw err
+                    localState.update {
+                        it.copy(errorMessage = formatPlaybackErrorMessage("Impossible de modifier les favoris", err))
+                    }
+                }
         }
     }
 }

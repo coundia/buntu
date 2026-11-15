@@ -47,9 +47,13 @@ data class CategoryFacet(
 enum class CatalogSort {
     DEFAULT,
     NAME_ASC,
+    NAME_DESC,
+    NUMBER_DESC,
     RECENTLY_ADDED,
+    OLDEST_ADDED,
     YEAR_DESC,
     RATING_DESC,
+    RATING_ASC,
 }
 
 data class CatalogQuery(

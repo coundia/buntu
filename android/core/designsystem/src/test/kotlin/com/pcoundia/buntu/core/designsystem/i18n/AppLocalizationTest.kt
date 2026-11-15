@@ -1,5 +1,6 @@
 package com.pcoundia.buntu.core.designsystem.i18n
 
+import com.pcoundia.buntu.core.designsystem.filterCategories
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -87,5 +88,25 @@ class AppLocalizationTest {
         assertEquals("1 season", AppLanguageState.translate("series.season_one", 1, lang = AppLanguage.EN))
         assertEquals("3 saisons", AppLanguageState.translate("series.season_many", 3, lang = AppLanguage.FR))
         assertEquals("3 seasons", AppLanguageState.translate("series.season_many", 3, lang = AppLanguage.EN))
+    }
+
+    @Test
+    fun `category search keys translate properly in FR and EN`() {
+        assertEquals("Catégories…", AppLanguageState.translate("categories.search_chip", lang = AppLanguage.FR))
+        assertEquals("Categories…", AppLanguageState.translate("categories.search_chip", lang = AppLanguage.EN))
+        assertEquals("Rechercher une catégorie…", AppLanguageState.translate("categories.search_placeholder", lang = AppLanguage.FR))
+        assertEquals("Search category…", AppLanguageState.translate("categories.search_placeholder", lang = AppLanguage.EN))
+        assertEquals("Fermer le lecteur", AppLanguageState.translate("live.close_player", lang = AppLanguage.FR))
+        assertEquals("Close player", AppLanguageState.translate("live.close_player", lang = AppLanguage.EN))
+    }
+
+    @Test
+    fun `filterCategories matches case-insensitively and handles blank or missing queries`() {
+        val categories = listOf("Sénégal", "Sports HD", "Cinéma", "Documentaire")
+        assertEquals(categories, filterCategories(categories, ""))
+        assertEquals(categories, filterCategories(categories, "   "))
+        assertEquals(listOf("Sports HD"), filterCategories(categories, "sport"))
+        assertEquals(listOf("Sénégal", "Sports HD"), filterCategories(categories, "s"))
+        assertTrue(filterCategories(categories, "anime").isEmpty())
     }
 }

@@ -1,6 +1,7 @@
 package com.pcoundia.buntu.core.domain
 
 import androidx.paging.PagingData
+import com.pcoundia.buntu.core.domain.model.LiveBuffer
 import com.pcoundia.buntu.core.domain.model.AiProviderType
 import com.pcoundia.buntu.core.domain.model.AiSettingsConfig
 import com.pcoundia.buntu.core.domain.model.AppPreferences
@@ -238,6 +239,7 @@ private class FakeSettingsRepository(initial: AppPreferences) : SettingsReposito
     override suspend fun setAdultCategoriesUnlocked(unlocked: Boolean) = Unit
     override suspend fun setLastChannelId(channelId: Long) { state.value = state.value.copy(lastChannelId = channelId) }
     override suspend fun updateAiConfig(config: AiSettingsConfig) { state.value = state.value.copy(aiConfig = config) }
+    override suspend fun setLiveBuffer(buffer: LiveBuffer) = Unit
     override suspend fun setUpNextPreferences(preferences: com.pcoundia.buntu.core.domain.model.UpNextPreferences) = Unit
 }
 

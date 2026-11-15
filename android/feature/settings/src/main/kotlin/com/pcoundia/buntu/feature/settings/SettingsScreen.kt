@@ -58,12 +58,13 @@ import com.pcoundia.buntu.core.designsystem.i18n.t
 import com.pcoundia.buntu.core.domain.model.AiProviderType
 import com.pcoundia.buntu.core.domain.model.ConnectionBudget
 import com.pcoundia.buntu.core.domain.model.RecoDomainKind
+import com.pcoundia.buntu.core.domain.model.LiveBuffer
 import com.pcoundia.buntu.core.domain.model.UpNextPreferences
 
 internal object BuntuAboutInfo {
     const val APP_NAME = "Buntu"
-    const val APP_VERSION = "1.0.0"
-    const val APP_BUILD = "1"
+    const val APP_VERSION = "1.0.1"
+    const val APP_BUILD = "2"
     const val SLOGAN = "Sa bunt ci lépp — La porte d'entrée de tous vos médias."
     const val AUTHOR_NAME = "Papa COUNDIA"
     const val AUTHOR_EMAIL = "papacoundia@gmail.com"
@@ -390,6 +391,25 @@ fun SettingsRoute(
                         color = BuntuPalette.MutedSilver,
                         style = MaterialTheme.typography.bodySmall,
                     )
+                }
+            }
+        }
+
+        item(key = "live_buffer_section", contentType = "settings_card") {
+            SettingsCard(
+                title = t("settings.live_buffer.title"),
+                subtitle = t("settings.live_buffer.subtitle"),
+            ) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(metrics.spacingS)) {
+                    LiveBuffer.entries.forEach { buffer ->
+                        val label = buffer.seconds?.let { t("settings.live_buffer.seconds", it) }
+                            ?: t("settings.live_buffer.auto")
+                        FilterChip(
+                            selected = prefs.liveBuffer == buffer,
+                            onClick = { viewModel.setLiveBuffer(buffer) },
+                            label = { Text(label) },
+                        )
+                    }
                 }
             }
         }

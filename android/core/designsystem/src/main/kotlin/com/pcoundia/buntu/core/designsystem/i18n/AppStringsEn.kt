@@ -1,11 +1,43 @@
 package com.pcoundia.buntu.core.designsystem.i18n
 
 val enStrings: Map<String, String> = mapOf(
+    "player.expert.title" to "Expert mode",
+    "player.expert.network" to "Active network",
+    "player.expert.download" to "Stream download",
+    "player.expert.download_relay" to "Download via local relay",
+    "player.expert.upload" to "App upload",
+    "player.expert.buffer" to "Video buffer",
+    "player.expert.video" to "Video resolution",
+    "player.expert.unavailable" to "Unavailable",
+    "player.expert.offline" to "Offline",
+    "player.expert.connected" to "Connected",
+    "player.expert.vpn" to "VPN",
+    "player.expert.ethernet" to "Ethernet",
+    "player.expert.wifi" to "Wi-Fi",
+    "player.expert.cellular" to "Cellular data",
+    "player.expert.mbps" to "%.2f Mbps",
+    "player.expert.kbps" to "%.1f kbps",
+    "player.expert.seconds" to "%.1f s",
+
     // Common
+    "common.sort_recently_added" to "Recently added",
+    "common.sort_name_asc" to "Name (A–Z)",
+    "common.sort_name_desc" to "Name (Z–A)",
+    "common.sort_oldest_added" to "Oldest added",
+    "common.sort_selected" to "Current sort order",
+    "common.sort" to "Sort",
     "common.back" to "Back",
     "common.cancel" to "Cancel",
     "common.close" to "Close",
     "common.refresh" to "Refresh",
+    "common.retry" to "Retry",
+    "common.loading" to "Loading…",
+    "common.search" to "Search",
+
+    // Item context menu (long press)
+    "item_menu.favorite_add" to "Add to favorites",
+    "item_menu.favorite_remove" to "Remove from favorites",
+    "item_menu.play_elsewhere" to "Play on another device",
 
     // Navigation
     "nav.live" to "Live",
@@ -19,6 +51,8 @@ val enStrings: Map<String, String> = mapOf(
     "nav.remote_command" to "TV Remote",
     "nav.profiles" to "Profiles",
     "nav.settings" to "More",
+    "nav.more_menu" to "Explore",
+    "nav.shortcuts_title" to "Quick access",
 
     // Settings
     "settings.title" to "Settings",
@@ -57,6 +91,10 @@ val enStrings: Map<String, String> = mapOf(
     "settings.ai.privacy_never_body" to "• stream URLs and the IPTV server\n• usernames, passwords, headers\n• full history, favorites outside suggestions, downloads",
     "settings.ai.local_only_hint" to "Explicit commands (\"France 2\", \"channel 6\", \"next\") and instant search are resolved on-device with no data sent. Choose a provider for more open-ended requests.",
 
+    "settings.live_buffer.title" to "Live buffer",
+    "settings.live_buffer.subtitle" to "A larger buffer helps absorb network interruptions. Startup and live delay may increase. Applies to the next channel opened.",
+    "settings.live_buffer.seconds" to "%d s",
+    "settings.live_buffer.auto" to "Automatic",
     "settings.reco.title" to "Recommendations, \"Up Next\" & \"For you\"",
     "settings.reco.subtitle" to "Movies, series, and live TV each have their own tastes and rows: they never mix.",
     "settings.reco.shelf_enabled" to "Show \"Up Next\" below the player",
@@ -189,6 +227,8 @@ val enStrings: Map<String, String> = mapOf(
     "remote.quick.4" to "Pause",
 
     // Live TV
+    "live.sort_number" to "Channel number (ascending)",
+    "live.sort_number_desc" to "Channel number (descending)",
     "live.numeric_zap" to "Channel %s ⏎",
     "live.inline_default_title" to "Live TV",
     "live.empty_title" to "No channels available",
@@ -201,16 +241,35 @@ val enStrings: Map<String, String> = mapOf(
     "live.pause" to "Pause",
     "live.play" to "Play",
     "live.fullscreen" to "Fullscreen",
+    "live.mute" to "Mute",
+    "live.unmute" to "Unmute",
+    "live.previous_channel" to "Previous channel",
+    "live.next_channel" to "Next channel",
+    "live.aspect" to "Picture format",
     "live.filter_placeholder" to "Filter channels…",
     "live.search" to "Search",
+    "live.recent_title" to "Recent",
+    "live.favorites_title" to "Favorites",
+    "live.all_channels_title" to "All channels",
     "live.favorites" to "★ Favorites",
     "live.outage_badge" to "DOWN",
     "live.badge" to "LIVE",
     "live.open_channel_error" to "Unable to open the selected channel.",
+    "live.close_player" to "Close player",
+
+    // Categories
+    "categories.all" to "All",
+    "categories.title" to "Categories",
+    "categories.search_chip" to "Categories…",
+    "categories.search_placeholder" to "Search category…",
+    "categories.no_match" to "No matching category",
 
     // Movies
+    "movies.sort_rating" to "Rating (descending)",
+    "movies.sort_rating_asc" to "Rating (ascending)",
     "movies.title" to "Movies",
     "movies.search" to "Search",
+    "movies.search_hint" to "Search movies…",
     "movies.favorites" to "★ Favorites",
     "movies.recent" to "Recent",
     "movies.empty_title" to "No movies found",

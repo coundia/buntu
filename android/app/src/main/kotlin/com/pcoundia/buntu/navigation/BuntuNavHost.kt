@@ -37,6 +37,7 @@ fun BuntuNavHost(
     navController: NavHostController,
     startDestination: String,
     modifier: Modifier = Modifier,
+    postOnboardingDestination: String = BuntuRoutes.LIVE,
     onExitApp: () -> Unit = {},
 ) {
     NavHost(
@@ -58,7 +59,7 @@ fun BuntuNavHost(
         composable(BuntuRoutes.ONBOARDING) {
             OnboardingRoute(
                 onFinished = {
-                    navController.navigate(BuntuRoutes.LIVE) {
+                    navController.navigate(postOnboardingDestination) {
                         popUpTo(BuntuRoutes.ONBOARDING) { inclusive = true }
                     }
                 },
@@ -68,7 +69,7 @@ fun BuntuNavHost(
         composable(BuntuRoutes.LIVE) {
             LiveRoute(
                 onOpenFullscreenPlayer = { channelId ->
-                    navController.navigate(BuntuRoutes.player(itemId = channelId))
+                    navController.navigate(BuntuRoutes.player(itemId = channelId, startFullscreen = true))
                 },
                 onOpenSources = {
                     navController.navigate(BuntuRoutes.SOURCES)
@@ -262,9 +263,14 @@ fun BuntuNavHost(
                     type = NavType.LongType
                     defaultValue = 0L
                 },
+                navArgument("startFullscreen") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
             ),
-        ) {
+        ) { entry ->
             PlayerRoute(
+                startFullscreen = entry.arguments?.getBoolean("startFullscreen") == true,
                 onBack = { navController.popBackStack() },
                 onNavigateToDownloads = {
                     navController.navigate(BuntuRoutes.DOWNLOADS) {

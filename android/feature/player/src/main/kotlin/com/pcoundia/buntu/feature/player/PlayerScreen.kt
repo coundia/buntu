@@ -1,13 +1,20 @@
 package com.pcoundia.buntu.feature.player
 
 import android.app.Activity
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.TrafficStats
+import android.os.Process
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +48,8 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
@@ -64,6 +73,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -82,12 +92,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -101,6 +115,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -113,6 +128,7 @@ import com.pcoundia.buntu.core.designsystem.BuntuPalette
 import com.pcoundia.buntu.core.designsystem.BuntuPosterCard
 import com.pcoundia.buntu.core.designsystem.BuntuPrimaryActionButton
 import com.pcoundia.buntu.core.designsystem.LocalBuntuMetrics
+import com.pcoundia.buntu.core.designsystem.i18n.t
 import com.pcoundia.buntu.core.domain.model.ChannelItem
 import com.pcoundia.buntu.core.domain.model.DiscoveredPeer
 import com.pcoundia.buntu.core.domain.model.MovieItem
@@ -124,7 +140,9 @@ import com.pcoundia.buntu.core.player.BuntuVideoSurface
 import com.pcoundia.buntu.core.player.PlayerEngineState
 import com.pcoundia.buntu.core.player.VideoAspectMode
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /** Same step as YouTube and the Apple player (`gobackward.10` / `goforward.10`). */
 private const val SEEK_STEP_MS = 10_000L
@@ -138,7 +156,7 @@ private enum class PlayerSheet { NONE, TRACKS, SETTINGS, VERSIONS, MIRRORS, CHAN
 
 /**
  * PRD-37 § 5.2: a player laid out like YouTube.
- * - Phone in portrait: the video in 16:9 at the top, then the title, the actions and the "À suivre" list.
+ * - Phone in portrait: a 16:9 video above its details, with a full-screen action.
  * - Landscape, tablet, Android TV: the video full screen, controls over it that hide by themselves.
  * Double tap on the left or right half seeks 10 s; on TV, left/right seek while nothing has the focus.
  */
@@ -147,6 +165,7 @@ fun PlayerRoute(
     onBack: () -> Unit,
     onNavigateToDownloads: () -> Unit,
     viewModel: PlayerViewModel = hiltViewModel(),
+    startFullscreen: Boolean = false,
 ) {
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
     val engineState by viewModel.engineState.collectAsStateWithLifecycle()
@@ -155,10 +174,12 @@ fun PlayerRoute(
     val context = LocalContext.current
     val activity = context as? Activity
 
+    var expanded by rememberSaveable { mutableStateOf(startFullscreen) }
     var showRemoteDialog by remember { mutableStateOf(false) }
     var dismissCandidate by remember { mutableStateOf<UpNextItem?>(null) }
     var settingsOpen by remember { mutableStateOf(false) }
     var mirrorsOpen by remember { mutableStateOf(false) }
+    var expertOpen by rememberSaveable { mutableStateOf(false) }
     // Focus inside the controls, a sheet or the end card: the remote then moves the focus instead of seeking.
     var overlayHasFocus by remember { mutableStateOf(false) }
     // Bumped on every touch or key, so the auto-hide timer restarts.
@@ -213,10 +234,11 @@ fun PlayerRoute(
         interactionTick,
         overlayHasFocus,
         openSheet,
+        expertOpen,
         screenState.nextUpCard,
     ) {
         val keepVisible = !screenState.isScreenLocked && (
-            !engineState.isPlaying || overlayHasFocus || openSheet != PlayerSheet.NONE ||
+            !engineState.isPlaying || expertOpen || overlayHasFocus || openSheet != PlayerSheet.NONE ||
                 screenState.nextUpCard != null
             )
         if (screenState.controlsVisible && !keepVisible) {
@@ -238,6 +260,7 @@ fun PlayerRoute(
             }
             screenState.nextUpCard != null -> viewModel.closeNextUpCard()
             openSheet != PlayerSheet.NONE -> closeSheet()
+            expertOpen -> expertOpen = false
             else -> exit()
         }
     }
@@ -250,6 +273,7 @@ fun PlayerRoute(
         onZap = viewModel::zapAdjacentLive,
         onToggleFavorite = viewModel::toggleFavorite,
         onLockScreen = {
+            expertOpen = false
             closeSheet()
             viewModel.lockScreen()
         },
@@ -260,6 +284,11 @@ fun PlayerRoute(
         onOpenTracks = {
             closeSheet()
             viewModel.toggleTrackSheet(true)
+        },
+        onToggleExpert = {
+            closeSheet()
+            viewModel.showControls()
+            expertOpen = !expertOpen
         },
         onOpenSettings = {
             closeSheet()
@@ -387,34 +416,47 @@ fun PlayerRoute(
                 }
             },
     ) {
-        // A PiP window is tiny: video only, no controls.
-        val isPip = maxWidth < 320.dp
-        val portrait = !screenState.isTv && !isPip && maxHeight > maxWidth
+        val isPip = activity?.isInPictureInPictureMode == true
+        val portraitWindow = !screenState.isTv && !isPip && maxHeight > maxWidth
+        val portrait = portraitWindow && !expanded
+        val toggleFullscreen: (() -> Unit)? = if (portraitWindow) {
+            { expanded = !expanded }
+        } else {
+            null
+        }
 
-        ImmersiveSystemBars(enabled = !portrait && !screenState.isTv)
+        BackHandler(
+            enabled = portraitWindow && expanded && !startFullscreen && !screenState.isScreenLocked &&
+                screenState.nextUpCard == null && openSheet == PlayerSheet.NONE && !expertOpen,
+        ) {
+            expanded = false
+        }
+        ImmersiveSystemBars(enabled = !portrait && !isPip)
 
-        if (portrait) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(BuntuPalette.Midnight),
-            ) {
-                VideoStage(
-                    viewModel = viewModel,
-                    engineState = engineState,
-                    isFullscreen = false,
-                    isPip = false,
-                    capabilities = capabilities,
-                    actions = actions,
-                    upNextShelf = null,
-                    onInteraction = { interactionTick++ },
-                    onOverlayFocus = { overlayHasFocus = it },
-                    modifier = Modifier
-                        .background(Color.Black)
-                        .statusBarsPadding()
-                        .fillMaxWidth()
-                        .aspectRatio(16f / 9f),
-                )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(if (portrait) BuntuPalette.Midnight else Color.Black),
+        ) {
+            VideoStage(
+                viewModel = viewModel,
+                engineState = engineState,
+                isFullscreen = !portrait,
+                isPip = isPip,
+                expertOpen = expertOpen,
+                onToggleFullscreen = toggleFullscreen,
+                capabilities = capabilities,
+                actions = actions,
+                upNextShelf = if (portrait) null else screenState.upNextShelf,
+                onInteraction = { interactionTick++ },
+                onOverlayFocus = { overlayHasFocus = it },
+                modifier = if (portrait) {
+                    Modifier.background(Color.Black).statusBarsPadding().fillMaxWidth().aspectRatio(16f / 9f)
+                } else {
+                    Modifier.fillMaxSize()
+                },
+            )
+            if (portrait) {
                 Box(modifier = Modifier.weight(1f)) {
                     PortraitDetails(
                         engineState = engineState,
@@ -440,19 +482,6 @@ fun PlayerRoute(
                     }
                 }
             }
-        } else {
-            VideoStage(
-                viewModel = viewModel,
-                engineState = engineState,
-                isFullscreen = true,
-                isPip = isPip,
-                capabilities = capabilities,
-                actions = actions,
-                upNextShelf = screenState.upNextShelf,
-                onInteraction = { interactionTick++ },
-                onOverlayFocus = { overlayHasFocus = it },
-                modifier = Modifier.fillMaxSize(),
-            )
         }
 
         if (!isPip) {
@@ -524,14 +553,21 @@ fun PlayerRoute(
                 }
             }
 
-            engineState.diagnosis?.let { diagnosis ->
+            val activeErrorMessage = engineState.diagnosis?.userMessage ?: screenState.errorMessage
+            activeErrorMessage?.let { errorMsg ->
                 Box(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .padding(24.dp)
                         .widthIn(max = 520.dp),
                 ) {
-                    BuntuErrorBanner(message = diagnosis.userMessage, actionLabel = "Retour", onAction = exit)
+                    BuntuErrorBanner(
+                        message = errorMsg,
+                        actionLabel = "Réessayer",
+                        onAction = viewModel::retryPlayback,
+                        secondaryActionLabel = "Retour",
+                        onSecondaryAction = exit,
+                    )
                 }
             }
 
@@ -638,6 +674,7 @@ private class PlayerActions(
     val onLockScreen: () -> Unit,
     val onUnlockScreen: () -> Unit,
     val onOpenTracks: () -> Unit,
+    val onToggleExpert: () -> Unit,
     val onOpenSettings: () -> Unit,
     val onOpenVersions: () -> Unit,
     val onPlayElsewhere: () -> Unit,
@@ -669,7 +706,7 @@ private data class PlayerCapabilities(
     val canDownload: Boolean,
 )
 
-/** Full screen on a phone in landscape: status and navigation bars hide, a swipe brings them back. */
+/** Immersive player on mobile: status and navigation bars hide, a swipe brings them back. */
 @Composable
 private fun ImmersiveSystemBars(enabled: Boolean) {
     val activity = LocalContext.current as? Activity ?: return
@@ -692,6 +729,8 @@ private fun VideoStage(
     engineState: PlayerEngineState,
     isFullscreen: Boolean,
     isPip: Boolean,
+    expertOpen: Boolean,
+    onToggleFullscreen: (() -> Unit)?,
     capabilities: PlayerCapabilities,
     actions: PlayerActions,
     upNextShelf: ImmutableList<UpNextItem>?,
@@ -712,11 +751,11 @@ private fun VideoStage(
     }
 
     BoxWithConstraints(
-        modifier = modifier.pointerInput(isLive, screenState.isScreenLocked) {
+        modifier = modifier.pointerInput(isLive, screenState.isScreenLocked, expertOpen) {
             detectTapGestures(
                 onTap = {
                     onInteraction()
-                    viewModel.toggleControls()
+                    if (expertOpen) viewModel.showControls() else viewModel.toggleControls()
                 },
                 onDoubleTap = { offset ->
                     onInteraction()
@@ -767,7 +806,7 @@ private fun VideoStage(
             val smallIcon: Dp = if (compact) 30.dp else 40.dp
 
             AnimatedVisibility(
-                visible = screenState.controlsVisible,
+                visible = screenState.controlsVisible || expertOpen,
                 enter = fadeIn(),
                 exit = fadeOut(),
                 modifier = Modifier.fillMaxSize(),
@@ -800,12 +839,7 @@ private fun VideoStage(
                                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)))),
                         )
 
-                        TopBar(
-                            title = engineState.activeStream?.title,
-                            subtitle = engineState.activeStream?.subtitle,
-                            showTitle = isFullscreen,
-                            capabilities = capabilities,
-                            actions = actions,
+                        Column(
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .fillMaxWidth()
@@ -813,7 +847,21 @@ private fun VideoStage(
                                     horizontal = if (isFullscreen) 16.dp else 4.dp,
                                     vertical = if (isFullscreen) 12.dp else 2.dp,
                                 ),
-                        )
+                        ) {
+                            TopBar(
+                                title = engineState.activeStream?.title,
+                                subtitle = engineState.activeStream?.subtitle,
+                                showTitle = isFullscreen,
+                                expertOpen = expertOpen,
+                                onToggleFullscreen = onToggleFullscreen,
+                                capabilities = capabilities,
+                                actions = actions,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            if (expertOpen) {
+                                ExpertPlayerStats(engineState, isTv = screenState.isTv)
+                            }
+                        }
 
                         CenterControls(
                             isLive = isLive,
@@ -860,16 +908,26 @@ private fun TopBar(
     title: String?,
     subtitle: String?,
     showTitle: Boolean,
+    expertOpen: Boolean,
+    onToggleFullscreen: (() -> Unit)?,
     capabilities: PlayerCapabilities,
     actions: PlayerActions,
     modifier: Modifier = Modifier,
 ) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         OverlayIcon(Icons.AutoMirrored.Filled.ArrowBack, "Retour", onClick = actions.onBack)
+        if (onToggleFullscreen != null) {
+            OverlayIcon(
+                icon = if (showTitle) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                label = if (showTitle) "Quitter le plein écran" else "Plein écran",
+                onClick = onToggleFullscreen,
+            )
+        }
         if (showTitle) {
             Column(
                 modifier = Modifier
                     .weight(1f)
+                    .widthIn(min = 100.dp)
                     .padding(horizontal = 8.dp),
             ) {
                 Text(
@@ -890,72 +948,85 @@ private fun TopBar(
                     )
                 }
             }
-            if (capabilities.isCatchupReplay) {
-                Surface(
-                    color = BuntuPalette.TerangaGold,
-                    shape = RoundedCornerShape(50),
-                ) {
-                    Text(
-                        text = "REPLAY",
-                        color = Color.Black,
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                    )
-                }
-                Spacer(modifier = Modifier.width(6.dp))
-                OutlinedButton(onClick = actions.onReturnToLive) {
-                    Text("Direct", color = Color.White)
-                }
-            }
-            capabilities.sleepTimerRemainingSeconds?.let { remaining ->
-                val min = remaining / 60
-                val sec = remaining % 60
-                Surface(
-                    color = Color(0xFF312E81),
-                    shape = RoundedCornerShape(50),
-                    modifier = Modifier.padding(end = 4.dp),
-                ) {
-                    Text(
-                        text = "Veille %d:%02d".format(min, sec),
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-            }
-            if (capabilities.canRecall) {
-                OverlayIcon(Icons.Filled.Replay, "Dernière chaîne", onClick = actions.onRecall)
-            }
-            if (capabilities.isLive) {
-                OverlayIcon(Icons.Filled.List, "Mini-Guide chaînes", onClick = actions.onOpenChannelsDrawer)
-            }
-            if (capabilities.hasMirrors) {
-                OverlayIcon(Icons.Filled.Tune, "Qualité et miroirs", onClick = actions.onOpenMirrors)
-            }
-            if (capabilities.canFavorite) {
-                OverlayIcon(
-                    icon = if (capabilities.isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
-                    label = if (capabilities.isFavorite) "Retirer des favoris" else "Ajouter aux favoris",
-                    tint = if (capabilities.isFavorite) BuntuPalette.TerangaGold else Color.White,
-                    onClick = actions.onToggleFavorite,
-                )
-            }
-            if (capabilities.canPlayElsewhere) {
-                OverlayIcon(Icons.Filled.Cast, "Lire sur un autre appareil", onClick = actions.onPlayElsewhere)
-            }
-            if (capabilities.canPip) {
-                OverlayIcon(Icons.Filled.PictureInPictureAlt, "Image dans l'image", onClick = actions.onPip)
-            }
         } else {
             Spacer(modifier = Modifier.weight(1f))
         }
-        OverlayIcon(Icons.Filled.AspectRatio, "Format vidéo", onClick = actions.onCycleAspect)
-        if (capabilities.hasTracks) {
-            OverlayIcon(Icons.Filled.ClosedCaption, "Audio et sous-titres", onClick = actions.onOpenTracks)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
+            TextButton(onClick = actions.onToggleExpert) {
+                Text(
+                    t("player.expert.title"),
+                    color = if (expertOpen) BuntuPalette.TerangaGold else Color.White,
+                )
+            }
+            if (showTitle) {
+                if (capabilities.isCatchupReplay) {
+                    Surface(
+                        color = BuntuPalette.TerangaGold,
+                        shape = RoundedCornerShape(50),
+                    ) {
+                        Text(
+                            text = "REPLAY",
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    OutlinedButton(onClick = actions.onReturnToLive) {
+                        Text("Direct", color = Color.White)
+                    }
+                }
+                capabilities.sleepTimerRemainingSeconds?.let { remaining ->
+                    val min = remaining / 60
+                    val sec = remaining % 60
+                    Surface(
+                        color = Color(0xFF312E81),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.padding(end = 4.dp),
+                    ) {
+                        Text(
+                            text = "Veille %d:%02d".format(min, sec),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                if (capabilities.canRecall) {
+                    OverlayIcon(Icons.Filled.Replay, "Dernière chaîne", onClick = actions.onRecall)
+                }
+                if (capabilities.isLive) {
+                    OverlayIcon(Icons.Filled.List, "Mini-Guide chaînes", onClick = actions.onOpenChannelsDrawer)
+                }
+                if (capabilities.hasMirrors) {
+                    OverlayIcon(Icons.Filled.Tune, "Qualité et miroirs", onClick = actions.onOpenMirrors)
+                }
+                if (capabilities.canFavorite) {
+                    OverlayIcon(
+                        icon = if (capabilities.isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
+                        label = if (capabilities.isFavorite) "Retirer des favoris" else "Ajouter aux favoris",
+                        tint = if (capabilities.isFavorite) BuntuPalette.TerangaGold else Color.White,
+                        onClick = actions.onToggleFavorite,
+                    )
+                }
+                if (capabilities.canPlayElsewhere) {
+                    OverlayIcon(Icons.Filled.Cast, "Lire sur un autre appareil", onClick = actions.onPlayElsewhere)
+                }
+                if (capabilities.canPip) {
+                    OverlayIcon(Icons.Filled.PictureInPictureAlt, "Image dans l'image", onClick = actions.onPip)
+                }
+            }
+            OverlayIcon(Icons.Filled.AspectRatio, "Format vidéo", onClick = actions.onCycleAspect)
+            if (capabilities.hasTracks) {
+                OverlayIcon(Icons.Filled.ClosedCaption, "Audio et sous-titres", onClick = actions.onOpenTracks)
+            }
+            OverlayIcon(Icons.Filled.Lock, "Verrouiller l'écran", onClick = actions.onLockScreen)
+            OverlayIcon(Icons.Filled.Settings, "Réglages de lecture", onClick = actions.onOpenSettings)
         }
-        OverlayIcon(Icons.Filled.Lock, "Verrouiller l'écran", onClick = actions.onLockScreen)
-        OverlayIcon(Icons.Filled.Settings, "Réglages de lecture", onClick = actions.onOpenSettings)
     }
 }
 
@@ -1049,6 +1120,7 @@ private fun CenterControls(
 }
 
 /** Progress bar with the time, like YouTube; the seek happens when the finger is lifted. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SeekBar(
     engineState: PlayerEngineState,
@@ -1132,11 +1204,17 @@ private fun SeekBar(
     val onSeekTo = actions.onSeekTo
     val duration = engineState.durationMs
     var dragFraction by remember { mutableStateOf<Float?>(null) }
-    val fraction = dragFraction ?: if (duration > 0L) {
-        (engineState.positionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    val playedFraction = if (duration > 0L) {
+        (engineState.positionMs.toDouble() / duration).coerceIn(0.0, 1.0).toFloat()
     } else {
         0f
     }
+    val bufferedFraction = if (duration > 0L) {
+        (engineState.bufferedPositionMs.toDouble() / duration).coerceIn(0.0, 1.0).toFloat()
+    } else {
+        0f
+    }
+    val fraction = dragFraction ?: playedFraction
     val shownPosition = dragFraction?.let { (it * duration).toLong() } ?: engineState.positionMs
     Column {
         Text(
@@ -1152,11 +1230,26 @@ private fun SeekBar(
                 dragFraction?.let { onSeekTo((it * duration).toLong()) }
                 dragFraction = null
             },
-            colors = SliderDefaults.colors(
-                thumbColor = BuntuPalette.TerangaGold,
-                activeTrackColor = BuntuPalette.TerangaGold,
-                inactiveTrackColor = Color.White.copy(alpha = 0.3f),
-            ),
+            colors = SliderDefaults.colors(thumbColor = BuntuPalette.TerangaGold),
+            track = {
+                Canvas(Modifier.fillMaxWidth().height(4.dp)) {
+                    val rtl = layoutDirection == LayoutDirection.Rtl
+                    val radius = CornerRadius(size.height / 2f)
+                    fun drawSegment(start: Float, end: Float, color: Color) {
+                        if (end <= start) return
+                        val left = if (rtl) 1f - end else start
+                        drawRoundRect(
+                            color = color,
+                            topLeft = Offset(size.width * left, 0f),
+                            size = Size(size.width * (end - start), size.height),
+                            cornerRadius = radius,
+                        )
+                    }
+                    drawSegment(0f, 1f, Color.White.copy(alpha = 0.3f))
+                    drawSegment(playedFraction, bufferedFraction, BuntuPalette.LeerCyan)
+                    drawSegment(0f, fraction, BuntuPalette.TerangaGold)
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(28.dp),
@@ -1406,7 +1499,7 @@ private fun PlayerSheetHost(
                         color = BuntuPalette.PureWhite,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = onClose) { Text("Fermer") }
+                    TextButton(onClick = onClose) { Text(t("common.close")) }
                 }
             }
             when (sheet) {
@@ -1611,6 +1704,92 @@ private fun PlayerSheetHost(
                     }
                 }
                 PlayerSheet.NONE -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExpertPlayerStats(engineState: PlayerEngineState, isTv: Boolean) {
+    val context = LocalContext.current
+    var networkLabel by remember { mutableStateOf("player.expert.unavailable") }
+    var uploadBps by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(context) {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        var previousBytes = TrafficStats.UNSUPPORTED.toLong()
+        var previousTime = SystemClock.elapsedRealtime()
+        while (true) {
+            val (transport, bytes) = withContext(Dispatchers.IO) {
+                val transport = if (connectivity == null) {
+                    "unavailable"
+                } else {
+                    try {
+                        val active = connectivity.activeNetwork
+                        val capabilities = connectivity.getNetworkCapabilities(active)
+                        when {
+                            active == null -> "offline"
+                            capabilities == null -> "unavailable"
+                            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
+                            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+                            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+                            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+                            else -> "connected"
+                        }
+                    } catch (_: SecurityException) {
+                        "unavailable"
+                    }
+                }
+                transport to TrafficStats.getUidTxBytes(Process.myUid())
+            }
+            val now = SystemClock.elapsedRealtime()
+            networkLabel = "player.expert.$transport"
+            uploadBps = if (previousBytes >= 0 && bytes >= previousBytes && now > previousTime) {
+                ((bytes - previousBytes) * 8_000.0 / (now - previousTime)).toLong()
+            } else {
+                null
+            }
+            previousBytes = bytes
+            previousTime = now
+            delay(1_000L)
+        }
+    }
+
+    val unavailable = t("player.expert.unavailable")
+    val stream = engineState.activeStream
+    val receiveRate = engineState.measuredBitrateBps.takeIf { stream != null && stream.kind != StreamKind.LOCAL_FILE }
+    val receiveLabel = if (stream?.usesSingleConnectionRelay == true) {
+        t("player.expert.download_relay")
+    } else {
+        t("player.expert.download")
+    }
+    val bufferMs = engineState.bufferedDurationMs
+    val videoSize = if (engineState.videoWidth > 0 && engineState.videoHeight > 0) {
+        "${engineState.videoWidth} × ${engineState.videoHeight}"
+    } else {
+        unavailable
+    }
+    val fields = listOf(
+        t("player.expert.network") to t(networkLabel),
+        receiveLabel to (receiveRate?.let { t("player.expert.mbps", it / 1_000_000.0) } ?: unavailable),
+        t("player.expert.upload") to (uploadBps?.let { t("player.expert.kbps", it / 1_000.0) } ?: unavailable),
+        t("player.expert.buffer") to (if (stream != null) t("player.expert.seconds", bufferMs / 1_000.0) else unavailable),
+        t("player.expert.video") to videoSize,
+    )
+    Surface(color = Color.Black.copy(alpha = 0.72f), shape = RoundedCornerShape(8.dp)) {
+        Row(
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            fields.forEach { (label, value) ->
+                Text(
+                    text = "$label · $value",
+                    color = BuntuPalette.PureWhite,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    modifier = Modifier.focusable(enabled = isTv),
+                )
             }
         }
     }

@@ -155,7 +155,8 @@ class DetailsViewModel @Inject constructor(
     fun toggleFavorite() {
         val detail = _uiState.value.detail ?: return
         viewModelScope.launch {
-            val kind = if (detail.isSeries) "series" else "vod"
+            // Same labels as the engine and the other apps ("movie", not "vod"), which also travel in the household sync.
+            val kind = if (detail.isSeries) "series" else "movie"
             val nextFav = runCatching { catalogRepository.toggleFavorite(detail.stableHash, kind) }
                 .getOrDefault(!detail.isFavorite)
             _uiState.update { state ->

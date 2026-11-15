@@ -15,6 +15,7 @@ import com.pcoundia.buntu.core.domain.model.StreamKind
 import com.pcoundia.buntu.core.domain.model.UpNextContext
 import com.pcoundia.buntu.core.domain.model.UpNextItem
 import com.pcoundia.buntu.core.domain.model.UpNextPreferences
+import com.pcoundia.buntu.core.domain.model.formatPlaybackErrorMessage
 import com.pcoundia.buntu.core.domain.repository.CatalogRepository
 import com.pcoundia.buntu.core.domain.repository.DownloadsRepository
 import com.pcoundia.buntu.core.domain.repository.EpgRepository
@@ -34,6 +35,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +55,7 @@ data class PlayerScreenUiState(
     val showVersionsSheet: Boolean = false,
     val otherVersions: ImmutableList<MovieItem> = persistentListOf(),
     val statusToast: String? = null,
+    val errorMessage: String? = null,
     /** Favorite button: shown for channels, films and episodes (an episode stars its series). */
     val canToggleFavorite: Boolean = false,
     val isFavorite: Boolean = false,
@@ -136,20 +139,28 @@ class PlayerViewModel @Inject constructor(
     fun playOnPeer(targetPeerId: String, onTransferred: () -> Unit) {
         val stream = videoEngine.state.value.activeStream?.takeIf { it.kind != StreamKind.LOCAL_FILE } ?: return
         viewModelScope.launch {
-            val success = remotePlaybackRepo.startHandoff(
-                targetPeerId = targetPeerId,
-                contentKey = stream.stableHash,
-                // The account key computed in Rust (PRD-41 identity), never the server address.
-                sourceKey = remotePlaybackRepo.sourceKeyForItem(stream.itemId),
-                itemKind = when (stream.kind) {
-                    StreamKind.LIVE, StreamKind.CATCHUP -> "live"
-                    StreamKind.VOD_EPISODE -> "episode"
-                    else -> "movie"
-                },
-                providerRef = null,
-                title = stream.title,
-                positionMs = videoEngine.state.value.positionMs,
-            )
+            val success = runCatching {
+                remotePlaybackRepo.startHandoff(
+                    targetPeerId = targetPeerId,
+                    contentKey = stream.stableHash,
+                    // The account key computed in Rust (PRD-41 identity), never the server address.
+                    sourceKey = remotePlaybackRepo.sourceKeyForItem(stream.itemId),
+                    itemKind = when (stream.kind) {
+                        StreamKind.LIVE, StreamKind.CATCHUP -> "live"
+                        StreamKind.VOD_EPISODE -> "episode"
+                        else -> "movie"
+                    },
+                    providerRef = null,
+                    title = stream.title,
+                    positionMs = videoEngine.state.value.positionMs,
+                )
+            }.getOrElse { err ->
+                if (err is CancellationException) throw err
+                _screenState.update {
+                    it.copy(statusToast = formatPlaybackErrorMessage("Transfert vers l'autre appareil impossible", err))
+                }
+                return@launch
+            }
             if (success) {
                 stopPlaybackAndCleanup()
                 onTransferred()
@@ -252,6 +263,7 @@ class PlayerViewModel @Inject constructor(
             (stream.kind == StreamKind.LIVE || stream.kind == StreamKind.VOD_MOVIE || stream.kind == StreamKind.VOD_EPISODE)
         _screenState.update {
             it.copy(
+                errorMessage = null,
                 nextUpCard = null,
                 upNextShelf = persistentListOf(),
                 canToggleFavorite = canFavorite,
@@ -396,12 +408,26 @@ class PlayerViewModel @Inject constructor(
 
     private fun openUpNext(item: UpNextItem) {
         viewModelScope.launch {
-            _screenState.update { it.copy(nextUpCard = null) }
+            _screenState.update { it.copy(nextUpCard = null, errorMessage = null) }
             persistCurrentProgress()
             // Start 0: the repository resumes at the saved position unless the title was finished.
-            val stream = catalogRepository.resolvePlayableStream(item.itemId, 0L) ?: return@launch
+            val stream = runCatching {
+                catalogRepository.resolvePlayableStream(item.itemId, 0L)
+            }.getOrElse { err ->
+                if (err is CancellationException) throw err
+                _screenState.update {
+                    it.copy(errorMessage = formatPlaybackErrorMessage("Impossible de lancer le titre suivant", err))
+                }
+                return@launch
+            }
+            if (stream == null) {
+                _screenState.update {
+                    it.copy(errorMessage = "Impossible de lancer le titre suivant : flux introuvable.")
+                }
+                return@launch
+            }
             if (stream.kind == StreamKind.LIVE) {
-                settingsRepository.setLastChannelId(stream.itemId)
+                runCatching { settingsRepository.setLastChannelId(stream.itemId) }
                 videoEngine.zap(stream)
             } else {
                 // Same player: ExoPlayer drops the previous provider connection before opening this one.
@@ -416,7 +442,10 @@ class PlayerViewModel @Inject constructor(
         if (!_screenState.value.canToggleFavorite) return
         viewModelScope.launch {
             val newState = runCatching { catalogRepository.toggleFavoriteForPlayback(stream.itemId) }
-                .getOrElse { return@launch }
+                .getOrElse { err ->
+                    if (err is CancellationException) throw err
+                    return@launch
+                }
             _screenState.update { it.copy(isFavorite = newState) }
         }
     }
@@ -425,29 +454,75 @@ class PlayerViewModel @Inject constructor(
         videoEngine.setPlaybackSpeed(speed)
     }
 
-    private fun startRequestedStream() {
+    fun retryPlayback() {
+        val active = videoEngine.state.value.activeStream
+        _screenState.update { it.copy(errorMessage = null) }
+        if (active != null && catchupStartEpoch <= 0L) {
+            val resumePos = if (active.kind == StreamKind.LIVE) {
+                0L
+            } else {
+                videoEngine.state.value.positionMs.coerceAtLeast(active.startPositionMs)
+            }
+            videoEngine.play(active.copy(startPositionMs = resumePos))
+        } else {
+            startRequestedStream(forceRestart = true)
+        }
+    }
+
+    private fun surfacePlaybackError(fallback: String, error: Throwable? = null) {
+        val msg = if (error != null) formatPlaybackErrorMessage(fallback, error) else fallback
+        if (videoEngine.state.value.activeStream == null) {
+            _screenState.update { it.copy(errorMessage = msg) }
+        } else {
+            _screenState.update { it.copy(statusToast = msg) }
+        }
+    }
+
+    private fun startRequestedStream(forceRestart: Boolean = false) {
         if (itemId <= 0L) return
         // Reuse already-playing stream if user expanded inline Live player to fullscreen!
         val existing = videoEngine.state.value.activeStream
-        if (existing != null && existing.itemId == itemId && catchupStartEpoch <= 0L) {
+        if (!forceRestart && existing != null && existing.itemId == itemId && catchupStartEpoch <= 0L) {
             loadAlternateVersionsIfMovie(existing)
             return
         }
 
         viewModelScope.launch {
-            val stream = if (catchupStartEpoch > 0L && catchupEndEpoch > catchupStartEpoch) {
-                epgRepository.buildCatchupStream(itemId, catchupStartEpoch, catchupEndEpoch)
-            } else {
-                catalogRepository.resolvePlayableStream(itemId, startPositionMs)
-            } ?: return@launch
-
-            val prefs = settingsRepository.currentPreferences()
-            if (minOf(prefs.assumedMaxConnections, stream.maxConnectionsForSource) <= 1) {
-                pausedDownloadsForSession = true
-                downloadsRepository.pauseAllForPlayback()
+            _screenState.update { it.copy(errorMessage = null) }
+            val stream = runCatching {
+                if (catchupStartEpoch > 0L && catchupEndEpoch > catchupStartEpoch) {
+                    epgRepository.buildCatchupStream(itemId, catchupStartEpoch, catchupEndEpoch)
+                } else {
+                    catalogRepository.resolvePlayableStream(itemId, startPositionMs)
+                }
+            }.getOrElse { err ->
+                if (err is CancellationException) throw err
+                _screenState.update {
+                    it.copy(errorMessage = formatPlaybackErrorMessage("Impossible de préparer la lecture", err))
+                }
+                return@launch
             }
-            if (stream.kind == StreamKind.LIVE) {
-                settingsRepository.setLastChannelId(stream.itemId)
+            if (stream == null) {
+                _screenState.update {
+                    it.copy(errorMessage = "Impossible d'ouvrir ce média : flux introuvable pour cette source.")
+                }
+                return@launch
+            }
+
+            runCatching {
+                val prefs = settingsRepository.currentPreferences()
+                if (minOf(prefs.assumedMaxConnections, stream.maxConnectionsForSource) <= 1) {
+                    pausedDownloadsForSession = true
+                    downloadsRepository.pauseAllForPlayback()
+                }
+                if (stream.kind == StreamKind.LIVE) {
+                    settingsRepository.setLastChannelId(stream.itemId)
+                }
+            }.onFailure { err ->
+                if (err is CancellationException) throw err
+                _screenState.update {
+                    it.copy(statusToast = formatPlaybackErrorMessage("Préparation partielle de la lecture", err))
+                }
             }
             loadAlternateVersionsIfMovie(stream)
             videoEngine.play(stream)
@@ -485,19 +560,26 @@ class PlayerViewModel @Inject constructor(
         if (stream.kind != StreamKind.VOD_MOVIE && stream.kind != StreamKind.VOD_EPISODE) return
         if (snap.positionMs <= 5_000L) return
 
-        catalogRepository.recordWatchProgress(
-            stableHash = stream.stableHash,
-            positionMs = snap.positionMs,
-            durationMs = snap.durationMs,
-        )
-        watchNextPublisher.publishContinueWatching(
-            itemId = stream.itemId,
-            title = stream.title,
-            posterUrl = stream.posterUrl,
-            positionMs = snap.positionMs,
-            durationMs = snap.durationMs,
-            isEpisode = stream.kind == StreamKind.VOD_EPISODE,
-        )
+        runCatching {
+            catalogRepository.recordWatchProgress(
+                stableHash = stream.stableHash,
+                positionMs = snap.positionMs,
+                durationMs = snap.durationMs,
+            )
+            watchNextPublisher.publishContinueWatching(
+                itemId = stream.itemId,
+                title = stream.title,
+                posterUrl = stream.posterUrl,
+                positionMs = snap.positionMs,
+                durationMs = snap.durationMs,
+                isEpisode = stream.kind == StreamKind.VOD_EPISODE,
+            )
+        }.onFailure { err ->
+            if (err is CancellationException) throw err
+            _screenState.update {
+                it.copy(statusToast = formatPlaybackErrorMessage("Sauvegarde de progression impossible", err))
+            }
+        }
     }
 
     fun toggleControls() {
@@ -551,8 +633,17 @@ class PlayerViewModel @Inject constructor(
         _screenState.update { it.copy(showVersionsSheet = false) }
         viewModelScope.launch {
             val currentPos = videoEngine.state.value.positionMs
-            val nextStream = catalogRepository.resolvePlayableStream(altMovie.id, currentPos)
-                ?: return@launch
+            val nextStream = runCatching {
+                catalogRepository.resolvePlayableStream(altMovie.id, currentPos)
+            }.getOrElse { err ->
+                if (err is CancellationException) throw err
+                surfacePlaybackError("Impossible de charger cette version", err)
+                return@launch
+            }
+            if (nextStream == null) {
+                surfacePlaybackError("Version indisponible pour cette source.")
+                return@launch
+            }
             videoEngine.play(nextStream)
         }
     }
@@ -565,13 +656,26 @@ class PlayerViewModel @Inject constructor(
         zapDebounceJob = viewModelScope.launch {
             val target = runCatching {
                 catalogRepository.getAdjacentChannel(anchorId, delta, activeGroupTitle)
-            }.getOrNull() ?: return@launch
+            }.getOrElse { err ->
+                if (err is CancellationException) throw err
+                surfacePlaybackError("Changement de chaîne impossible", err)
+                return@launch
+            } ?: return@launch
             pendingZapChannel = target
             _screenState.update { it.copy(pendingZapTitle = target.name) }
             delay(zapDebounceMs)
             pendingZapChannel = null
             _screenState.update { it.copy(pendingZapTitle = null) }
-            val nextStream = zapToChannelUseCase.byId(target.id) ?: return@launch
+            val nextStream = runCatching { zapToChannelUseCase.byId(target.id) }
+                .getOrElse { err ->
+                    if (err is CancellationException) throw err
+                    surfacePlaybackError("Impossible d'ouvrir ${target.name}", err)
+                    return@launch
+                }
+            if (nextStream == null) {
+                surfacePlaybackError("Chaîne ${target.name} indisponible.")
+                return@launch
+            }
             videoEngine.zap(nextStream)
         }
     }
@@ -583,7 +687,16 @@ class PlayerViewModel @Inject constructor(
         pendingZapChannel = null
         _screenState.update { it.copy(pendingZapTitle = null) }
         viewModelScope.launch {
-            val stream = zapToChannelUseCase.byId(prevId) ?: return@launch
+            val stream = runCatching { zapToChannelUseCase.byId(prevId) }
+                .getOrElse { err ->
+                    if (err is CancellationException) throw err
+                    surfacePlaybackError("Impossible de revenir à la chaîne précédente", err)
+                    return@launch
+                }
+            if (stream == null) {
+                surfacePlaybackError("Chaîne précédente indisponible.")
+                return@launch
+            }
             videoEngine.zap(stream)
         }
     }
@@ -607,7 +720,12 @@ class PlayerViewModel @Inject constructor(
         _screenState.update { it.copy(channelDigitBuffer = "") }
         val number = raw.toIntOrNull()?.takeIf { it > 0 } ?: return
         viewModelScope.launch {
-            val next = zapToChannelUseCase.byNumber(number)
+            val next = runCatching { zapToChannelUseCase.byNumber(number) }
+                .getOrElse { err ->
+                    if (err is CancellationException) throw err
+                    surfacePlaybackError("Impossible de charger la chaîne $number", err)
+                    return@launch
+                }
             if (next != null) {
                 pendingZapChannel = null
                 _screenState.update { it.copy(pendingZapTitle = null) }
@@ -622,7 +740,13 @@ class PlayerViewModel @Inject constructor(
         val channelId = currentLiveChannel?.id ?: videoEngine.state.value.activeStream?.itemId ?: return
         val slot = _screenState.value.liveNowSlot ?: return
         viewModelScope.launch {
-            val stream = epgRepository.buildCatchupStream(channelId, slot.startEpochSecs, slot.endEpochSecs)
+            val stream = runCatching {
+                epgRepository.buildCatchupStream(channelId, slot.startEpochSecs, slot.endEpochSecs)
+            }.getOrElse { err ->
+                if (err is CancellationException) throw err
+                surfacePlaybackError("Impossible de lancer le replay", err)
+                return@launch
+            }
             if (stream != null) {
                 videoEngine.play(stream)
             } else {
@@ -634,7 +758,16 @@ class PlayerViewModel @Inject constructor(
     fun returnToLive() {
         val channelId = videoEngine.state.value.activeStream?.itemId ?: currentLiveChannel?.id ?: return
         viewModelScope.launch {
-            val stream = zapToChannelUseCase.byId(channelId) ?: return@launch
+            val stream = runCatching { zapToChannelUseCase.byId(channelId) }
+                .getOrElse { err ->
+                    if (err is CancellationException) throw err
+                    surfacePlaybackError("Impossible de revenir au direct", err)
+                    return@launch
+                }
+            if (stream == null) {
+                surfacePlaybackError("Direct indisponible pour cette chaîne.")
+                return@launch
+            }
             videoEngine.zap(stream)
         }
     }
@@ -645,7 +778,16 @@ class PlayerViewModel @Inject constructor(
         pendingZapChannel = null
         _screenState.update { it.copy(pendingZapTitle = null, showChannelDrawer = false) }
         viewModelScope.launch {
-            val stream = zapToChannelUseCase.byId(mirror.id) ?: return@launch
+            val stream = runCatching { zapToChannelUseCase.byId(mirror.id) }
+                .getOrElse { err ->
+                    if (err is CancellationException) throw err
+                    surfacePlaybackError("Impossible d'ouvrir le miroir ${mirror.name}", err)
+                    return@launch
+                }
+            if (stream == null) {
+                surfacePlaybackError("Miroir ${mirror.name} indisponible.")
+                return@launch
+            }
             videoEngine.zap(stream)
         }
     }
@@ -670,7 +812,16 @@ class PlayerViewModel @Inject constructor(
         pendingZapChannel = null
         if (channel.id == videoEngine.state.value.activeStream?.itemId) return
         viewModelScope.launch {
-            val stream = zapToChannelUseCase.byId(channel.id) ?: return@launch
+            val stream = runCatching { zapToChannelUseCase.byId(channel.id) }
+                .getOrElse { err ->
+                    if (err is CancellationException) throw err
+                    surfacePlaybackError("Impossible d'ouvrir ${channel.name}", err)
+                    return@launch
+                }
+            if (stream == null) {
+                surfacePlaybackError("Chaîne ${channel.name} indisponible.")
+                return@launch
+            }
             videoEngine.zap(stream)
         }
     }
@@ -811,7 +962,12 @@ class PlayerViewModel @Inject constructor(
             _screenState.update { it.copy(failoverBanner = null) }
         }
         viewModelScope.launch {
-            val nextStream = zapToChannelUseCase.byId(nextMirror.id) ?: return@launch
+            val nextStream = runCatching { zapToChannelUseCase.byId(nextMirror.id) }
+                .getOrElse { err ->
+                    if (err is CancellationException) throw err
+                    surfacePlaybackError("Bascule vers ${nextMirror.name} impossible", err)
+                    return@launch
+                } ?: return@launch
             videoEngine.zap(nextStream)
         }
     }
@@ -825,6 +981,9 @@ class PlayerViewModel @Inject constructor(
                 downloadsRepository.enqueueDownload(stream.itemId)
                 val prefs = settingsRepository.currentPreferences()
                 DownloadForegroundWorker.enqueue(appContext, allowCellular = prefs.downloadOverCellular)
+            }.onFailure { err ->
+                if (err is CancellationException) throw err
+                surfacePlaybackError("Téléchargement impossible", err)
             }
             onNavigateToDownloads()
         }
@@ -837,7 +996,7 @@ class PlayerViewModel @Inject constructor(
             if (activeKind != StreamKind.LIVE) {
                 videoEngine.stop()
                 if (pausedDownloadsForSession) {
-                    downloadsRepository.resumeAfterPlayback()
+                    runCatching { downloadsRepository.resumeAfterPlayback() }
                 }
             }
         }

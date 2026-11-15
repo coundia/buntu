@@ -15,6 +15,7 @@ import com.pcoundia.buntu.core.domain.model.RecoDomainKind
 import com.pcoundia.buntu.core.domain.model.RecoShelfGroup
 import com.pcoundia.buntu.core.domain.model.SeriesItem
 import com.pcoundia.buntu.core.domain.repository.CatalogRepository
+import kotlinx.coroutines.CancellationException
 import com.pcoundia.buntu.core.domain.usecase.LoadShelvesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
@@ -56,9 +57,33 @@ class SeriesViewModel @Inject constructor(
 
     fun openRemoteMenu() = playOnAnotherDevice.reset()
 
+    /** Favorite of the item behind a card menu (an episode reads its series, as in the player). */
+    suspend fun isItemFavorite(itemId: Long): Boolean? =
+        runCatching { catalogRepository.isFavoriteForPlayback(itemId) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
+
+    /** Flips the favorite of the item behind a card menu; returns the new state, or `null` on failure. */
+    suspend fun toggleItemFavorite(itemId: Long): Boolean? =
+        runCatching { catalogRepository.toggleFavoriteForPlayback(itemId) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
+
     fun playOnDevice(deviceId: String, itemId: Long, onSent: () -> Unit) {
         viewModelScope.launch { if (playOnAnotherDevice(deviceId, itemId)) onSent() }
     }
+
+    // Series cards come from a paged list that is not refreshed by a toggle: remember what the user set.
+    private val seriesFavoriteOverrides = mutableMapOf<String, Boolean>()
+
+    fun isSeriesFavorite(series: SeriesItem): Boolean = seriesFavoriteOverrides[series.stableHash] ?: series.isFavorite
+
+    /** Flips the favorite of a series card; returns the new state, or `null` on failure. */
+    suspend fun toggleSeriesFavorite(series: SeriesItem): Boolean? =
+        runCatching { catalogRepository.toggleFavorite(series.stableHash, "series") }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
+            ?.also { seriesFavoriteOverrides[series.stableHash] = it }
 
     private val _uiState = MutableStateFlow(SeriesUiState())
     val uiState: StateFlow<SeriesUiState> = _uiState.asStateFlow()
@@ -95,6 +120,10 @@ class SeriesViewModel @Inject constructor(
 
     fun selectCategory(category: String?) {
         _uiState.update { it.copy(selectedCategory = category) }
+    }
+
+    fun selectSort(sort: CatalogSort) {
+        _uiState.update { it.copy(sort = sort) }
     }
 
     fun toggleFavoritesOnly() {

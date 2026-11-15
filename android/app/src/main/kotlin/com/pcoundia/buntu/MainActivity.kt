@@ -115,7 +115,10 @@ class MainActivity : ComponentActivity() {
             }
 
             LaunchedEffect(Unit) {
-                sourcesRepository.refreshSourcesList()
+                runCatching { sourcesRepository.refreshSourcesList() }
+                    .onFailure { err ->
+                        appLogger.warn("STARTUP", "Échec rafraîchissement sources: ${err.message ?: err.javaClass.simpleName}")
+                    }
                 launch {
                     remotePlaybackRepo.incomingPlayInstructions.collect { instruction ->
                         videoEngine.stop()
@@ -140,12 +143,16 @@ class MainActivity : ComponentActivity() {
                         .distinctUntilChanged { a, b -> a?.itemId == b?.itemId }
                         .collectLatest { active ->
                             if (active == null) {
-                                remotePlaybackRepo.onLocalPlaybackStopped()
+                                runCatching { remotePlaybackRepo.onLocalPlaybackStopped() }
                                 return@collectLatest
                             }
-                            remotePlaybackRepo.setLocalPlaybackActive(active.stableHash, active.title, null)
-                            val sourceKey = remotePlaybackRepo.sourceKeyForItem(active.itemId)
-                            remotePlaybackRepo.setLocalPlaybackActive(active.stableHash, active.title, sourceKey)
+                            runCatching {
+                                remotePlaybackRepo.setLocalPlaybackActive(active.stableHash, active.title, null)
+                                val sourceKey = remotePlaybackRepo.sourceKeyForItem(active.itemId)
+                                remotePlaybackRepo.setLocalPlaybackActive(active.stableHash, active.title, sourceKey)
+                            }.onFailure { err ->
+                                appLogger.warn("REMOTE", "Synchronisation lecture locale ignorée: ${err.message ?: err.javaClass.simpleName}")
+                            }
                         }
                 }
             }

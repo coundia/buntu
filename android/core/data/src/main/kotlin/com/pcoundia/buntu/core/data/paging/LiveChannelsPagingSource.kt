@@ -6,6 +6,7 @@ import com.pcoundia.buntu.core.data.mapper.EngineMappers.toChannelDomain
 import com.pcoundia.buntu.core.data.mapper.EngineMappers.toEngineSort
 import com.pcoundia.buntu.core.domain.model.CatalogQuery
 import com.pcoundia.buntu.core.domain.model.ChannelItem
+import com.pcoundia.buntu.core.domain.repository.PlaybackHealthRepository
 import com.pcoundia.buntu.core.engine.EngineProvider
 import com.pcoundia.buntu.core.engine.ffi.CatalogFilter
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +20,7 @@ import kotlinx.coroutines.withContext
 class LiveChannelsPagingSource(
     private val engineProvider: EngineProvider,
     private val query: CatalogQuery,
+    private val playbackHealth: PlaybackHealthRepository? = null,
 ) : PagingSource<Int, ChannelItem>() {
 
     override fun getRefreshKey(state: PagingState<Int, ChannelItem>): Int? {
@@ -60,8 +62,10 @@ class LiveChannelsPagingSource(
                     emptyMap()
                 }
 
+                val brokenStatuses = playbackHealth?.brokenChannels?.value.orEmpty()
                 val mapped = rows.map { row ->
-                    row.toChannelDomain(nowNext = row.tvgId?.let(nowNextByTvg::get))
+                    val domain = row.toChannelDomain(nowNext = row.tvgId?.let(nowNextByTvg::get))
+                    brokenStatuses[domain.stableHash]?.let { domain.copy(isBroken = it) } ?: domain
                 }
 
                 LoadResult.Page(

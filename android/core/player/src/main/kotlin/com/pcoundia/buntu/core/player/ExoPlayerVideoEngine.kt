@@ -1,6 +1,7 @@
 package com.pcoundia.buntu.core.player
 
 import android.content.Context
+import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Looper
 import androidx.annotation.OptIn
@@ -23,6 +24,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.pcoundia.buntu.core.domain.model.PlayableStream
+import com.pcoundia.buntu.core.domain.model.LiveBuffer
+import com.pcoundia.buntu.core.domain.model.StreamDiagnosis
 import com.pcoundia.buntu.core.domain.model.StreamKind
 import com.pcoundia.buntu.core.domain.repository.DownloadsRepository
 import com.pcoundia.buntu.core.domain.repository.SettingsRepository
@@ -32,6 +35,8 @@ import com.pcoundia.buntu.core.platform.logging.RedactedAppLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -59,8 +64,24 @@ class ExoPlayerVideoEngine @Inject constructor(
     private val playbackHealth: com.pcoundia.buntu.core.domain.repository.PlaybackHealthRepository,
 ) : VideoEngine {
 
-    private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val engineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        val diagnosis = StallWatchdog.classifyFailure(extractHttpStatusCode(throwable), throwable)
+        logger.error(
+            "PLAYER",
+            "Exception lecteur interceptée (${RedactedAppLogger.describeStreamUrl(_state.value.activeStream?.originalUrl)}) -> ${diagnosis.userMessage}",
+            throwable,
+        )
+        _state.update {
+            it.copy(
+                isPlaying = false,
+                isBuffering = false,
+                diagnosis = diagnosis,
+            )
+        }
+    }
+
+    private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + engineExceptionHandler)
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + engineExceptionHandler)
 
     private val _state = MutableStateFlow(PlayerEngineState())
     override val state: StateFlow<PlayerEngineState> = _state.asStateFlow()
@@ -91,6 +112,10 @@ class ExoPlayerVideoEngine @Inject constructor(
     private val watchdog = StallWatchdog()
     private var tickerJob: Job? = null
     private var retryJob: Job? = null
+    private val connectivity = context.getSystemService(ConnectivityManager::class.java)
+    private var waitingForNetwork = false
+    private var openingJob: Job? = null
+    private var activeLiveBuffer = LiveBuffer.AUTO
 
     private val byteCountingListener = object : TransferListener {
         override fun onTransferInitializing(source: androidx.media3.datasource.DataSource, dataSpec: DataSpec, isNetwork: Boolean) = Unit
@@ -178,7 +203,7 @@ class ExoPlayerVideoEngine @Inject constructor(
         override fun onPlayerError(error: PlaybackException) {
             liveHealth.failed()
             val httpCode = extractHttpStatusCode(error)
-            val diagnosis = StallWatchdog.classifyFailure(httpCode, error.cause ?: error)
+            val diagnosis = StallWatchdog.classifyFailure(httpCode, error.cause ?: error, error.errorCode)
             logger.warn(
                 "PLAYER",
                 "Erreur lecture (${RedactedAppLogger.describeStreamUrl(_state.value.activeStream?.originalUrl)}) -> ${diagnosis.userMessage}",
@@ -191,7 +216,14 @@ class ExoPlayerVideoEngine @Inject constructor(
                 retryJob?.cancel()
                 retryJob = mainScope.launch {
                     delay(delayMs)
+                    if (openingJob?.isActive == true) return@launch
                     val stream = _state.value.activeStream ?: return@launch
+                    if (stream.kind != StreamKind.LOCAL_FILE && connectivity != null &&
+                        connectivity.activeNetwork == null
+                    ) {
+                        waitingForNetwork = true
+                        return@launch
+                    }
                     val resumePos = exoPlayer.currentPosition.coerceAtLeast(0L)
                     openInternal(stream.copy(startPositionMs = resumePos), resetRetries = false)
                 }
@@ -202,110 +234,169 @@ class ExoPlayerVideoEngine @Inject constructor(
     override fun play(stream: PlayableStream) {
         mainScope.launch {
             if (stream.maxConnectionsForSource <= 1) {
-                ioScope.launch { downloadsRepository.pauseAllForPlayback() }
+                ioScope.launch { runCatching { downloadsRepository.pauseAllForPlayback() } }
             }
             applyTvPreferences()
-            openInternal(stream, resetRetries = true)
+            openWithPreferences(stream)
         }
     }
 
     override fun zap(stream: PlayableStream) {
         // PRD-37 § 4.3: Reuse the exact same ExoPlayer & video surface without recreating either!
         mainScope.launch {
+            openWithPreferences(stream)
+        }
+    }
+
+    private fun openWithPreferences(stream: PlayableStream) {
+        openingJob?.cancel()
+        retryJob?.cancel()
+        openingJob = mainScope.launch {
+            activeLiveBuffer = if (stream.kind == StreamKind.LIVE) {
+                try {
+                    settingsRepository.currentPreferences().liveBuffer
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    LiveBuffer.AUTO
+                }
+            } else {
+                LiveBuffer.AUTO
+            }
             openInternal(stream, resetRetries = true)
         }
     }
 
     private fun openInternal(stream: PlayableStream, resetRetries: Boolean) {
-        retryJob?.cancel()
-        if (resetRetries) {
-            errorRetryAttempt = 0
-            bandwidthWarningDismissedForItemId = null
-        }
-        liveHealth.open(stream.stableHash.takeIf { stream.kind == StreamKind.LIVE })
-        val now = System.currentTimeMillis()
-        watchdog.reset(now)
-        windowStartMs = now
-        windowBytes = totalBytesReceived.get()
-
-        logger.info(
-            "PLAYER",
-            "Ouverture « ${stream.title} » (${RedactedAppLogger.describeStreamUrl(stream.originalUrl)}, relay=${stream.usesSingleConnectionRelay})",
-        )
-
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(10_000)
-            .setReadTimeoutMs(15_000)
-            .setTransferListener(byteCountingListener)
-
-        if (!stream.usesSingleConnectionRelay) {
-            val headers = buildMap {
-                putAll(stream.headers)
-                stream.referer?.takeIf(String::isNotBlank)?.let { put("Referer", it) }
+        try {
+            val shouldPlay = resetRetries || exoPlayer.playWhenReady
+            retryJob?.cancel()
+            if (resetRetries) {
+                errorRetryAttempt = 0
+                waitingForNetwork = false
+                bandwidthWarningDismissedForItemId = null
             }
-            if (headers.isNotEmpty()) {
-                httpFactory.setDefaultRequestProperties(headers)
+            liveHealth.open(stream.stableHash.takeIf { stream.kind == StreamKind.LIVE })
+            val now = System.currentTimeMillis()
+            watchdog.reset(now)
+            windowStartMs = now
+            windowBytes = totalBytesReceived.get()
+
+            logger.info(
+                "PLAYER",
+                "Ouverture « ${stream.title} » (${RedactedAppLogger.describeStreamUrl(stream.originalUrl)}, relay=${stream.usesSingleConnectionRelay})",
+            )
+
+            val httpFactory = DefaultHttpDataSource.Factory()
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(10_000)
+                .setReadTimeoutMs(15_000)
+                .setTransferListener(byteCountingListener)
+
+            if (!stream.usesSingleConnectionRelay) {
+                val headers = buildMap {
+                    putAll(stream.headers)
+                    stream.referer?.takeIf(String::isNotBlank)?.let { put("Referer", it) }
+                }
+                if (headers.isNotEmpty()) {
+                    httpFactory.setDefaultRequestProperties(headers)
+                }
+                stream.userAgent?.takeIf(String::isNotBlank)?.let { httpFactory.setUserAgent(it) }
             }
-            stream.userAgent?.takeIf(String::isNotBlank)?.let { httpFactory.setUserAgent(it) }
-        }
 
-        val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
-        val mediaSourceFactory = DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory)
+            val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+            val mediaSourceFactory = DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory)
 
-        val mediaItem = MediaItem.Builder()
-            .setMediaId(stream.itemId.toString())
-            .setUri(Uri.parse(stream.playbackUrl))
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(stream.title)
-                    .setSubtitle(stream.subtitle)
-                    .setArtworkUri(stream.posterUrl?.let(Uri::parse))
-                    .build()
+            val mediaItem = MediaItem.Builder()
+                .setMediaId(stream.itemId.toString())
+                .setUri(Uri.parse(stream.playbackUrl))
+                .apply {
+                    activeLiveBuffer.seconds?.let { seconds ->
+                        setTag(activeLiveBuffer)
+                        setLiveConfiguration(
+                            MediaItem.LiveConfiguration.Builder()
+                                .setTargetOffsetMs(seconds * 1_000L)
+                                .setMinPlaybackSpeed(1f)
+                                .setMaxPlaybackSpeed(1f)
+                                .build(),
+                        )
+                    }
+                }
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(stream.title)
+                        .setSubtitle(stream.subtitle)
+                        .setArtworkUri(stream.posterUrl?.let(Uri::parse))
+                        .build()
+                )
+                .build()
+
+            // A live channel always plays at normal speed; films keep the speed chosen by the user.
+            val speed = if (stream.kind == StreamKind.LIVE) 1.0f else _state.value.playbackSpeed
+            exoPlayer.setPlaybackSpeed(speed)
+            _state.update {
+                it.copy(
+                    activeStream = stream,
+                    isBroken = playbackHealth.brokenChannels.value[stream.stableHash] ?: false,
+                    isBuffering = true,
+                    isEnded = false,
+                    playbackSpeed = speed,
+                    diagnosis = null,
+                    bandwidthWarning = null,
+                    isLiveSeekable = false,
+                    liveOffsetMs = 0L,
+                    measuredBitrateBps = 0L,
+                    bufferedDurationMs = 0L,
+                    videoWidth = 0,
+                    videoHeight = 0,
+                )
+            }
+
+            val mediaSource = mediaSourceFactory.createMediaSource(mediaItem)
+            if (stream.startPositionMs > 0L && stream.kind != StreamKind.LIVE) {
+                exoPlayer.setMediaSource(mediaSource, stream.startPositionMs)
+            } else {
+                exoPlayer.setMediaSource(mediaSource)
+            }
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = shouldPlay
+            ensurePositionAndWatchdogTicker()
+        } catch (err: Throwable) {
+            liveHealth.failed()
+            val diagnosis = StallWatchdog.classifyFailure(extractHttpStatusCode(err), err)
+            logger.error(
+                "PLAYER",
+                "Impossible d'ouvrir « ${stream.title} » (${RedactedAppLogger.describeStreamUrl(stream.originalUrl)}) -> ${diagnosis.userMessage}",
+                err,
             )
-            .build()
-
-        // A live channel always plays at normal speed; films keep the speed chosen by the user.
-        val speed = if (stream.kind == StreamKind.LIVE) 1.0f else _state.value.playbackSpeed
-        exoPlayer.setPlaybackSpeed(speed)
-        _state.update {
-            it.copy(
-                activeStream = stream,
-                isBroken = playbackHealth.brokenChannels.value[stream.stableHash] ?: false,
-                isBuffering = true,
-                isEnded = false,
-                playbackSpeed = speed,
-                diagnosis = null,
-                bandwidthWarning = null,
-                isLiveSeekable = false,
-                liveOffsetMs = 0L,
-            )
+            _state.update {
+                it.copy(
+                    activeStream = stream,
+                    isPlaying = false,
+                    isBuffering = false,
+                    diagnosis = diagnosis,
+                )
+            }
         }
-
-        val mediaSource = mediaSourceFactory.createMediaSource(mediaItem)
-        if (stream.startPositionMs > 0L && stream.kind != StreamKind.LIVE) {
-            exoPlayer.setMediaSource(mediaSource, stream.startPositionMs)
-        } else {
-            exoPlayer.setMediaSource(mediaSource)
-        }
-        exoPlayer.prepare()
-        exoPlayer.playWhenReady = true
-        ensurePositionAndWatchdogTicker()
     }
 
     private fun applyTvPreferences() {
         if (!deviceCapabilities.isTelevision) return
         ioScope.launch {
-            val prefs = settingsRepository.currentPreferences()
+            val prefs = runCatching { settingsRepository.currentPreferences() }.getOrNull() ?: return@launch
             mainScope.launch {
-                exoPlayer.videoChangeFrameRateStrategy = if (prefs.autoFrameRateMatchingTv) {
-                    C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS
-                } else {
-                    C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF
+                runCatching {
+                    exoPlayer.videoChangeFrameRateStrategy = if (prefs.autoFrameRateMatchingTv) {
+                        C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS
+                    } else {
+                        C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF
+                    }
+                    trackSelector.parameters = trackSelector.buildUponParameters()
+                        .setTunnelingEnabled(prefs.tunnelingEnabledTv)
+                        .build()
+                }.onFailure { err ->
+                    logger.warn("PLAYER", "Préférences TV ignorées: ${err.message ?: err.javaClass.simpleName}")
                 }
-                trackSelector.parameters = trackSelector.buildUponParameters()
-                    .setTunnelingEnabled(prefs.tunnelingEnabledTv)
-                    .build()
             }
         }
     }
@@ -316,61 +407,94 @@ class ExoPlayerVideoEngine @Inject constructor(
             while (isActive) {
                 delay(1_000L)
                 val stream = _state.value.activeStream ?: continue
-                val now = System.currentTimeMillis()
-                val bytesNow = totalBytesReceived.get()
-                val elapsedSec = ((now - windowStartMs).coerceAtLeast(1L)) / 1000.0
-                val measuredBps = (((bytesNow - windowBytes).coerceAtLeast(0L) * 8.0) / elapsedSec).toLong()
-                if (now - windowStartMs >= 4_000L) {
-                    windowStartMs = now
-                    windowBytes = bytesNow
-                }
+                try {
+                    val now = System.currentTimeMillis()
+                    val bytesNow = totalBytesReceived.get()
+                    val elapsedSec = ((now - windowStartMs).coerceAtLeast(1L)) / 1000.0
+                    val measuredBps = (((bytesNow - windowBytes).coerceAtLeast(0L) * 8.0) / elapsedSec).toLong()
+                    if (now - windowStartMs >= 4_000L) {
+                        windowStartMs = now
+                        windowBytes = bytesNow
+                    }
 
-                val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
-                liveHealth.progress(pos, exoPlayer.isPlaying)
-                val dur = exoPlayer.duration.takeIf { it > 0L } ?: 0L
-                val buf = exoPlayer.bufferedPosition.coerceAtLeast(0L)
-                val liveSeekable = stream.kind == StreamKind.LIVE &&
-                    exoPlayer.isCurrentMediaItemLive &&
-                    exoPlayer.isCurrentMediaItemSeekable
-                val liveOffset = if (liveSeekable && dur > 0L) (dur - pos).coerceAtLeast(0L) else 0L
+                    val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
+                    liveHealth.progress(pos, exoPlayer.isPlaying)
+                    val dur = exoPlayer.duration.takeIf { it > 0L } ?: 0L
+                    val buf = exoPlayer.bufferedPosition.coerceAtLeast(0L)
+                    val bufferedDuration = exoPlayer.totalBufferedDuration.coerceAtLeast(0L)
+                    val videoSize = exoPlayer.videoSize
+                    val liveSeekable = stream.kind == StreamKind.LIVE &&
+                        exoPlayer.isCurrentMediaItemLive &&
+                        exoPlayer.isCurrentMediaItemSeekable
+                    val liveOffset = if (liveSeekable && dur > 0L) (dur - pos).coerceAtLeast(0L) else 0L
 
-                // PRD-37 § 4.3: Check insufficient bandwidth on heavy VOD files
-                val bwAssessment = if (
-                    (stream.kind == StreamKind.VOD_MOVIE || stream.kind == StreamKind.VOD_EPISODE) &&
-                    bandwidthWarningDismissedForItemId != stream.itemId &&
-                    measuredBps > 0L
-                ) {
-                    assessBandwidth(
-                        measuredBitsPerSec = measuredBps,
-                        fileSizeBytes = stream.expectedFileSizeBytes,
-                        durationMs = dur.takeIf { it > 0L } ?: stream.expectedDurationMs,
-                    )?.takeIf { it.isInsufficient }
-                } else {
-                    null
-                }
+                    // PRD-37 § 4.3: Check insufficient bandwidth on heavy VOD files
+                    val bwAssessment = if (
+                        (stream.kind == StreamKind.VOD_MOVIE || stream.kind == StreamKind.VOD_EPISODE) &&
+                        bandwidthWarningDismissedForItemId != stream.itemId &&
+                        measuredBps > 0L
+                    ) {
+                        assessBandwidth(
+                            measuredBitsPerSec = measuredBps,
+                            fileSizeBytes = stream.expectedFileSizeBytes,
+                            durationMs = dur.takeIf { it > 0L } ?: stream.expectedDurationMs,
+                        )?.takeIf { it.isInsufficient }
+                    } else {
+                        null
+                    }
 
-                _state.update {
-                    it.copy(
-                        positionMs = pos,
-                        durationMs = dur,
-                        bufferedPositionMs = buf,
-                        measuredBitrateBps = measuredBps,
-                        bandwidthWarning = bwAssessment ?: it.bandwidthWarning,
-                        isLiveSeekable = liveSeekable,
-                        liveOffsetMs = liveOffset,
-                    )
-                }
+                    _state.update {
+                        it.copy(
+                            positionMs = pos,
+                            durationMs = dur,
+                            bufferedPositionMs = buf,
+                            measuredBitrateBps = measuredBps,
+                            bufferedDurationMs = bufferedDuration,
+                            videoWidth = videoSize.width,
+                            videoHeight = videoSize.height,
+                            bandwidthWarning = bwAssessment ?: it.bandwidthWarning,
+                            isLiveSeekable = liveSeekable,
+                            liveOffsetMs = liveOffset,
+                        )
+                    }
 
-                // Stall watchdog: NEVER restarts while bytes are arriving!
-                if (watchdog.shouldRestartStalledStream(
-                        isBuffering = _state.value.isBuffering,
-                        totalBytesReceived = bytesNow,
-                        nowMs = now,
-                    )
-                ) {
+                    if (stream.kind != StreamKind.LOCAL_FILE && connectivity != null) {
+                        if (connectivity.activeNetwork == null) {
+                            waitingForNetwork = true
+                            watchdog.reset(now)
+                            continue
+                        }
+                        if (waitingForNetwork) {
+                            waitingForNetwork = false
+                            errorRetryAttempt = 0
+                            val diagnosis = _state.value.diagnosis
+                            val recoverable = diagnosis?.isFinalError != true || diagnosis == StreamDiagnosis.UnknownHost
+                            if (recoverable && exoPlayer.playerError != null && openingJob?.isActive != true) {
+                                openInternal(stream.copy(startPositionMs = pos), resetRetries = false)
+                                continue
+                            }
+                        }
+                    }
+
+                    // Stall watchdog: NEVER restarts while bytes are arriving!
+                    if (openingJob?.isActive != true && watchdog.shouldRestartStalledStream(
+                            isBuffering = _state.value.isBuffering,
+                            totalBytesReceived = bytesNow,
+                            nowMs = now,
+                            minimumStallThresholdMs = if (activeLiveBuffer == LiveBuffer.AUTO) 0L else 15_000L,
+                        )
+                    ) {
+                        liveHealth.failed()
+                        logger.warn("PLAYER", "Blocage détecté sans octets reçus -> relance sur la même session")
+                        openInternal(stream.copy(startPositionMs = pos), resetRetries = false)
+                    }
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (err: Throwable) {
                     liveHealth.failed()
-                    logger.warn("PLAYER", "Blocage détecté sans octets reçus -> relance sur la même session")
-                    openInternal(stream.copy(startPositionMs = pos), resetRetries = false)
+                    val diagnosis = StallWatchdog.classifyFailure(extractHttpStatusCode(err), err)
+                    logger.error("PLAYER", "Erreur pendant la lecture: ${diagnosis.userMessage}", err)
+                    _state.update { it.copy(isPlaying = false, isBuffering = false, diagnosis = diagnosis) }
                 }
             }
         }
@@ -478,6 +602,11 @@ class ExoPlayerVideoEngine @Inject constructor(
         _state.update { it.copy(aspectMode = mode) }
     }
 
+    override fun setMuted(muted: Boolean) {
+        mainScope.launch { exoPlayer.volume = if (muted) 0f else 1f }
+        _state.update { it.copy(isMuted = muted) }
+    }
+
     override fun seekToLiveEdge() {
         mainScope.launch {
             exoPlayer.seekToDefaultPosition()
@@ -492,18 +621,21 @@ class ExoPlayerVideoEngine @Inject constructor(
 
     override fun stop() {
         mainScope.launch {
+            openingJob?.cancel()
             liveHealth.open(null)
             retryJob?.cancel()
             tickerJob?.cancel()
-            exoPlayer.stop()
-            exoPlayer.clearMediaItems()
+            runCatching {
+                exoPlayer.stop()
+                exoPlayer.clearMediaItems()
+            }
             _state.value = PlayerEngineState(aspectMode = _state.value.aspectMode)
-            ioScope.launch { downloadsRepository.resumeAfterPlayback() }
+            ioScope.launch { runCatching { downloadsRepository.resumeAfterPlayback() } }
         }
     }
 
-    private fun extractHttpStatusCode(error: PlaybackException): Int? {
-        var cur: Throwable? = error.cause
+    private fun extractHttpStatusCode(error: Throwable?): Int? {
+        var cur: Throwable? = error
         while (cur != null) {
             if (cur is HttpDataSource.InvalidResponseCodeException) {
                 return cur.responseCode

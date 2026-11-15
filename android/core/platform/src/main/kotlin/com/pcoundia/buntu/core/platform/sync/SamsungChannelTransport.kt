@@ -40,18 +40,28 @@ import kotlin.coroutines.coroutineContext
  * Which device is a TV is decided by [LocalSyncService] after decryption ([markTv]), never from the
  * clear envelope: any client of the relay can send one.
  */
-class SamsungChannelTransport(private val scope: CoroutineScope) {
+class SamsungChannelTransport(
+    private val scope: CoroutineScope,
+    /** The relay port of the TV; only tests use another one. */
+    private val port: Int = CHANNEL_PORT,
+) {
 
     companion object {
         const val SERVICE_TYPE = "_samsungmsf._tcp."
         const val CHANNEL_PORT = 8001
         const val EVENT = "buntu-sync-envelope"
+        const val FAILURES_BEFORE_REDISCOVERY = 3
     }
 
     var onEnvelopeReceived: ((DomainHouseholdSealedEnvelope) -> Unit)? = null
     var onConnected: (() -> Unit)? = null
     /** Called with the TVs that were reachable on the closed connection. */
     var onDisconnected: ((Set<String>) -> Unit)? = null
+    /**
+     * Called once when [FAILURES_BEFORE_REDISCOVERY] attempts in a row failed: the address may be stale
+     * (the TV got another IP from the router), so the TV must be looked for again.
+     */
+    var onRepeatedFailure: (() -> Unit)? = null
 
     @Volatile private var householdId: String? = null
     @Volatile private var isRunning = false
@@ -59,6 +69,8 @@ class SamsungChannelTransport(private val scope: CoroutineScope) {
     @Volatile private var socket: Socket? = null
     @Volatile var currentHost: String? = null
         private set
+    /** Time of the last message read from the relay; the TV announces itself every 30 s. */
+    @Volatile private var lastReceivedAt = 0L
     private val writeMutex = Mutex()
     private var connectionJob: Job? = null
     private val tvDeviceIds = Collections.synchronizedSet(mutableSetOf<String>())
@@ -88,6 +100,27 @@ class SamsungChannelTransport(private val scope: CoroutineScope) {
 
     fun isTv(deviceId: String): Boolean = connected && tvDeviceIds.contains(deviceId)
 
+    /**
+     * How long the open channel has been silent, `0` when it is not open. A TCP connection that died
+     * without a close (TV standby, Wi-Fi change, phone asleep) raises no error: silence is the only sign.
+     */
+    fun silentForMs(now: Long = System.currentTimeMillis()): Long =
+        if (connected) (now - lastReceivedAt).coerceAtLeast(0L) else 0L
+
+    /**
+     * Gives up the current connection and its host, but keeps the service running, so that the TV can be
+     * found again (possibly at another address) and a fresh connection opened.
+     */
+    fun drop() {
+        connectionJob?.cancel()
+        connectionJob = null
+        closeSocket()
+        currentHost = null
+    }
+
+    /** The devices currently known as TVs on this channel. */
+    fun tvIds(): Set<String> = synchronized(tvDeviceIds) { tvDeviceIds.toSet() }
+
     fun markTv(deviceId: String) {
         tvDeviceIds.add(deviceId)
     }
@@ -109,14 +142,14 @@ class SamsungChannelTransport(private val scope: CoroutineScope) {
             val sock = Socket()
             try {
                 socket = sock
-                sock.connect(InetSocketAddress(host, CHANNEL_PORT), 5000)
+                sock.connect(InetSocketAddress(host, port), 5000)
                 sock.tcpNoDelay = true
                 val input = BufferedInputStream(sock.getInputStream())
                 val output = sock.getOutputStream()
 
                 val key = WebSocketFrames.base64(ByteArray(16).also { SecureRandom().nextBytes(it) })
                 val upgrade = "GET /api/v2/channels/buntu.sync.$hId HTTP/1.1\r\n" +
-                    "Host: $host:$CHANNEL_PORT\r\n" +
+                    "Host: $host:$port\r\n" +
                     "Upgrade: websocket\r\n" +
                     "Connection: Upgrade\r\n" +
                     "Sec-WebSocket-Key: $key\r\n" +
@@ -131,6 +164,7 @@ class SamsungChannelTransport(private val scope: CoroutineScope) {
                 if (!status.contains(" 101")) throw IOException("upgrade refused")
                 while (!WebSocketFrames.readHttpLine(input).isNullOrEmpty()) { /* headers */ }
                 sock.soTimeout = 0
+                lastReceivedAt = System.currentTimeMillis()
 
                 while (coroutineContext.isActive && isRunning && !sock.isClosed) {
                     val text = WebSocketFrames.readText(input) { pong ->
@@ -138,6 +172,7 @@ class SamsungChannelTransport(private val scope: CoroutineScope) {
                             runCatching { writeMutex.withLock { WebSocketFrames.writeFrame(output, 0x8A, pong); output.flush() } }
                         }
                     } ?: break
+                    lastReceivedAt = System.currentTimeMillis()
                     if (handleIncoming(text)) attempts = 0
                 }
             } catch (_: Exception) {
@@ -147,6 +182,7 @@ class SamsungChannelTransport(private val scope: CoroutineScope) {
             if (socket === sock) closeSocket() else runCatching { sock.close() }
             if (!isRunning || !coroutineContext.isActive) break
             attempts++
+            if (attempts == FAILURES_BEFORE_REDISCOVERY) onRepeatedFailure?.invoke()
             delay((2000L shl attempts.coerceAtMost(4)).coerceAtMost(30_000L))
         }
     }
@@ -189,6 +225,8 @@ class SamsungChannelTransport(private val scope: CoroutineScope) {
             }
             true
         } catch (_: Exception) {
+            // The write failed: the link is dead. Closing it wakes the read loop, which reconnects.
+            if (socket === sock) closeSocket()
             false
         }
     }

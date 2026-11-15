@@ -3,6 +3,7 @@ package com.pcoundia.buntu.feature.player
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
+import com.pcoundia.buntu.core.domain.model.LiveBuffer
 import com.pcoundia.buntu.core.domain.model.ActiveRemoteControlSession
 import com.pcoundia.buntu.core.domain.model.AiSettingsConfig
 import com.pcoundia.buntu.core.domain.model.AppPreferences
@@ -62,6 +63,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -407,6 +409,48 @@ class PlayerViewModelTest {
         assertNull(h.engine.state.value.activeStream)
         assertNull(vm.screenState.value.sleepTimerRemainingSeconds)
     }
+
+    @Test
+    fun `stream resolution exception surfaces clear redacted error and retryPlayback recovers`() = playerTest {
+        val h = PlayerHarness()
+        h.catalog.failResolveWith = IllegalStateException(
+            "SQLite lock on http://alice:topsecret@vod.example.com/movie/10.mkv",
+        )
+
+        val vm = h.viewModel(itemId = 10L)
+        runCurrent()
+
+        val err = vm.screenState.value.errorMessage
+        assertNotNull(err)
+        assertTrue(err!!.contains("Impossible de préparer la lecture"))
+        assertTrue(err.contains("<lien masqué>"))
+        assertFalse(err.contains("topsecret"))
+        assertNull(h.engine.state.value.activeStream)
+
+        h.catalog.failResolveWith = null
+        vm.retryPlayback()
+        runCurrent()
+        assertNull(vm.screenState.value.errorMessage)
+        assertEquals(10L, h.engine.state.value.activeStream?.itemId)
+    }
+
+    @Test
+    fun `progress persistence error mid-playback surfaces toast without crashing player`() = playerTest {
+        val h = PlayerHarness(kind = StreamKind.VOD_MOVIE)
+        h.catalog.failProgressWith = IllegalStateException("database is locked")
+
+        val vm = h.viewModel(itemId = 20L)
+        runCurrent()
+        h.engine.advancePosition(positionMs = 45_000L, durationMs = 7_200_000L)
+
+        vm.persistCurrentProgress()
+        runCurrent()
+
+        assertEquals(20L, h.engine.state.value.activeStream?.itemId)
+        val toast = vm.screenState.value.statusToast
+        assertNotNull(toast)
+        assertTrue(toast!!.contains("Sauvegarde de progression impossible"))
+    }
 }
 
 private fun fakeChannel(
@@ -598,6 +642,7 @@ private class FakePlayerSettings(private val prefs: AppPreferences) : SettingsRe
     override suspend fun setAdultCategoriesUnlocked(unlocked: Boolean) = Unit
     override suspend fun setLastChannelId(channelId: Long) = Unit
     override suspend fun updateAiConfig(config: AiSettingsConfig) = Unit
+    override suspend fun setLiveBuffer(buffer: LiveBuffer) = Unit
     override suspend fun setUpNextPreferences(preferences: UpNextPreferences) = Unit
 }
 
@@ -655,6 +700,8 @@ private class FakePlayerCatalogRepository(private val kind: StreamKind) : Catalo
     val resolvedIds = mutableListOf<Long>()
     var channels: List<ChannelItem> = emptyList()
     var mirrorsById: Map<Long, List<ChannelItem>> = emptyMap()
+    var failResolveWith: Throwable? = null
+    var failProgressWith: Throwable? = null
     private var favorite = false
 
     override fun pagedLiveChannels(query: CatalogQuery): Flow<PagingData<ChannelItem>> = flowOf(PagingData.empty())
@@ -692,9 +739,11 @@ private class FakePlayerCatalogRepository(private val kind: StreamKind) : Catalo
         return favorite
     }
     override suspend fun recordWatchProgress(stableHash: String, positionMs: Long, durationMs: Long) {
+        failProgressWith?.let { throw it }
         savedProgress[stableHash] = positionMs
     }
     override suspend fun resolvePlayableStream(itemId: Long, startPositionMs: Long): PlayableStream {
+        failResolveWith?.let { throw it }
         resolvedIds += itemId
         val ch = channels.firstOrNull { it.id == itemId }
         return PlayableStream(
