@@ -1,0 +1,65 @@
+name: Signaler un bug
+description: Signaler un dysfonctionnement sur macOS, iOS/tvOS/visionOS, Android, Samsung TV (Tizen) ou le cœur Rust.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de prendre le temps de signaler ce problème.
+        **Sécurité & Confidentialité :** Ne collez **jamais** d'URL Xtream Codes complète (elle contient votre identifiant et votre mot de passe), de playlist M3U privée ou de clé d'API. Masquez tout hôte, identifiant ou jeton avant publication.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Plateforme concernée
+      options:
+        - Apple macOS
+        - Apple iOS / iPadOS
+        - Apple tvOS
+        - Apple visionOS
+        - Android (Téléphone / Tablette)
+        - Android TV / Google TV
+        - Samsung Smart TV (Tizen)
+        - Cœur Rust (cnd-domain / cnd-core / cnd-cli)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version de Buntu et appareil / OS
+      description: "Exemple : Buntu 1.0.1 (build 2), Samsung UN43AU8000 (Tizen 6.0), macOS 15.1, Android 14"
+      placeholder: "1.0.1 (build 2) — ..."
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description du problème
+      description: Décrivez clairement le comportement observé.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Étapes pour reproduire
+      description: Listez les actions permettant de reproduire le bug.
+      placeholder: |
+        1. Ouvrir ...
+        2. Sélectionner ...
+        3. Constater ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportement attendu
+      description: Que devait-il se passer normalement ?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Journaux ou captures (anonymisés)
+      description: Extraits de logs console/logcat/DevTools sans aucun secret ni URL privée.
+    validations:
+      required: false

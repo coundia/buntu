@@ -1,0 +1,39 @@
+name: Proposer une fonctionnalité
+description: Suggérer une amélioration ou une nouvelle capacité pour Buntu.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Buntu privilégie les règles métier partagées dans `crates/cnd-domain`, le streaming sans saturation mémoire et le respect strict du quota mono-connexion fournisseur.
+  - type: checkboxes
+    id: platforms
+    attributes:
+      label: Plateformes ciblées
+      options:
+        - label: Apple (macOS / iOS / tvOS / visionOS)
+        - label: Android / Android TV
+        - label: Samsung Smart TV (Tizen)
+        - label: Cœur Rust (cnd-domain / cnd-core)
+  - type: textarea
+    id: problem
+    attributes:
+      label: Besoin ou problème à résoudre
+      description: Quel cas d'usage manque aujourd'hui ou pose difficulté ?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Solution proposée
+      description: Décrivez l'expérience attendue pour l'utilisateur et, si possible, l'impact sur les couches du projet.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives envisagées
+      description: Avez-vous envisagé d'autres approches ou contournements ?
+    validations:
+      required: false

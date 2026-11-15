@@ -39,3 +39,18 @@ tizen/dist/
 # IDE
 /.idea/
 help
+
+# OS & Editor temporary files
+**/.DS_Store
+*.swp
+*.swo
+*~
+
+# AI & local tooling
+.claude/
+
+# Signing keys, keystores & provisioning profiles (never commit)
+*.keystore
+*.jks
+*.p12
+*.mobileprovision

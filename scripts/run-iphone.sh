@@ -4,12 +4,12 @@
 #
 #   scripts/run-iphone.sh                      first connected device, debug build, launch
 #   scripts/run-iphone.sh --release            optimized build
-#   scripts/run-iphone.sh --device "My iPhone"   pick a device by name or UDID
+#   scripts/run-iphone.sh --device "My iPhone" pick a device by name or UDID
 #   scripts/run-iphone.sh --rebuild-core       rebuild the Rust XCFramework first
 #   scripts/run-iphone.sh --no-launch          build and install only
 #   scripts/run-iphone.sh --list               list the connected devices
 #
-# DEVELOPMENT_TEAM (env) is your Apple team id; the default is the one this project was signed with.
+# DEVELOPMENT_TEAM (env) is your Apple team id (required for physical device builds; Xcode > Settings > Accounts).
 # The device must be unlocked, trusted, and in Developer Mode. Output goes to build/ (git-ignored).
 set -euo pipefail
 
@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 APPLE_DIR="${ROOT_DIR}/apple"
 DERIVED_DATA="${ROOT_DIR}/build/DerivedData-device"
-TEAM="${DEVELOPMENT_TEAM:-<TEAM_ID>}"
+TEAM="${DEVELOPMENT_TEAM:-}"
 
 CONFIG="Debug"
 DEVICE=""
@@ -63,6 +63,11 @@ DEVICES="$(connected_devices)"
 if [[ "${LIST}" -eq 1 ]]; then
   if [[ -z "${DEVICES}" ]]; then echo "No connected device."; else echo "${DEVICES}" | awk -F'\t' '{printf "%s  %s\n", $1, $2}'; fi
   exit 0
+fi
+
+if [[ -z "${TEAM}" ]]; then
+  echo "error: set DEVELOPMENT_TEAM=<YOUR_APPLE_TEAM_ID> (find it in Xcode > Settings > Accounts)" >&2
+  exit 1
 fi
 
 if [[ -z "${DEVICES}" ]]; then
