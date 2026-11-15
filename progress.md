@@ -48,6 +48,13 @@ Ce fichier dit, à tout moment, **ce que les agents IA font dans ce dépôt et o
 
 ---
 
+## 2026-11-15 — Claude, CI/CD désactivé sur GitHub (releases manuelles)
+
+- ✅ À la demande de l'utilisateur (« je vais faire des release manuelle ») : workflows `CI` et `Release` **désactivés** sur `coundia/buntu` (`gh workflow disable`, état `disabled_manually`) ; 7 runs `CI` en cours (PR Dependabot) annulés. Réactivation : `gh workflow enable CI` / `gh workflow enable Release`. Les fichiers `.github/workflows/*` restent dans le dépôt, inchangés.
+- ⚠️ `Dependabot Updates` reste actif : il a ouvert des PR (#17 à #28 au moins : mises à jour de dépendances, certaines majeures) ; désactiver = retirer `.github/dependabot.yml` ou régler *Settings → Code security*. Non fait.
+- ℹ️ Premier passage réel du CI (avant désactivation) : `Secrets & Default Keys` ✅ ; ❌ `Rust` (1 test de performance sensible au temps, `hiding_adult_groups_stays_fast_on_a_large_catalog`, 318/319) ; ❌ `Android` (`QrPairingServerTest > stopping closes the port`, `:core:platform`) ; ❌ `Tizen` (`tsc` ne trouve pas `src/wasm/pkg/cnd_domain_wasm.js` : le `--out-dir tizen/src/wasm/pkg` de `wasm-pack` est relatif à la caisse `crates/cnd-domain-wasm`, il faut `../../tizen/src/wasm/pkg`). À corriger avant de réactiver le CI.
+- ℹ️ Les paquets construits (`build/release/v1.2.0/`, 4 APK + 2 `.wgt`) sont des fichiers **locaux**, ignorés par git et jamais envoyés sur GitHub : la page Releases n'affiche que « Buntu 1.1.0 ». Publication manuelle : `gh release create v1.2.0 build/release/v1.2.0/* …` (voir la réponse de la session).
+
 ## 2026-11-15 — Claude, push de `main` (historique réécrit)
 
 - ✅ `git push --force-with-lease=main:<ancien sha> origin main` : `origin/main` = `c4f1b7f` (identique au local au moment du push). Le dépôt `coundia/buntu` est **public** (vérifié avec `gh repo view`). Tags **non** poussés.
