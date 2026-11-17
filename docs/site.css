@@ -1,10 +1,10 @@
 /* Buntu project page: flat yellow, black and white. No gradient, shadow, border or blur.
    No external font, script or image: nothing is requested from a third party. */
 :root {
-  --yellow: #ffd60a;
+  --yellow: #ffd600;
   --yellow-soft: #fff1a8;
-  --black: #111111;
-  --ink: #2a2a2a;
+  --black: #000000;
+  --ink: #222222;
   --paper: #ffffff;
   --grey: #f3f3ef;
 }
