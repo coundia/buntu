@@ -3,9 +3,9 @@ import SwiftUI
 import AppKit
 #endif
 
-/// The app's logo (brand book, § 4.1): a "B" drawn as two stacked arches, a door ajar, with a thread of
-/// warm light (*leer*) coming through the opening, on a deep night tile. Drawn in code so the sidebar, the
-/// Dock icon and the exported `.icns` share one source.
+/// The app's logo (brand book, § 4.1): a yellow "B" drawn as two stacked arches, a door ajar, with a thread
+/// of yellow light (*leer*) coming through the opening, on a pure black tile. Drawn in code so the sidebar,
+/// the Dock icon and the exported `.icns` share one source.
 struct AppLogoView: View {
     var size: CGFloat
     /// `true` adds the transparent margin and soft shadow of a macOS app icon (the tile fills 80 %).
@@ -13,8 +13,10 @@ struct AppLogoView: View {
     /// `true` renders a full-bleed square with no corner rounding (for iOS, iPadOS app icons).
     var fullBleed = false
 
-    static let tileTop = BrandPalette.slate.color
-    static let tileBottom = BrandPalette.midnight.color
+    /// Pure black (`#000000`) tile background.
+    static let tileBackground = Color(red: 0, green: 0, blue: 0)
+    /// True vibrant yellow (`#FFD600`) for the "B" letter, glow, and light beams.
+    static let logoYellow = Color(red: 1.0, green: 0xD6 / 255.0, blue: 0)
 
     var body: some View {
         let tile = framed ? size * 0.8 : size
@@ -22,32 +24,23 @@ struct AppLogoView: View {
             let t = canvas.width
             let tileRect = CGRect(origin: .zero, size: canvas)
             if fullBleed {
-                context.fill(
-                    Path(tileRect),
-                    with: .linearGradient(
-                        Gradient(colors: [Self.tileTop, Self.tileBottom]),
-                        startPoint: CGPoint(x: t * 0.2, y: 0), endPoint: CGPoint(x: t * 0.8, y: t)
-                    )
-                )
+                context.fill(Path(tileRect), with: .color(Self.tileBackground))
             } else {
                 let radius = t * 0.2237
                 context.fill(
                     Path(roundedRect: tileRect, cornerRadius: radius, style: .continuous),
-                    with: .linearGradient(
-                        Gradient(colors: [Self.tileTop, Self.tileBottom]),
-                        startPoint: CGPoint(x: t * 0.2, y: 0), endPoint: CGPoint(x: t * 0.8, y: t)
-                    )
+                    with: .color(Self.tileBackground)
                 )
             }
 
             func point(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: x * t, y: y * t) }
-            let gold = BrandPalette.gold.color
+            let yellow = Self.logoYellow
 
             // The glow behind the opening.
             context.fill(
                 Path(ellipseIn: CGRect(x: 0.14 * t, y: 0.22 * t, width: 0.62 * t, height: 0.56 * t)),
                 with: .radialGradient(
-                    Gradient(colors: [gold.opacity(0.42), gold.opacity(0)]),
+                    Gradient(colors: [yellow.opacity(0.42), yellow.opacity(0)]),
                     center: point(0.45, 0.5), startRadius: 0, endRadius: 0.32 * t
                 )
             )
@@ -66,7 +59,7 @@ struct AppLogoView: View {
             letter.addLine(to: point(0.31, 0.76))
             context.stroke(
                 letter,
-                with: .color(BrandPalette.white.color),
+                with: .color(yellow),
                 style: StrokeStyle(lineWidth: t * 0.085, lineCap: .round, lineJoin: .round)
             )
 
@@ -76,7 +69,7 @@ struct AppLogoView: View {
                 context.fill(
                     Path(roundedRect: beam, cornerRadius: t * 0.017),
                     with: .linearGradient(
-                        Gradient(colors: [gold.opacity(0.55), gold]),
+                        Gradient(colors: [yellow.opacity(0.55), yellow]),
                         startPoint: point(0.44, top), endPoint: point(0.44, bottom)
                     )
                 )

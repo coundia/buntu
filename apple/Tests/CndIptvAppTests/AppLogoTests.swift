@@ -38,6 +38,22 @@ final class AppLogoTests: XCTestCase {
         XCTAssertEqual(center.alphaComponent, 1, accuracy: 0.01)
     }
 
+    func testLogoUsesPureBlackBackgroundAndTrueYellow() throws {
+        let image = try XCTUnwrap(AppLogoRenderer.nsImage(pixels: 512, framed: false, fullBleed: true))
+        let rep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
+
+        let corner = try XCTUnwrap(rep.colorAt(x: 2, y: 2)?.usingColorSpace(.sRGB))
+        XCTAssertEqual(corner.redComponent, 0, accuracy: 0.02)
+        XCTAssertEqual(corner.greenComponent, 0, accuracy: 0.02)
+        XCTAssertEqual(corner.blueComponent, 0, accuracy: 0.02)
+
+        // Vertical stem of the "B" at x = 0.31 * 512 (~159), y = 0.50 * 512 (256).
+        let stem = try XCTUnwrap(rep.colorAt(x: 159, y: 256)?.usingColorSpace(.sRGB))
+        XCTAssertEqual(stem.redComponent, 1.0, accuracy: 0.03)
+        XCTAssertEqual(stem.greenComponent, 0xD6 / 255.0, accuracy: 0.03)
+        XCTAssertEqual(stem.blueComponent, 0.0, accuracy: 0.03)
+    }
+
     func testExportIosIconWhenAsked() throws {
         guard let path = ProcessInfo.processInfo.environment["CND_EXPORT_IOS_ICON"], !path.isEmpty else {
             throw XCTSkip("Set CND_EXPORT_IOS_ICON to export the iOS icon.")

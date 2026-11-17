@@ -4,11 +4,6 @@
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:pathData="M0,0H108V108H0Z">
-        <aapt:attr name="android:fillColor">
-            <gradient android:type="linear" android:startX="21.6" android:startY="0"
-                android:endX="86.4" android:endY="108"
-                android:startColor="#FF161B26" android:endColor="#FF0B0E14" />
-        </aapt:attr>
-    </path>
+    <path android:pathData="M0,0H108V108H0Z"
+        android:fillColor="#FF000000" />
 </vector>

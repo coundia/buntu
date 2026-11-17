@@ -96,10 +96,10 @@ C'est un **lecteur** : Buntu ne fournit aucun contenu, il lit les sources que l'
 - **Forme centrale :** la lettre **« B »** dessinée comme une **double arche**, une porte contemporaine entrouverte.
 - **La fente lumineuse :** de l'entrebâillement émane une lueur chaude (*leer*), qui invite à entrer.
 - **Rendu :**
-  - fond sombre profond ;
+  - fond noir pur (`#000000`) ;
   - icône en couches pour l'effet de profondeur des icônes Apple récentes (tvOS en parallaxe, iOS et macOS en verre) ;
   - variantes claire, sombre et teintée fournies pour iOS.
-- **État :** une première version est dessinée en code (`Shared/AppLogoView.swift`, couleurs de `BrandPalette`) : un « B » blanc en deux arches sur fond nuit, avec un filet de lumière dorée dans chaque arche. Elle sert d'icône du Mac (`task icon` produit `assets/AppIcon.icns` et `AppIcon-1024.png`) et de logo de la barre latérale. C'est une base de travail : le dessin final d'un graphiste reste à faire.
+- **État :** une première version est dessinée en code (`Shared/AppLogoView.swift`) : un « B » jaune vif (`#FFD600`) en deux arches sur fond noir pur (`#000000`), avec un halo et des faisceaux lumineux jaunes (`#FFD600`) dans chaque arche (au lieu du doré). Elle sert d'icône d'application (`task icon` produit `assets/AppIcon.icns` et `AppIcon-1024.png`, déclinés aussi pour Tizen et la documentation) et de logo de la barre latérale. C'est une base de travail : le dessin final d'un graphiste reste à faire.
 - **Contraintes techniques :**
   - **source :** `task icon` régénère l'icône depuis le code ;
   - **lisibilité :** reconnaissable à 16 × 16 px (Dock, Spotlight) ;

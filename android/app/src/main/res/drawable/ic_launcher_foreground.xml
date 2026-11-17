@@ -8,24 +8,24 @@
         <aapt:attr name="android:fillColor">
             <gradient android:type="radial" android:centerX="50.11" android:centerY="54"
                 android:gradientRadius="24.88"
-                android:startColor="#6BFF9F0A" android:endColor="#00FF9F0A" />
+                android:startColor="#6BFFD600" android:endColor="#00FFD600" />
         </aapt:attr>
     </path>
     <path android:pathData="M39.23,33.78L39.23,74.22M39.23,33.78L54,33.78A10.11,10.11 0 0,1 54,54L39.23,54M39.23,54L56.33,54A10.11,10.11 0 0,1 56.33,74.22L39.23,74.22"
-        android:strokeColor="#FFF5F7FA" android:strokeWidth="6.61"
+        android:strokeColor="#FFFFD600" android:strokeWidth="6.61"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
     <path android:pathData="M48.25,40.55A1.32,1.32 0 0,1 50.89,40.55L50.89,48.4A1.32,1.32 0 0,1 48.25,48.4Z">
         <aapt:attr name="android:fillColor">
             <gradient android:type="linear" android:startX="49.33" android:startY="39.23"
                 android:endX="49.33" android:endY="49.72"
-                android:startColor="#8CFF9F0A" android:endColor="#FFFF9F0A" />
+                android:startColor="#8CFFD600" android:endColor="#FFFFD600" />
         </aapt:attr>
     </path>
     <path android:pathData="M48.25,59.6A1.32,1.32 0 0,1 50.89,59.6L50.89,67.45A1.32,1.32 0 0,1 48.25,67.45Z">
         <aapt:attr name="android:fillColor">
             <gradient android:type="linear" android:startX="49.33" android:startY="58.28"
                 android:endX="49.33" android:endY="68.77"
-                android:startColor="#8CFF9F0A" android:endColor="#FFFF9F0A" />
+                android:startColor="#8CFFD600" android:endColor="#FFFFD600" />
         </aapt:attr>
     </path>
 </vector>
